@@ -9,6 +9,7 @@ Or from Docker Compose, which is the intended production path.
 
 from __future__ import annotations
 
+import contextlib
 import logging
 import os
 import threading
@@ -116,7 +117,11 @@ async def lifespan(app: FastAPI):
         daemon=True,
     )
     scheduler.start()
+    from resume_tailor.apply.funnel import answer_harvest  # noqa: PLC0415
+    with contextlib.suppress(Exception):
+        answer_harvest.restore()
     yield
+    answer_harvest.stop()
     _scheduler_stop.set()
     scheduler.join(timeout=2.0)
 

@@ -47,6 +47,7 @@ export type SkillGroup = {
 };
 
 export type DegreeFormat = "semicolon" | "comma" | "pipe";
+export type MajorEntry = { name: string; degree_type: string };
 
 export type Education = {
   school: string;
@@ -61,6 +62,7 @@ export type Education = {
   degree_type?: string;
   /** Fields of study; the first answers a single "Major" form field. */
   majors?: string[];
+  major_entries?: MajorEntry[];
   minors?: string[];
   /** "generated": `degree` is built from the parts above (`lib/degreeLine`); "manual":
    * `degree` is exactly what was typed. */

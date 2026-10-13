@@ -82,7 +82,7 @@ def test_a_graduation_date_question_is_dated_from_the_profile(monkeypatch):
         workday_dates, "fill_date_sections",
         lambda _page, control, parts: typed.setdefault(control, parts) is not None,
     )
-    done = workday_dates.fill_question_dates(_Page(), {"graduation_month": "2027-06"})
+    done = workday_dates.fill_question_dates(_Page(), {"graduation_month": "2027-06-01"})
     assert typed == {
         "g": [("dateSectionMonth", "06"), ("dateSectionDay", "01"), ("dateSectionYear", "2027")]
     }

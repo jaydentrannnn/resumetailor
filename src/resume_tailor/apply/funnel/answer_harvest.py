@@ -27,6 +27,7 @@ from collections.abc import Iterable
 from dataclasses import dataclass
 from typing import Any
 
+from resume_tailor import config
 from resume_tailor.apply.answers import answer_memory
 from resume_tailor.apply.funnel import store, store_models
 
@@ -35,7 +36,7 @@ _log = logging.getLogger(__name__)
 #: Field outcome states that mean "left for the applicant".
 _LEFT = frozenset({"unanswered", "ambiguous", "invalid_existing", "manual_review", "failed"})
 _SKIP_KINDS = frozenset({"file", "unsupported", "checkbox"})
-_RETAINED = frozenset({"awaiting_review", "awaiting_otp"})
+_RETAINED = frozenset({"awaiting_review", "awaiting_otp", "submit_unconfirmed"})
 _INTERVAL_S = 20.0
 _TIMEOUT_S = 20.0
 
@@ -220,26 +221,37 @@ async def install(page: Any) -> None:
 
 async def _collect_async(application_id: str) -> int:
     from resume_tailor.apply.driver import browser, scanner  # noqa: PLC0415
+    from resume_tailor.web import template_ops  # noqa: PLC0415
 
-    app = store.get(application_id)
+    with template_ops.LOCK:
+        workspace_path = config.APPLICATIONS_PATH
+        app = store.get(application_id)
     if app is None or not app.fill:
         return 0
     fill = store_models.FillResult.model_validate(app.fill)
     left = left_for_you(fill)
-    if not left or not fill.browser_target_id or browser.extension_mode():
+    if not fill.browser_target_id or (browser.extension_mode() and FILLING):
         return 0
     # Only an open tab: never start a browser just to read one.
     if fill.browser_target_id not in (browser.open_target_ids() or set()):
         return 0
-    async with browser.async_cdp_browser() as connected:
+    connection = (browser.async_cdp_browser(background=True) if browser.extension_mode()
+                  else browser.async_cdp_browser())
+    async with connection as connected:
         for context in connected.contexts:
             page = await browser.async_find_target(context, fill.browser_target_id)
             if page is None:
                 continue
+            from resume_tailor.apply.funnel import submission_monitor  # noqa: PLC0415
+            if await submission_monitor.inspect(app, page, workspace_path=workspace_path) or not left:
+                return 0
             observed = await scanner.scan(page)
             typed = await _frames_typed(page) + from_fields(observed.fields)
             await install(page)
-            return save(typed, left, company=app.company, ats=_ats(app))
+            with template_ops.LOCK:
+                if config.APPLICATIONS_PATH != workspace_path:
+                    return 0
+                return save(typed, left, company=app.company, ats=_ats(app))
     return 0
 
 
@@ -267,10 +279,6 @@ def watch(application_id: str) -> None:
     """Collect from this application's review tab every `_INTERVAL_S` seconds while it
     waits for the applicant (starts the one background thread when needed)."""
     global _THREAD
-    from resume_tailor.apply.driver import browser  # noqa: PLC0415
-
-    if browser.extension_mode():
-        return  # the relay has one connection, which fills need
     with _WATCH_LOCK:
         _WATCHED.add(application_id)
         if _THREAD is None:
@@ -290,6 +298,8 @@ def _loop() -> None:
 
     while not _STOP.wait(_INTERVAL_S):
         open_ids = browser.open_target_ids()
+        if browser.extension_mode() and FILLING:
+            continue  # the relay has one connection; fills take priority
         with _WATCH_LOCK:
             watched = sorted(_WATCHED - FILLING)
         if open_ids is None:
@@ -310,3 +320,14 @@ def _loop() -> None:
                 break
     with _WATCH_LOCK:
         _THREAD = None
+
+
+def restore() -> None:
+    """Resume observation of this workspace's retained tabs after startup."""
+    with _WATCH_LOCK:
+        _WATCHED.clear()
+    for app in store.load_all().values():
+        if app.status in _RETAINED and app.fill:
+            fill = store_models.FillResult.model_validate(app.fill)
+            if fill.browser_target_id:
+                watch(app.source_job_id)

@@ -47,6 +47,37 @@ class BrowserStatus:
 RELAY_BUSY = "Relay busy: a fill is connected"
 TAB_GONE = "Tab was closed or DevTools opened"
 UPLOAD_LOCK = threading.Lock()
+_RELAY_LEASE = threading.Lock()
+
+
+@contextmanager
+def relay_slot() -> Iterator[None]:
+    """Foreground connections wait for a bounded background observation to finish."""
+    held = extension_mode()
+    if held and not _RELAY_LEASE.acquire(timeout=25):
+        raise RuntimeError(RELAY_BUSY)
+    try:
+        yield
+    finally:
+        if held:
+            _RELAY_LEASE.release()
+
+
+@asynccontextmanager
+async def async_relay_slot(*, background: bool = False):
+    """A monitor skips a busy relay; foreground work waits without blocking its loop."""
+    held = extension_mode()
+    if held:
+        deadline = time.monotonic() + 25
+        while not _RELAY_LEASE.acquire(blocking=False):
+            if background or time.monotonic() >= deadline:
+                raise RuntimeError(RELAY_BUSY)
+            await asyncio.sleep(0.05)
+    try:
+        yield
+    finally:
+        if held:
+            _RELAY_LEASE.release()
 
 
 @asynccontextmanager
@@ -69,15 +100,22 @@ def _relay_call(method: str) -> dict[str, Any]:
     """One CDP browser-level command to the relay on a short-lived connection."""
     from websockets.sync.client import connect
 
-    with connect(effective_cdp_url(), open_timeout=2, close_timeout=1) as connection:
-        connection.send(json.dumps({"id": 1, "method": method}))
-        reply = json.loads(connection.recv(timeout=2))
+    if not _RELAY_LEASE.acquire(blocking=False):
+        raise RuntimeError(RELAY_BUSY)
+    try:
+        with connect(effective_cdp_url(), open_timeout=2, close_timeout=1) as connection:
+            connection.send(json.dumps({"id": 1, "method": method}))
+            reply = json.loads(connection.recv(timeout=2))
+    finally:
+        _RELAY_LEASE.release()
     if reply.get("error"):
         raise RuntimeError(reply["error"].get("message", "Relay rejected connection"))
     return reply["result"]
 
 
 def _relay_busy(exc: BaseException) -> bool:
+    if isinstance(exc, RuntimeError) and str(exc) == RELAY_BUSY:
+        return True
     received = getattr(exc, "rcvd", None)
     return getattr(received, "reason", "") == RELAY_BUSY
 
@@ -213,6 +251,12 @@ def _require_browser(status: BrowserStatus) -> None:
 
 @contextmanager
 def cdp_browser() -> Iterator[Any]:
+    with relay_slot(), _cdp_browser() as connected:
+        yield connected
+
+
+@contextmanager
+def _cdp_browser() -> Iterator[Any]:
     """Connect to the host browser over CDP; yield a Playwright ``Browser``.
 
     Each caller owns a separate sync Playwright connection in its own thread. Browser
@@ -285,7 +329,13 @@ def focus_target(expected_id: str) -> str:
 
 
 @asynccontextmanager
-async def async_cdp_browser():
+async def async_cdp_browser(*, background: bool = False):
+    async with async_relay_slot(background=background), _async_cdp_browser() as connected:
+        yield connected
+
+
+@asynccontextmanager
+async def _async_cdp_browser():
     """Async CDP connection for the deadline-bounded verified Apply engine."""
     _require_browser(await asyncio.to_thread(_ensure))
     try:

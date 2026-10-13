@@ -8,7 +8,8 @@ export type AppEvent =
   /** Model settings, a key, or the template changed: the setup checklist is stale. */
   | "rt:setup-changed"
   /** The active template changed: page-fit numbers and previews are stale. */
-  | "rt:template-changed";
+  | "rt:template-changed"
+  | "rt:resume-saved";
 
 export function emitAppEvent(name: AppEvent): void {
   window.dispatchEvent(new Event(name));

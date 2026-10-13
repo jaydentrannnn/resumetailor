@@ -8,7 +8,7 @@ import json
 from pydantic import BaseModel, Field
 
 from resume_tailor.apply.answers.profile import ApplicantProfile
-from resume_tailor.content.data import MasterResume
+from resume_tailor.content.data import MajorEntry, MasterResume
 
 
 class PacketEducation(BaseModel):
@@ -20,6 +20,8 @@ class PacketEducation(BaseModel):
     #: Every major, then every minor, for forms with a repeatable or multi-select field
     #: of study; `major`/`minor` are the first of each for a single-valued field.
     majors: list[str] = Field(default_factory=list)
+    #: Structured per-major credentials; absent in packets prepared before this field.
+    major_entries: list[MajorEntry] = Field(default_factory=list)
     minor: str = ""
     minors: list[str] = Field(default_factory=list)
     start: str = ""

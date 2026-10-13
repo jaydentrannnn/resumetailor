@@ -198,6 +198,11 @@ class ApplicantProfile(BaseModel):
     #: Agree to required notices and consents (privacy, background check, screening,
     #: accuracy, terms, arbitration); optional opt-ins are always declined.
     auto_accept_routine_acknowledgements: bool = True
+    #: Explicit answers to broad recruiting questions; unset means ask the applicant.
+    consider_other_positions: bool | None = None
+    minimum_qualifications_answer: bool | None = None
+    experience_basis: Literal["experience", "experience_projects", "experience_projects_education", "custom"] = "experience"
+    experience_years_custom: float | None = Field(default=None, ge=0, allow_inf_nan=False)
     #: Overrides the resume's GPA on forms ("3.7/4.0"). Blank = resume.
     gpa_display: str = ""
     #: Uploaded transcript (PDF) in the workspace's files folder, for transcript uploads.

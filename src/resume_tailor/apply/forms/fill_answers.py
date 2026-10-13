@@ -57,7 +57,15 @@ class _FillAnswers(fill_state._FillState):
             "input[type='file'][name*='cover' i]",
         ):
             if cov_sel not in existing_sels and fill_buttons._locator_exists(page.locator(cov_sel)):
-                file_inputs.append({"selector": cov_sel, "label": "Cover Letter"})
+                required = False
+                with contextlib.suppress(Exception):
+                    required = page.locator(cov_sel).first.evaluate("""el => {
+                      const group = el.closest('fieldset, .field, .form-group, .file-upload, [role=group]');
+                      const label = group?.querySelector('legend, label, .upload-label')?.textContent || '';
+                      return el.required || el.getAttribute('aria-required') === 'true' ||
+                        !!el.closest('[aria-required=true]') || /[*✱][\\s\u2060:]*$|\\(required\\)/i.test(label.trim());
+                    }""") is True
+                file_inputs.append({"selector": cov_sel, "label": "Cover Letter", "required": required})
                 break
         return file_inputs
 
@@ -98,6 +106,8 @@ class _FillAnswers(fill_state._FillState):
         self.uploaded_controls.add(key)
         self.attempted_purposes.add((purpose, frame_index))
         record = {"selector": sel, "label": label, "purpose": purpose}
+        if purpose == "cover_letter":
+            record["cover_letter_mode"] = self.settings.cover_letter_mode
         existing_filename = fill_outcomes._attached_filename(upload_target, sel)
         if isinstance(existing_filename, str) and existing_filename:
             self.uploads.append({
@@ -109,9 +119,11 @@ class _FillAnswers(fill_state._FillState):
         if purpose == "cover_letter":
             action, written = self._cover_letter(bool(is_dict and fin.get("required")))
             if action == "skip":
+                reason = f"Skipped: optional cover letter; setting is {self.settings.cover_letter_mode}"
+                self.progress(reason)
                 self.uploads.append({
                     **record, "state": "not_requested", "verified": False,
-                    "reason": cover_on_demand.SKIPPED_NOTE, "frame_index": frame_index,
+                    "reason": reason, "frame_index": frame_index,
                 })
                 return False
             path = self.cover_path

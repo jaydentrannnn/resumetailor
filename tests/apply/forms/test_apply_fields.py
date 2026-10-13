@@ -229,12 +229,12 @@ def test_choice_values_try_the_named_degree_before_the_level():
     assert choice_values("degree_level", fields) == ["Bachelor of Science", "Bachelors"]
     assert choice_values("degree_level", {"degree_level": "Bachelors"}) == ["Bachelors"]
     assert choice_values("race", {"race": "Asian", "race_detail": "Southeast Asian"}) == ["Southeast Asian", "Asian"]
-    assert choice_values("how_heard", {"how_heard": "LinkedIn"}) == ["LinkedIn", "Job Board", "Online Job Board", "Internet", "Online", "Company Website", "Careers Website", "Social Media", "Other", "Career Fair"]
+    assert choice_values("how_heard", {"how_heard": "LinkedIn"}) == ["LinkedIn", "LinkedIn.com", "Other"]
     assert "BS" in search_terms("degree_level", "Bachelor of Science")
 
 
-def test_how_heard_falls_back_to_online_then_other_then_career_fair():
-    assert fallback_values("how_heard", "LinkedIn") == ["LinkedIn", "Job Board", "Online Job Board", "Internet", "Online", "Company Website", "Careers Website", "Social Media", "Other", "Career Fair"]
+def test_how_heard_tries_only_saved_source_aliases_then_other():
+    assert fallback_values("how_heard", "LinkedIn") == ["LinkedIn", "LinkedIn.com", "Other"]
     assert fallback_values("how_heard", "Other")[0] == "Other"
     assert fallback_values("gender", "Decline") == ["Decline"]
     assert fallback_values("how_heard", "") == []

@@ -102,6 +102,7 @@ class FillResult(BaseModel):
     ready_to_submit: bool = False
     submit_action: str = ""
     confirmation: str = ""
+    confirmation_evidence: dict[str, str] = Field(default_factory=dict)
     screenshot_path: str | None = None
     error: str | None = None
     status: str = ""

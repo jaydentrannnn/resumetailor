@@ -19,7 +19,7 @@ export const MONTH_NAMES = [
   "December",
 ] as const;
 
-export type DatePrecision = "month" | "day";
+export type DatePrecision = "month" | "day" | "optional_day";
 
 export type DateParts = { year: string; month: string; day: string };
 
@@ -47,7 +47,8 @@ export function composeDate(parts: DateParts, precision: DatePrecision): string 
   const month = Number(parts.month);
   if (year < 1950 || year > 2100 || month < 1 || month > 12) return null;
   const mm = String(month).padStart(2, "0");
-  if (precision === "month") return `${parts.year}-${mm}`;
+  if (precision === "month" || (precision === "optional_day" && !parts.day))
+    return `${parts.year}-${mm}`;
   const day = Number(parts.day);
   if (!/^\d{1,2}$/.test(parts.day) || day < 1 || day > daysIn(year, month)) return null;
   return `${parts.year}-${mm}-${String(day).padStart(2, "0")}`;

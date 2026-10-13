@@ -63,6 +63,23 @@ from . import fake_llm, llm_telemetry, model_queue, telemetry
 T = TypeVar("T", bound=BaseModel)
 
 
+def bound_client_timeout(client: Any, seconds: float) -> Any:
+    """Shorten numeric or SDK timeouts without coercing an HTTP timeout object."""
+    limit = max(0.001, float(seconds))
+    if hasattr(client, "max_retries"):
+        client.max_retries = 0
+    current = getattr(client, "timeout", None)
+    if isinstance(current, (int, float)):
+        client.timeout = min(current, limit)
+    elif current is not None and all(hasattr(current, key) for key in ("connect", "read", "write", "pool")):
+        values = {key: min(value, limit) if isinstance(value := getattr(current, key), (int, float))
+                  else limit for key in ("connect", "read", "write", "pool")}
+        client.timeout = type(current)(**values)
+    elif hasattr(client, "with_options"):
+        client = client.with_options(timeout=limit)
+    return client
+
+
 class LLMError(RuntimeError):
     """A provider call failed in a way no retry inside this module could repair.
 

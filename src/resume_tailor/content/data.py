@@ -18,7 +18,14 @@ from collections import Counter
 from pathlib import Path
 from typing import Annotated, Any, Literal
 
-from pydantic import BaseModel, ConfigDict, Field, field_validator, model_validator
+from pydantic import (
+    BaseModel,
+    ConfigDict,
+    Field,
+    field_serializer,
+    field_validator,
+    model_validator,
+)
 
 from .. import config
 from . import dates
@@ -132,6 +139,18 @@ class Experience(_Strict):
         return dates.normalize(value.strip(), "month") if isinstance(value, str) else value
 
 
+class MajorEntry(_Strict):
+    """One field of study and the credential it contributes to."""
+
+    name: str = ""
+    degree_type: str = ""
+
+    @field_validator("name", "degree_type")
+    @classmethod
+    def _strip(cls, value: str) -> str:
+        return value.strip()
+
+
 class Education(_Strict):
     school: str
     degree: str
@@ -145,20 +164,19 @@ class Education(_Strict):
     show_gpa: bool = False
     #: Extra education bullets (not coursework). Coursework has its own field.
     details: list[str] = Field(default_factory=list)
-    #: Degree type as the person writes it ("B.A.", "Bachelor of Science").
+    #: Legacy projections of `major_entries`, retained for existing application readers.
     degree_type: str = ""
-    #: Fields of study, in order; the first is the one a single "Major" form field gets.
-    #: Read by application forms, and by `degree_line.compose` when `degree_mode` is
-    #: "generated". A legacy single `major` is folded in by `_fold_major`.
     majors: list[str] = Field(default_factory=list)
+    #: Authoritative fields of study, in order. Equal credential types share a degree.
+    major_entries: list[MajorEntry] = Field(default_factory=list)
     minors: list[str] = Field(default_factory=list)
     #: "manual": `degree` is exactly what the person typed. "generated": `degree` is
-    #: rebuilt from `degree_type`/`majors`/`minors` in `degree_format` on every save
+    #: rebuilt from `major_entries`/`minors` in `degree_format` on every save
     #: (`web/routes/resume._write_master_resume`), so render and every other reader of
     #: `degree` stay unchanged.
     degree_mode: Literal["manual", "generated"] = "manual"
     degree_format: Literal["semicolon", "comma", "pipe"] = "semicolon"
-    #: Start and (expected) graduation month as ``YYYY-MM`` for application forms. Never
+    #: Start and graduation dates as ``YYYY-MM`` or ``YYYY-MM-DD`` for forms. Never
     #: rendered: the printed line is `dates`. Filled from `dates` on save when empty
     #: (`edu_dates.fill`); "" when the printed dates give no month.
     start: str = ""
@@ -167,15 +185,76 @@ class Education(_Strict):
     @model_validator(mode="before")
     @classmethod
     def _fold_major(cls, data: Any) -> Any:
-        """A file written before `majors` existed has one `major` string: it becomes the
-        first major (only when `majors` is not already set). The printed `degree` is
-        untouched — such an entry stays `degree_mode="manual"`."""
-        if isinstance(data, dict) and "major" in data:
-            data = dict(data)
+        """Migrate old majors without changing the manually printed degree line."""
+        if not isinstance(data, dict):
+            return data
+        data = dict(data)
+        if "major" in data:
             major = str(data.pop("major") or "").strip()
             if major and not data.get("majors"):
                 data["majors"] = [major]
+                if data.get("major_entries") == []:
+                    data.pop("major_entries")
+        # Older clients edit the legacy fields on a full JSON copy with empty entries.
+        if data.get("major_entries") == [] and (data.get("majors") or data.get("degree_type")):
+            data.pop("major_entries")
+        if "major_entries" not in data:
+            kind = data.get("degree_type", "")
+            names = data.get("majors", [])
+            data["major_entries"] = [
+                {"name": name, "degree_type": kind} for name in names
+            ] or ([{"name": "", "degree_type": kind}] if kind else [])
+        else:
+            entries = data["major_entries"]
+            if isinstance(entries, list):
+                def part(entry: Any, name: str) -> Any:
+                    return entry.get(name, "") if isinstance(entry, dict) else getattr(
+                        entry, name, ""
+                    )
+
+                data["majors"] = [part(entry, "name") for entry in entries if part(entry, "name")]
+                data["degree_type"] = part(entries[0], "degree_type") if entries else ""
         return data
+
+    def __getattribute__(self, name: str) -> Any:
+        """Legacy reads remain accurate after an entry is renamed or reordered in place."""
+        if name in {"majors", "degree_type"}:
+            state = object.__getattribute__(self, "__dict__")
+            if "major_entries" in state:
+                entries = state["major_entries"]
+                if name == "majors":
+                    return [entry.name for entry in entries if entry.name]
+                return entries[0].degree_type if entries else ""
+        return super().__getattribute__(name)
+
+    def __setattr__(self, name: str, value: Any) -> None:
+        """Keep legacy assignments meaningful; individual types use `major_entries`."""
+        if name in {"majors", "degree_type"} and "major_entries" in self.__dict__:
+            entries = self.major_entries
+            if name == "degree_type":
+                entries = [
+                    MajorEntry(name=entry.name, degree_type=value) for entry in entries
+                ] or ([MajorEntry(degree_type=value)] if value.strip() else [])
+            else:
+                first_type = self.degree_type
+                types = {entry.name: entry.degree_type for entry in entries}
+                entries = [
+                    MajorEntry(name=item, degree_type=types.get(item.strip(), first_type))
+                    for item in value if item.strip()
+                ] or ([MajorEntry(degree_type=first_type)] if first_type else [])
+            super().__setattr__("major_entries", entries)
+        elif name == "major_entries":
+            super().__setattr__(name, [MajorEntry.model_validate(entry) for entry in value])
+        else:
+            super().__setattr__(name, value)
+
+    @field_serializer("majors")
+    def _serialize_majors(self, _value: list[str]) -> list[str]:
+        return self.majors
+
+    @field_serializer("degree_type")
+    def _serialize_degree_type(self, _value: str) -> str:
+        return self.degree_type
 
     @field_validator("majors", "minors")
     @classmethod
@@ -190,15 +269,20 @@ class Education(_Strict):
     @major.setter
     def major(self, value: str) -> None:
         """Replace the first major ("" removes it), keeping any others."""
-        rest = self.majors[1:]
-        self.majors = ([value.strip()] if value.strip() else []) + rest
+        rest = self.major_entries[1:]
+        self.major_entries = (
+            [MajorEntry(name=value, degree_type=self.degree_type)] if value.strip() else []
+        ) + rest
 
     @field_validator("start", "end")
     @classmethod
-    def _month(cls, value: str) -> str:
+    def _date(cls, value: str) -> str:
         value = value.strip()
-        if value and not re.fullmatch(r"\d{4}-(0[1-9]|1[0-2])", value):
-            raise ValueError("must be a month as YYYY-MM, or empty")
+        if value and (
+            not re.fullmatch(r"\d{4}-\d{2}(?:-\d{2})?", value)
+            or dates.parse(value) is None
+        ):
+            raise ValueError("must be a valid YYYY-MM or YYYY-MM-DD date, or empty")
         return value
 
 

@@ -49,6 +49,7 @@ def _menu_choices(page: Any, trigger: Any) -> list[Any]:
 
 def _select_combobox_option(
     page: Any, trigger_selector: str, target_value: str, *, key: str = "", phone_region: str = "",
+    location_context: dict[str, str] | None = None, preserve_existing: bool = False,
 ) -> bool:
     """Click a custom combobox trigger and pick the matching option from the popup portal."""
     try:
@@ -60,12 +61,21 @@ def _select_combobox_option(
         is_input = tag_name == "input"
 
         before = _selected_combobox_text(trigger)
-        if key != "phone_country_code" and before and _option_match([before], target_value, key=key):
+        # Normal fill callers preserve a user's committed answer. Explicit repair
+        # callers have already checked its recorded automation provenance and can
+        # replace it. A bare phone prefix establishes no country identity.
+        if (key != "phone_country_code" and before and not _placeholder(before)
+                and (preserve_existing or _option_match([before], target_value, key=key))):
+            return True
+        if key == "phone_country_code" and _phone_identity_matches(trigger, target_value, phone_region):
             return True
         clicks.safe_click(trigger, purpose="select", timeout=3000)
         search_terms = [""]
         if key == "phone_country_code" and phone_region:
             search_terms.extend([phone_region, target_value])
+        elif key in {"city", "location"}:
+            city = (location_context or {}).get("city") or target_value.split(",")[0].strip()
+            search_terms.extend([city, target_value])
         else:
             search_terms.extend(field_matcher.search_terms(key, target_value))
         match = None
@@ -82,8 +92,8 @@ def _select_combobox_option(
                 option_texts = [choice.inner_text().strip() for choice in choices]
                 if key == "phone_country_code":
                     chosen_text = _phone_option(option_texts, target_value, phone_region)
-                    if not chosen_text:
-                        chosen_text = _option_match(option_texts, target_value, key=key)
+                elif key in {"city", "location"}:
+                    chosen_text = _location_option(option_texts, target_value, location_context)
                 else:
                     chosen_text = questions.choose(questions.Question(
                         "", kind="choice", options=tuple(option_texts),
@@ -101,7 +111,8 @@ def _select_combobox_option(
         if match is None:
             trigger.press("Escape")
             return False
-        if key == "phone_country_code" and match.get_attribute("aria-selected") == "true":
+        if (key == "phone_country_code" and match.get_attribute("aria-selected") == "true"
+                and _phone_prefix_matches(before, target_value)):
             trigger.press("Escape")
             return True
         selected_option = match.inner_text().strip()
@@ -115,21 +126,21 @@ def _select_combobox_option(
             page.wait_for_timeout(250)
             selected = _selected_combobox_text(trigger)
         if key == "phone_country_code":
+            if _phone_identity_matches(trigger, target_value, phone_region):
+                return True
             # React Select often detaches the clicked option when its menu closes.
             # Reopen the owned menu and inspect the newly rendered committed choice.
             clicks.safe_click(trigger, purpose="select", timeout=3000)
             refreshed = [choice for choice in _menu_choices(page, trigger) if choice.is_visible()]
             labels = [choice.inner_text().strip() for choice in refreshed]
-            committed_label = _phone_option(labels, target_value, phone_region) or _option_match(
-                labels, target_value, key=key,
-            )
+            committed_label = _phone_option(labels, target_value, phone_region)
             committed = bool(committed_label) and any(
                 choice.inner_text().strip() == committed_label
                 and choice.get_attribute("aria-selected") == "true"
                 for choice in refreshed
             )
             trigger.press("Escape")
-            return committed and _norm(selected) == _norm(target_value)
+            return committed and _phone_prefix_matches(selected, target_value)
         return _norm(selected) == _norm(selected_option) and _norm(selected) != _norm(before)
     except Exception as exc:  # noqa: BLE001
         _log.debug("combobox selection failed: %s", exc)
@@ -139,6 +150,131 @@ def _select_combobox_option(
 
 def _norm(value: str) -> str:
     return re.sub(r"\s+", " ", re.sub(r"[^\w+]+", " ", value.casefold())).strip()
+
+
+def _placeholder(value: str) -> bool:
+    return bool(re.fullmatch(
+        r"(?:(?:please )?(?:select|choose)(?: .*)?)?",
+        _norm(value),
+    ))
+
+
+def _location_option(
+    options: list[str], target: str, context: dict[str, str] | None = None,
+) -> str | None:
+    """A city option must match every region it names, with explicit geo aliases."""
+    fields = context or {}
+    parts = [part.strip() for part in target.split(",")]
+    city = fields.get("city") or parts[0]
+    state = fields.get("state") or (parts[1] if len(parts) > 1 else "")
+    country = fields.get("country") or (parts[2] if len(parts) > 2 else "")
+    canonical = reference_data.region_key(country)
+    state_aliases = {_norm(state)} - {""}
+    state_aliases |= {
+        _norm(reference_data.state_code(state, canonical.title())),
+        _norm(reference_data.state_name(state, canonical.title())),
+    } - {""}
+    candidates = []
+    for option in options:
+        segments = [part.strip() for part in option.split(",")]
+        if not segments or _norm(segments[0]) != _norm(city):
+            continue
+        score = 0
+        valid = True
+        for index, segment in enumerate(segments[1:], start=1):
+            # "CA" as the state part of "Fountain Valley, CA" is California,
+            # while the last part of a three-part option can name Canada.
+            if index == 1 and _norm(segment) in state_aliases:
+                score += 1
+                continue
+            named_country = reference_data.country(segment)
+            if named_country is not None:
+                if canonical and reference_data.region_key(segment) != canonical:
+                    valid = False
+                    break
+                score += 1
+            elif index == 1 and not state_aliases:
+                # A profile can identify the city and country without supplying
+                # the site's intervening state/region. It is not a contradictory
+                # fact; any country named later must still match.
+                continue
+            elif state_aliases or country:
+                valid = False
+                break
+        if valid:
+            candidates.append((score, option))
+    if not candidates:
+        return None
+    best = max(score for score, _option in candidates)
+    matches = [option for score, option in candidates if score == best]
+    return matches[0] if len(matches) == 1 else None
+
+
+_PHONE_CONTROL_JS = r"""(el) => {
+  const clues = [el.id, el.name, el.getAttribute('autocomplete'),
+    el.getAttribute('aria-label')].filter(Boolean).join(' ');
+  const codeLabel = /tel-country-code|dial(?:ling|ing)?[ _-]*code|calling[ _-]*code/;
+  if (codeLabel.test(clues.toLowerCase()) ||
+    /phone[ _-]*country|country[ _/-]*code/i.test(clues)) return true;
+  const group = el.closest('fieldset, [class*="phone" i], [data-field*="phone" i], .form-group');
+  const groupLabel = group && [group.className, group.getAttribute('data-field'),
+    group.querySelector('label,legend')?.textContent].filter(Boolean).join(' ');
+  return !!group && !!group.querySelector('input[type="tel"], input[name*="phone" i]') &&
+    /country/i.test(clues) && /phone/i.test(groupLabel);
+}"""
+
+
+def _is_phone_code_control(trigger: Any, label: str = "") -> bool:
+    if re.search(
+        r"dial(?:ling|ing)?[ _-]*code|calling[ _-]*code|phone[ _-]*country|country[ _/-]*code",
+        label, re.I,
+    ):
+        return True
+    with contextlib.suppress(Exception):
+        return trigger.evaluate(_PHONE_CONTROL_JS) is True
+    return False
+
+
+_PHONE_REGION_JS = r"""(el) => {
+  const control = el.closest('.select__control, [class*="-control"], ' +
+    '[class*="phone-country"], [data-automation-id*="countryPhoneCode"]') || el;
+  const hints = [control.getAttribute('aria-label'), el.getAttribute('aria-label')];
+  const flags = control.querySelectorAll('[data-country], [data-country-code], ' +
+    '[data-region], img[alt], svg[aria-label], [class*="flag"]');
+  for (const flag of flags) {
+    for (const attr of ['data-country', 'data-country-code', 'data-region',
+      'alt', 'aria-label', 'title']) hints.push(flag.getAttribute(attr));
+    const classes = String(flag.className?.baseVal || flag.className || '');
+    const code = classes.match(/(?:flag|fi)[_-]+([a-z]{2})(?:\b|_)/i);
+    if (code) hints.push(code[1]);
+  }
+  return hints.filter(Boolean);
+}"""
+
+
+def _phone_prefix_matches(selected: str, code: str) -> bool:
+    prefixes = re.findall(r"\+\d{1,4}\b", selected)
+    return prefixes == [code] or (not prefixes and reference_data.country(selected) is not None)
+
+
+def _phone_identity_matches(trigger: Any, code: str, region: str) -> bool:
+    """Trust a visible selected flag/region and prefix together, never a bare +1."""
+    selected = _selected_combobox_text(trigger)
+    if not _phone_prefix_matches(selected, code) or reference_data.region_dial(region) != code:
+        return False
+    if _phone_option([selected], code, region) is not None:
+        return True
+    with contextlib.suppress(Exception):
+        hints = trigger.evaluate(_PHONE_REGION_JS)
+        if isinstance(hints, list):
+            regions = set()
+            for hint in hints:
+                value = re.sub(r"\bflag\b|\+\d{1,4}\b", "", str(hint), flags=re.I).strip(" ()-:")
+                found = reference_data.country(value)
+                if found is not None:
+                    regions.add(reference_data.region_key(value))
+            return regions == {reference_data.region_key(region)}
+    return False
 
 def _selected_combobox_text(trigger: Any) -> str:
     """React Select keeps its chosen value in a sibling, not in the search input."""
@@ -156,13 +292,16 @@ def _selected_combobox_text(trigger: Any) -> str:
 def _phone_option(options: list[str], code: str, region: str) -> str | None:
     """Resolve a calling-code menu only when the declared phone region disambiguates it."""
     region_key = _norm(reference_data.region_key(region))
-    if not region_key or not re.fullmatch(r"\+\d{1,4}", code):
+    if (not region_key or not re.fullmatch(r"\+\d{1,4}", code)
+            or reference_data.region_dial(region) != code):
         return None
     code_pattern = re.compile(rf"(?<!\d){re.escape(code)}(?!\d)")
     matches = [
         option for option in options
-        if code_pattern.search(option)
-        and _norm(reference_data.region_key(code_pattern.sub("", option).strip(" ()-"))) == region_key
+        if (code_pattern.search(option) or not re.search(r"\+\d{1,4}\b", option))
+        and _norm(reference_data.region_key(
+            code_pattern.sub("", option).strip(" ()-"),
+        )) == region_key
     ]
     return matches[0] if len(matches) == 1 else None
 
@@ -217,7 +356,11 @@ def _check_options(page: Any, group_selector: str, values: list[str]) -> bool:
 def execute_action(page: Any, action: resolver_types.FieldAction) -> bool:
     """Execute one resolved action in the browser page."""
     if action.action == "select_combobox":
-        return _select_combobox_option(page, action.selector, action.value)
+        match = questions.classify(questions.Question(action.label, kind="typeahead"))
+        return _select_combobox_option(
+            page, action.selector, action.value, key=match.key if match is not None else "",
+            preserve_existing=True,
+        )
     if action.action == "choose_radio":
         return _choose_radio_option(page, action.selector, action.value)
     if action.action == "check_options":

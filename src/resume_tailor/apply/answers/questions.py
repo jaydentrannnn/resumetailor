@@ -29,7 +29,7 @@ from dataclasses import dataclass, field
 from datetime import date
 from typing import TYPE_CHECKING, Literal
 
-from resume_tailor.apply.answers import education, form_facts, salary
+from resume_tailor.apply.answers import education, experience, form_facts, salary
 from resume_tailor.apply.ats import ats_hints
 from resume_tailor.apply.forms import field_matcher
 
@@ -106,6 +106,8 @@ YES_NO_KEYS = frozenset({
     "currently_enrolled", "degree_by", "returning_to_school", "gpa_at_least",
     "located_or_relocate", "has_prior_internship", "us_citizen", "us_person_status",
     "government_employee", "conflict_of_interest", "export_control_country",
+    "consider_other_positions", "minimum_qualifications", "recent_graduate_or_student",
+    "advertising_consent",
 }) | field_matcher.EEO_KEYS
 
 _MONTH_RE = "|".join(month.lower() for month in MONTHS)
@@ -130,7 +132,7 @@ _DERIVED: tuple[tuple[str, str], ...] = (
     ),
     (
         r"\b(?:currently|presently)\s+(?:be\s+)?enrolled\b"
-        r"|\bare you (?:currently )?(?:an? )?(?:enrolled |full[- ]time )?student\b",
+        r"|\bare you (?:currently )?(?:an? )?(?:active |enrolled |full[- ]time )?student\b",
         "currently_enrolled",
     ),
     (
@@ -233,6 +235,23 @@ _DIRECT_CURRENT_JOB = {
 }
 
 
+def _application_key(text: str) -> str | None:
+    low = text.casefold()
+    if re.search(r"\bgraduat\w*\b.{0,65}\b(?:past|last|within)\b.{0,20}\b6\s*months?", low) and re.search(r"\bstudent\b", low):
+        return "recent_graduate_or_student"
+    if re.search(r"\b(?:considered|consideration)\b.{0,65}\b(?:other|additional|future)\s+(?:positions?|roles?|jobs?|opportunities)", low):
+        return "consider_other_positions"
+    if re.search(r"\b(?:meet|satisfy|fulfil|fulfill)\b.{0,35}\bminimum\b.{0,35}\b(?:qualification|requirement)", low):
+        return "minimum_qualifications"
+    if re.search(r"advertis(?:ing|ement)\s+partners?|share.{0,70}personal information.{0,70}partners", low):
+        return "advertising_consent"
+    if re.search(r"\bsources?\b.{0,55}\b(?:influenced|decision|apply|application)", low):
+        return "how_heard"
+    if experience.question_key(text):
+        return "experience_years"
+    return None
+
+
 def _synonym_key(text: str) -> str | None:
     low = text.casefold()
     sponsorship = _sponsorship_key(low)
@@ -302,6 +321,9 @@ def classify(question: Question) -> Match | None:
     if not text:
         return None
     low = text.casefold()
+    application_key = _application_key(text)
+    if application_key and _compatible(application_key, question):
+        return Match(application_key)
     typed = question.kind in {"text", "textarea"}
     if typed:
         consent_text = form_facts.typed_consent(text, question.help_text)
@@ -333,7 +355,7 @@ def classify(question: Question) -> Match | None:
         if education.compound(text):
             return None
         return Match(edu_key) if _compatible(edu_key, question) else None
-    if question.part in {"month", "year"}:
+    if question.part in {"month", "year", "day"}:
         context = f"{question.section} {text}".casefold()
         if re.search(r"\bend\b|graduat|complet|finish", context):
             return Match("graduation_month")
@@ -402,6 +424,8 @@ def _derived(match: Match, facts: Facts) -> list[str]:
     graduation = _year_month(fields.get("graduation_month", ""))
     now = (facts.today.year, facts.today.month)
     if match.key == "currently_enrolled":
+        if "currently_enrolled" in fields:
+            return [fields["currently_enrolled"]] if fields["currently_enrolled"] in {"Yes", "No"} else []
         return _yes(None if graduation is None else graduation >= now)
     if match.key == "degree_by":
         target = by_date(match.param, facts.today)
@@ -468,6 +492,9 @@ def _date_part(value: str, part: str) -> str:
         return parsed.group(1) if parsed else ""
     if part == "month":
         return month
+    if part == "day":
+        full = re.fullmatch(r"\d{4}-\d{2}-(\d{2})", value or "")
+        return str(int(full[1])) if full else ""
     return value
 
 
@@ -475,6 +502,20 @@ def answers(match: Match | None, question: Question, facts: Facts) -> list[str]:
     """Answers to try for ``question``, most specific first; [] when no fact answers it."""
     if match is None:
         return []
+    if match.key == "advertising_consent":
+        return _DECLINE
+    if match.key in {"consider_other_positions", "minimum_qualifications", "recent_graduate_or_student"}:
+        value = facts.fields.get(match.key, "")
+        return [value] if value in {"Yes", "No"} else []
+    if match.key == "experience_years":
+        value = facts.fields.get("experience_years", "")
+        if not value:
+            return []
+        years = float(value)
+        if question.options:
+            chosen = experience.choose_year_option(question.options, years)
+            return [chosen] if chosen else []
+        return [experience.years_text(years)]
     if match.key == form_facts.SKILLS:
         return form_facts.skill_options(question.options, facts.skills)
     if match.key == form_facts.ACKNOWLEDGEMENT:
@@ -509,7 +550,8 @@ def answers(match: Match | None, question: Question, facts: Facts) -> list[str]:
     if derived or match.key in {key for _pattern, key in _DERIVED}:
         return derived
     if match.key in {"graduation_month", "education_start_month", "earliest_start"}:
-        value = facts.fields.get(match.key, "")
+        full_key = {"graduation_month": "graduation_date", "education_start_month": "education_start_date"}.get(match.key, match.key)
+        value = facts.fields.get(full_key) or facts.fields.get(match.key, "")
         part = question.part or _part_from_text(question.text)
         answer = _date_part(value, part) if value else ""
         return [answer] if answer else []
@@ -533,6 +575,8 @@ def _part_from_text(text: str) -> str:
         return "year"
     if month and not year:
         return "month"
+    if re.search(r"\b(?:day|dd)\b", low) and not year and not month:
+        return "day"
     return ""
 
 
@@ -584,13 +628,21 @@ def date_text(value: str, *, placeholder: str = "", input_type: str = "") -> str
         return ""
     year, month = parsed
     hint = placeholder.casefold()
+    full = re.fullmatch(r"\d{4}-\d{2}-(\d{2})", value)
+    day = full[1] if full else ""
+    if input_type == "month":
+        return f"{year:04d}-{month:02d}"
+    if re.search(r"mm\s*/\s*yyyy", hint) and "dd" not in hint:
+        return f"{month:02d}/{year}"
+    if not day:
+        return ""
     if input_type == "date" or re.search(r"yyyy\s*-\s*mm", hint):
-        return f"{year:04d}-{month:02d}-01"
+        return f"{year:04d}-{month:02d}-{day}"
     if re.search(r"mm\s*/\s*yyyy", hint) and "dd" not in hint:
         return f"{month:02d}/{year}"
     if re.search(r"dd\s*/\s*mm", hint):
-        return f"01/{month:02d}/{year}"
-    return f"{month:02d}/01/{year}"
+        return f"{day}/{month:02d}/{year}"
+    return f"{month:02d}/{day}/{year}"
 
 
 #: Keys whose answer the fill runner cannot read from the packet's fields.
@@ -702,6 +754,12 @@ def _step(
         return {"key": None, "value": ""}
     found = answers(match, question, facts)
     value = ""
+    if match.key in _DATE_KEYS and question.part == "day":
+        if found and question.options:
+            days = [option for option in question.options
+                    if option.strip().isdigit() and int(option.strip()) == int(found[0])]
+            return {"key": match.key, "value": days[0] if len(days) == 1 else None}
+        return {"key": match.key, "value": found[0] if found else None}
     if match.key == form_facts.SKILLS:
         return {"key": match.key, "value": "", "values": found}
     if match.key in form_facts.PROTECTED_KEYS and not found:
@@ -713,9 +771,14 @@ def _step(
         value = chosen or ""
     elif found and question.kind == "date" and match.key in _DATE_KEYS:
         value = date_text(
-            facts.fields.get(match.key, ""), placeholder=str(item.get("placeholder") or ""),
+            found[0], placeholder=str(item.get("placeholder") or ""),
             input_type=str(item.get("input_type") or ""),
         )
+        if not value:
+            return {"key": match.key, "value": None}
+    elif found and match.key == "experience_years" and question.kind in {"text", "textarea"}:
+        integer = str(item.get("input_type") or "") == "number" and str(item.get("step") or "1") == "1"
+        value = experience.years_text(float(facts.fields["experience_years"]), integer=integer)
     elif found and match.key == "earliest_start" and (
         question.part or _part_from_text(question.text)
     ):

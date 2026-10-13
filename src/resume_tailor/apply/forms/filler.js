@@ -249,6 +249,12 @@
   function labelFor(el) {
     const lever = leverQuestion(el);
     if (lever) return lever.text;
+    if (el.type === "checkbox" || el.type === "radio") {
+      const group = el.closest("fieldset[data-automation-id$='-CheckboxGroup'], [role='radiogroup']");
+      const field = group?.closest("[data-automation-id^='formField-']");
+      const heading = field?.querySelector("legend") || group?.querySelector("legend");
+      if (textOf(heading)) return textOf(heading);
+    }
     // One option of a radio/checkbox question stands for the question.
     if (isGroupMember(el)) {
       const question = groupQuestion(el);
@@ -430,11 +436,11 @@
    * runner keeps these; label wording is the decision layer's (`questions.py`).
    */
   function attrKey(el, label) {
-    if (/^end[-_ ]?(?:year|month)(?:--\d+)?$/i.test(el.id || "")) return "graduation_month";
-    if (/^start[-_ ]?(?:year|month)(?:--\d+)?$/i.test(el.id || "")) return "education_start_month";
+    if (/^end[-_ ]?(?:year|month|day)(?:--\d+)?$/i.test(el.id || "")) return "graduation_month";
+    if (/^start[-_ ]?(?:year|month|day)(?:--\d+)?$/i.test(el.id || "")) return "education_start_month";
     // Epic Games / Greenhouse-style education rows: educations[0].start_date.year. Decided
     // here so "start date" never reaches the availability synonym (earliest_start).
-    const eduDate = /educations?\[\d+\]\.(start|end)_date\.(?:year|month)$/i.exec(el.getAttribute("name") || "");
+    const eduDate = /educations?\[\d+\]\.(start|end)_date\.(?:year|month|day)$/i.exec(el.getAttribute("name") || "");
     if (eduDate) return eduDate[1].toLowerCase() === "start" ? "education_start_month" : "graduation_month";
     const educationContext = `${el.id || ""} ${el.closest("fieldset, [data-automation-id*='education' i]")?.textContent?.slice(0, 100) || ""}`;
     if (/education|university|school/i.test(educationContext)) {
@@ -714,6 +720,7 @@
     if (/^month\b/i.test(first) || (real.length >= 12 && real.filter((option) => MONTH_NAME.test(option.trim())).length >= 12)) return "month";
     if (/^year\b/i.test(first) || (real.length >= 3 && real.every((option) => /^\d{4}$/.test(option.trim())))) return "year";
     if (el.tagName === "SELECT" || el.type === "number") {
+      if (/\bday\b/i.test(label) && !/\b(?:month|year)\b/i.test(label)) return "day";
       if (/\bmonth\b/i.test(label) && !/\byear\b/i.test(label)) return "month";
       if (/\byear\b/i.test(label) && !/\bmonth\b/i.test(label)) return "year";
     }
@@ -749,6 +756,7 @@
       part: kind === "choice" || kind === "text" || kind === "typeahead" ? datePartOf(el, label, options) : "",
       attr_key: attrKey(el, label) || "", name_key: nameKey(el) || "",
       placeholder: el.getAttribute("placeholder") || "", input_type: type,
+      step: el.getAttribute("step") || "",
       section: sectionHeading(el),
     };
   }
@@ -947,6 +955,7 @@
     const id = el.id || "";
     if (/\.year$/i.test(name) || /[-_]year(?:--\d+)?$/i.test(id) || /^yyyy$/i.test(placeholder) || /\(year\)/i.test(label)) return "year";
     if (/\.month$/i.test(name) || /[-_]month(?:--\d+)?$/i.test(id) || /^mm$/i.test(placeholder) || /\(month\)/i.test(label)) return "month";
+    if (/\.day$/i.test(name) || /[-_]day(?:--\d+)?$/i.test(id) || /^dd$/i.test(placeholder) || /\(day\)/i.test(label)) return "day";
     return "";
   }
 
@@ -1146,7 +1155,9 @@
     // year: MPC's "142027"). Text that is not a well-formed year (or month) is replaced
     // with the planned part; a well-formed one is the applicant's own answer and is kept.
     const plannedPart = planned && planned.value ? String(planned.value) : "";
-    const wellFormedPart = /^\d{4}$/.test(plannedPart)
+    const wellFormedPart = datePart(el, label) === "day"
+      ? /^(?:0?[1-9]|[12]\d|3[01])$/.test(existingAnswer)
+      : /^\d{4}$/.test(plannedPart)
       ? /^\d{4}$/.test(existingAnswer)
       : /^(?:0?[1-9]|1[0-2]|[a-z]{3,9})$/i.test(existingAnswer);
     const replaceDatePart = el.tagName === "INPUT" && type === "text" && plannedPart &&
@@ -1292,12 +1303,13 @@
       if (key === "education_start_month" && /start[-_ ]?year/i.test(el.id || label)) textValue = textValue.slice(0, 4);
       if (key === "education_start_month" || key === "graduation_month") {
         const part = datePart(el, label);
-        const date = /^(\d{4})(?:-(\d{2}))?/.exec(String(value));
+        const date = /^(\d{4})(?:-(\d{2}))?(?:-(\d{2}))?/.exec(String(value));
         if (part && date) {
           if (part === "year") textValue = date[1];
-          else if (date[2]) textValue = String(Number(date[2]));
+          else if (part === "day" && date[3]) textValue = String(Number(date[3]));
+          else if (part === "month" && date[2]) textValue = String(Number(date[2]));
           else {
-            leftovers.push({ key, label, type, options: [], required, selector: sel, reason: "No month in the profile date" });
+            leftovers.push({ key, label, type, options: [], required, selector: sel, reason: `No ${part} in the profile date` });
             if (required) required_empty.push(label || sel);
             continue;
           }

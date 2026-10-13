@@ -801,3 +801,9 @@ comes back `updated` (not `added`), still exactly one education entry, coursewor
 - Generated mode recomposes on save in `_write_master_resume` (one hook covering web, MCP and import saves), not at render time: the printed line stays a plain field the guards and `include.education_key` already understand.
 - `detect` is never automatic â€” "B.A. in Economics and Math" is ambiguous enough that a silent parse could reorder or split a major; the editor offers it as a button on manual entries with empty parts.
 - Deferred: a "minor" form-field classifier (the bare word collides with "Are you a minor?" age questions) and Workday multi-major selection; `minor` exists only in the packet fields for now.
+
+## 2026-10-13 — Education rows, optional days, and shared credentials
+
+Education stores authoritative `major_entries` (name plus degree type), with `majors`, `major`, and `degree_type` retained as legacy projections. Old JSON seeds structured rows without changing manual degree text; old writers that populate legacy fields on an empty structured list remain supported. The editor uses Add entry > Major/Minor, per-major degree choices, and mutually exclusive punctuation buttons beside the stronger generated preview. Same credential aliases share one printed degree; different credentials remain separate clauses. Packet serialization retains per-major credentials so application rows cannot borrow a sibling's degree type.
+
+Education start/end dates accept YYYY-MM or YYYY-MM-DD. Month-only entries remain valid and printed Dates stay independently editable. Application fields preserve a supplied day; a required day absent from the source is left for the applicant, replacing the earlier day-01 convention. Matching legacy month overrides retain a newly recorded resume day. Split Workday dates and generic native day fields follow the same rule.

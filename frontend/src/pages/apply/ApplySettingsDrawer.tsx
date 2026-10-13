@@ -11,6 +11,7 @@ import { useConfirm } from "../../state/confirmState";
 import type { BrowserView } from "../../lib/browserState";
 import { BrowserPicker, ConnectionStatus } from "./BrowserConnection";
 import { CoverLetterSetting } from "./CoverLetterSetting";
+import { AnswerPreferences } from "./AnswerPreferences";
 
 /**
  * Platforms that may auto-submit. Workday, LinkedIn, Indeed, Handshake and SmartRecruiters
@@ -168,6 +169,10 @@ export function ApplySettingsDrawer({
             value={apply.cover_letter_mode}
             onChange={(mode) => patch({ cover_letter_mode: mode })}
           />
+        </Section>
+
+        <Section title="Answering questions">
+          <AnswerPreferences />
         </Section>
 
         <Section title="Filling">

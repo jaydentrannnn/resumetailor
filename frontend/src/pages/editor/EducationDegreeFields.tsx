@@ -1,23 +1,20 @@
-import { useId } from "react";
-import { ChipListField } from "../../components/ChipListField";
-import { ChoiceOrOther } from "../../components/ChoiceOrOther";
-import { Button, Segmented, Switch } from "../../components/ui";
-import { generatedDegree, withDegreeParts, withDetectedParts } from "../../lib/degreeLine";
-import { useProfileOptions } from "../../lib/profileOptions";
+import { Button, Switch, buttonClass } from "../../components/ui";
+import {
+  generatedDegree,
+  majorEntries,
+  withDegreeParts,
+  withDetectedParts,
+} from "../../lib/degreeLine";
 import type { DegreeFormat, Education } from "../../lib/resumeEdit";
+import { EducationStudies } from "./EducationStudies";
 import { TextField } from "./TextField";
 
-const FORMATS: { id: DegreeFormat; label: string }[] = [
-  { id: "semicolon", label: "; Minor in" },
-  { id: "comma", label: ", Minor in" },
-  { id: "pipe", label: "| Minor in" },
+const FORMATS: { id: DegreeFormat; label: string; name: string }[] = [
+  { id: "semicolon", label: ";", name: "Semicolon" },
+  { id: "comma", label: ",", name: "Comma" },
+  { id: "pipe", label: "|", name: "Vertical bar" },
 ];
 
-/**
- * Degree type, majors and minors (also used for application forms), and the printed
- * degree line — generated from those parts, or written by hand. Majors split on ";" so a
- * field of study containing a comma stays one chip.
- */
 export function EducationDegreeFields({
   edu,
   onChange,
@@ -25,44 +22,13 @@ export function EducationDegreeFields({
   edu: Education;
   onChange: (next: Education) => void;
 }) {
-  const id = useId();
-  const options = useProfileOptions();
   const generated = edu.degree_mode === "generated";
   const set = (patch: Partial<Education>) => onChange(withDegreeParts(edu, patch));
-  const hasParts = !!(edu.degree_type || edu.majors?.length || edu.minors?.length);
+  const hasParts = !!(edu.degree_type || majorEntries(edu).length || edu.minors?.length);
   return (
-    <div className="space-y-3 sm:col-span-2">
-      <div className="grid grid-cols-1 gap-3 sm:grid-cols-3">
-        <label className="block text-sm" htmlFor={`${id}-type`}>
-          <span className="mb-1 block text-ink-muted">Degree type</span>
-          <ChoiceOrOther
-            id={`${id}-type`}
-            label="Degree type"
-            value={edu.degree_type ?? ""}
-            onChange={(degree_type) => set({ degree_type })}
-            options={options?.degree_types ?? []}
-            blankLabel="Choose…"
-            allowDecline={false}
-          />
-        </label>
-        <ChipListField
-          label="Majors"
-          items={edu.majors ?? []}
-          onChange={(majors) => set({ majors })}
-          suggestions={options?.fields_of_study}
-          separators={/;/}
-          placeholder="Add a major"
-        />
-        <ChipListField
-          label="Minors"
-          items={edu.minors ?? []}
-          onChange={(minors) => set({ minors })}
-          suggestions={options?.fields_of_study}
-          separators={/;/}
-          placeholder="Add a minor"
-        />
-      </div>
-      <div className="rounded-sm border border-line px-3 py-3">
+    <div className="space-y-4 sm:col-span-2">
+      <EducationStudies edu={edu} onChange={set} />
+      <div className="border-t border-line pt-3">
         <div className="flex flex-wrap items-center justify-between gap-2">
           <span className="text-xs font-medium text-ink-2">Printed on your resume</span>
           <label className="flex items-center gap-2 text-xs text-ink-muted">
@@ -80,20 +46,28 @@ export function EducationDegreeFields({
           </label>
         </div>
         {generated ? (
-          <>
-            <p className="mt-2 text-sm text-ink">
-              {edu.degree || <span className="text-ink-muted">Add a degree type or major</span>}
+          <div className="mt-2 flex flex-wrap items-center justify-between gap-3">
+            <p className="min-w-0 flex-1 text-base font-semibold text-ink break-words">
+              {edu.degree || (
+                <span className="font-normal text-ink-muted">Add a major or minor</span>
+              )}
             </p>
-            {(edu.minors?.length ?? 0) > 0 && (edu.majors?.length || edu.degree_type) && (
-              <Segmented
-                className="mt-2"
-                label="How the minor is joined"
-                items={FORMATS}
-                value={edu.degree_format ?? "semicolon"}
-                onChange={(fmt) => set({ degree_format: fmt as DegreeFormat })}
-              />
-            )}
-          </>
+            <span className="flex shrink-0 gap-1" role="group" aria-label="Degree separator">
+              {FORMATS.map((fmt) => (
+                <button
+                  key={fmt.id}
+                  type="button"
+                  aria-label={fmt.name}
+                  title={fmt.name}
+                  aria-pressed={(edu.degree_format ?? "semicolon") === fmt.id}
+                  className={`${buttonClass((edu.degree_format ?? "semicolon") === fmt.id ? "primary" : "plain", "sm")} w-8`}
+                  onClick={() => set({ degree_format: fmt.id })}
+                >
+                  {fmt.label}
+                </button>
+              ))}
+            </span>
+          </div>
         ) : (
           <div className="mt-2">
             <TextField label="Degree" value={edu.degree} onChange={(degree) => set({ degree })} />
@@ -109,8 +83,8 @@ export function EducationDegreeFields({
           </div>
         )}
         <p className="mt-2 text-xs text-ink-muted">
-          Majors and minors also answer application forms; the first major fills a single “Major”
-          field.
+          Majors sharing a degree are joined together. The first major answers a single Major field
+          on applications.
         </p>
       </div>
     </div>

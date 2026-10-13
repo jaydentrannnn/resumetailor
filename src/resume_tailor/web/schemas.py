@@ -1364,6 +1364,7 @@ class ApplicantProfileResponse(BaseModel):
     fallbacks: dict[str, str] = Field(default_factory=dict)
     #: Custom answers that restate a built-in field: question -> profile attribute.
     custom_answer_duplicates: dict[str, str] = Field(default_factory=dict)
+    experience_summaries: dict[str, dict[str, Any]] = Field(default_factory=dict)
 
 
 class ApplicantProfileUpdateRequest(BaseModel):

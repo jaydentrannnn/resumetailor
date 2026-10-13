@@ -13,7 +13,6 @@ from resume_tailor.apply.funnel.store_models import FillResult
 
 from . import fill_buttons, fill_page, fill_state, fill_widgets
 
-
 #: Progress line when Continue finds the review tab gone and opens the posting again.
 CLOSED_TAB_REOPENED = (
     "Review tab was closed; reopening the posting (Workday restores the saved draft)"
@@ -55,6 +54,18 @@ class _FillEntry(fill_state._FillState):
             self.target_id = browser.target_id(context, self.page)
             self._record_target(self.page.url)
         self.progress("application form opened")
+        if self.fill_mode == "continue":
+            from resume_tailor.apply.funnel import submission_monitor  # noqa: PLC0415
+            try:
+                evidence = submission_monitor.confirmation(
+                    self.app.final_url or self.app.posting_url, str(self.page.url),
+                    self.page.inner_text("body"), self.app.ats,
+                    self.page.evaluate(submission_monitor.ROWS_JS) if self.app.ats == "workday" else None,
+                )
+            except Exception:  # noqa: BLE001 - ordinary form inspection continues
+                evidence = None
+            if evidence:
+                return submission_monitor.record(self.app, evidence)
         language = form_guards.form_language(fill_page._page_lang(self.page))
         if language:
             return self._handoff(f"{language}. Fill it in this tab.")
@@ -93,6 +104,12 @@ class _FillEntry(fill_state._FillState):
             self.page, self.context, deadline=self.deadline, progress=self.progress,
         )
         self.progress(f"Workday screen: {wd_state}")
+        if wd_state == "already_applied":
+            from resume_tailor.apply.funnel import submission_monitor  # noqa: PLC0415
+            evidence = submission_monitor.confirmation(self.app.final_url or self.app.posting_url,
+                str(self.page.url), self.page.inner_text("body"), "workday")
+            if evidence:
+                return submission_monitor.record(self.app, evidence)
         if wd_state not in {"already_applied", "unavailable", "posting", "start_dialog", "unknown"}:
             return None
         reason = {

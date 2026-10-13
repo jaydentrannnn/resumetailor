@@ -12,6 +12,8 @@ TALENT_POOL = "talent_pool_consent"
 TYPED_CONSENT = "typed_consent"
 PROTECTED_KEYS = frozenset({
     HIGH_SCHOOL, SKILLS, ACKNOWLEDGEMENT, TALENT_POOL, TYPED_CONSENT, "relatives_at_company",
+    "consider_other_positions", "minimum_qualifications", "advertising_consent",
+    "experience_years", "recent_graduate_or_student",
 })
 
 #: Consent to keep the applicant's data for OTHER openings (a talent pool), as opposed to
@@ -49,7 +51,15 @@ _FACT_CLAIM = re.compile(
 #: Optional opt-ins the applicant declines (marketing, alerts, texts, talent pools).
 _OPT_IN = re.compile(
     r"marketing|newsletter|promotional|job alerts?|text messages?|\bsms\b"
-    r"|talent (?:community|network|pool)"
+    r"|talent (?:community|network|pool)|advertising partners?|share.{0,70}personal information.{0,70}partners"
+)
+_OPT_IN_ACTION = re.compile(
+    r"\b(?:i|we)\s+(?:(?:would|do)\s+)?(?:like|want|wish|agree|consent|authori[sz]e|allow|permit)\b"
+    r"|\b(?:would|do|will)\s+you\s+(?:like|want|wish|agree|consent|allow|permit)\b"
+    r"|\bmay\s+we\s+(?:contact|send|keep|retain|share)\b"
+    r"|^\s*(?:opt[- ]?in|join|subscribe|sign\s*up|receive|send\s+me|email\s+me|text\s+me|keep\s+me)\b"
+    r"|^\s*(?:consent|agree|permission)\s+(?:to|for)\b"
+    r"|^\s*(?:sms|text messages?|marketing|newsletter|job alerts?)\s+(?:opt[- ]?in|consent)\b"
 )
 
 
@@ -90,12 +100,17 @@ def acknowledgement(text: str) -> str:
     background check, screening, terms, arbitration, signature), "fact" (it asserts
     something about the applicant), "optional" (an opt-in to decline), else ""."""
     low = text.casefold()
+    if _OPT_IN.search(low):
+        if _OPT_IN_ACTION.search(low):
+            return "optional"
+        if re.search(r"\bexperience\b|\bskills?\b|\bexpertise\b", low):
+            return "fact"
+    if re.search(r"graduat|date of birth|\bminimum\s+qualification", low):
+        return "fact"
     if not _NOTICE.search(low):
         return ""
     if _FACT_CLAIM.search(low):
         return "fact"
-    if _OPT_IN.search(low):
-        return "optional"
     return "routine"
 
 

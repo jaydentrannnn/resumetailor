@@ -107,14 +107,17 @@ export function DateParts({
           value={present ? "" : parts.year}
           onChange={(e) => update({ ...parts, year: e.target.value.replace(/\D/g, "") })}
         />
-        {precision === "day" && (
+        {precision !== "month" && (
           <input
             aria-label={`${label}, day`}
             aria-invalid={invalid || !!problem || undefined}
-            className="field w-20"
+            className={`field ${precision === "optional_day" ? "w-32" : "w-20"}`}
             inputMode="numeric"
             maxLength={2}
-            placeholder={fallbackParts?.day || "Day"}
+            placeholder={
+              fallbackParts?.day || (precision === "optional_day" ? "Day (optional)" : "Day")
+            }
+            disabled={present}
             value={parts.day}
             onChange={(e) => update({ ...parts, day: e.target.value.replace(/\D/g, "") })}
           />

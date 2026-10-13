@@ -249,16 +249,29 @@ def test_earliest_start_text_date_parts(label, expected):
 @pytest.mark.parametrize(
     ("placeholder", "input_type", "expected"),
     [
-        ("Pick date...", "text", "06/01/2027"),
-        ("", "date", "2027-06-01"),
+        ("Pick date...", "text", ""),
+        ("", "date", ""),
         ("MM/YYYY", "text", "06/2027"),
-        ("DD/MM/YYYY", "text", "01/06/2027"),
+        ("DD/MM/YYYY", "text", ""),
     ],
 )
-def test_date_text_always_names_the_day(placeholder, input_type, expected):
-    # "2027-06" parsed by a date picker is June 1st UTC: May 31st in California.
+def test_date_text_does_not_invent_a_missing_day(placeholder, input_type, expected):
+    # Month precision is valid only when the form accepts month precision.
     assert q.date_text("2027-06", placeholder=placeholder, input_type=input_type) == expected
     assert q.date_text("", placeholder=placeholder, input_type=input_type) == ""
+
+
+@pytest.mark.parametrize(("date", "options", "expected"), [
+    ("2027-06-09", ["01", "02", "09"], "09"),
+    ("2027-06-09", ["1", "2", "9"], "9"),
+    ("2027-06", ["01", "02", "09"], None),
+    ("2027-06-09", ["9", "09"], None),
+])
+def test_split_day_choice_uses_the_observed_option(date, options, expected):
+    plan = q.plan_for([{"qid": "day", "label": "Day", "kind": "choice", "part": "day",
+                        "section": "Education End Date", "options": options}],
+                      q.facts_for({"graduation_date": date}))
+    assert plan["day"] == {"key": "graduation_month", "value": expected}
 
 
 @pytest.mark.parametrize(
@@ -280,7 +293,7 @@ def test_plan_for_decides_key_and_value():
     ]
     plan = q.plan_for(items, FACTS)
     assert plan["a"] == {"key": "currently_enrolled", "value": "Yes"}
-    assert plan["b"] == {"key": "graduation_month", "value": "06/01/2027"}
+    assert plan["b"] == {"key": "graduation_month", "value": None}
     assert plan["c"] == {"key": "graduation_month", "value": "June"}
     # A text box's number formatting stays the filler's.
     assert plan["d"] == {"key": "education_start_month", "value": ""}

@@ -193,6 +193,10 @@ export type ApplicantProfile = {
   class_year?: "" | "freshman" | "sophomore" | "junior" | "senior" | "graduate";
   high_school_graduation_year?: string;
   auto_accept_routine_acknowledgements?: boolean;
+  consider_other_positions?: boolean | null;
+  minimum_qualifications_answer?: boolean | null;
+  experience_basis?: ExperienceBasis;
+  experience_years_custom?: number | null;
   gpa_display?: string;
   /** Server-owned: set only by the transcript upload route. */
   transcript_path?: string;
@@ -205,6 +209,13 @@ export type ApplicantProfile = {
 };
 
 export type NoticeUnit = "day" | "week" | "month";
+export type ExperienceBasis =
+  "experience" | "experience_projects" | "experience_projects_education" | "custom";
+export type ExperienceSummary = {
+  years: number | null;
+  as_of: string;
+  excluded_entries: { label: string; kind: string; reason: string }[];
+};
 
 export type VisaStatus =
   "" | "none" | "f1" | "f1_opt" | "f1_stem_opt" | "f1_cpt" | "h1b" | "h4_ead" | "other";
@@ -227,6 +238,7 @@ export type ProfileGap = {
 };
 
 export type ApplicantProfileResponse = {
+  experience_summaries?: Partial<Record<ExperienceBasis, ExperienceSummary>>;
   workspace_id: string | null;
   profile: ApplicantProfile;
   seeded: boolean;

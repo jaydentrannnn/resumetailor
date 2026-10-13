@@ -121,7 +121,8 @@ def test_an_optional_cover_field_is_left_empty(job, browser, tmp_path):
     run._upload_one(_cover_input(required=False))
     assert calls == [] and browser == []
     assert run.uploads[0]["state"] == "not_requested"
-    assert run.uploads[0]["reason"] == cover_on_demand.SKIPPED_NOTE
+    assert run.uploads[0]["reason"] == "Skipped: optional cover letter; setting is required"
+    assert run.uploads[0]["cover_letter_mode"] == "required"
 
 
 def test_a_required_cover_field_gets_a_letter_written_and_uploaded(job, browser, tmp_path):
@@ -192,3 +193,18 @@ def test_with_cover_letters_off_a_required_text_box_is_left_for_review(job, tmp_
     run = _fill(tmp_path, mode="off")
     run._answer_one_long_text({"label": "Cover Letter", "required": True}, "Cover Letter")
     assert calls == [] and run.needs_review == ["Cover Letter"]
+
+
+@pytest.mark.parametrize("required", [False, True])
+def test_fallback_cover_input_keeps_required_metadata(tmp_path, required):
+    run = _fill(tmp_path, mode="required")
+    run.merged = {"file_inputs": []}
+    def locator(selector):
+        return SimpleNamespace(
+            count=lambda: int(selector == "input[type='file']#cover_letter"),
+            first=SimpleNamespace(evaluate=lambda _script: required),
+        )
+    run.page = SimpleNamespace(locator=locator)
+    assert run._file_inputs() == [{
+        "selector": "input[type='file']#cover_letter", "label": "Cover Letter", "required": required,
+    }]

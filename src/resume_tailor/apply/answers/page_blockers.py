@@ -113,7 +113,9 @@ _INSPECT_PAGE_JS = """
 
       const label = getLabel(el);
       const sel = uniqueSelector(el);
-      if (sel && (!current || current.toLowerCase().includes('select') || current.toLowerCase().includes('choose'))) {
+      const phoneCode = !!el.closest('.phone-input__country, [data-automation-id="formField-countryPhoneCode"]')
+        || /dial(?:ing|ling)? code|calling code|phone country|country code/i.test(label);
+      if (sel && (phoneCode || !current || current.toLowerCase().includes('select') || current.toLowerCase().includes('choose'))) {
         if (key) seenFields.add(key);
         unresolved.push({
           type: 'combobox',
@@ -122,6 +124,7 @@ _INSPECT_PAGE_JS = """
           help: helpFor(el),
           current: current,
           invalid: invalid(el)
+          ,phone_code_menu: phoneCode
         });
       }
     }

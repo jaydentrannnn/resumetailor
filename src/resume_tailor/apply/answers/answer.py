@@ -257,10 +257,7 @@ def _call_model(
     client = llm.client_for("answer")
     if deadline is not None:
         timeout = max(1.0, min(60.0, deadline - time.monotonic()))
-        if hasattr(client, "timeout"):
-            client.timeout = min(float(client.timeout), timeout)
-        elif hasattr(client, "with_options"):
-            client = client.with_options(timeout=timeout)
+        client = llm.bound_client_timeout(client, timeout)
     response = client.messages.parse(
         model=config.model_for("answer"),
         max_tokens=config.max_tokens_for("answer"),

@@ -29,6 +29,11 @@
     return pieces.join(" > ");
   };
   const label = (el) => {
+    if (el.type === "checkbox" || el.type === "radio") {
+      const parent = el.closest("fieldset[data-automation-id$='-CheckboxGroup'], [role='radiogroup']");
+      const heading = parent?.closest("[data-automation-id^='formField-']")?.querySelector("legend") || parent?.querySelector("legend");
+      if (text(heading)) return text(heading);
+    }
     const refs = (el.getAttribute("aria-labelledby") || "").split(/\s+/).filter(Boolean)
       .map(id => text(document.getElementById(id))).filter(Boolean);
     if (refs.length) return refs.join(" ");

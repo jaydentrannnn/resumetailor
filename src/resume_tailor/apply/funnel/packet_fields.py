@@ -2,12 +2,14 @@
 
 from __future__ import annotations
 
+from resume_tailor.apply.answers import education_status
+from resume_tailor.apply.answers import experience as experience_years
 from resume_tailor.apply.answers import phone as phone_mod
 from resume_tailor.apply.answers import profile as profile_mod
 from resume_tailor.apply.answers.profile import ApplicantProfile
 from resume_tailor.apply.forms import field_matcher
-from resume_tailor.content import edu_dates
-from resume_tailor.content.data import MasterResume
+from resume_tailor.content import dates, degree_line, edu_dates
+from resume_tailor.content.data import MajorEntry, MasterResume
 from resume_tailor.document.render import parse_range
 
 from . import packet_models, packet_profile_fields
@@ -162,6 +164,11 @@ def build_fields(profile: ApplicantProfile, resume: MasterResume) -> dict[str, s
     fields["auto_accept_routine_acknowledgements"] = (
         _yes_no(profile.auto_accept_routine_acknowledgements)
     )
+    _maybe_set(fields, "consider_other_positions", _yes_no(profile.consider_other_positions))
+    _maybe_set(fields, "minimum_qualifications", _yes_no(profile.minimum_qualifications_answer))
+    total = experience_years.calculate(resume, profile.experience_basis, profile.experience_years_custom)
+    if total["years"] is not None:
+        fields["experience_years"] = str(total["years"])
     _maybe_set(fields, "noncompete", _yes_no(profile.subject_to_noncompete))
     _maybe_set(fields, "earliest_start", profile.earliest_start or None)
     _maybe_set(fields, "notice_period", profile.notice_period or None)
@@ -183,6 +190,8 @@ def build_fields(profile: ApplicantProfile, resume: MasterResume) -> dict[str, s
         primary = current_education(education)
         _maybe_set(fields, "education_start_month", primary.start or None)
         _maybe_set(fields, "graduation_month", primary.end or None)
+        _maybe_set(fields, "education_start_date", primary.start or None)
+        _maybe_set(fields, "graduation_date", primary.end or None)
         _maybe_set(fields, "degree_level", primary.degree_level or None)
         _maybe_set(fields, "major", primary.major or None)
         _maybe_set(fields, "minor", primary.minor or None)
@@ -190,6 +199,20 @@ def build_fields(profile: ApplicantProfile, resume: MasterResume) -> dict[str, s
         _maybe_set(fields, "gpa", primary.gpa or None)
     # Profile overrides for what the resume states differently or not at all.
     _maybe_set(fields, "graduation_month", profile.graduation_date or None)
+    if profile.graduation_date:
+        # A legacy month override for the same month must not erase a newly supplied day.
+        source_date = fields.get("graduation_date", "")
+        if not (len(profile.graduation_date) == 7 and source_date[:7] == profile.graduation_date):
+            fields["graduation_date"] = profile.graduation_date
+    for key in ("education_start_month", "graduation_month"):
+        if key in fields:
+            fields[key] = fields[key][:7]
+    status_education = [row.model_copy() for row in education]
+    if status_education and profile.graduation_date:
+        for row in status_education:
+            if row.entry_key == primary.entry_key:
+                row.end = fields.get("graduation_date", profile.graduation_date)
+    fields.update(education_status.facts(status_education))
     _maybe_set(fields, "gpa", profile.gpa_display or None)
     class_year = (
         profile.class_year.capitalize()
@@ -243,26 +266,32 @@ def _build_education(resume: MasterResume) -> list[packet_models.PacketEducation
     """One packet row per resume education entry: the resume is the only education source."""
     rows: list[packet_models.PacketEducation] = []
     for index, edu in enumerate(resume.education):
-        # The editor's structured months win; older files only have the printed dates.
+        # Structured dates retain supplied days; older files only have printed dates.
         parsed_start, parsed_end = edu_dates.months(edu.dates)
         start = edu.start or parsed_start
         end = edu.end or parsed_end
         if not (start or end):
             start, end = parse_range(edu.dates)
+        first_major = next((entry for entry in edu.major_entries if entry.name), None)
+        if first_major and any(entry.degree_type for entry in edu.major_entries):
+            kind = first_major.degree_type
+        else:
+            kind = edu.degree_type or edu.degree
         rows.append(
             packet_models.PacketEducation(
                 school=edu.school,
                 degree=edu.degree,
                 major=edu.major,
                 majors=list(edu.majors),
+                major_entries=[entry.model_copy() for entry in edu.major_entries],
                 minor=edu.minors[0] if edu.minors else "",
                 minors=list(edu.minors),
                 start=start,
                 end=end,
                 gpa=edu.gpa,
                 entry_key=f"resume:education:{index}",
-                degree_level=_degree_label(edu.degree_type or edu.degree),
-                degree_name=edu.degree,
+                degree_level=_degree_label(kind),
+                degree_name=kind,
                 source="resume",
             )
         )
@@ -271,21 +300,33 @@ def _build_education(resume: MasterResume) -> list[packet_models.PacketEducation
 def education_rows(
     education: list[packet_models.PacketEducation],
 ) -> list[packet_models.PacketEducation]:
-    """Education as a form's repeatable rows: a double major (one degree, two majors) is
-    one row per major, same school, degree and dates, since such forms take one field of
-    study per row. The resume keeps it as one entry; single-answer questions read
-    `packet.education`, one row per entry."""
+    """One form row per major, retaining that major's degree and the school's dates.
+
+    Old packets without structured credentials keep their existing degree facts.
+    """
     rows: list[packet_models.PacketEducation] = []
     for row in education:
-        if len(row.majors) < 2:
+        entries = [entry for entry in row.major_entries if entry.name]
+        if not entries and len(row.majors) < 2:
             rows.append(row)
             continue
-        rows.extend(
-            row.model_copy(
-                update={"major": major, "majors": [major], "entry_key": f"{row.entry_key}:{i}"}
-            )
-            for i, major in enumerate(row.majors)
-        )
+        entries = entries or [MajorEntry(name=major) for major in row.majors]
+        has_types = any(entry.degree_type for entry in row.major_entries)
+        for index, entry in enumerate(entries):
+            update = {
+                "major": entry.name,
+                "majors": [entry.name],
+                "major_entries": [entry.model_copy()] if row.major_entries else [],
+                "entry_key": f"{row.entry_key}:{index}" if len(entries) > 1 else row.entry_key,
+            }
+            if has_types:
+                # A sibling's credential never supplies a missing type for this major.
+                kind = entry.degree_type
+                update.update(
+                    degree_level=_degree_label(kind), degree_name=kind,
+                    degree=degree_line.compose(kind, [entry.name], []) if kind else "",
+                )
+            rows.append(row.model_copy(update=update))
     return rows
 
 
@@ -294,21 +335,30 @@ def current_education(
 ) -> packet_models.PacketEducation:
     """The row a single "School"/"Graduation date" question means: the latest ``end``
     month, ties and undated rows falling back to resume order."""
-    dated = [row for row in education if edu_dates.MONTH_RE.match(row.end or "")]
+    dated = [
+        (row, parsed) for row in education
+        if (parsed := dates.parse(row.end)) and parsed[1]
+    ]
     if not dated:
         return education[0]
-    return max(dated, key=lambda row: row.end)
+    return max(
+        dated, key=lambda item: (item[1][0], item[1][1] or 1, item[1][2] or 31)
+    )[0]
 
 def degree_name(education: list[packet_models.PacketEducation], level: str) -> str:
     """The one named degree at the profile's level ("Bachelor of Science" from "Bachelor
     of Science in Computer Science & Minor in ..."), so a choice list of "BS"/"BA" is
     answered without the model; "" when the rows disagree or name none."""
     wanted = field_matcher.degree_of(level) if level else None
-    names = {
-        degree[1] for row in education
-        for degree in [field_matcher.degree_of(row.degree_name or row.degree)]
-        if degree and degree[1] and (wanted is None or degree[0] == wanted[0])
-    }
+    names: set[str] = set()
+    for row in education:
+        types = [entry.degree_type for entry in row.major_entries if entry.degree_type]
+        if types and any(entry.name and not entry.degree_type for entry in row.major_entries):
+            return ""
+        for value in types or [row.degree_name or row.degree]:
+            degree = field_matcher.degree_of(value)
+            if degree and degree[1] and (wanted is None or degree[0] == wanted[0]):
+                names.add(degree[1])
     if len(names) != 1:
         return ""
     words = names.pop().split()

@@ -574,12 +574,13 @@ def fallback_values(key: str, value: str) -> list[str]:
     if not value:
         return []
     if key == "how_heard" and normalize(value) != "other":
-        # Always an answer, never a referral (2026-10-12): generic online sources, then
-        # "Other", then a career fair.
-        return list(dict.fromkeys([
-            value, "LinkedIn", "Job Board", "Online Job Board", "Internet", "Online",
-            "Company Website", "Careers Website", "Social Media", "Other", "Career Fair",
-        ]))
+        aliases = {
+            "linkedin": ["LinkedIn", "LinkedIn.com"],
+            "job board": ["Job Board", "Online Job Board", "Job Board (Indeed, Glassdoor, etc.)"],
+            "online job board": ["Online Job Board", "Job Board", "Job Board (Indeed, Glassdoor, etc.)"],
+            "company website": ["Company Website", "Careers Website", "Company Career Site"],
+        }
+        return list(dict.fromkeys([value, *aliases.get(normalize(value), []), "Other"]))
     if key == "phone_device_type" and normalize(value) in _MOBILE_DEVICE:
         # Tenants name the same device "Mobile", "Cell" or "Mobile Phone".
         return list(dict.fromkeys([value, "Mobile", "Cell", "Mobile Phone", "Cell Phone"]))

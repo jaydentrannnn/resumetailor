@@ -1,0 +1,137 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <title>Anonymized DoorDash and P&amp;G application controls</title>
+  <style>
+    body { font-family: sans-serif; padding: 20px; }
+    fieldset, .select__control { margin-bottom: 12px; padding: 8px; }
+    [role="listbox"] { border: 1px solid #999; padding: 8px; }
+    [role="option"] { cursor: pointer; padding: 6px; }
+    [hidden] { display: none; }
+  </style>
+</head>
+<body>
+  <!-- Reduced live shapes: DoorDash's shared +1 prefix and optional attachment,
+       plus Workday's separately named P&G source checkboxes. All applicant facts
+       and dropdown behavior below are synthetic and make no external requests. -->
+  <section aria-label="DoorDash application">
+    <fieldset class="phone-input">
+      <legend>Phone</legend>
+      <div class="phone-input__country">
+        <label for="country">Country</label>
+        <div class="select__control">
+          <span class="select__single-value" id="phone-country-value">
+            <span class="iti__flag iti__ca" aria-hidden="true"></span>+1
+          </span>
+          <input id="country" role="combobox" aria-controls="country-menu"
+                 aria-expanded="false" autocomplete="tel-country-code">
+        </div>
+        <div id="country-menu" role="listbox" hidden>
+          <div id="country-ca" role="option" aria-selected="true">Canada +1</div>
+          <div id="country-us" role="option" aria-selected="false">United States +1</div>
+        </div>
+      </div>
+      <label for="phone-number">Phone number</label>
+      <input id="phone-number" name="phone" type="tel" value="2025550198">
+    </fieldset>
+    <div class="form-group">
+      <label for="candidate-location">Location (City)<span aria-hidden="true">*</span></label>
+      <div class="select__control">
+        <span class="select__single-value" id="location-value"></span>
+        <input id="candidate-location" role="combobox" required aria-required="true"
+               aria-controls="location-menu" aria-expanded="false">
+      </div>
+      <div id="location-menu" role="listbox" hidden></div>
+    </div>
+    <div class="file-upload">
+      <h3 class="upload-label">Cover Letter</h3>
+      <label for="cover_letter">Attach</label>
+      <input id="cover_letter" type="file" hidden>
+    </div>
+  </section>
+  <section aria-label="P&amp;G application">
+    <div data-automation-id="formField-source">
+      <fieldset>
+        <legend>What source(s) of information influenced your decision to apply for a P&amp;G position?</legend>
+        <fieldset data-automation-id="sources-CheckboxGroup" aria-required="true">
+          <input id="source-linkedin" name="sourceLinkedIn" type="checkbox" aria-required="true">
+          <label for="source-linkedin">LinkedIn</label>
+          <input id="source-career" name="sourceCareerSite" type="checkbox" aria-required="true">
+          <label for="source-career">P&amp;G Career Site</label>
+          <input id="source-jobboard" name="sourceJobBoard" type="checkbox" aria-required="true">
+          <label for="source-jobboard">Job Board</label>
+        </fieldset>
+      </fieldset>
+    </div>
+  </section>
+  <script>
+    const countryInput = document.getElementById('country');
+    const countryMenu = document.getElementById('country-menu');
+    const countryValue = document.getElementById('phone-country-value');
+    const countryOptions = Array.from(countryMenu.querySelectorAll('[role="option"]'));
+    countryInput.addEventListener('click', () => {
+      countryMenu.hidden = false;
+      countryInput.setAttribute('aria-expanded', 'true');
+    });
+    for (const option of countryOptions) {
+      option.addEventListener('click', () => {
+        for (const other of countryOptions) {
+          other.setAttribute('aria-selected', String(other === option));
+        }
+        const region = option.id === 'country-us' ? 'us' : 'ca';
+        countryValue.innerHTML = `<span class="iti__flag iti__${region}" aria-hidden="true"></span>+1`;
+        countryInput.value = '';
+        countryMenu.hidden = true;
+        countryInput.setAttribute('aria-expanded', 'false');
+      });
+    }
+    countryInput.addEventListener('keydown', event => {
+      if (event.key === 'Escape') {
+        countryMenu.hidden = true;
+        countryInput.setAttribute('aria-expanded', 'false');
+      }
+    });
+
+    const locationInput = document.getElementById('candidate-location');
+    const locationMenu = document.getElementById('location-menu');
+    const locationValue = document.getElementById('location-value');
+    const locations = ['Fountain Valley, CA, Canada', 'Fountain Valley, TX, USA',
+      'Fountain Valley, CA, USA'];
+    window.locationSearches = [];
+    locationInput.addEventListener('click', () => {
+      locationMenu.hidden = false;
+      locationInput.setAttribute('aria-expanded', 'true');
+    });
+    locationInput.addEventListener('input', () => {
+      window.locationSearches.push(locationInput.value);
+      locationMenu.replaceChildren();
+      if (locationInput.value.toLowerCase() !== 'fountain valley') return;
+      for (const label of locations) {
+        const option = document.createElement('div');
+        option.setAttribute('role', 'option');
+        option.setAttribute('aria-selected', 'false');
+        option.textContent = label;
+        option.addEventListener('click', () => {
+          option.setAttribute('aria-selected', 'true');
+          locationValue.textContent = label;
+          locationInput.value = '';
+          locationInput.dataset.committed = label;
+          locationInput.required = false;
+          locationInput.setAttribute('aria-invalid', 'false');
+          locationMenu.hidden = true;
+          locationInput.setAttribute('aria-expanded', 'false');
+        });
+        locationMenu.append(option);
+      }
+      locationMenu.hidden = false;
+    });
+    locationInput.addEventListener('keydown', event => {
+      if (event.key === 'Escape') {
+        locationMenu.hidden = true;
+        locationInput.setAttribute('aria-expanded', 'false');
+      }
+    });
+  </script>
+</body>
+</html>

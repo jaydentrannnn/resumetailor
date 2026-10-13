@@ -51,7 +51,7 @@ def _fill(monkeypatch, page, fields=None, *, succeeds=True):
     monkeypatch.setattr(workday_dates, "fill_date_sections", type_parts)
     blank, review = [], []
     filled = workday_dates.fill_question_dates(
-        page, fields if fields is not None else {"graduation_month": "2027-06"},
+        page, fields if fields is not None else {"graduation_month": "2027-06-01"},
         blank=blank, review=review,
     )
     return filled, typed, blank, review
@@ -72,8 +72,8 @@ def test_required_graduation_date_uses_profile_and_types_all_sections(monkeypatc
     assert fill_widgets._observe_fields(page, "generic", {}, {identity: item}) == {}  # noqa: SLF001
 
 
-@pytest.mark.parametrize("fields", [{}, {"graduation_month": "2027"}])
-def test_missing_month_is_reported_without_guessing(monkeypatch, fields):
+@pytest.mark.parametrize("fields", [{}, {"graduation_month": "2027"}, {"graduation_month": "2027-06"}])
+def test_missing_date_parts_are_reported_without_guessing(monkeypatch, fields):
     filled, typed, blank, review = _fill(monkeypatch, _Page(), fields)
     assert filled == typed == review == []
     assert blank == [{"key": "graduation_month", "label": "Expected Graduation Date"}]
@@ -112,7 +112,7 @@ def test_background_date_typing_retries_once_in_front(monkeypatch):
         return True
 
     monkeypatch.setattr(workday_dates, "fill_date_sections", type_parts)
-    filled = workday_dates.fill_question_dates(page, {"graduation_month": "2027-06"})
+    filled = workday_dates.fill_question_dates(page, {"graduation_month": "2027-06-01"})
     assert len(attempts) == 2
     assert len(filled) == 1
 
@@ -134,7 +134,7 @@ def test_captured_workday_spinbuttons_fill_and_stay_observable():
             page.add_style_tag(content="input[role=spinbutton] { width: 0; opacity: 0; }")
             review = []
             filled = workday_dates.fill_question_dates(
-                page, {"graduation_month": "2027-06"}, review=review,
+                page, {"graduation_month": "2027-06-01"}, review=review,
             )
             assert review == []
             assert len(filled) == 1

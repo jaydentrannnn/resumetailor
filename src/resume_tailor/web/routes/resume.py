@@ -100,6 +100,7 @@ def _write_master_resume(resume: MasterResume, note: str = "") -> Path | None:
                 education.majors,
                 education.minors,
                 education.degree_format,
+                major_entries=education.major_entries,
             )
     # Round-trip through the model so tags are canonicalised and unknown keys stripped
     # before anything hits disk — same guarantees `data.load` enforces on the way in.

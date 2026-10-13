@@ -5,9 +5,14 @@ import {
   type ApplicantProfile,
   type ApplicantProfileResponse,
   type ProfileGap,
+  type ExperienceBasis,
+  type ExperienceSummary,
 } from "../api";
+import { onAppEvent } from "../lib/appEvents";
 
 type State = {
+  experienceSummaries: Partial<Record<ExperienceBasis, ExperienceSummary>>;
+  refreshSummaries: () => Promise<void>;
   /** The profile as last loaded or saved (the baseline for "unsaved changes"). */
   saved: ApplicantProfile | null;
   draft: ApplicantProfile | null;
@@ -30,6 +35,9 @@ type State = {
 };
 const Context = createContext<State | null>(null);
 export function ApplicantProfileProvider({ children }: { children: ReactNode }) {
+  const [experienceSummaries, setExperienceSummaries] = useState<
+    Partial<Record<ExperienceBasis, ExperienceSummary>>
+  >({});
   const [saved, setSaved] = useState<ApplicantProfile | null>(null);
   const [draft, setDraft] = useState<ApplicantProfile | null>(null);
   const [passwordSet, setPasswordSet] = useState(false);
@@ -41,6 +49,7 @@ export function ApplicantProfileProvider({ children }: { children: ReactNode }) 
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState<string | null>(null);
   function accept(result: ApplicantProfileResponse) {
+    setExperienceSummaries(result.experience_summaries ?? {});
     setSaved(result.profile);
     setDraft(result.profile);
     setPasswordSet(result.workday_password_set);
@@ -63,6 +72,17 @@ export function ApplicantProfileProvider({ children }: { children: ReactNode }) 
     };
   }, []);
   const dirty = !!draft && !!saved && JSON.stringify(draft) !== JSON.stringify(saved);
+  async function refreshSummaries() {
+    const result = await getApplicantProfile();
+    setExperienceSummaries(result.experience_summaries ?? {});
+  }
+  useEffect(
+    () =>
+      onAppEvent("rt:resume-saved", () => {
+        void refreshSummaries().catch(() => undefined);
+      }),
+    [],
+  );
   async function save(): Promise<boolean> {
     if (!draft) return false;
     setSaving(true);
@@ -92,6 +112,8 @@ export function ApplicantProfileProvider({ children }: { children: ReactNode }) 
   return (
     <Context.Provider
       value={{
+        experienceSummaries,
+        refreshSummaries,
         saved,
         draft,
         setDraft,

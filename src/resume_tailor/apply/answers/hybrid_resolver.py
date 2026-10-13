@@ -98,10 +98,7 @@ def choose_skill_options(
     client = llm.client_for("answer")
     if deadline is not None:
         timeout = max(1.0, min(60.0, deadline - time.monotonic()))
-        if hasattr(client, "timeout"):
-            client.timeout = min(float(client.timeout), timeout)
-        elif hasattr(client, "with_options"):
-            client = client.with_options(timeout=timeout)
+        client = llm.bound_client_timeout(client, timeout)
     payload = [{"skill": skill, "options": options} for skill, options in unmatched.items()]
     response = client.messages.parse(
         model=config.model_for("answer"),
@@ -425,9 +422,19 @@ class _StepResolver:
         profile = self.profile
         for field in unresolved:
             options = field.get("options") or []
-            field["phone_code_menu"] = (
-                sum(bool(re.search(r"\+\d{1,4}\b", str(o))) for o in options) >= 2
+            phone_menu = field.get("type") == "combobox" and (
+                field.get("phone_code_menu") or field.get("key") == "phone_country_code"
+                or sum(bool(re.search(r"\+\d{1,4}\b", str(o))) for o in options) >= 2
             )
+            clues = f"{field.get('label') or ''} {field.get('selector') or ''}"
+            if (not phone_menu and field.get("type") == "combobox"
+                    and re.search(r"country|phone|dial|calling", clues, re.I)
+                    and hasattr(self.page, "locator")):
+                phone_menu = widget_actions._is_phone_code_control(  # noqa: SLF001
+                    self.page.locator(str(field.get("selector") or "")).first,
+                    str(field.get("label") or ""),
+                )
+            field["phone_code_menu"] = bool(phone_menu)
             if field["phone_code_menu"]:
                 field["phone_match"] = widget_actions._phone_option(
                     [str(o) for o in options], profile.phone_country_code,
@@ -453,9 +460,13 @@ class _StepResolver:
         facts = questions.facts_from_packet(self.packet)
         for field in unresolved:
             label = str(field.get("label") or "")
-            question = questions.Question(label, kind="typeahead",
+            kind = {"combobox": "typeahead", "radiogroup": "choice", "checkboxgroup": "multi"}.get(
+                str(field.get("type") or ""), "text",
+            )
+            question = questions.Question(label, kind=kind,
                 part=questions._part_from_text(label),  # noqa: SLF001
-                options=tuple(field.get("options") or []), help_text=str(field.get("help") or ""))
+                options=tuple(field.get("options") or []),
+                help_text=str(field.get("help") or field.get("help_text") or ""))
             match = questions.classify(question)
             semantic = form_facts.semantic_key(label, question.help_text)
             if semantic == form_facts.ACKNOWLEDGEMENT and match is None:
@@ -465,24 +476,43 @@ class _StepResolver:
                     and field.get("type") != "combobox"):
                 self.ledger.asked.add(str(field.get("selector") or ""))
                 continue
-            if (
-                match is None or field.get("type") != "combobox"
-                or match.key not in form_facts.PROTECTED_KEYS | {
-                    "education_start_month", "graduation_month", "class_year",
-                }
-            ):
+            preferences = {
+                "consider_other_positions", "minimum_qualifications", "experience_years",
+                "recent_graduate_or_student", "advertising_consent",
+            }
+            direct = form_facts.PROTECTED_KEYS | preferences | {
+                "education_start_month", "graduation_month", "class_year",
+                "city", "location", "state", "country", "how_heard",
+            }
+            if match is None or match.key not in direct:
                 remaining.append(field)
                 continue
             values = questions.answers(match, question, facts)
+            if not values and match.key not in form_facts.PROTECTED_KEYS | preferences:
+                remaining.append(field)
+                continue
             selector = str(field.get("selector") or "")
             self.ledger.asked.add(selector)
             chosen = questions.choose(question, match.key, values) if values else None
             # Search the known fact even when a virtualized menu did not render it yet.
             candidates = [chosen] if chosen else values
             for value in candidates:
-                if widget_actions._select_combobox_option(
-                    self.page, selector, value, key=match.key,
-                ):
+                if field.get("type") == "combobox":
+                    kwargs = {"key": match.key, "preserve_existing": True}
+                    if match.key in {"city", "location"}:
+                        kwargs["location_context"] = facts.fields
+                    ok = widget_actions._select_combobox_option(
+                        self.page, selector, value, **kwargs,
+                    )
+                else:
+                    verb = {"radiogroup": "choose_radio", "checkboxgroup": "check_options"}.get(
+                        str(field.get("type") or ""), "fill_text",
+                    )
+                    ok = widget_actions.execute_action(self.page, resolver_types.FieldAction(
+                        label=label, selector=selector, action=verb, value=value,
+                        rationale="your profile answer",
+                    ))
+                if ok:
                     self.ledger.done.add(selector)
                     self.log(f"selected known fact for {label}")
                     break
@@ -667,10 +697,7 @@ class _StepResolver:
             client = llm.client_for("answer")
             if self.deadline is not None:
                 timeout = max(1.0, min(60.0, self.deadline - time.monotonic()))
-                if hasattr(client, "timeout"):
-                    client.timeout = min(float(client.timeout), timeout)
-                elif hasattr(client, "with_options"):
-                    client = client.with_options(timeout=timeout)
+                client = llm.bound_client_timeout(client, timeout)
             return client.messages.parse(
                 model=config.model_for("answer"),
                 max_tokens=config.max_tokens_for("answer"),

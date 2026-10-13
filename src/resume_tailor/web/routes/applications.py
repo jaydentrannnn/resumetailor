@@ -187,7 +187,14 @@ def _resume_fallbacks() -> dict[str, str]:
 
 
 def _profile_response(profile: apply_profile.ApplicantProfile, *, seeded: bool, password_set: bool) -> ApplicantProfileResponse:
+    from resume_tailor.apply.answers import experience  # noqa: PLC0415
+
+    try:
+        experience_summaries = experience.summaries(data.load())
+    except (FileNotFoundError, ValueError):
+        experience_summaries = {}
     return ApplicantProfileResponse(
+        experience_summaries=experience_summaries,
         fallbacks=_resume_fallbacks(),
         custom_answer_duplicates=custom_answers.duplicates(profile),
         workspace_id=config.active_workspace_id(),

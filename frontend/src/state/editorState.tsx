@@ -14,7 +14,7 @@ import {
   saveMasterResume,
   validateMasterResume,
 } from "../api";
-import { onAppEvent } from "../lib/appEvents";
+import { emitAppEvent, onAppEvent } from "../lib/appEvents";
 import { orderResumeEntries } from "../lib/resumeEntryOrder";
 import {
   type MasterResume,
@@ -168,6 +168,7 @@ export function EditorProvider({ children }: { children: ReactNode }) {
         const cfg = await fetchConfig();
         setConfig(cfg);
       }
+      if (result.ok) emitAppEvent("rt:resume-saved");
       return result.ok;
     } catch (err) {
       setErrors([err instanceof Error ? err.message : String(err)]);
@@ -214,6 +215,7 @@ export function EditorProvider({ children }: { children: ReactNode }) {
     setSavedSnapshot(JSON.stringify(stripRowKeys(withKeys)));
     setErrors([]);
     setMessage(syncMessage ?? "Master resume updated.");
+    emitAppEvent("rt:resume-saved");
   }, []);
 
   const value = useMemo<EditorStateValue>(

@@ -152,6 +152,9 @@ export function validateProfile(profile: ApplicantProfile): Record<string, strin
   if (profile.earliest_start && !/^\d{4}-(0[1-9]|1[0-2])-\d{2}$/.test(profile.earliest_start))
     errors.earliest_start = "Pick a month, year and day.";
   const hours = profile.hours_per_week_available;
+  const years = profile.experience_years_custom;
+  if (years != null && (!Number.isFinite(years) || years < 0))
+    errors.experience_years_custom = "Enter zero or a positive number of years.";
   if (hours != null && (!Number.isInteger(hours) || hours < 0 || hours > 80))
     errors.hours_per_week_available = "Enter whole hours from 0 to 80.";
   return errors;
@@ -253,13 +256,7 @@ export const PROFILE_GROUPS: ProfileGroup[] = [
   {
     id: "Saved answers and other preferences",
     title: "Referral and preferences",
-    fields: [
-      "referred_by",
-      "how_heard",
-      "portfolio_url",
-      "portfolio_only_when_asked",
-      "auto_accept_routine_acknowledgements",
-    ],
+    fields: ["referred_by", "how_heard", "portfolio_url", "portfolio_only_when_asked"],
   },
 ];
 

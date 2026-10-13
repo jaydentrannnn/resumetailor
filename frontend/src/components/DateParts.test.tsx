@@ -66,3 +66,51 @@ describe("DateParts", () => {
     expect((screen.getByLabelText("Start, year") as HTMLInputElement).placeholder).toBe("2027");
   });
 });
+
+describe("education optional day", () => {
+  it("keeps a completely blank date blank and accepts month/year without inventing a day", () => {
+    render(<Harness precision="optional_day" />);
+    expect(out()).toBe("");
+    const day = screen.getByLabelText("Start, day") as HTMLInputElement;
+    expect(day.placeholder).toBe("Day (optional)");
+    expect(day.value).toBe("");
+    fireEvent.change(screen.getByLabelText("Start, month"), { target: { value: "6" } });
+    fireEvent.change(screen.getByLabelText("Start, year"), { target: { value: "2027" } });
+    expect(out()).toBe("2027-06");
+    expect(day.value).toBe("");
+    expect(screen.queryByText("Enter the day.")).toBeNull();
+  });
+
+  it("accepts an exact day and returns to month precision when the day is cleared", () => {
+    render(<Harness initial="2027-06" precision="optional_day" />);
+    fireEvent.change(screen.getByLabelText("Start, day"), { target: { value: "9" } });
+    expect(out()).toBe("2027-06-09");
+    fireEvent.change(screen.getByLabelText("Start, day"), { target: { value: "" } });
+    expect(out()).toBe("2027-06");
+  });
+
+  it("validates a supplied day rather than silently discarding an impossible date", () => {
+    render(<Harness initial="2024-02" precision="optional_day" />);
+    fireEvent.change(screen.getByLabelText("Start, day"), { target: { value: "30" } });
+    expect(out()).toBe("");
+    expect(screen.getByText("That date doesn't exist.")).toBeTruthy();
+    expect(screen.getByLabelText("Start, day").getAttribute("aria-invalid")).toBe("true");
+    fireEvent.change(screen.getByLabelText("Start, day"), { target: { value: "29" } });
+    expect(out()).toBe("2024-02-29");
+    expect(screen.queryByText("That date doesn't exist.")).toBeNull();
+  });
+
+  it("reloads exact dates and clears a previous day when a month-only value arrives", () => {
+    const onChange = () => undefined;
+    const { rerender } = render(
+      <DateParts label="Start" value="2027-06-09" precision="optional_day" onChange={onChange} />,
+    );
+    expect((screen.getByLabelText("Start, day") as HTMLInputElement).value).toBe("09");
+    rerender(
+      <DateParts label="Start" value="2028-05" precision="optional_day" onChange={onChange} />,
+    );
+    expect((screen.getByLabelText("Start, day") as HTMLInputElement).value).toBe("");
+    expect((screen.getByLabelText("Start, month") as HTMLSelectElement).value).toBe("5");
+    expect((screen.getByLabelText("Start, year") as HTMLInputElement).value).toBe("2028");
+  });
+});

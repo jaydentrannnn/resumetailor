@@ -99,6 +99,8 @@ def activate_workspace(workspace_id: str) -> WorkspaceActivateResponse:
             workspace.activate(workspace_id)
         except workspace.WorkspaceError as exc:
             raise HTTPException(status_code=400, detail=str(exc)) from exc
+        from resume_tailor.apply.funnel import answer_harvest  # noqa: PLC0415
+        answer_harvest.restore()
         # Its template was switched to movable sections while another profile was active.
         section_title_sync.apply_pending_unlocked()
 

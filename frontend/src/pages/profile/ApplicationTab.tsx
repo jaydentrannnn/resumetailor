@@ -17,6 +17,7 @@ import { ProfileField } from "./ProfileField";
 import { AnswerBook } from "./AnswerBook";
 import { DocumentUpload } from "./DocumentUpload";
 import { EeoFields } from "./EeoFields";
+import { ExperienceFields } from "./ExperienceFields";
 
 const yesNo = (value: boolean) => (value ? "Yes" : "No");
 
@@ -98,6 +99,10 @@ export function ApplicationTab({
         gaps={applicant.gaps.filter((gap) => gap.path === "/profile/application")}
         onOpen={onOpenGroup}
       />
+      <Tile>
+        <h3 className="rt-tile-title">Experience</h3>
+        <ExperienceFields ctx={ctx} />
+      </Tile>
       {PROFILE_GROUPS.map((group) => (
         <Tile key={group.id} id={`profile-group-${group.id}`}>
           <details

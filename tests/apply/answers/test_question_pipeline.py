@@ -189,10 +189,11 @@ def test_ashby_toggle_buttons_answer_yes_no_questions(quora):
     assert _filled(result, "Will you now or in the future require sponsorship") == ["No"]
 
 
-def test_ashby_date_picker_gets_the_first_of_the_month(quora):
-    # "2027-06" typed raw is parsed as UTC midnight: May 31st west of Greenwich.
+def test_ashby_full_date_picker_leaves_missing_day_for_applicant(quora):
+    # A month-only profile cannot supply the day this picker requires.
     _scanned, _plan, result = quora
-    assert _filled(result, "Graduation Date") == ["06/01/2027"]
+    assert _filled(result, "Graduation Date") == []
+    assert any("Graduation Date" in item["label"] for item in result["leftovers"])
 
 
 def test_ashby_location_and_school_are_searched_with_planned_text(quora):
@@ -292,3 +293,110 @@ def test_ashby_education_date_selects_preset_to_today_are_overwritten(browser):
         assert values == ["September", "2023", "June", "2027"]
     finally:
         page.close()
+
+
+def _split_day_form(*, start_day: str = "", end_day: str = "") -> str:
+    """Local education row using the names emitted by split-date ATS controls."""
+    parts = []
+    months = "".join(
+        f'<option value="{index}">{name}</option>'
+        for index, name in enumerate(questions.MONTHS, start=1)
+    )
+    for side, current_day in (("start", start_day), ("end", end_day)):
+        for part in ("month", "year", "day"):
+            element_id = f"{side}-{part}--0"
+            name = f"educations[0].{side}_date.{part}"
+            label = f"{side.capitalize()} date {part}"
+            parts.append(f'<label for="{element_id}">{label}</label>')
+            if part == "month":
+                parts.append(
+                    f'<select id="{element_id}" name="{name}" required>'
+                    f'<option value="">Month</option>{months}</select>'
+                )
+            else:
+                value = current_day if part == "day" else ""
+                placeholder = "DD" if part == "day" else "YYYY"
+                parts.append(
+                    f'<input id="{element_id}" name="{name}" type="text" '
+                    f'placeholder="{placeholder}" value="{value}" required>'
+                )
+    return '<form><fieldset><legend>Education</legend>' + "".join(parts) + "</fieldset></form>"
+
+
+def _run_split_day_form(browser, fields: dict[str, str], **existing):
+    page = browser.new_page()
+    try:
+        page.set_content(_split_day_form(**existing))
+        args = {
+            "fields": fields, "hints": {},
+            "synonyms": [list(pair) for pair in ats_hints.SYNONYMS], "eeo": {},
+        }
+        scanned = page.evaluate(_FILLER, {**args, "scan": True})["questions"]
+        plan = questions.plan_for(scanned, questions.facts_for(fields, today=_TODAY))
+        result = page.evaluate(_FILLER, {**args, "plan": plan})
+        values = page.locator("input, select").evaluate_all(
+            "els => Object.fromEntries(els.map(el => [el.id, el.value]))"
+        )
+        return scanned, plan, result, values
+    finally:
+        page.close()
+
+
+@pytest.mark.browser
+def test_education_split_dates_fill_supplied_days_through_question_plan(browser):
+    fields = {
+        "education_start_month": "2023-09", "education_start_date": "2023-09-18",
+        "graduation_month": "2027-06", "graduation_date": "2027-06-14",
+    }
+    scanned, plan, result, values = _run_split_day_form(browser, fields)
+    assert _planned(scanned, plan, "Start date day") == {
+        "key": "education_start_month", "value": "18",
+    }
+    assert _planned(scanned, plan, "End date day") == {
+        "key": "graduation_month", "value": "14",
+    }
+    assert values == {
+        "start-month--0": "9", "start-year--0": "2023", "start-day--0": "18",
+        "end-month--0": "6", "end-year--0": "2027", "end-day--0": "14",
+    }
+    assert result["leftovers"] == []
+    assert result["required_empty"] == []
+
+
+@pytest.mark.browser
+def test_education_split_dates_report_required_days_missing_from_month_only_profile(browser):
+    fields = {"education_start_month": "2023-09", "graduation_month": "2027-06"}
+    scanned, plan, result, values = _run_split_day_form(browser, fields)
+    assert _planned(scanned, plan, "Start date day") == {
+        "key": "education_start_month", "value": None,
+    }
+    assert _planned(scanned, plan, "End date day") == {
+        "key": "graduation_month", "value": None,
+    }
+    assert values == {
+        "start-month--0": "9", "start-year--0": "2023", "start-day--0": "",
+        "end-month--0": "6", "end-year--0": "2027", "end-day--0": "",
+    }
+    assert {item["label"] for item in result["leftovers"]} == {
+        "Start date day", "End date day",
+    }
+    assert set(result["required_empty"]) == {"Start date day", "End date day"}
+
+
+@pytest.mark.browser
+@pytest.mark.parametrize("profile_has_day", [False, True])
+def test_education_split_dates_preserve_valid_manually_entered_days(browser, profile_has_day):
+    fields = {"education_start_month": "2023-09", "graduation_month": "2027-06"}
+    if profile_has_day:
+        fields.update(education_start_date="2023-09-18", graduation_date="2027-06-14")
+    _scanned, _plan, result, values = _run_split_day_form(
+        browser, fields, start_day="19", end_day="15",
+    )
+    assert values["start-day--0"] == "19"
+    assert values["end-day--0"] == "15"
+    preserved = [item for item in result["filled"] if item.get("preserved")]
+    assert {(item["label"], item["value"]) for item in preserved} == {
+        ("Start date day", "19"), ("End date day", "15"),
+    }
+    assert result["leftovers"] == []
+    assert result["required_empty"] == []

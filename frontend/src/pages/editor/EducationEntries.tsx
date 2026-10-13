@@ -100,6 +100,7 @@ export function EducationEntries({
                 <div className="grid grid-cols-1 gap-3 sm:col-span-2 sm:grid-cols-2">
                   <DateField
                     label="Start"
+                    optionalDay
                     value={edu.start ?? ""}
                     onChange={(v) => {
                       const next = [...entries];
@@ -109,6 +110,7 @@ export function EducationEntries({
                   />
                   <DateField
                     label="Expected graduation"
+                    optionalDay
                     value={edu.end ?? ""}
                     onChange={(v) => {
                       const next = [...entries];

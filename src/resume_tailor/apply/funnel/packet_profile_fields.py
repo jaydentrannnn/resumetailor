@@ -120,6 +120,9 @@ PROFILE_FIELDS: dict[str, ProfileFieldInfo] = {
     "auto_accept_routine_acknowledgements": ProfileFieldInfo(
         label="Agree to required notices and consents", section=_SAVED,
     ),
+    "consider_other_positions": ProfileFieldInfo(label="Consider me for other positions", section="Answering questions"),
+    "minimum_qualifications": ProfileFieldInfo(label="General minimum qualifications", section="Answering questions"),
+    "experience_years": ProfileFieldInfo(label="Years of experience", section="Experience"),
     "school_email": ProfileFieldInfo(label="School email", section=_EDUCATION),
     "security_clearance": ProfileFieldInfo(label="Security clearance", section=_AVAILABILITY),
     "drivers_license": ProfileFieldInfo(label="Driver's license", section=_AVAILABILITY),
@@ -165,6 +168,8 @@ _PROFILE_EDUCATION_KEYS = frozenset({
 
 def profile_path(section: str, key: str = "") -> str:
     """The Profile page tab that holds ``section`` (or, for education, ``key``)."""
+    if section == "Answering questions" or key == "auto_accept_routine_acknowledgements":
+        return "/apply"
     if section == _EDUCATION and key not in _PROFILE_EDUCATION_KEYS:
         return "/profile/resume"
     return "/profile/personal" if section == _CONTACT else "/profile/application"

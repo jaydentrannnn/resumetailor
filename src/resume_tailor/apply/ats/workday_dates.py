@@ -60,13 +60,13 @@ def fill_question_dates(
         if values and all(values):
             continue  # a complete date is the applicant's own answer
         answers = questions.answers(match, question, facts)
-        has_month = bool(answers and re.fullmatch(r"\d{4}-(?:0?[1-9]|1[0-2])", answers[0]))
-        value = questions.date_text(answers[0], input_type="date") if has_month else ""
-        if not value:
+        parsed = re.fullmatch(r"(\d{4})-(0[1-9]|1[0-2])(?:-(\d{2}))?", answers[0]) if answers else None
+        if parsed is None or ("dateSectionDay" in sections and not parsed[3]):
             if blank is not None:
                 blank.append({"key": match.key, "label": label})
             continue
-        year, month, day = value.split("-")
+        year, month, day = parsed[1], parsed[2], parsed[3] or ""
+        value = answers[0]
         wanted = {"dateSectionMonth": month, "dateSectionDay": day, "dateSectionYear": year}
         parts = [(section, wanted[section]) for section in sections]
         if not {"dateSectionMonth", "dateSectionYear"}.issubset(sections):
@@ -188,7 +188,15 @@ def _fill_date(page: Any, prefix: str, field: str, value: str, *, with_month: bo
                 if current
                 else workday_dropdowns.select_listbox(page, f"[id='{prefix}{field}']", year)
             )
-    parts = ([("dateSectionMonth", month)] if with_month else []) + [("dateSectionYear", year)]
+    control = f"{prefix}{field}"
+    day_box = page.locator(f"[id='{control}-dateSectionDay-input']")
+    parsed_day = re.fullmatch(r"\d{4}-\d{2}-(\d{2})", value)
+    if day_box.count() == 1 and parsed_day is None:
+        return False
+    parts = ([("dateSectionMonth", month)] if with_month else [])
+    if day_box.count() == 1 and parsed_day is not None:
+        parts.append(("dateSectionDay", parsed_day[1]))
+    parts.append(("dateSectionYear", year))
     return fill_date_sections(page, f"{prefix}{field}", parts)
 
 def _fill_date_retrying(

@@ -1,4 +1,4 @@
-import type { DegreeFormat, Education } from "./resumeEdit";
+import type { DegreeFormat, Education, MajorEntry } from "./resumeEdit";
 
 // Mirrors `resume_tailor/content/degree_line.py` so the editor previews exactly what the
 // server prints on save. Keep the two in step (`degreeLine.test.ts` pins the same cases
@@ -54,10 +54,52 @@ export function detectDegree(degree: string): [string, string[], string[]] {
   return ["", split(text), minors];
 }
 
-type DegreeParts = Pick<Education, "degree_type" | "majors" | "minors" | "degree_format">;
+type DegreeParts = Pick<
+  Education,
+  "degree_type" | "majors" | "major_entries" | "minors" | "degree_format"
+>;
+
+export function majorEntries(edu: DegreeParts): MajorEntry[] {
+  return (
+    edu.major_entries ??
+    (edu.majors ?? []).map((name) => ({ name, degree_type: edu.degree_type ?? "" }))
+  );
+}
+
+function degreeKey(value: string): string {
+  const key = value.toLowerCase().replace(/[^a-z0-9]/g, "");
+  const aliases: Record<string, string> = {
+    bachelorofscience: "bs",
+    bachelorscience: "bs",
+    bachelorsdegreeinscience: "bs",
+    bsc: "bs",
+    bachelorofarts: "ba",
+    bachelorarts: "ba",
+    bachelorsdegreeinarts: "ba",
+    masterofscience: "ms",
+    msc: "ms",
+    masterofarts: "ma",
+    associateofscience: "as",
+    associateofarts: "aa",
+    doctorofphilosophy: "phd",
+  };
+  return aliases[key] ?? key;
+}
 
 /** The line a "generated" entry prints, from its current parts. */
 export function generatedDegree(edu: DegreeParts): string {
+  if (edu.major_entries !== undefined) {
+    const groups = new Map<string, { type: string; names: string[] }>();
+    for (const entry of edu.major_entries) {
+      const type = entry.degree_type.trim();
+      const key = degreeKey(type);
+      if (!groups.has(key)) groups.set(key, { type, names: [] });
+      if (entry.name.trim()) groups.get(key)!.names.push(entry.name.trim());
+    }
+    const clauses = [...groups.values()].map((group) => composeDegree(group.type, group.names, []));
+    if (edu.minors?.length) clauses.push(composeDegree("", [], edu.minors));
+    return clauses.filter(Boolean).join(SEPARATORS[edu.degree_format ?? "semicolon"]);
+  }
   return composeDegree(
     edu.degree_type ?? "",
     edu.majors ?? [],
@@ -69,6 +111,15 @@ export function generatedDegree(edu: DegreeParts): string {
 /** `edu` with `patch` applied; a "generated" entry's printed line follows its parts. */
 export function withDegreeParts<T extends Education>(edu: T, patch: Partial<T>): T {
   const next = { ...edu, ...patch };
+  if (patch.major_entries !== undefined) {
+    next.majors = patch.major_entries.map((entry) => entry.name);
+    next.degree_type = patch.major_entries[0]?.degree_type ?? "";
+  } else if (patch.majors !== undefined || patch.degree_type !== undefined) {
+    next.major_entries = (next.majors ?? []).map((name) => ({
+      name,
+      degree_type: next.degree_type ?? "",
+    }));
+  }
   return next.degree_mode === "generated" ? { ...next, degree: generatedDegree(next) } : next;
 }
 
@@ -80,5 +131,11 @@ export function withDetectedParts<T extends Education>(edu: T): T {
     degree_type: edu.degree_type || degreeType,
     majors: edu.majors?.length ? edu.majors : majors,
     minors: edu.minors?.length ? edu.minors : minors,
+    major_entries: majorEntries(edu).length
+      ? majorEntries(edu).map((entry) => ({
+          ...entry,
+          degree_type: entry.degree_type || degreeType,
+        }))
+      : majors.map((name) => ({ name, degree_type: edu.degree_type || degreeType })),
   };
 }
