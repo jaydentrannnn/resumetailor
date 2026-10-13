@@ -52,7 +52,7 @@ for (const width of [1280, 390]) {
     });
     await page.goto("/settings?tab=ai");
     await expect(page.getByRole("tab", { name: "AI model", exact: true })).toBeVisible();
-    // One tile holds both roles' provider and model; everything else lives in API keys.
+    // Connections live with their model; credentials live in API keys.
     const tile = page
       .locator("section")
       .filter({ has: page.getByRole("heading", { name: "AI models", exact: true }) })
@@ -65,12 +65,13 @@ for (const width of [1280, 390]) {
       .last();
     await heavy.getByRole("combobox", { name: "Provider", exact: true }).selectOption("custom");
     await heavy.getByLabel("Model", { exact: true }).fill("filler");
-    await expect(tile.getByLabel("Server URL")).toHaveCount(0);
-    const server = keys.getByRole("group", { name: "Custom server (Heavy)", exact: true });
-    await server
+    await expect(heavy.getByLabel("Server URL")).toBeVisible();
+    await expect(keys.getByLabel("Server URL")).toHaveCount(0);
+    await heavy
       .getByRole("combobox", { name: "API format", exact: true })
       .selectOption("anthropic");
-    await server.getByLabel("Server URL", { exact: true }).fill("https://proxy.example/api");
+    await heavy.getByLabel("Server URL", { exact: true }).fill("https://proxy.example/api");
+    const server = keys.getByRole("group", { name: "Custom server (Heavy)", exact: true });
     await expect(server.getByLabel("Server API key (optional)")).toBeVisible();
     await expect.poll(() => saved.ai_models?.heavy.base_url).toBe("https://proxy.example/api");
     expect(saved.ai_models?.light.provider).toBe("ollama");
@@ -80,7 +81,7 @@ for (const width of [1280, 390]) {
     await server.getByLabel("Server API key (optional)").fill("dummy-test-key");
     await server.getByRole("button", { name: "Save", exact: true }).click();
     await expect(server.getByText("Saved", { exact: true })).toBeVisible();
-    await server.getByLabel("Server URL", { exact: true }).fill("https://other.example/api");
+    await heavy.getByLabel("Server URL", { exact: true }).fill("https://other.example/api");
     await expect(server.getByText("Not set", { exact: true })).toBeVisible();
 
     await light.getByRole("combobox", { name: "Provider", exact: true }).selectOption("openai");
@@ -93,13 +94,12 @@ for (const width of [1280, 390]) {
     await expect.poll(() => saved.ai_models?.light.model_name).toBe("reasoner");
     expect(saved.ai_models?.heavy.model_name).toBe("filler");
 
-    const advanced = page
-      .locator("section")
-      .filter({ has: page.getByRole("heading", { name: "Advanced", exact: true }) })
-      .last();
-    const usage = page.getByRole("heading", { name: "Usage", exact: true });
-    expect((await advanced.boundingBox())!.y).toBeLessThan((await usage.boundingBox())!.y);
-    await advanced.getByRole("button", { name: /Show/ }).click();
+    const advanced = tile;
+    const toggle = tile.getByRole("switch", { name: "Advanced", exact: true });
+    await expect(toggle).not.toBeChecked();
+    await expect(advanced.getByLabel("Request concurrency", { exact: true })).toHaveCount(0);
+    await toggle.press("Space");
+    await expect(toggle).toBeChecked();
     await advanced
       .getByRole("combobox", { name: "Request concurrency", exact: true })
       .selectOption("custom");
@@ -114,5 +114,8 @@ for (const width of [1280, 390]) {
       width,
     );
     await advanced.screenshot({ path: `test-results/ai-advanced-${width}.png` });
+    await toggle.press("Space");
+    await expect(toggle).not.toBeChecked();
+    await expect(advanced.getByLabel("Request concurrency", { exact: true })).toHaveCount(0);
   });
 }
