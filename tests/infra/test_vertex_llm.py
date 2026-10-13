@@ -7,7 +7,7 @@ import pytest
 from pydantic import BaseModel
 
 from resume_tailor import config
-from resume_tailor.infra import llm, model_queue, telemetry, vertex_auth, vertex_catalog
+from resume_tailor.infra import llm, model_queue, telemetry, vertex_auth, vertex_catalog, vertex_llm
 from resume_tailor.infra.vertex_llm import AsyncVertexClient, VertexClient
 from resume_tailor.model_selection import ModelSelection
 
@@ -154,6 +154,47 @@ def test_provider_errors_are_actionable_redacted_and_not_retried(transport, stat
         parse(VertexClient(transport.backend, "extract"))
     assert "private" not in str(failure.value)
     assert len(transport.seen) == 1
+
+
+@pytest.mark.parametrize("known_quota", [True, False])
+def test_quota_failure_exposes_only_recognized_google_metric_constants(known_quota):
+    metric = "aiplatform.googleapis.com/us_multi_region_online_prediction_requests_per_base_model"
+    error = RuntimeError("private-refresh-token and resume text")
+    error.status_code = 429
+    error.message = (
+        f"VertexAIException - Quota exceeded for {metric if known_quota else 'private-secret'}. "
+        "private-refresh-token and resume text"
+    )
+    response = vertex_llm._failure(error, "https://vertex.example")
+    assert "private" not in response.text
+    assert model_queue.parse_rate_limit(response.text).quota == (metric if known_quota else "")
+    with pytest.raises(llm.LLMError) as failure:
+        vertex_llm.check_status(response, "claude-haiku-5-5")
+    assert failure.value.status == 429
+    assert "private" not in str(failure.value)
+    if known_quota:
+        assert metric in str(failure.value)
+        assert "Available billing credit does not increase request quotas" in str(failure.value)
+
+
+@pytest.mark.parametrize("asynchronous", [False, True])
+def test_explicit_quota_increase_failure_is_reported_without_repeated_requests(transport, asynchronous):
+    metric = "aiplatform.googleapis.com/us_multi_region_online_prediction_requests_per_base_model"
+    error = RuntimeError("private-refresh-token")
+    error.status_code = 429
+    error.message = f"Quota exceeded for {metric} with base model: anthropic-claude-haiku."
+    transport.replies.append(error)
+    client = (
+        AsyncVertexClient(transport.backend, "extract")
+        if asynchronous else VertexClient(transport.backend, "extract")
+    )
+    with pytest.raises(llm.LLMError, match=metric):
+        if asynchronous:
+            asyncio.run(parse(client))
+        else:
+            parse(client)
+    assert len(transport.seen) == 1
+    assert not model_queue.queue.status()["endpoints"][0]["exhausted_seconds"]
 
 
 def test_bad_location_is_rejected_before_sdk_can_substitute(transport):

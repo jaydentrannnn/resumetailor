@@ -29,6 +29,14 @@ def check_status(response: httpx.Response, model: str) -> None:
     detail = details.get(
         response.status_code, "Google Cloud is temporarily unavailable. Retry later."
     )
+    if response.status_code == 429:
+        quota = model_queue.parse_rate_limit(response.text).quota
+        if quota:
+            detail = (
+                f"Google Cloud quota exceeded: {quota}. "
+                "Check this project's Quotas & System Limits and request an increase. "
+                "Available billing credit does not increase request quotas."
+            )
     raise llm.LLMError(f"Vertex AI {model!r}: {detail}", status=response.status_code)
 
 
@@ -54,9 +62,21 @@ def _failure(exc: Exception, endpoint: str) -> httpx.Response:
     )
     upstream = getattr(exc, "response", None)
     retry_after = getattr(upstream, "headers", {}).get("retry-after")
+    body: dict = {"error": hint}
+    if status == 429:
+        # The pinned SDK wraps Google's JSON in its message instead of retaining
+        # a JSON response. Return only a recognized constant, never provider text.
+        message = str(getattr(exc, "message", ""))
+        for location in ("global", "us_multi_region", "eu_multi_region"):
+            for unit in ("requests", "input_tokens_per_minute", "output_tokens_per_minute"):
+                metric = (
+                    f"aiplatform.googleapis.com/{location}_online_prediction_{unit}_per_base_model"
+                )
+                if f"Quota exceeded for {metric}" in message:
+                    body = {"error": {"details": [{"violations": [{"quotaId": metric}]}]}}
     return httpx.Response(
         status,
-        json={"error": hint},
+        json=body,
         request=httpx.Request("POST", endpoint),
         headers={"retry-after": retry_after} if retry_after else None,
     )
@@ -141,6 +161,8 @@ class VertexClient(_Connection, llm._OpenAICompatClient):
                     response = _failure(exc, self.base_url)
                 measured.response(response)
                 model_queue.queue.rate_limited(self.base_url, response)
+            if model_queue.parse_rate_limit(response.text).quota:
+                return response  # Google asks for a quota increase, not an immediate retry.
             if response.status_code not in llm._RETRYABLE_STATUSES or retry == len(
                 llm._RETRY_BACKOFF
             ):
@@ -192,6 +214,8 @@ class AsyncVertexClient(_Connection, llm._AsyncOpenAICompatClient):
                         response = _failure(exc, self.base_url)
                     measured.response(response)
                     model_queue.queue.rate_limited(self.base_url, response)
+            if model_queue.parse_rate_limit(response.text).quota:
+                return response
             if response.status_code not in llm._RETRYABLE_STATUSES or retry == len(
                 llm._RETRY_BACKOFF
             ):

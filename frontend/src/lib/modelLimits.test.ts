@@ -24,15 +24,15 @@ describe("limitLabel", () => {
     expect(limitLabel(null, "heavy", now)).toBeNull();
   });
 
-  it("names the time a cooldown or a used-up quota ends", () => {
+  it("shows the app's retry pause without claiming the credit balance is exhausted", () => {
     expect(limitLabel(status({ cooldown_seconds: 300 }), "heavy", now)).toMatch(
       /^At limit, resumes /,
     );
     expect(limitLabel(status({ exhausted_seconds: 600 }), "heavy", now)).toMatch(
-      /^Quota used up, resumes /,
+      /^Requests paused, retry at /,
     );
     expect(limitLabel(status({ exhausted_seconds: 7200 }), "heavy", now)).toBe(
-      "Quota used up for now",
+      "Requests paused for now",
     );
   });
 });

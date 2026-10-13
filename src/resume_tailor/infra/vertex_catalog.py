@@ -35,6 +35,15 @@ MODELS = (
     ("zai-org/glm-5.2-maas", "GLM 5.2 API Service", "Zai-org"),
 )
 
+# Google model pages, checked 2026-10-13. These models are newer than the
+# pinned SDK's region catalog; absent metadata must not suggest every region.
+# https://docs.cloud.google.com/gemini-enterprise-agent-platform/models/partner-models/claude/haiku-5-5
+# https://docs.cloud.google.com/gemini-enterprise-agent-platform/models/partner-models/claude/sonnet-5-5
+_LOCATION_OVERRIDES = {
+    "claude-haiku-5-5": ("global", "us", "eu"),
+    "claude-sonnet-5-5": ("global", "us", "eu"),
+}
+
 
 def normalize_model(model: str) -> str:
     return model.strip().removeprefix("vertex_ai/")
@@ -85,17 +94,23 @@ def clear_credentials() -> None:
 
 
 def suggestions() -> list[dict]:
-    catalog = sdk().model_cost
     return [
         {
             "id": model,
             "name": name,
             "publisher": publisher,
             "reasoning": supports_effort(model),
-            "locations": catalog.get(f"vertex_ai/{model}", {}).get("supported_regions") or [],
+            "locations": model_locations(model),
         }
         for model, name, publisher in MODELS
     ]
+
+
+def model_locations(model: str) -> list[str]:
+    model = normalize_model(model)
+    if model in _LOCATION_OVERRIDES:
+        return list(_LOCATION_OVERRIDES[model])
+    return list(sdk().model_cost.get(f"vertex_ai/{model}", {}).get("supported_regions") or [])
 
 
 def supports_effort(model: str) -> bool:
@@ -109,9 +124,7 @@ def supports_effort(model: str) -> bool:
 
 
 def validate_location(model: str, location: str) -> None:
-    regions = (
-        sdk().model_cost.get(f"vertex_ai/{normalize_model(model)}", {}).get("supported_regions")
-    )
+    regions = model_locations(model)
     if regions and location not in regions:
         # LiteLLM otherwise silently switches to its first catalog region.
         raise ValueError(

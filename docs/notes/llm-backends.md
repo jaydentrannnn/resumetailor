@@ -423,3 +423,15 @@ upgrade.
 **What:** Omit inherited OpenAI-compatible sampling controls on Vertex Claude requests; preserve Gemini sampling. Bumped Vertex transport cache identity to `vertex-json-v2`. The owner supplied a Desktop OAuth client file outside the repository; its app identity is configured in GitHub and bundled into release builds.
 **Why:** Direct SDK transformation reproduced Sonnet 5.5 rejecting `temperature=0` even though its supported-parameter list includes temperature. Claude's own defaults work with adaptive thinking. App OAuth registration identifies ResumeTailor; it is separate from each user's local account credentials and billing project.
 **Impact:** Claude connection checks and reasoning calls avoid the incompatible default. Supersedes the earlier note's missing-client state: the configured release now includes the app identity. Account tokens remain local; the downloaded client file is not committed.
+
+## 2026-10-13 — Vertex Haiku/Sonnet 5.5 endpoint locations
+
+**What:** Added Google-documented global/us/eu location metadata for Haiku and Sonnet 5.5, shared by the dropdown catalog and request validation.
+**Why:** The pinned LiteLLM catalog has no regions for these new models, so the picker offered generic regions. Live Haiku requests in us-east1 and us-west4 returned 404; Google's model pages list global and US/EU multi-region endpoints. Google OAuth now saves successfully; Gemini 3.5 Flash Lite answered a live JSON connection test. A Haiku global test instead returned a 429 quota/capacity failure.
+**Impact:** Invalid Haiku/Sonnet 5.5 locations fail locally with the supported choices. Existing settings are preserved rather than silently relocated; other models retain SDK metadata and unknown models retain custom-location support. Public installer publication is still pending final validation.
+
+## 2026-10-13 — Vertex quota diagnostics and welcome-credit eligibility
+
+**What:** Replaced the misleading “Quota used up” pause label with “Requests paused”; surfaced only allowlisted Google Claude lineage quota metric constants from LiteLLM's wrapped error; added managed-partner paid-billing and welcome-credit disclosure.
+**Why:** Direct Google REST testing confirmed RESOURCE_EXHAUSTED for the Haiku US request metric, independently of LiteLLM and the app's saved pause. Google explicitly requests a quota increase. The user confirmed a Paid billing account. Google's current free-trial terms exclude managed partner models from the standard $300 welcome credit, even after upgrading. Endpoint admission remains shared; switching models on the same endpoint can show a saved pause without a fresh request.
+**Impact:** Credit balance no longer looks depleted in the UI. Users can identify a recognized quota and request an increase themselves. Gemini access and OAuth sign-in are live-validated; Haiku US access remains blocked by the project's Google quota. Reading project quotas programmatically was unavailable because Cloud Resource Manager returned SERVICE_DISABLED; no Google Cloud configuration or quota was changed.

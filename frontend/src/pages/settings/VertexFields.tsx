@@ -62,6 +62,20 @@ export function VertexFields({ model, id }: { model: RoleModel; id: string }) {
       <p className="text-xs text-ink-muted sm:col-span-2">
         Managed text models only. Availability depends on your project and location.
       </p>
+      {selected && selected.publisher !== "Google" && (
+        <p className="text-xs text-ink-muted sm:col-span-2">
+          Managed partner models require paid Google Cloud billing. The $300 welcome credit does not
+          cover their usage.{" "}
+          <a
+            className="underline"
+            href="https://docs.cloud.google.com/free/docs/free-cloud-features"
+            target="_blank"
+            rel="noreferrer"
+          >
+            Google Cloud credit terms
+          </a>
+        </p>
+      )}
       {vertex?.detail && <p className="text-xs text-ink-muted sm:col-span-2">{vertex.detail}</p>}
     </>
   );

@@ -1060,12 +1060,20 @@ Settings and onboarding offer Vertex for both Light and Heavy. Connect Google Cl
 in the system browser, then explicitly choose a project, location and model per role.
 Model and location use dropdowns with explicit custom-entry options. The curated
 managed text catalog includes current Gemini, Claude and GLM 5.2 API Service models;
-SDK metadata supplies known location and reasoning capabilities. Manual IDs also
+SDK metadata supplies known location and reasoning capabilities; Google-documented
+overrides supply `global`, `us` and `eu` for Haiku/Sonnet 5.5, whose region metadata
+is missing from the pinned SDK. Other regions fail before a request. Manual IDs also
 work, with or without `vertex_ai/`. Self-deployed models, image/embedding models and
 dedicated robotics/computer-use models are excluded. Suggestions establish SDK routing, not project
 access or credit eligibility. Connection tests make one small generating request.
 Usage is billed to the selected project; check Google Cloud Billing for actual credit
-coverage. This route is separate from the Google AI Studio Gemini provider.
+eligibility. The standard $300 welcome credit excludes managed partner models such
+as Claude; those require paid billing and incur charges outside that credit
+([Google's free-trial terms](https://docs.cloud.google.com/free/docs/free-cloud-features)).
+Request quotas are separate from credit balances. Repeated 429s pause the endpoint
+locally; the displayed retry time is the app's pause, not a guaranteed Google quota
+reset. Recognized Claude lineage quota failures name the Google metric to check.
+This route is separate from the Google AI Studio Gemini provider.
 
 The SDK is embedded: no LiteLLM proxy, server URL, gcloud command or model deployment.
 Refresh credentials use the OS secret store. Reconnect replaces the shared account;

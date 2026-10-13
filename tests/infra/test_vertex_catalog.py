@@ -31,3 +31,30 @@ def test_location_host_matches_google_endpoint(location, host):
     assert vertex_catalog.endpoint("test-project", location) == (
         f"https://{host}/v1/projects/test-project/locations/{location}"
     )
+
+
+@pytest.mark.parametrize("model", ["claude-haiku-5-5", "claude-sonnet-5-5"])
+def test_new_claude_regions_use_google_metadata_when_sdk_catalog_is_missing(monkeypatch, model):
+    monkeypatch.setattr(vertex_catalog, "sdk", lambda: SimpleNamespace(
+        model_cost={}, get_supported_openai_params=lambda **_kwargs: [],
+    ))
+    entry = next(item for item in vertex_catalog.suggestions() if item["id"] == model)
+    assert entry["locations"] == ["global", "us", "eu"]
+    for location in entry["locations"]:
+        vertex_catalog.validate_location(f"vertex_ai/{model}", location)
+    for location in ("us-east1", "us-west4"):
+        with pytest.raises(ValueError, match="global, us, eu"):
+            vertex_catalog.validate_location(model, location)
+
+
+def test_other_models_keep_sdk_regions_and_unknown_models_allow_custom_locations(monkeypatch):
+    monkeypatch.setattr(vertex_catalog, "sdk", lambda: SimpleNamespace(
+        model_cost={"vertex_ai/gemini-2.5-pro": {"supported_regions": ["us-central1"]}},
+        get_supported_openai_params=lambda **_kwargs: [],
+    ))
+    entry = next(item for item in vertex_catalog.suggestions() if item["id"] == "gemini-2.5-pro")
+    assert entry["locations"] == ["us-central1"]
+    vertex_catalog.validate_location("gemini-2.5-pro", "us-central1")
+    with pytest.raises(ValueError, match="us-central1"):
+        vertex_catalog.validate_location("gemini-2.5-pro", "global")
+    vertex_catalog.validate_location("custom-model", "us-east1")

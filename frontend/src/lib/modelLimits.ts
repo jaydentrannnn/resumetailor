@@ -10,7 +10,7 @@ export const PLAN_OPTIONS: { value: ModelPlan | ""; label: string }[] = [
   { value: "local", label: "On this computer" },
 ];
 
-/** "At limit, resumes 14:05" / "Quota used up for now" for a role's server, or null. */
+/** The app's retry pause for a role's server, or null; this is not a credit balance. */
 export function limitLabel(
   status: ModelQueueStatus | null,
   role: ModelRole,
@@ -26,8 +26,8 @@ export function limitLabel(
     });
   if ((endpoint.exhausted_seconds ?? 0) > 0)
     return endpoint.exhausted_seconds! > 3600
-      ? "Quota used up for now"
-      : `Quota used up, resumes ${at(endpoint.exhausted_seconds!)}`;
+      ? "Requests paused for now"
+      : `Requests paused, retry at ${at(endpoint.exhausted_seconds!)}`;
   if (endpoint.cooldown_seconds > 0) return `At limit, resumes ${at(endpoint.cooldown_seconds)}`;
   return null;
 }

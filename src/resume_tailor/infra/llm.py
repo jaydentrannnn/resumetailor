@@ -109,7 +109,7 @@ def unavailable(exc: BaseException) -> int | None:
 def _exhausted_error(base_url: str) -> LLMError:
     wait = model_queue.queue.exhausted_for(base_url)
     return LLMError(
-        f"{base_url} returned HTTP 429: quota used up; try again in about "
+        f"{base_url}: requests paused after HTTP 429; retry in about "
         f"{max(1, round(wait / 60))} min",
         status=429,
     )

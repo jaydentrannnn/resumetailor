@@ -20,6 +20,13 @@ const defaults: ModelSelection = {
 };
 const models = [
   {
+    id: "gemini-3.8-flash",
+    name: "Gemini 3.8 Flash",
+    publisher: "Google",
+    locations: ["global"],
+    reasoning: true,
+  },
+  {
     id: "claude-sonnet-5-5",
     name: "Claude Sonnet 5.5",
     publisher: "Anthropic",
@@ -85,9 +92,21 @@ describe("Vertex settings dropdowns", () => {
     });
     expect(changed).toHaveBeenLastCalledWith({ model_name: "newer-model" });
     fireEvent.change(screen.getByRole("combobox", { name: "Model" }), {
-      target: { value: models[0].id },
+      target: { value: "claude-sonnet-5-5" },
     });
     expect(screen.queryByRole("textbox", { name: "Custom model ID" })).toBeNull();
+  });
+
+  it("explains welcome-credit eligibility for partner models", () => {
+    render(<Fields />);
+    expect(screen.getByText(/\$300 welcome credit/)).toBeTruthy();
+    expect(
+      screen.getByRole("link", { name: "Google Cloud credit terms" }).getAttribute("href"),
+    ).toBe("https://docs.cloud.google.com/free/docs/free-cloud-features");
+    fireEvent.change(screen.getByRole("combobox", { name: "Model" }), {
+      target: { value: "gemini-3.8-flash" },
+    });
+    expect(screen.queryByText(/\$300 welcome credit/)).toBeNull();
   });
 
   it("uses a location dropdown while preserving a saved region outside the model suggestions", () => {
