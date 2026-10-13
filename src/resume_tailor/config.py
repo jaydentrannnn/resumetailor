@@ -1167,7 +1167,7 @@ def fingerprint(purpose: str, *, include_guidance: bool = True) -> str:
         from importlib.metadata import version
 
         value += (
-            f"|{backend.vertex_project}|{backend.vertex_location}|vertex-json-v1"
+            f"|{backend.vertex_project}|{backend.vertex_location}|vertex-json-v2"
             f"|litellm:{version('litellm')}"
         )
     if backend.provider == "openai" and forwards_effort(backend):

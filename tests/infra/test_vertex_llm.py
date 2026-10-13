@@ -111,6 +111,22 @@ def test_one_repair_then_failure(transport):
     assert transport.seen[1]["messages"][-2]["role"] == "assistant"
 
 
+def test_vertex_claude_omits_sampling_even_when_sdk_lists_temperature(transport):
+    def complete(**kwargs):
+        # Sonnet 5.5 rejects temperature=0 although the SDK lists temperature.
+        assert "temperature" not in kwargs
+        transport.seen.append(kwargs)
+        return SimpleNamespace(model_dump=lambda: {
+            "choices": [{"message": {"content": '{"ok":true}'}, "finish_reason": "stop"}],
+        })
+
+    transport.sdk.completion = complete
+    assert parse(VertexClient(transport.backend, "extract")).parsed_output.ok
+    client = VertexClient(transport.backend, "extract")
+    gemini = client._parameters({"model": "gemini-3.8-flash", "temperature": 0}, 30)
+    assert gemini["temperature"] == 0
+
+
 def test_truncation_escalates_but_empty_blocked_and_removed_connections_do_not(transport):
     transport.replies.extend([('{"ok":', "length"), ('{"ok":true}', "stop")])
     assert parse(VertexClient(transport.backend, "extract")).parsed_output.ok

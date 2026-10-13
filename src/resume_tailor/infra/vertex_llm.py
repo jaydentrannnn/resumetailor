@@ -94,6 +94,10 @@ class _Connection:
         for optional in ("response_format", "reasoning_effort", "temperature"):
             if optional not in params:
                 request.pop(optional, None)
+        if payload["model"].startswith("claude-"):
+            # New Claude models reject temperature=0, and adaptive thinking uses
+            # the model's own sampling defaults. Keep these controls with Claude.
+            request.pop("temperature", None)
         return {
             **request,
             "model": f"vertex_ai/{payload['model']}",
