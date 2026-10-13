@@ -399,3 +399,21 @@ upgrade.
   `|effort-sent` so results cached without effort are not reused.
 - **Resumes at once:** 1-8 (was 1-4). A run makes at most ~3 model calls at once, so cloud
   request limits above ~12 add nothing at 4; paid providers can now use the extra slots.
+
+## 2026-10-13 — Vertex SDK packaging and explicit regions
+
+**What:** Vertex uses the pinned full LiteLLM SDK without launching its proxy; supported-region metadata is checked before calling the SDK.
+**Why:** The documented litellm-core distribution was unavailable from the package index, and LiteLLM otherwise silently substitutes a supported region.
+**Impact:** Desktop bundles grow with SDK dependencies. Incompatible locations fail explicitly. Browser sign-in requires a ResumeTailor-owned Desktop OAuth client supplied at release build time.
+
+## 2026-10-13 — Vertex credential lifecycle and release checks
+
+**What:** Connection removal clears app and pinned-SDK token caches; cancelled token exchanges cannot save late credentials. Vertex fingerprints include the SDK version, and Fill never falls back into or out of Vertex automatically.
+**Why:** LiteLLM caches Google credentials globally and its translations can change with SDK updates. Account and billing-project choices must survive concurrent model work without silent rerouting.
+**Impact:** Verify SDK cache purge and explicit-region behavior when upgrading LiteLLM. Windows frozen sidecar/catalog smoke passed; real Google sign-in and macOS release verification still require the release owner's OAuth client and a Mac. Owner OAuth configuration is embedded from temporary build files, not stageable repository files.
+
+## 2026-10-13 — Vertex dropdowns and managed model catalog
+
+**What:** Model and Vertex location now use native selects matching Provider/Plan, with custom-entry options that preserve existing values. Replaced broad SDK suggestions with the supplied list's 22 managed text models, including publisher-qualified `zai-org/glm-5.2-maas`. Added explicit `us`/`eu` multi-region endpoint routing.
+**Why:** The broader Model Garden list also contains self-deployed models, image generators, embeddings and specialized robotics/computer-use models that cannot serve this text-only pipeline through a model ID alone. Current Google docs confirm the managed model IDs and multi-region hostnames; SDK metadata remains the capability/region source.
+**Impact:** Deployment-based and specialized models are omitted from suggestions; manual IDs remain available. Catalog membership does not guarantee project access, availability or credit coverage. GitHub OAuth client configuration is still absent at release preparation, so sign-in is unavailable unless the owner supplies it.

@@ -88,6 +88,21 @@ def _item(
 
 def _model_item() -> dict[str, Any]:
     settings = JobSettings.model_validate(workspace.load_settings()["defaults"])
+    if settings.ai_models and settings.ai_models.light.provider == "vertex_ai":
+        from resume_tailor.infra import vertex_auth
+
+        choice = settings.ai_models.light
+        if not choice.model_name or not choice.vertex_project or not choice.vertex_location:
+            return _item("model", "AI model", False, "Choose a Vertex model, project and location.",
+                         "Model settings", "/settings")
+        try:
+            if not vertex_auth.state()["connected"]:
+                return _item("model", "AI model", False,
+                             "Connect Google Cloud in AI model settings.",
+                             "Connect Google Cloud", "/settings")
+        except vertex_auth.ConnectionError as exc:
+            return _item("model", "AI model", False, str(exc),
+                         "Reconnect Google Cloud", "/settings")
     profile, overrides, effort = model_routing(settings)
     gaps = config.credential_gaps(profile, overrides)
     if gaps:

@@ -14,6 +14,9 @@
 # Playwright client with its Node driver. No browser is bundled: fills drive the
 # student's own browser over CDP or the extension relay.
 
+import json
+import os
+import tempfile
 from pathlib import Path
 
 from PyInstaller.utils.hooks import collect_all, collect_data_files, collect_submodules
@@ -27,8 +30,24 @@ datas = [(str(SPA), "frontend/dist")]
 binaries = []
 hiddenimports = collect_submodules("resume_tailor") + collect_submodules("uvicorn")
 datas += collect_data_files("resume_tailor")
-for package in ("docx", "docxtpl", "pdfplumber", "pypdfium2"):
+for package in ("docx", "docxtpl", "pdfplumber", "pypdfium2", "litellm", "tiktoken"):
     datas += collect_data_files(package)
+hiddenimports += collect_submodules("google.auth") + collect_submodules("google.oauth2")
+hiddenimports += collect_submodules("google_auth_oauthlib")
+os.environ["LITELLM_LOCAL_MODEL_COST_MAP"] = "True"
+hiddenimports += collect_submodules("litellm.llms.vertex_ai")
+hiddenimports += collect_submodules("litellm.llms.anthropic")
+# Installed-app client configuration is supplied by the release owner, never user tokens.
+client_id = os.environ.get("RESUME_TAILOR_GOOGLE_CLIENT_ID", "")
+client_secret = os.environ.get("RESUME_TAILOR_GOOGLE_CLIENT_SECRET", "")
+if client_id and client_secret:
+    # Keep installed-app configuration out of stageable repository folders.
+    oauth_temp = tempfile.TemporaryDirectory(prefix="resumetailor-oauth-")
+    oauth_config = Path(oauth_temp.name) / "vertex_oauth_client.json"
+    oauth_config.write_text(
+        json.dumps({"client_id": client_id, "client_secret": client_secret}), "utf-8",
+    )
+    datas.append((str(oauth_config), "resume_tailor/infra"))
 for package in ("playwright",):
     pkg_datas, pkg_binaries, pkg_hidden = collect_all(package)
     datas += pkg_datas

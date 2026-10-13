@@ -1,9 +1,37 @@
 import { describe, expect, it } from "vitest";
 import { DEFAULT_SETTINGS } from "../state/runDefaults";
 import { customCredentialName, modelsFor, selectionReady, withSelection } from "./aiModels";
-import { endpointKey, queueEndpoints } from "./modelEndpoints";
+import { endpointKey, queueEndpoints, selectionEndpoint } from "./modelEndpoints";
 
 describe("shared model settings", () => {
+  it("requires a Vertex model, project and location and derives its endpoint", () => {
+    const pick = {
+      provider: "vertex_ai" as const,
+      model_name: "vertex_ai/claude-sonnet-5-5",
+      api_format: "openai" as const,
+      base_url: "",
+      vertex_project: "test-project",
+      vertex_location: "global",
+    };
+    expect(selectionReady(pick)).toBe(true);
+    expect(selectionReady({ ...pick, vertex_project: "" })).toBe(false);
+    expect(selectionReady({ ...pick, vertex_location: "" })).toBe(false);
+    expect(selectionReady({ ...pick, model_name: "" })).toBe(false);
+    expect(selectionReady({ ...pick, vertex_location: "evil.example" })).toBe(false);
+    expect(selectionEndpoint(pick, null)).toBe(
+      "https://aiplatform.googleapis.com/v1/projects/test-project/locations/global",
+    );
+    expect(selectionEndpoint({ ...pick, vertex_location: "us-east5" }, null)).toContain(
+      "us-east5-aiplatform.googleapis.com",
+    );
+    for (const region of ["us", "eu"]) {
+      const selection = { ...pick, vertex_location: region };
+      expect(selectionReady(selection)).toBe(true);
+      expect(selectionEndpoint(selection, null)).toBe(
+        `https://aiplatform.${region}.rep.googleapis.com/v1/projects/test-project/locations/${region}`,
+      );
+    }
+  });
   it("keeps role selections independent and clears migrated overrides only after a light edit", () => {
     const initial = {
       ...DEFAULT_SETTINGS,

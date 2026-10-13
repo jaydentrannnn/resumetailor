@@ -6,6 +6,7 @@ import { useRunState } from "../../state/runState";
 import { AiAdvancedSettings } from "./AiAdvancedSettings";
 import { ModelRow } from "./ModelRow";
 import type { RoleModel } from "./useRoleModel";
+import { VertexConnectionPanel } from "./VertexConnectionPanel";
 
 const ADVANCED_KEY = "rt.settings.aiAdvanced";
 
@@ -69,6 +70,9 @@ export function ModelsCard({
         <ModelRow model={light} queue={queue} />
         <ModelRow model={heavy} queue={queue} />
       </fieldset>
+      {[light, heavy].some((m) => m.selection.provider === "vertex_ai") && (
+        <VertexConnectionPanel />
+      )}
       {advanced && showAdvanced && (
         <div className="mt-4 border-t border-line pt-4">
           <AiAdvancedSettings />

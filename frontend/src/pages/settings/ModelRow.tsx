@@ -8,6 +8,8 @@ import { useRunState } from "../../state/runState";
 import { CheckResultLine } from "./CheckResultLine";
 import { CustomServerFields, PlanField } from "./ModelRowFields";
 import type { RoleModel } from "./useRoleModel";
+import { VertexFields } from "./VertexFields";
+import { VertexModelField } from "./VertexModelField";
 
 const ROLES = {
   light: { name: "Light task model", uses: "Tailoring, cover letters, extraction and app tools." },
@@ -33,7 +35,7 @@ export function ModelRow({
     selection.provider === "anthropic" ? "claude" : selection.provider,
     selection.model_name || fallback,
   );
-  const models = connection.local?.models ?? [];
+  const models = connection.vertex?.models.map((m) => m.id) ?? connection.local?.models ?? [];
   return (
     <div role="group" aria-labelledby={`${id}-name`} className="min-w-0 py-4 first:pt-0 last:pb-0">
       <div className="flex flex-wrap items-center justify-between gap-x-3 gap-y-1">
@@ -58,6 +60,8 @@ export function ModelRow({
                 base_url: "",
                 api_format: "openai",
                 plan: null,
+                vertex_project: "",
+                vertex_location: "",
               })
             }
           >
@@ -68,26 +72,31 @@ export function ModelRow({
             ))}
           </select>
         </label>
-        <label className="block min-w-0 text-sm font-medium">
-          Model
-          <input
-            className="field mt-1 font-mono"
-            value={selection.model_name}
-            placeholder={fallback}
-            list={models.length ? `${id}-models` : undefined}
-            onChange={(e) => patch({ model_name: e.target.value })}
-          />
-          {models.length > 0 && (
-            <datalist id={`${id}-models`}>
-              {models.map((name) => (
-                <option key={name} value={name} />
-              ))}
-            </datalist>
-          )}
-        </label>
+        {selection.provider === "vertex_ai" ? (
+          <VertexModelField model={model} />
+        ) : (
+          <label className="block min-w-0 text-sm font-medium">
+            Model
+            <input
+              className="field mt-1 font-mono"
+              value={selection.model_name}
+              placeholder={fallback}
+              list={models.length ? `${id}-models` : undefined}
+              onChange={(e) => patch({ model_name: e.target.value })}
+            />
+            {models.length > 0 && (
+              <datalist id={`${id}-models`}>
+                {models.map((name) => (
+                  <option key={name} value={name} />
+                ))}
+              </datalist>
+            )}
+          </label>
+        )}
         {selection.provider === "custom" && (
           <CustomServerFields selection={selection} patch={patch} />
         )}
+        {selection.provider === "vertex_ai" && <VertexFields model={model} id={id} />}
         <PlanField selection={selection} patch={patch} />
       </div>
       <RowNotes model={model} />
@@ -108,7 +117,10 @@ export function ModelRow({
 function RowStatus({ model, limit }: { model: RoleModel; limit: string | null }) {
   const { check, ready, connection, retest } = model;
   let chip;
-  if (connection.needsKey) chip = <StatusChip tone="attention">Needs a key</StatusChip>;
+  const needsGoogle =
+    model.selection.provider === "vertex_ai" && !connection.vertex?.connection?.connected;
+  if (needsGoogle) chip = <StatusChip tone="attention">Connect Google Cloud</StatusChip>;
+  else if (connection.needsKey) chip = <StatusChip tone="attention">Needs a key</StatusChip>;
   else if (limit) chip = <StatusChip tone="attention">{limit}</StatusChip>;
   else if (!ready) chip = <StatusChip tone="muted">Incomplete</StatusChip>;
   else if (check === "testing") chip = <StatusChip tone="live">Testing…</StatusChip>;
@@ -117,7 +129,7 @@ function RowStatus({ model, limit }: { model: RoleModel; limit: string | null })
   return (
     <div className="flex items-center gap-2">
       {chip}
-      {ready && !connection.needsKey && (
+      {ready && !connection.needsKey && !needsGoogle && (
         <Button size="sm" variant="plain" loading={check === "testing"} onClick={retest}>
           Test again
         </Button>

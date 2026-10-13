@@ -1,4 +1,5 @@
 import type { AppConfig } from "../api";
+import type { VertexModel } from "../api";
 import type { ModelRole, ModelSelection } from "./aiModels";
 
 export type EffortLevel = "low" | "medium" | "high";
@@ -43,7 +44,14 @@ export const EFFORT_STEPS: { id: EffortStep; label: string; help: string; role: 
 ];
 
 /** Providers that receive the effort setting (`config.forwards_effort`). */
-export function receivesEffort(selection: ModelSelection): boolean {
+export function receivesEffort(
+  selection: ModelSelection,
+  vertexModels: VertexModel[] = [],
+): boolean {
+  if (selection.provider === "vertex_ai")
+    return vertexModels.some(
+      (m) => m.id === selection.model_name.replace(/^vertex_ai\//, "") && m.reasoning,
+    );
   if (selection.provider === "custom") return selection.api_format === "anthropic";
   return ["anthropic", "openai", "gemini"].includes(selection.provider);
 }

@@ -1054,6 +1054,48 @@ The panel is a mode of the Resume view with a live draft preview:
 
 ## 7. Backend / model routing detail
 
+### Google Cloud / Vertex AI
+
+Settings and onboarding offer Vertex for both Light and Heavy. Connect Google Cloud
+in the system browser, then explicitly choose a project, location and model per role.
+Model and location use dropdowns with explicit custom-entry options. The curated
+managed text catalog includes current Gemini, Claude and GLM 5.2 API Service models;
+SDK metadata supplies known location and reasoning capabilities. Manual IDs also
+work, with or without `vertex_ai/`. Self-deployed models, image/embedding models and
+dedicated robotics/computer-use models are excluded. Suggestions establish SDK routing, not project
+access or credit eligibility. Connection tests make one small generating request.
+Usage is billed to the selected project; check Google Cloud Billing for actual credit
+coverage. This route is separate from the Google AI Studio Gemini provider.
+
+The SDK is embedded: no LiteLLM proxy, server URL, gcloud command or model deployment.
+Refresh credentials use the OS secret store. Reconnect replaces the shared account;
+Disconnect removes local credentials and cached tokens without revoking Google's
+grant or changing existing gcloud ADC. A captured client fails after its connection
+revision changes; it cannot silently use a new account. Vertex disables Fill's
+automatic Heavy-to-Light fallback into or out of a Vertex connection. Project and
+location enter saved backend snapshots and content-cache identity; credentials do not.
+
+The release owner must register a Google **Desktop app** OAuth client, configure
+an external consent screen for `openid`, email and `cloud-platform`, and complete
+any Google verification required for public distribution. Enable the Resource
+Manager API in the OAuth client's project for project discovery. Users must have
+Vertex access and the API and billing enabled in their own inference project;
+the app never enables services, creates projects or accepts model terms for them.
+
+For source builds, set `RESUME_TAILOR_GOOGLE_CLIENT_ID` and
+`RESUME_TAILOR_GOOGLE_CLIENT_SECRET` in the backend environment. For desktop releases,
+set the GitHub Actions variable `RESUME_TAILOR_GOOGLE_CLIENT_ID` and secret
+`RESUME_TAILOR_GOOGLE_CLIENT_SECRET`; PyInstaller embeds the installed-app client
+configuration. These identify the app, not the user's billing account. Without
+both values, the app reports Google sign-in unavailable. OAuth's Testing mode is
+for development; complete the production consent setup before public release.
+Callback listeners bind only to `127.0.0.1`, require state and PKCE, and expire in
+five minutes. No exemption is added to the API request gate.
+
+Windows and macOS frozen sidecar smoke tests check the lazy SDK imports and bundled
+Vertex catalog without calling Google. Public release still requires a real browser
+sign-in and model test on each OS with the owner's configured OAuth client.
+
 Every physical model request enters one shared FIFO queue per endpoint, including
 retries. Local servers default to one simultaneous request; cloud endpoints default
 to three. A queued request starts as soon as a slot opens, with no pause between

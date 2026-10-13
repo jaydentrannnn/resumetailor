@@ -71,7 +71,9 @@ def bound_client_timeout(client: Any, seconds: float) -> Any:
     current = getattr(client, "timeout", None)
     if isinstance(current, (int, float)):
         client.timeout = min(current, limit)
-    elif current is not None and all(hasattr(current, key) for key in ("connect", "read", "write", "pool")):
+    elif current is not None and all(
+        hasattr(current, key) for key in ("connect", "read", "write", "pool")
+    ):
         values = {key: min(value, limit) if isinstance(value := getattr(current, key), (int, float))
                   else limit for key in ("connect", "read", "write", "pool")}
         client.timeout = type(current)(**values)
@@ -440,6 +442,11 @@ class _OpenAICompatClient:
     def _check_status(self, response: httpx.Response, model: str) -> None:
         if response.status_code < 400:
             return
+        if self.origin == "vertex_ai":
+            from .vertex_llm import check_status
+
+            check_status(response, model)
+            return
         detail = response.text[:400]
         if response.status_code == 404:
             # By far the most common first error: the tag is not available to this
@@ -615,6 +622,11 @@ def client_for(purpose: str) -> Any:
         return fake_llm.FakeClient(purpose)
     backend = config.backend_for(purpose)
 
+    if backend.provider == "vertex_ai":
+        from .vertex_llm import VertexClient
+
+        return llm_telemetry.wrap(VertexClient(backend, purpose), purpose, backend.origin)
+
     if backend.provider == "anthropic":
         import anthropic
 
@@ -781,13 +793,16 @@ class _AsyncOpenAICompatClient:
                     _LEARNED_CEILING[(self.base_url, model)] = ceiling
                 return _Response(parsed, finish)
             except ValidationError as error:
-                if finish == "length" and ceiling < cap and escalations < config.MAX_TOKEN_ESCALATIONS:
+                if (finish == "length" and ceiling < cap
+                        and escalations < config.MAX_TOKEN_ESCALATIONS):
                     telemetry.retry_reason("token_escalation")
                     ceiling = min(ceiling * 2, cap)
                     escalations += 1
                     continue
                 if finish == "length":
-                    raise LLMError(f"{model!r} hit its {ceiling}-token ceiling before finishing JSON") from error
+                    raise LLMError(
+                        f"{model!r} hit its {ceiling}-token ceiling before finishing JSON"
+                    ) from error
                 repair = dict(payload)
                 repair["messages"] = [
                     *messages,
@@ -804,7 +819,9 @@ class _AsyncOpenAICompatClient:
                 try:
                     parsed = output_format.model_validate_json(_extract_json_object(repaired))
                 except ValidationError as exc:
-                    raise LLMError(f"{model!r} did not return valid {output_format.__name__} JSON") from exc
+                    raise LLMError(
+                        f"{model!r} did not return valid {output_format.__name__} JSON"
+                    ) from exc
                 return _Response(parsed, repaired_finish)
 
 
@@ -813,6 +830,12 @@ def async_client_for(purpose: str) -> Any:
     if fake_llm.enabled():  # e2e tests only; see fake_llm.py
         return fake_llm.AsyncFakeClient(purpose)
     backend = config.backend_for(purpose)
+    if backend.provider == "vertex_ai":
+        from .vertex_llm import AsyncVertexClient
+
+        return llm_telemetry.wrap(
+            AsyncVertexClient(backend, purpose), purpose, backend.origin, asynchronous=True,
+        )
     if backend.provider == "anthropic":
         import anthropic
 

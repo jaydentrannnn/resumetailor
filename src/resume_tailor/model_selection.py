@@ -17,7 +17,7 @@ ModelRole = Literal["light", "heavy"]
 #: allowance (BytePlus ModelArk, Cursor), as opposed to pay-as-you-go ("paid").
 ModelPlan = Literal["free", "paid", "subscription", "local"]
 ModelProvider = Literal[
-    "ollama", "ollama-cloud", "lmstudio", "gemini", "anthropic", "openai", "custom"
+    "ollama", "ollama-cloud", "lmstudio", "gemini", "anthropic", "openai", "custom", "vertex_ai"
 ]
 
 
@@ -38,6 +38,8 @@ class ModelSelection(BaseModel):
     base_url: str = Field(default="", max_length=2048)
     #: None = inferred from the provider (`effective_plan`).
     plan: ModelPlan | None = None
+    vertex_project: str = Field(default="", max_length=63)
+    vertex_location: str = Field(default="", max_length=40)
 
     def effective_plan(self) -> ModelPlan | None:
         """The chosen plan, else a guess: Gemini's free tier, paid Anthropic/OpenAI.
@@ -46,11 +48,11 @@ class ModelSelection(BaseModel):
             return self.plan
         if self.provider == "gemini":
             return "free"
-        if self.provider in {"anthropic", "openai"}:
+        if self.provider in {"anthropic", "openai", "vertex_ai"}:
             return "paid"
         return None
 
-    @field_validator("model_name", "base_url")
+    @field_validator("model_name", "base_url", "vertex_project", "vertex_location")
     @classmethod
     def _strip(cls, value: str) -> str:
         return value.strip()
@@ -69,6 +71,19 @@ class ModelSelection(BaseModel):
 
     def spec(self, role: ModelRole) -> str | dict[str, Any]:
         """Resolve a selection; incomplete drafts may be saved but cannot run."""
+        if self.provider == "vertex_ai":
+            from resume_tailor.infra import vertex_auth, vertex_catalog
+
+            model = vertex_catalog.normalize_model(self.model_name)
+            if not model or not self.vertex_project or not self.vertex_location:
+                raise ValueError("Vertex AI needs a model, project ID and location")
+            return {
+                "provider": "vertex_ai", "origin": "vertex_ai", "model": model,
+                "base_url": vertex_catalog.endpoint(self.vertex_project, self.vertex_location),
+                "vertex_project": self.vertex_project, "vertex_location": self.vertex_location,
+                "credential_ref": vertex_auth.SECRET,
+                "credential_revision": vertex_auth.state()["revision"],
+            }
         if self.provider == "custom":
             if not self.base_url or not self.model_name:
                 raise ValueError("Custom server needs a server URL and model name")

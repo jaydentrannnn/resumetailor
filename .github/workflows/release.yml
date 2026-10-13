@@ -43,6 +43,8 @@ jobs:
     env:
       PYTHONUTF8: "1"
       PLAYWRIGHT_SKIP_BROWSER_DOWNLOAD: "1"
+      RESUME_TAILOR_GOOGLE_CLIENT_ID: ${{ vars.RESUME_TAILOR_GOOGLE_CLIENT_ID }}
+      RESUME_TAILOR_GOOGLE_CLIENT_SECRET: ${{ secrets.RESUME_TAILOR_GOOGLE_CLIENT_SECRET }}
     steps:
       - uses: actions/checkout@v4
       - uses: astral-sh/setup-uv@v5

@@ -15,3 +15,4 @@ export * from "./sources";
 export * from "./modelQueue";
 export * from "./coverLetter";
 export * from "./templateEdit";
+export * from "./vertex";

@@ -24,7 +24,10 @@ export function useRoleModel(role: ModelRole, secrets: SecretState[]) {
   const { check, retest } = useModelCheck(
     role,
     settings,
-    settingsLoaded && ready && !connection.needsKey,
+    settingsLoaded &&
+      ready &&
+      !connection.needsKey &&
+      (selection.provider !== "vertex_ai" || !!connection.vertex?.connection?.connected),
   );
   const patch = (fields: Partial<ModelSelection>) =>
     setSettings(withSelection(settings, role, { ...selection, ...fields }));

@@ -15,6 +15,16 @@ const config = {
 } as unknown as AppConfig;
 
 describe("effortSteps", () => {
+  it("only offers Vertex effort for a model with known capability", () => {
+    const selection = { ...pick("vertex_ai"), model_name: "vertex_ai/claude-sonnet-5-5" };
+    expect(receivesEffort(selection)).toBe(false);
+    expect(
+      receivesEffort(selection, [{ id: "claude-sonnet-5-5", reasoning: true, locations: [] }]),
+    ).toBe(true);
+    expect(
+      receivesEffort(selection, [{ id: "claude-sonnet-5-5", reasoning: false, locations: [] }]),
+    ).toBe(false);
+  });
   it("knows which providers receive effort", () => {
     expect(receivesEffort(pick("anthropic"))).toBe(true);
     expect(receivesEffort(pick("gemini"))).toBe(true);

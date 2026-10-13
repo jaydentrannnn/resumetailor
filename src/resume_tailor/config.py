@@ -368,7 +368,7 @@ PURPOSES = (
 #: Providers `parse_spec` recognises as a leading segment. Anything else is read as a bare
 #: model name, which matters more than it looks: `gemma4:cloud` contains a
 #: colon, so a naive split would take "gemma4" for a provider.
-PROVIDERS = ("anthropic", "openai", "ollama", "lmstudio", "gemini")
+PROVIDERS = ("anthropic", "openai", "ollama", "lmstudio", "gemini", "vertex_ai")
 
 #: Origins that require a credential. `api_key_for` treats every other origin's key as
 #: optional (a local server, or a hosted one that authenticates some other way) — Gemini's
@@ -436,7 +436,7 @@ LLM_STRUCTURED_MODE = _STRUCTURED_MODE_ENV or "prompt"
 #: ignores it, returning HTTP 200 with markdown prose, so sending it there is a round trip
 #: that always fails against finite quota. Gemini's shim genuinely enforces `json_schema`,
 #: so it gets the stronger default; every other origin keeps "prompt" via dict.get.
-PROVIDER_STRUCTURED_MODE: dict[str, str] = {"gemini": "schema"}
+PROVIDER_STRUCTURED_MODE: dict[str, str] = {"gemini": "schema", "vertex_ai": "schema"}
 
 #: Per-stage reasoning depth. Extraction is structured matching against a supplied
 #: vocabulary and scoring is 39 independent judgements — neither is reasoning-hard, and
@@ -651,6 +651,9 @@ class Backend(NamedTuple):
     effort: str
     origin: str = ""
     credential_ref: str = ""
+    vertex_project: str = ""
+    vertex_location: str = ""
+    credential_revision: str = ""
 
     def label(self) -> str:
         """Human-readable identity, for the run report."""
@@ -785,6 +788,9 @@ def _backend(spec: ModelSpec, purpose: str, effort: Effort) -> Backend:
             origin=origin,
             effort=chosen or spec.get("effort") or default_effort(purpose, origin),
             credential_ref=spec.get("credential_ref", ""),
+            vertex_project=spec.get("vertex_project", ""),
+            vertex_location=spec.get("vertex_location", ""),
+            credential_revision=spec.get("credential_revision", ""),
         )
     provider, model, base_url = parse_spec(spec)
     origin = provider
@@ -987,6 +993,10 @@ def forwards_effort(backend: Backend) -> bool:
     `reasoning_effort` (`llm._completion_payload`). Ollama, LM Studio and other
     OpenAI-compatible servers get nothing: their reasoning controls differ per server.
     """
+    if backend.provider == "vertex_ai":
+        from resume_tailor.infra import vertex_catalog
+
+        return vertex_catalog.supports_effort(backend.model)
     if backend.provider == "anthropic":
         return True
     if backend.origin == "gemini":
@@ -1153,6 +1163,13 @@ def fingerprint(purpose: str, *, include_guidance: bool = True) -> str:
     """
     backend = backend_for(purpose)
     value = f"{backend.origin or backend.provider}|{backend.model}|{backend.effort}"
+    if backend.origin == "vertex_ai":
+        from importlib.metadata import version
+
+        value += (
+            f"|{backend.vertex_project}|{backend.vertex_location}|vertex-json-v1"
+            f"|litellm:{version('litellm')}"
+        )
     if backend.provider == "openai" and forwards_effort(backend):
         # Results cached before OpenAI/Gemini received the effort were made without it.
         value += "|effort-sent"

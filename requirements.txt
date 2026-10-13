@@ -1,6 +1,9 @@
 # Runtime dependencies (also what the Docker image installs). Test and lint tooling
 # lives in requirements-dev.txt.
 anthropic>=1.8
+# Embedded Vertex SDK only; no proxy or gateway process is started.
+litellm==1.105.0
+google-auth-oauthlib>=1.5,<2
 # Direct dependency since llm.py talks to OpenAI-compatible endpoints itself. Already
 # used separately from the Anthropic SDK's httpx2 transport.
 httpx>=0.27

@@ -4,7 +4,14 @@ import { providerInfo } from "./providers";
 
 export type ModelRole = "light" | "heavy";
 export type ModelProvider =
-  "ollama" | "ollama-cloud" | "lmstudio" | "gemini" | "anthropic" | "openai" | "custom";
+  | "ollama"
+  | "ollama-cloud"
+  | "lmstudio"
+  | "gemini"
+  | "anthropic"
+  | "openai"
+  | "custom"
+  | "vertex_ai";
 /** How the model is paid for; sets its server's default request concurrency. */
 export type ModelPlan = "free" | "paid" | "subscription" | "local";
 export type ModelSelection = {
@@ -14,6 +21,8 @@ export type ModelSelection = {
   base_url: string;
   /** null/absent = guessed from the provider. */
   plan?: ModelPlan | null;
+  vertex_project?: string;
+  vertex_location?: string;
 };
 export type AiModels = {
   light: ModelSelection;
@@ -72,7 +81,7 @@ export function selectionProvider(selection: ModelSelection) {
 }
 
 export function selectionDefault(selection: ModelSelection, config: AppConfig | null): string {
-  if (selection.provider === "custom" || selection.provider === "openai") return "Enter model name";
+  if (["custom", "openai", "vertex_ai"].includes(selection.provider)) return "Enter model name";
   return (
     config?.model_defaults?.[selection.provider] ??
     profileDefaultModel(
@@ -83,6 +92,12 @@ export function selectionDefault(selection: ModelSelection, config: AppConfig | 
 }
 
 export function selectionReady(selection: ModelSelection): boolean {
+  if (selection.provider === "vertex_ai")
+    return (
+      !!selection.model_name.trim() &&
+      /^[a-z][a-z0-9-]{4,61}[a-z0-9]$/.test(selection.vertex_project?.trim() ?? "") &&
+      /^(global|us|eu|[a-z]+-[a-z]+[0-9]+)$/.test(selection.vertex_location?.trim() ?? "")
+    );
   if (selection.provider === "openai") return !!selection.model_name.trim();
   if (selection.provider !== "custom") return true;
   try {

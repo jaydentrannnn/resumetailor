@@ -20,6 +20,14 @@ const sentTo = (company: string) =>
 
 export const PROVIDERS: ProviderInfo[] = [
   {
+    id: "vertex_ai",
+    name: "Google Cloud / Vertex AI",
+    summary: "Use managed models billed to your Google Cloud project. Connect your Google account.",
+    keys: [],
+    local: false,
+    privacy: sentTo("Google Cloud"),
+  },
+  {
     id: "openai",
     name: "OpenAI",
     summary: "Runs on OpenAI's servers. Needs an API key.",
@@ -125,6 +133,7 @@ export const KEY_HELP: Record<string, { label: string; href: string }> = {
 
 /** Providers the Autofill model can use (`ApplySettings.model_provider`), labelled. */
 export const AUTOFILL_PROVIDERS: { id: ApplySettings["model_provider"]; label: string }[] = [
+  { id: "vertex_ai", label: "Google Cloud / Vertex AI" },
   { id: "openai", label: "OpenAI" },
   { id: "custom", label: "Custom server" },
   { id: "ollama", label: "Ollama" },

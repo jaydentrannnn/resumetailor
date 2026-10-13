@@ -11,6 +11,17 @@ export function selectionEndpoint(
   selection: ModelSelection,
   config: AppConfig | null,
 ): string | null {
+  if (selection.provider === "vertex_ai") {
+    const region = selection.vertex_location?.trim();
+    const project = selection.vertex_project?.trim();
+    if (!region || !project) return null;
+    const host = ["us", "eu"].includes(region)
+      ? `aiplatform.${region}.rep.googleapis.com`
+      : region === "global"
+        ? "aiplatform.googleapis.com"
+        : `${region}-aiplatform.googleapis.com`;
+    return `https://${host}/v1/projects/${project}/locations/${region}`;
+  }
   const bases: Record<string, string> = {
     ollama: config?.ollama_base_url ?? "http://localhost:11434/v1",
     "ollama-cloud": "https://ollama.com/v1",

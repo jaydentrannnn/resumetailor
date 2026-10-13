@@ -11,6 +11,7 @@ import {
 import { useRunState } from "../../state/runState";
 import { SELECT_WIDTH } from "./selectWidth";
 import { SettingRow } from "./SettingRow";
+import { useVertexConnection } from "./useVertexConnection";
 
 /**
  * Reasoning effort, Recommended or Custom per step (`JobSettings.effort`). Only Custom
@@ -19,11 +20,15 @@ import { SettingRow } from "./SettingRow";
 export function EffortSetting() {
   const { settings, setSettings, config } = useRunState();
   const models = modelsFor(settings);
+  const vertex = useVertexConnection(
+    [models.light, models.heavy].some((m) => m.provider === "vertex_ai"),
+  );
+  const usesEffort = (role: "light" | "heavy") => receivesEffort(models[role], vertex.models);
   const custom = settings.effort != null;
   const recommended = (step: EffortStep) =>
     recommendedEffort(config, step, models[EFFORT_STEPS.find((s) => s.id === step)!.role]);
   const levels = customLevels(settings.effort, recommended);
-  const note = ignoredNote(receivesEffort(models.light), receivesEffort(models.heavy));
+  const note = ignoredNote(usesEffort("light"), usesEffort("heavy"));
 
   return (
     <>
@@ -50,7 +55,9 @@ export function EffortSetting() {
       </SettingRow>
       {custom && (
         <div className="space-y-3 pb-4">
-          {EFFORT_STEPS.map((step) => (
+          {EFFORT_STEPS.filter(
+            (step) => models[step.role].provider !== "vertex_ai" || usesEffort(step.role),
+          ).map((step) => (
             <label
               key={step.id}
               className="grid min-w-0 gap-2 sm:grid-cols-[minmax(0,1fr)_auto] sm:items-center sm:gap-6"
@@ -88,7 +95,7 @@ export function EffortSetting() {
 
 /** Which of the chosen task models drop the setting (only Claude, OpenAI and Gemini use it). */
 function ignoredNote(light: boolean, heavy: boolean): string | null {
-  const why = "Only Claude, OpenAI and Gemini models use reasoning effort.";
+  const why = "Reasoning effort is available only for models that support it.";
   if (!light && !heavy) return `Neither of your task models uses these settings. ${why}`;
   if (!light)
     return `Your light task model ignores these settings; only Application answers use one. ${why}`;

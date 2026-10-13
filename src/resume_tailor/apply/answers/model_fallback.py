@@ -32,6 +32,16 @@ class Fallback:
 
     def use_light(self, why: str) -> bool:
         """Switch to Light; False when there is no distinct Light model to switch to."""
+        # A Vertex connection explicitly selects a billing project. Do not switch
+        # into or out of that connection automatically when another provider fails.
+        for spec in (self.heavy, self.light):
+            if (
+                isinstance(spec, dict)
+                and (spec.get("origin") or spec.get("provider")) == "vertex_ai"
+            ):
+                return False
+            if isinstance(spec, str) and spec.startswith("vertex_ai:"):
+                return False
         if self.light is None or self.light == self.heavy:
             return False
         self.heavy_down = True

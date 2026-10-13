@@ -8,6 +8,7 @@ throwaway folder, never the runner's real app-data folder.
 
 from __future__ import annotations
 
+import json
 import os
 import subprocess
 import sys
@@ -47,6 +48,17 @@ def main(program: str) -> int:
                 if b'<div id="root"' not in r.read():
                     print("the web UI is not bundled", file=sys.stderr)
                     return 1
+            # Exercise lazy SDK/OAuth imports and bundled metadata, without Google calls.
+            for path in ("connection", "models"):
+                request = urllib.request.Request(
+                    f"http://127.0.0.1:{port}/api/vertex/{path}",
+                    headers={"X-RT-Token": _token},
+                )
+                with urllib.request.urlopen(request, timeout=60) as r:
+                    data = json.loads(r.read())
+                    if path == "models" and not data.get("models"):
+                        print("Vertex model catalog is not bundled", file=sys.stderr)
+                        return 1
             proc.stdin.close()
             code = proc.wait(timeout=30)
             print(f"sidecar OK on port {port}; exited {code} after stdin closed")

@@ -121,6 +121,8 @@ async def lifespan(app: FastAPI):
     with contextlib.suppress(Exception):
         answer_harvest.restore()
     yield
+    from resume_tailor.infra import vertex_oauth
+    vertex_oauth.cancel_all()
     answer_harvest.stop()
     _scheduler_stop.set()
     scheduler.join(timeout=2.0)
@@ -263,6 +265,7 @@ from resume_tailor.web.routes import (  # noqa: E402, I001
     template as _template_routes,
     template_edit as _template_edit_routes,
     update as _update_routes,
+    vertex as _vertex_routes,
     workspaces as _workspaces_routes,
 )
 
@@ -274,7 +277,7 @@ for _router in (
     _secrets_routes, _setup_routes, _system_routes, _onboarding_routes,
     _jd_routes, _answers_routes, _automation_routes, _discovery_routes,
     _extension_routes, _update_routes, _reference_routes, _search_presets_routes,
-    _cover_letter_routes, _template_edit_routes,
+    _cover_letter_routes, _template_edit_routes, _vertex_routes,
 ):
     app.include_router(_router.router)
 

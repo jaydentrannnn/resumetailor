@@ -6,6 +6,7 @@ import {
   type ModelRole,
   type ModelSelection,
 } from "../../lib/aiModels";
+import { useVertexConnection } from "./useVertexConnection";
 
 export function useModelConnection(
   role: ModelRole,
@@ -16,6 +17,7 @@ export function useModelConnection(
   const [custom, setCustom] = useState<SecretState | null>(null);
   const provider = selectionProvider(selection);
   const { provider: id, api_format, base_url } = selection;
+  const vertex = useVertexConnection(id === "vertex_ai");
   useEffect(() => {
     let live = true;
     setLocal(null);
@@ -56,5 +58,5 @@ export function useModelConnection(
           (name) => secrets.find((s) => s.name === name) ?? { name, set: false, source: null },
         );
   const needsKey = id !== "custom" && !!provider?.keys.length && !keys.some((key) => key.set);
-  return { provider, local, keys, needsKey };
+  return { provider, local, keys, needsKey, vertex: id === "vertex_ai" ? vertex : null };
 }
