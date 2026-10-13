@@ -1864,3 +1864,9 @@ it answered (those are corrections), never passwords/files/checkboxes/`review._P
 labels, and never logs values. The background pass only reads tabs `/json/list` shows open
 (never launches a browser), skips tabs in `answer_harvest.FILLING`, is off in extension
 mode, and exits when nothing is watched. Tests stub `collect`/`watch` in conftest.
+
+## 2026-10-12 — Workday questionnaire dates and Continue on Review
+
+Workday's required Expected Graduation Date uses hidden month/day/year spinbuttons, which the generic text scan skips. `workday_dates.fill_question_dates` classifies the whole label through `questions`, fills it after other answers finish rendering, and verifies every section; a failed background attempt gets one retry with the tab in front. The existing month-precision convention supplies day 01. Missing month, conflicting partial manual dates, and unrelated dates are never guessed; complete manual dates are preserved. Reconciliation checks every section rather than treating a filled month as a complete date.
+
+A Continue fill already on Workday's read-only final Review page is allowed through the no-controls guard only when the final step was independently recognised. Attachment checks and submission policy still run. Live reproduction fixtures contain an empty date field and a review snapshot with no personal values. Validation: 683 nearest forms/ATS tests, focused date/review regressions, and the live six-tab check with auto-submit off. The Settings browser test was also updated for the existing inline custom connection controls and Advanced switch; desktop and mobile cases pass.

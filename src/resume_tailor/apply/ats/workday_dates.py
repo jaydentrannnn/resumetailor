@@ -7,9 +7,104 @@ import re
 from collections.abc import Callable
 from typing import Any
 
+from resume_tailor.apply.answers import questions
 from resume_tailor.apply.driver import clicks
 
 from . import workday_rows
+
+_QUESTION_DATES_JS = r"""() => {
+  const root = document.querySelector("[data-automation-id='applyFlowPage']") || document;
+  const visible = e => !!(e && (e.offsetWidth || e.offsetHeight || e.getClientRects().length));
+  return [...root.querySelectorAll("[data-automation-id^='formField-']")].flatMap(field => {
+    const month = field.querySelector("input[id$='-dateSectionMonth-input']");
+    if (!month || !visible(field) || month.disabled || month.readOnly) return [];
+    const control = month.id.slice(0, -'-dateSectionMonth-input'.length);
+    const label = (field.querySelector('label, legend')?.innerText || '')
+      .replace(/\*\s*$/, '').trim();
+    const parts = ['dateSectionMonth', 'dateSectionDay', 'dateSectionYear'].filter(
+      part => document.getElementById(`${control}-${part}-input`));
+    return [{control, label, parts, values: parts.map(
+      part => document.getElementById(`${control}-${part}-input`).value.trim())}];
+  });
+}"""
+
+
+def fill_question_dates(
+    page: Any,
+    fields: dict[str, str],
+    *,
+    progress: Callable[[str], None] = lambda _msg: None,
+    blank: list[dict[str, str]] | None = None,
+    review: list[str] | None = None,
+) -> list[dict[str, Any]]:
+    """Fill recognised questionnaire dates using the profile's existing date convention.
+
+    Workday's spinbuttons are hidden overlays, so the generic text filler never reaches
+    them. Classify the whole question, then type and verify its sections mechanically.
+    A complete manual date is kept; conflicting partial dates are left for review.
+    """
+    try:
+        controls = page.evaluate(_QUESTION_DATES_JS) or []
+    except Exception:  # noqa: BLE001
+        return []
+    facts = questions.facts_for(fields)
+    committed: list[dict[str, Any]] = []
+    for control in controls:
+        label = str(control.get("label") or "")
+        question = questions.Question(label, kind="date")
+        match = questions.classify(question)
+        if match is None or match.key not in {"graduation_month", "education_start_month"}:
+            continue
+        sections = control.get("parts") or []
+        values = control.get("values") or []
+        if values and all(values):
+            continue  # a complete date is the applicant's own answer
+        answers = questions.answers(match, question, facts)
+        has_month = bool(answers and re.fullmatch(r"\d{4}-(?:0?[1-9]|1[0-2])", answers[0]))
+        value = questions.date_text(answers[0], input_type="date") if has_month else ""
+        if not value:
+            if blank is not None:
+                blank.append({"key": match.key, "label": label})
+            continue
+        year, month, day = value.split("-")
+        wanted = {"dateSectionMonth": month, "dateSectionDay": day, "dateSectionYear": year}
+        parts = [(section, wanted[section]) for section in sections]
+        if not {"dateSectionMonth", "dateSectionYear"}.issubset(sections):
+            continue
+        # Do not partly change a manually entered date before finding a conflict.
+        conflict = any(current and current.lstrip("0") != wanted[section].lstrip("0")
+                       for section, current in zip(sections, values, strict=True))
+        try:
+            ok = not conflict and fill_date_sections(page, str(control["control"]), parts)
+            if not ok and not conflict:
+                with contextlib.suppress(Exception):
+                    page.bring_to_front()
+                ok = fill_date_sections(page, str(control["control"]), parts)
+        except Exception:  # noqa: BLE001
+            ok = False
+        if ok:
+            progress(f"Workday: filled {label} = {value}")
+            committed.append({"key": match.key, "label": label, "value": value,
+                              "selector": f"[id='{control['control']}-dateSectionMonth-input']",
+                              "date_control": control["control"], "date_parts": parts})
+        elif review is not None:
+            review.append(label)
+    return committed
+
+
+def question_date_matches(page: Any, item: dict[str, Any]) -> bool:
+    """Read back every split section when reconciling a questionnaire date."""
+    parts = item.get("date_parts") or []
+    if not item.get("date_control") or not parts:
+        return False
+    for section, wanted in parts:
+        box = page.locator(f"[id='{item['date_control']}-{section}-input']")
+        if box.count() != 1:
+            return False
+        current = str(box.first.input_value() or "").strip()
+        if current.lstrip("0") != wanted.lstrip("0"):
+            return False
+    return True
 
 
 def _school_field(page: Any, row: str | None = None) -> str:

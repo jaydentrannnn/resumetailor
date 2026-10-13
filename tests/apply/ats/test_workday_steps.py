@@ -95,6 +95,7 @@ def _rows_run(monkeypatch, snap: dict) -> list[str]:
     run = fill_ats_steps._FillAtsSteps.__new__(fill_ats_steps._FillAtsSteps)
     run.page, run.pkt, run.progress = object(), object(), lambda _m: None
     run.merged, run.needs_review = {"filled": []}, []
+    run.fields, run.blank_facts = {}, []
     run._workday_rows()  # noqa: SLF001
     return calls
 

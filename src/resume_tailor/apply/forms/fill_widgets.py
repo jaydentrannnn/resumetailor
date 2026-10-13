@@ -122,6 +122,8 @@ def _availability_note(earliest_start: str, jd_text: str) -> str | None:
 
 def _observe_fields(page: Any, filler_js: str, hints: dict[str, str], attempted: dict[tuple[int, str], dict[str, Any]]) -> dict[tuple[int, str], dict[str, Any]]:
     """Read current selected values without filling any new answer."""
+    from resume_tailor.apply.ats import workday_dates
+
     observed: dict[tuple[int, str], dict[str, Any]] = {}
     for frame_index, frame in enumerate(page.frames):
         with contextlib.suppress(Exception):
@@ -148,6 +150,14 @@ def _observe_fields(page: Any, filler_js: str, hints: dict[str, str], attempted:
                             f"(the form had “{prior['previous']}”)"
                         ),
                     )
+        # Hidden Workday date spinbuttons are absent from the generic text scan.
+        for identity, prior in attempted.items():
+            if identity[0] != frame_index or not prior.get("date_control"):
+                continue
+            observed.pop(identity, None)
+            with contextlib.suppress(Exception):
+                if workday_dates.question_date_matches(frame, prior):
+                    observed[identity] = dict(prior)
     return observed
 
 def _correct_resume_prefill(

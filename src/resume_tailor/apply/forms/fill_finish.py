@@ -137,6 +137,11 @@ class _FillFinish(fill_state._FillState):
         page = self.page
         if self.barrier_hit:
             return None
+        if (self.is_workday and self.final_step_reached
+                and workday_page.is_review_step(workday_page.snapshot(page))):
+            # Continue fill can start on Workday's read-only Review page. It has no
+            # editable fields; attachments and submission policy still get verified.
+            return None
         if (
             total_controls == 0 and self.is_workday
             and workday_flow.is_site_error(workday_page.snapshot(page))

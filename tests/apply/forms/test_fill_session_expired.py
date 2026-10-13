@@ -61,3 +61,29 @@ def test_a_failed_sign_in_hands_over_with_its_reason(run, monkeypatch):
     result = run._workday_step_ready(1)
     assert result is not None and result.status == "awaiting_otp"
     assert result.handoff_reason == workday_auth.AUTH_HANDOFF["verification_needed"]
+
+
+def test_a_graduation_date_question_is_dated_from_the_profile(monkeypatch):
+    from resume_tailor.apply.ats import workday_dates
+
+    class _Page:
+        def evaluate(self, _script):
+            controls = [
+                {"kind": "date", "label": "Expected Graduation Date", "control": "g", "day": True},
+                {"kind": "date", "label": "Date", "control": "sig", "day": True},
+                {"kind": "date", "label": "Favourite day", "control": "x", "day": False},
+            ]
+            return [{**control,
+                     "parts": ["dateSectionMonth", "dateSectionDay", "dateSectionYear"],
+                     "values": ["", "", ""]} for control in controls]
+
+    typed = {}
+    monkeypatch.setattr(
+        workday_dates, "fill_date_sections",
+        lambda _page, control, parts: typed.setdefault(control, parts) is not None,
+    )
+    done = workday_dates.fill_question_dates(_Page(), {"graduation_month": "2027-06"})
+    assert typed == {
+        "g": [("dateSectionMonth", "06"), ("dateSectionDay", "01"), ("dateSectionYear", "2027")]
+    }
+    assert [item["key"] for item in done] == ["graduation_month"]

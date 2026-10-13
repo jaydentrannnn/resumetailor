@@ -14,6 +14,7 @@ from resume_tailor.apply.ats import (
     smartrecruiters_page,
     workday_auth,
     workday_choices,
+    workday_dates,
     workday_dropdowns,
     workday_flow,
     workday_page,
@@ -239,6 +240,15 @@ class _FillAtsSteps(fill_state._FillState):
         # sections are read-only summaries.
         if workday_page.is_review_step(workday_page.snapshot(self.page)):
             return
+        # Questionnaire widgets may finish rendering after the initial step scan.
+        # Fill their split dates after the other answers, just before advancing.
+        date_review: list[str] = []
+        dates = workday_dates.fill_question_dates(
+            self.page, self.fields, progress=self.progress,
+            blank=self.blank_facts, review=date_review,
+        )
+        self.merged["filled"].extend({**item, "frame_index": 0} for item in dates)
+        self._review(date_review)
         rows_filled, rows_review = fill_widgets._fill_workday_experience_and_education(
             self.page, self.pkt, self.progress
         )
