@@ -12,6 +12,7 @@ from resume_tailor.apply.answers import answer_memory, hybrid_resolver, model_fa
 from resume_tailor.apply.ats import (
     smartrecruiters_flow,
     smartrecruiters_page,
+    workday_auth,
     workday_choices,
     workday_dropdowns,
     workday_flow,
@@ -44,9 +45,9 @@ class _FillAtsSteps(fill_state._FillState):
         if not self.recover_site_error():
             return self._handoff(self.SITE_ERROR_MSG)
         if step and workday_page.detect_state(self.page) in fill_outcomes.SIGNED_OUT_STATES:
-            # The session timed out mid-application. Workday keeps the saved steps, and
-            # Continue fill signs in again from this tab.
-            return self._handoff(fill_outcomes.SESSION_EXPIRED_MSG)
+            # The session timed out mid-application. Workday keeps the saved steps: sign
+            # in again (once per fill) and carry on with the step it restores.
+            return self._workday_sign_in_again()
         if workday_flow.wait_for_step_ready(self.page, deadline=self.deadline):
             return None
         if not workday_flow.is_site_error(workday_page.snapshot(self.page)):
@@ -60,6 +61,30 @@ class _FillAtsSteps(fill_state._FillState):
         fill_widgets._guard_file_chooser(self.page, self.progress)
         if not workday_flow.wait_for_step_ready(self.page, deadline=self.deadline):
             return self._handoff(self.SITE_ERROR_MSG)
+        return None
+
+    def _workday_sign_in_again(self) -> FillResult | None:
+        """Sign back in after a timed-out session; a handoff when that does not work."""
+        if getattr(self, "reauthenticated", False):
+            return self._handoff(fill_outcomes.SESSION_EXPIRED_MSG)
+        self.reauthenticated = True
+        self.progress("Workday signed you out (session timed out); signing in again")
+        result = workday_auth.handle_workday_auth(
+            self.page, self.source_job_id, self.profile, on_progress=self.progress,
+            deadline=self.deadline,
+        )
+        if result != "authenticated":
+            return self._handoff(
+                workday_auth.AUTH_HANDOFF[result],
+                status="awaiting_otp" if result == "verification_needed" else "awaiting_review",
+            )
+        self.recover_site_error()
+        if workday_flow.wait_for_state(
+            self.page, {"apply_form"}, timeout_s=15, deadline=self.deadline
+        ) != "apply_form":
+            return self._handoff(fill_outcomes.SESSION_EXPIRED_MSG)
+        workday_flow.wait_for_step_ready(self.page, deadline=self.deadline)
+        self.progress("Signed in again; Workday restored the saved steps")
         return None
 
     def _workday_citizenship_stop(self) -> FillResult | None:

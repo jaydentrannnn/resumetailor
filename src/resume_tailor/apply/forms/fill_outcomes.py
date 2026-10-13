@@ -8,7 +8,9 @@ from typing import Any
 from . import fill_buttons
 
 #: Workday screens that mean the session ended while a form was open (plan P4-E14).
-SIGNED_OUT_STATES = frozenset({"sign_in", "auth_chooser"})
+#: A timed-out session lands on any of these mid-application (Create Account included:
+#: Workday shows its Create Account/Sign In step again, live 2026-10-12).
+SIGNED_OUT_STATES = frozenset({"sign_in", "auth_chooser", "create_account"})
 
 #: The fill found only the page's own chrome (a language picker), never the form.
 NO_FORM_MSG = (
