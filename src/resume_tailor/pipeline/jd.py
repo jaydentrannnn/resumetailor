@@ -161,6 +161,13 @@ phrase about that requirement in the posting.
 ("team player", "fast-paced environment") unless the posting clearly treats it as a \
 distinguishing requirement. Skip degree, education, visa, and location requirements \
 entirely — they are not skills a resume bullet can demonstrate.
+- A `phrase` must NAME a skill, not describe a duty or a body of work. Every phrase is \
+later woven into resume bullets, so a duty clause or a generic work noun gets pasted into \
+sentence after sentence. "building and improving data processes" is a duty — skip it, \
+or extract the skill inside it if one is named. "data engineering projects", "AI \
+initiatives", and "analytics work" are generic work nouns — extract the field itself \
+("data engineering") only when the posting treats it as a requirement. A phrase that \
+starts with a verb or gerund, or contains "and"/"or", is almost never a skill.
 - `domain_notes` captures context worth reflecting in tone and emphasis: the industry, \
 the product, the team's shape, the core responsibilities.
 """
@@ -170,8 +177,10 @@ the product, the team's shape, the core responsibilities.
 #: the cache key so a prompt edit invalidates every stored extraction automatically —
 #: previously this relied on the operator remembering `--no-cache`, and a stale extraction
 #: is invisible rather than merely wrong. Version 3 added band/evidence and the
-#: untrusted-input framing — every prior extraction is intentionally discarded.
-_PROMPT_VERSION = 4
+#: untrusted-input framing — every prior extraction is intentionally discarded. Version 5
+#: forbids duty clauses and generic work nouns as phrases: the rewriter mirrored them
+#: verbatim into many bullets of one resume ("data engineering projects").
+_PROMPT_VERSION = 5
 _EXTRACT_POOL_SIZE = 3
 _CACHE_WRITE_LOCK = threading.Lock()
 

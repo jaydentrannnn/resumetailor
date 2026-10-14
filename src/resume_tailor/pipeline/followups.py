@@ -18,7 +18,7 @@ The wording is already right — the only problem is length. Bring each one to a
 number, every required technical keyword, and the opening verb exactly as written.
 """
 
-_REPAIR_PROMPT_VERSION = 7
+_REPAIR_PROMPT_VERSION = 8
 
 _TARGET_INSTRUCTION = """\
 Each bullet has a character window. For SHORTEN, cut secondary detail while preserving
@@ -53,6 +53,14 @@ a manager or a team, that the bullet credits. Keep the rest of the bullet word f
 including every number, unless the new verb makes the grammar wrong — then change as \
 little as possible. Do not lengthen the bullet. Do not restate the claim in different \
 words: this is a one-word substitution, not a rewrite.
+"""
+
+_PHRASE_INSTRUCTION = """\
+Each bullet below repeats a posting phrase that other bullets already carry, so the resume \
+reads as keyword stuffing. Remove every phrase in its `remove` list: name the specific \
+work the bullet already describes instead, or drop the phrase if the sentence stands \
+without it. Keep the opening verb and every number exactly as written, add nothing the \
+bullet does not already say, and do not lengthen the bullet.
 """
 
 _RETRY_INSTRUCTION = """\
@@ -99,6 +107,22 @@ def _format_verb_items(
         tags = ", ".join(sources[bullet_id].tags)
         lines.append(
             f"<bullet id={bullet_id!r} max={len(text)} avoid={', '.join(avoid)!r}>\n"
+            f"  <current>{text}</current>\n"
+            f"  <permitted_skills>{tags}</permitted_skills>\n"
+            f"</bullet>"
+        )
+    return "\n".join(lines)
+
+def _format_phrase_items(
+    overuse: dict[str, list[str]], texts: dict[str, str], sources: dict[str, Bullet]
+) -> str:
+    """Format phrase-overusing bullets, each carrying the posting phrases to remove."""
+    lines = []
+    for bullet_id, phrases in overuse.items():
+        text = texts[bullet_id]
+        tags = ", ".join(sources[bullet_id].tags)
+        lines.append(
+            f"<bullet id={bullet_id!r} max={len(text)} remove={'; '.join(phrases)!r}>\n"
             f"  <current>{text}</current>\n"
             f"  <permitted_skills>{tags}</permitted_skills>\n"
             f"</bullet>"
@@ -263,6 +287,28 @@ def _accept_verb_swap(
     return (not fabrication.check_fabrication(source, candidate)
             and not fabrication.numbers_dropped([floor], candidate))
 
+def _accept_rephrase(
+    original: str, candidate: str, source: Bullet, phrases: list[str]
+) -> bool:
+    """Whether a returned phrase removal is safe to apply.
+
+    Same non-regressive bar as `_accept_verb_swap`, inverted on the opener: every listed
+    phrase must be gone, the opener must be unchanged (the verb pass already settled it),
+    and the bullet may not grow a line, become a widow, fabricate, or drop a number.
+    A rejected candidate keeps the original — a repeated phrase only reads badly.
+    """
+    if not candidate or any(bullet_checks.contains_phrase(candidate, p) for p in phrases):
+        return False
+    if bullet_checks.opening_verb(candidate) != bullet_checks.opening_verb(original):
+        return False
+    if config.line_span(candidate) > config.line_span(original):
+        return False
+    if bullet_checks.widowed({"_": candidate}):
+        return False
+    floor = source.model_copy(update={"text": original, "tags": []})
+    return (not fabrication.check_fabrication(source, candidate)
+            and not fabrication.numbers_dropped([floor], candidate))
+
 def _keep_opener(texts: dict[str, str], bid: str, candidate: str) -> str | None:
     """`candidate` for `bid` with an opener that repeats no more verbs than `texts[bid]`.
 
@@ -307,6 +353,7 @@ def _polish(
     line_ceilings: dict[str, int] | None = None,
     revoice_only: set[str] | None = None,
     number_floor: dict[str, str] | None = None,
+    phrase_overuse: dict[str, list[str]] | None = None,
 ) -> tuple[dict[str, str], int, int, dict[str, list[str]]]:
     """Re-request only the defective bullets.
 
@@ -329,6 +376,12 @@ def _polish(
     `number_floor` (`{id: text}`) checks a target's numbers against that text instead of
     its master source — for capping an over-long rewrite, which may already have dropped
     a minor figure the master states; the guard itself still runs against the source.
+
+    `phrase_overuse` (`{id: posting phrases}`, from `bullet_checks.phrase_collisions`)
+    asks those bullets to drop a phrase the page repeats past its cap. It shares the
+    round trip, never the id: a bullet already sent for length or verb repair keeps its
+    phrase. Repairs are counted in telemetry only (`phrase_repeats` / `phrase_repaired`),
+    never reported — a surviving repeat reads badly but costs nothing.
 
     Returns ``(texts, widows fixed, verbs changed, widow repairs rejected)`` where the
     last mapping is bullet id to offending terms for shorten candidates discarded by the
@@ -368,7 +421,12 @@ def _polish(
         if repair_verbs
         else {}
     )
-    if not ceilings and not collisions and not targets:
+    phrase_overuse = {
+        bid: phrases for bid, phrases in (phrase_overuse or {}).items()
+        if bid in sources and bid not in ceilings and bid not in targets
+        and bid not in collisions
+    }
+    if not ceilings and not collisions and not targets and not phrase_overuse:
         return texts, 0, 0, {}
 
     sections = [
@@ -391,6 +449,11 @@ def _polish(
             f"<bullets_to_revoice>\n{_format_verb_items(collisions, texts, sources)}\n"
             f"</bullets_to_revoice>\n\n{_verb_instruction()}"
         )
+    if phrase_overuse:
+        sections.append(
+            f"<bullets_to_rephrase>\n{_format_phrase_items(phrase_overuse, texts, sources)}\n"
+            f"</bullets_to_rephrase>\n\n{_PHRASE_INSTRUCTION}"
+        )
     user = "\n\n".join(sections)
 
     client = llm.client_for("rewrite")
@@ -407,6 +470,8 @@ def _polish(
     if result is None:
         # Not fatal: the first draft is still valid output, just wasteful. Report it as a
         # surviving widow rather than failing a run over a cosmetic pass.
+        if phrase_overuse:
+            telemetry.event("rewrite", phrase_repeats=len(phrase_overuse), phrase_repaired=0)
         return texts, 0, 0, {}
 
     repaired = dict(texts)
@@ -417,6 +482,7 @@ def _polish(
     # An accepted swap claims its new opener, so two colliding bullets cannot both be
     # handed the same replacement verb.
     claimed: set[str] = set()
+    rephrased: set[str] = set()
     line_ceilings = line_ceilings or {}
     number_floor = number_floor or {}
 
@@ -500,6 +566,15 @@ def _polish(
                 verb = bullet_checks.opening_verb(candidate)
                 if verb is not None:
                     claimed.add(verb)
+        elif item.id in phrase_overuse and item.id not in rephrased:
+            if _accept_rephrase(texts[item.id], candidate, source, phrase_overuse[item.id]):
+                repaired[item.id] = candidate
+                rephrased.add(item.id)
+
+    if phrase_overuse:
+        telemetry.event(
+            "rewrite", phrase_repeats=len(phrase_overuse), phrase_repaired=len(rephrased)
+        )
 
     if retry_candidates:
         windows = {bid: (0, high) for bid, high in ceilings.items()}

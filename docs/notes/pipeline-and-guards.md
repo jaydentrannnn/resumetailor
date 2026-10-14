@@ -545,3 +545,20 @@ opener (`_REPAIR_PROMPT_VERSION = 6`).
   v2 keeps one table per model (3 most recent), prunes only removed bullets, migrates v1
   entries with no model call, and serialises concurrent `ensure` per file + model. The
   server warms the active profile at startup.
+
+## Posting-phrase repeat cap (2026-10-14)
+
+Gemini runs mirrored multi-word posting phrases ("data engineering projects") into bullet
+after bullet; the rewrite prompt already said "say each thing once", but only the opener
+rule was enforced in code. `bullet_checks.phrase_collisions` now caps bullets sharing one
+multi-word `Keyword.phrase` at `config.phrase_repeat_cap(pages)` (2 on one page, +1 per
+extra page). Single-word phrases are exempt (a tool name recurring is the real stack).
+Keepers are chosen as: unrepairable (context / verb-colliding) first, then bullets whose
+master source already states the phrase, then selection order — only a bullet that
+*added* the phrase is ever asked to drop it. The repair rides the existing polish call
+(`<bullets_to_rephrase>`, `_REPAIR_PROMPT_VERSION` 8), gated by `repair_verbs`, and is
+accepted only if every phrase is gone, the opener is unchanged, and it is guard-clean,
+number-preserving, no longer, and not widowed. Silent by design: telemetry
+`phrase_repeats` / `phrase_repaired`, never a run warning. Alongside, `jd._PROMPT_VERSION`
+5 forbids duty clauses and generic work nouns as phrases; completed jobs keep their saved
+`requirements.json`, only new runs re-extract.

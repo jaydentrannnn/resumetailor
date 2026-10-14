@@ -620,9 +620,9 @@ def test_extraction_diagnosis_clean():
     assert jd.extraction_diagnosis(reqs) is None
 
 
-def test_prompt_version_is_four():
-    """Version 4 includes profile field guidance in extraction and cache identity."""
-    assert jd._PROMPT_VERSION == 4
+def test_prompt_version_is_five():
+    """Version 5 forbids duty clauses and generic work nouns as keyword phrases."""
+    assert jd._PROMPT_VERSION == 5
 
 
 def test_system_prompt_names_bands_and_untrusted_input():

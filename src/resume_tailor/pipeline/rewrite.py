@@ -76,13 +76,16 @@ def rewrite_bullets(
     merge_groups: list[MergeGroup] | None = None,
     on_event: events.ProgressCallback | None = None,
     verb_context: dict[str, str] | None = None,
+    target_pages: int = config.DEFAULT_PAGE_TARGET,
 ) -> RewriteOutcome:
     """Rewrite `bullets` to surface the posting's keywords.
 
     `verb_context` is the text of bullets already on the page (`{id: text}`), used only
     to detect repeated opening verbs: the fit loop's top-up rewrites just the bullets it
     adds, and those must not open with a verb the page already uses. Context bullets are
-    never re-requested or returned.
+    never re-requested or returned. They also count toward the phrase-repeat cap
+    (`bullet_checks.phrase_collisions`, scaled by `target_pages`), which rides the same
+    follow-up call as verb repair and is gated by `repair_verbs`.
 
     Verb repair can add one follow-up call here. Widow repair waits until fit has a PDF;
     character estimates at this stage have too many false positives to trim safely.
@@ -228,6 +231,17 @@ def rewrite_bullets(
             widowed=stranded,
             verb_collisions=colliding,
         )
+    phrase_overuse = (
+        bullet_checks.phrase_collisions(
+            combined, [kw.phrase for kw in requirements.keywords], by_id,
+            # A bullet already queued for verb repair is sent only for that, so it keeps
+            # the phrase and another bullet gives it up instead.
+            pages=target_pages,
+            repairable=set(out) - set(bullet_checks.verb_collisions(combined)),
+        )
+        if repair_verbs
+        else {}
+    )
     polished, improved, revoiced, rejected_repairs = followups._polish(
         combined,
         by_id,
@@ -235,6 +249,7 @@ def rewrite_bullets(
         repair_widows=False,
         repair_verbs=repair_verbs,
         revoice_only=revoice_only,
+        phrase_overuse=phrase_overuse,
     )
     out = {bid: polished[bid] for bid in out}
     return RewriteOutcome(

@@ -55,6 +55,7 @@ def _identity_rewrite(
     merge_groups=None,
     on_event=None,
     verb_context=None,
+    target_pages=1,
 ):
     """Pass-through rewrite stub that ignores polish and merge knobs."""
     return RewriteOutcome({b.id: b.text for b in bullets})
@@ -812,6 +813,7 @@ def test_fit_restores_bullets_on_underflow(monkeypatch, tmp_path):
         repair_verbs=True,
         merge_groups=None,
         on_event=None,
+        target_pages=1,
     ):
         """Track selection size so underflow growth can be asserted."""
         seen["count"] = len(bullets)
@@ -865,6 +867,7 @@ def test_fit_warns_when_widow_repair_fabrication_is_discarded(monkeypatch, tmp_p
         repair_verbs=True,
         merge_groups=None,
         on_event=None,
+        target_pages=1,
     ):
         """Return one bullet plus a rejected widow repair for the fit warning path."""
         texts = {b.id: b.text for b in bullets}

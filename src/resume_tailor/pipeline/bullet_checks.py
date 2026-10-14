@@ -1,5 +1,5 @@
 """Deterministic checks on rewritten bullets: re-bound numbers, delegated authorship,
-redundancy, widowed last lines, and repeated opening verbs."""
+redundancy, widowed last lines, repeated opening verbs, and over-used posting phrases."""
 
 from __future__ import annotations
 
@@ -413,3 +413,58 @@ def verb_collisions(texts: dict[str, str]) -> dict[str, list[str]]:
 
     in_use = {w for w in openers.values() if w is not None}
     return {bid: sorted(forbidden | in_use) for bid, forbidden in offenders.items()}
+
+def _phrase_pattern(phrase: str) -> re.Pattern[str]:
+    words = [re.escape(w) for w in phrase.lower().split()]
+    return re.compile(r"(?<![a-z0-9])" + r"\s+".join(words) + r"(?![a-z0-9])")
+
+def phrase_collisions(
+    texts: dict[str, str],
+    phrases: Sequence[str],
+    sources: dict[str, Bullet],
+    *,
+    pages: int,
+    repairable: set[str] | None = None,
+) -> dict[str, list[str]]:
+    """`{bullet id: posting phrases to remove}` for bullets past the phrase-repeat cap.
+
+    Only multi-word phrases count: a single tool name ("Python") recurring across
+    bullets is the candidate's real stack, while a repeated multi-word posting phrase
+    reads as keyword stuffing. At most `config.phrase_repeat_cap(pages)` bullets keep a
+    phrase. Bullets that cannot change keep it first (`repairable` excludes them —
+    context bullets already on the page), then bullets whose master source already says
+    it, then selection order. An offender is only ever a bullet that *added* the phrase:
+    removing words the source itself states would cut the candidate's own claim.
+    """
+    cap = config.phrase_repeat_cap(pages)
+    offenders: dict[str, list[str]] = {}
+    seen: set[str] = set()
+    for phrase in phrases:
+        key = " ".join(phrase.lower().split())
+        if len(key.split()) < 2 or key in seen:
+            continue
+        seen.add(key)
+        pattern = _phrase_pattern(key)
+        hits = [bid for bid, text in texts.items() if pattern.search(text.lower())]
+        if len(hits) <= cap:
+            continue
+
+        changeable = {
+            bid: (repairable is None or bid in repairable) and bid in sources for bid in hits
+        }
+        injected = {
+            bid: bid not in sources or not pattern.search(sources[bid].text.lower())
+            for bid in hits
+        }
+        order = sorted(
+            range(len(hits)), key=lambda i: (changeable[hits[i]], injected[hits[i]], i)
+        )
+        for i in order[cap:]:
+            bid = hits[i]
+            if changeable[bid] and injected[bid]:
+                offenders.setdefault(bid, []).append(phrase)
+    return offenders
+
+def contains_phrase(text: str, phrase: str) -> bool:
+    """Whether `text` contains `phrase`, case- and whitespace-insensitively, as whole words."""
+    return bool(_phrase_pattern(phrase).search(text.lower()))

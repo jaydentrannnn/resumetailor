@@ -1616,7 +1616,7 @@ def test_measured_target_window_accepts_only_guard_clean_numeric_preserving_repl
     )
     assert out["a"] == "Trained 30+ staff on IT practices."
     assert fixed == 1 and rejected == {}
-    assert "<repair_prompt_version>7" in calls[0]["messages"][0]["content"]
+    assert "<repair_prompt_version>8" in calls[0]["messages"][0]["content"]
 
     rewrite_calls(_reply(a="Trained 30+ staff."))
     out, fixed, _, _ = followups._polish(

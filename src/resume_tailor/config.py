@@ -1673,6 +1673,17 @@ def family_opener_cap(bullet_count: int) -> int:
     return max(MAX_SAME_FAMILY_OPENERS, math.ceil(bullet_count / BULLETS_PER_FAMILY_OPENER))
 
 
+#: Bullets on a one-page resume that may carry the same multi-word posting phrase. The
+#: rewriter mirrored phrases like "data engineering projects" into bullet after bullet,
+#: which read as keyword stuffing; two is still a visible echo of the posting.
+MAX_PHRASE_REPEATS = 2
+
+
+def phrase_repeat_cap(pages: int) -> int:
+    """Bullets allowed to share one posting phrase: two on one page, +1 per extra page."""
+    return MAX_PHRASE_REPEATS + max(0, pages - 1)
+
+
 def _build_verb_index(families: dict[str, tuple[str, ...]]) -> dict[str, str]:
     """Invert `families` into {verb: family}, first-wins on a verb listed twice.
 

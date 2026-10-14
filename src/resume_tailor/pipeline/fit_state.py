@@ -202,6 +202,7 @@ class _FitState:
             repair_widows=self.repair_widows,
             repair_verbs=self.repair_verbs,
             on_event=self.on_event,
+            target_pages=self.target_pages,
         )
         self.rewritten = self.outcome.texts
         self._set_draft(
@@ -298,7 +299,7 @@ class _FitState:
         fresh = rewrite_bullets(
             new, self.requirements, char_budget=self.char_budget,
             repair_widows=False, repair_verbs=self.repair_verbs, on_event=self.on_event,
-            verb_context=dict(self.rewritten),
+            verb_context=dict(self.rewritten), target_pages=self.target_pages,
         )
         self.outcome.fabrications_rejected.update(fresh.fabrications_rejected)
         self.outcome.verbs_diversified += fresh.verbs_diversified
