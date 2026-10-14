@@ -32,6 +32,9 @@ hiddenimports = collect_submodules("resume_tailor") + collect_submodules("uvicor
 datas += collect_data_files("resume_tailor")
 for package in ("docx", "docxtpl", "pdfplumber", "pypdfium2", "litellm", "tiktoken"):
     datas += collect_data_files(package)
+# LiteLLM loads cl100k_base lazily. Tiktoken discovers its encoding plugins at
+# runtime, so static import analysis misses both the plugin and its load helper.
+hiddenimports += collect_submodules("tiktoken") + collect_submodules("tiktoken_ext")
 hiddenimports += collect_submodules("google.auth") + collect_submodules("google.oauth2")
 hiddenimports += collect_submodules("google_auth_oauthlib")
 os.environ["LITELLM_LOCAL_MODEL_COST_MAP"] = "True"

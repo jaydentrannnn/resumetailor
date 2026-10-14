@@ -187,3 +187,9 @@ mode gets a message. `GET /api/setup-status` never makes a model call: key prese
 `anthropic_api_key`), and a cached 2 s `GET <base>/models` probe for local servers.
 The header needs `relative z-30`: its `backdrop-blur` creates a stacking context that
 otherwise lets page cards paint over header popovers.
+
+## 2026-10-13 - Desktop Vertex tokenizer packaging
+
+**What:** Explicitly collect tiktoken and tiktoken_ext submodules, and add an offline --check-vertex-runtime probe to the sidecar release smoke test.
+**Why:** The installed v1.11.2 bundle omitted tiktoken_ext.openai_public and tiktoken.load. LiteLLM's lazy cl100k_base initialization failed locally and surfaced as the generic Google Cloud unavailable message; catalog-only smoke checks did not exercise it.
+**Impact:** The packaged executable must encode/decode with network connections blocked before a release build passes. Dependency versions remain pinned. The standalone CI workflow is skipped for this user-requested hotfix; focused local checks and the release build's smoke checks still run.

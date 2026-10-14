@@ -1,4 +1,4 @@
-"""Smoke-test a built sidecar: it must print READY, serve /api/health, and exit with stdin.
+"""Smoke-test a built sidecar's offline tokenizer, startup, UI, and exit with stdin.
 
     python desktop/sidecar/smoke.py desktop/sidecar/dist/resumetailor-server/resumetailor-server
 
@@ -23,6 +23,17 @@ def main(program: str) -> int:
         env = {**os.environ, "RESUME_TAILOR_LOG_DIR": "off"}
         for var in ("DATA", "TEMPLATES", "OUTPUT", "CACHE"):
             env[f"RESUME_TAILOR_{var}_DIR"] = str(Path(tmp) / var.lower())
+        # Catalog imports do not load LiteLLM's tokenizer. Exercise that lazy path
+        # in the actual frozen process; the probe blocks network connections.
+        tokenizer = subprocess.run(
+            [program, "--check-vertex-runtime"], env=env,
+            capture_output=True, text=True, timeout=90,
+        )
+        if tokenizer.returncode or "Vertex tokenizer OK" not in tokenizer.stdout:
+            print(tokenizer.stdout, file=sys.stderr)
+            print(tokenizer.stderr, file=sys.stderr)
+            print("the bundled Vertex tokenizer is unavailable", file=sys.stderr)
+            return 1
         proc = subprocess.Popen(
             [program, "--exit-with-stdin"],
             env=env,
