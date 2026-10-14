@@ -193,3 +193,9 @@ otherwise lets page cards paint over header popovers.
 **What:** Explicitly collect tiktoken and tiktoken_ext submodules, and add an offline --check-vertex-runtime probe to the sidecar release smoke test.
 **Why:** The installed v1.11.2 bundle omitted tiktoken_ext.openai_public and tiktoken.load. LiteLLM's lazy cl100k_base initialization failed locally and surfaced as the generic Google Cloud unavailable message; catalog-only smoke checks did not exercise it.
 **Impact:** The packaged executable must encode/decode with network connections blocked before a release build passes. Dependency versions remain pinned. The standalone CI workflow is skipped for this user-requested hotfix; focused local checks and the release build's smoke checks still run.
+
+## 2026-10-13 - Vertex tokenizer cold-build encoding data
+
+**What:** Initialize LiteLLM's cl100k_base encoding before PyInstaller collects its data files, so the verified encoding cache is shipped with the modules.
+**Why:** The new offline check caught a fresh Windows release build attempting to fetch encoding data, although a warm developer environment and the macOS build passed. Build-time initialization verifies/fills the cache; the installed runtime must remain offline-capable.
+**Impact:** The first v1.11.3 draft was not published. The corrected v1.11.4 release is rebuilt and must pass the frozen offline smoke check on both platforms.

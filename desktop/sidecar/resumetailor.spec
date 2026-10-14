@@ -21,6 +21,14 @@ from pathlib import Path
 
 from PyInstaller.utils.hooks import collect_all, collect_data_files, collect_submodules
 
+# Verify and populate the SDK's bundled encoding cache before collecting data.
+# Fresh installations can lack a valid cache; downloads belong at build time,
+# never in the installed desktop's first Vertex request.
+os.environ["LITELLM_LOCAL_MODEL_COST_MAP"] = "True"
+from litellm.litellm_core_utils.default_encoding import encoding
+
+encoding.encode("Vertex AI tokenizer build check")
+
 ROOT = Path(SPECPATH).resolve().parents[1]  # noqa: F821 - defined by PyInstaller
 SPA = ROOT / "frontend" / "dist"
 if not (SPA / "index.html").is_file():
@@ -37,7 +45,6 @@ for package in ("docx", "docxtpl", "pdfplumber", "pypdfium2", "litellm", "tiktok
 hiddenimports += collect_submodules("tiktoken") + collect_submodules("tiktoken_ext")
 hiddenimports += collect_submodules("google.auth") + collect_submodules("google.oauth2")
 hiddenimports += collect_submodules("google_auth_oauthlib")
-os.environ["LITELLM_LOCAL_MODEL_COST_MAP"] = "True"
 hiddenimports += collect_submodules("litellm.llms.vertex_ai")
 hiddenimports += collect_submodules("litellm.llms.anthropic")
 # Installed-app client configuration is supplied by the release owner, never user tokens.
