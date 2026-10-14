@@ -327,6 +327,12 @@ class ApplySettings(BaseModel):
         return self
 
 
+class AdvancedSettings(BaseModel):
+    effort: EffortLevel | dict[EffortStep, EffortLevel] | None = None
+    extract_runs: int = Field(default=0, ge=0, le=10)
+    max_concurrent_jobs: int = Field(default=2, ge=1, le=8)
+
+
 class JobSettings(BaseModel):
     """Per-run knobs, mirroring the CLI flags in `tailor.py`."""
 
@@ -338,6 +344,10 @@ class JobSettings(BaseModel):
     #: Anthropic key — the Ollama free tier is what makes bulk applying affordable.
     model: str = "ollama"
     ai_models: AiModels | None = None
+    # Older callers retain their active tuning; fresh UI sessions explicitly use False.
+    ai_advanced_enabled: bool = True
+    advanced_settings: AdvancedSettings | None = None
+    custom_effort: EffortLevel | dict[EffortStep, EffortLevel] | None = None
     #: Ollama tag for *every* Ollama-routed stage of the chosen profile, overriding the
     #: `OLLAMA_MODEL` env default without an edit-and-restart. Under `hybrid` this leaves
     #: the Anthropic rewrite stage alone (see `config.ollama_stages`). The two per-stage
@@ -426,6 +436,20 @@ class JobSettings(BaseModel):
     model_name: str | None = None
     #: Daily discover/screen/fill funnel settings (persisted with profile defaults).
     apply: ApplySettings = Field(default_factory=ApplySettings)
+
+    @model_validator(mode="before")
+    @classmethod
+    def _advanced_defaults(cls, values: Any) -> Any:
+        if isinstance(values, dict) and values.get("ai_advanced_enabled") is False:
+            values = dict(values)
+            if values.get("advanced_settings") is None:
+                values["advanced_settings"] = {
+                    key: values[key]
+                    for key in ("effort", "extract_runs", "max_concurrent_jobs")
+                    if key in values
+                }
+            values.update(effort=None, extract_runs=0, max_concurrent_jobs=2)
+        return values
 
     @model_validator(mode="after")
     def _shared_heavy_model(self) -> JobSettings:

@@ -83,6 +83,9 @@ class FakeEventSource {
 }
 
 import { RunProvider, useRunState } from "./runState";
+import { fetchSettings } from "../api";
+import { DEFAULT_SETTINGS } from "./runDefaults";
+import { withSelection } from "../lib/aiModels";
 
 function SettingsProbe() {
   const { settings, setSettings, settingsLoaded, settingsSaveState, flushSettings } = useRunState();
@@ -134,6 +137,32 @@ it("waits for the profile field to save before flushing for a new run", async ()
 });
 
 describe("RunProvider: settings persistence", () => {
+  it("keeps the app-wide model choices when seeding a new profile", async () => {
+    saveSettings.mockReset();
+    saveSettings.mockResolvedValue(undefined);
+    const settings = withSelection(DEFAULT_SETTINGS, "light", {
+      provider: "gemini",
+      model_name: "saved-writer",
+      api_format: "openai",
+      base_url: "",
+    });
+    vi.mocked(fetchSettings).mockResolvedValueOnce({
+      seeded: true,
+      workspace_id: "default",
+      settings,
+    });
+    render(
+      <RunProvider>
+        <SettingsProbe />
+      </RunProvider>,
+    );
+    await waitFor(() => expect(screen.getByTestId("loaded").textContent).toBe("true"));
+    await waitFor(() =>
+      expect(saveSettings).toHaveBeenCalledWith(
+        expect.objectContaining({ ai_models: settings.ai_models }),
+      ),
+    );
+  });
   it("keeps a failed save visible and retries the current draft before switching", async () => {
     saveSettings.mockReset();
     saveSettings.mockRejectedValueOnce(new Error("disk unavailable")).mockResolvedValue(undefined);

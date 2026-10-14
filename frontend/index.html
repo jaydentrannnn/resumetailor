@@ -2,14 +2,14 @@
 <html lang="en">
   <head>
     <meta charset="UTF-8" />
-    <link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><text y='.9em' font-size='90'>R</text></svg>" />
+    <link rel="icon" href="/src/assets/logo-mark-black.svg" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <title>ResumeTailor</title>
     <!-- Apply data-theme before paint so a stored Light override doesn't flash OS-dark tokens. -->
     <script>
       (function () {
         try {
-          var p = localStorage.getItem("resume-tailor-theme") || "system";
+          var p = window.__RT_DESKTOP_THEME__ || localStorage.getItem("resume-tailor-theme") || "system";
           var dark =
             p === "dark" ||
             (p !== "light" &&
@@ -20,6 +20,10 @@
         } catch (e) {}
       })();
     </script>
+    <style>
+      html { background: #ffffff; color: #0b0b0b; }
+      html[data-theme="dark"] { background: #0a0a0a; color: #f5f5f4; }
+    </style>
   </head>
   <body>
     <div id="root"></div>

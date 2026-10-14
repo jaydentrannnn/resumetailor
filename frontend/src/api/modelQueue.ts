@@ -1,9 +1,13 @@
 import { request } from "./core";
 
-export interface ModelQueueSettings {
+export interface ModelQueueLimits {
   local_concurrency: number;
   cloud_concurrency: number;
   endpoint_limits: Record<string, number>;
+}
+export interface ModelQueueSettings extends ModelQueueLimits {
+  custom_mode?: boolean;
+  custom_settings?: ModelQueueLimits | null;
 }
 export interface ModelQueueStatus {
   settings: ModelQueueSettings;

@@ -2,7 +2,7 @@ import { useEffect, useState } from "react";
 import { fetchModelQueue, saveModelQueue, type ModelQueueStatus } from "../../api";
 import { Button } from "../../components/ui";
 import { startAdaptivePoll } from "../../lib/adaptivePoll";
-import { presetFor, settingsFor, SPEED_PRESETS, type SpeedPresetId } from "../../lib/speedPresets";
+import { presetFor, withSpeedPreset, SPEED_PRESETS, type SpeedPresetId } from "../../lib/speedPresets";
 import { useToast } from "../../lib/toast";
 import { queueEndpoints } from "../../lib/modelEndpoints";
 import { useRunState } from "../../state/runState";
@@ -16,7 +16,6 @@ import { SettingRow } from "./SettingRow";
 export function ModelSpeedSetting() {
   const [status, setStatus] = useState<ModelQueueStatus | null>(null);
   const [busy, setBusy] = useState(false);
-  const [custom, setCustom] = useState(false);
   const toast = useToast();
   const { settings: appSettings, config } = useRunState();
   useEffect(() => {
@@ -48,7 +47,7 @@ export function ModelSpeedSetting() {
   }
 
   if (!status) return null;
-  const preset: SpeedPresetId = custom ? "custom" : presetFor(status.settings);
+  const preset: SpeedPresetId = presetFor(status.settings);
   const help = SPEED_PRESETS.find((p) => p.id === preset)?.help;
   const endpoints = queueEndpoints(appSettings, config, status);
 
@@ -98,8 +97,7 @@ export function ModelSpeedSetting() {
           disabled={busy}
           onChange={(e) => {
             const id = e.target.value as SpeedPresetId;
-            setCustom(id === "custom");
-            if (id !== "custom") void save(settingsFor(id));
+            void save(withSpeedPreset(status.settings, id));
           }}
         >
           {SPEED_PRESETS.map((p) => (

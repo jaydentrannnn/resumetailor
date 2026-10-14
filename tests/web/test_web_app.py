@@ -149,3 +149,27 @@ def test_spa_revalidation_answers_304_with_the_same_policy(spa_client):
     again = spa_client.get("/", headers={"if-none-match": first.headers["etag"]})
     assert again.status_code == 304
     assert again.headers["cache-control"] == "no-cache"
+
+
+def test_desktop_html_seeds_the_saved_theme_on_every_app_route(tmp_path, monkeypatch):
+    from fastapi import FastAPI
+
+    from resume_tailor import config
+    from resume_tailor.infra import appearance
+    from resume_tailor.web import state
+    from resume_tailor.web.app import _SPAStaticFiles
+
+    monkeypatch.setattr(config, "DATA_ROOT", tmp_path / "data")
+    monkeypatch.setattr(state, "desktop", True)
+    dist = tmp_path / "dist"
+    dist.mkdir()
+    (dist / "index.html").write_text("<html><head></head><body>app</body></html>", "utf-8")
+    spa = FastAPI()
+    spa.mount("/", _SPAStaticFiles(directory=str(dist), html=True))
+    with TestClient(spa) as c:
+        for preference in ("dark", "light", "system"):
+            appearance.save_theme(preference)
+            for route in ("/", "/index.html", "/settings"):
+                response = c.get(route)
+                assert f'window.__RT_DESKTOP_THEME__="{preference}";' in response.text
+                assert response.headers["cache-control"] == "no-store"

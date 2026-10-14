@@ -97,12 +97,44 @@ fn log_folder() -> String {
     log_folder_path().display().to_string()
 }
 
+fn theme_path() -> PathBuf {
+    log_folder_path()
+        .parent()
+        .unwrap()
+        .parent()
+        .unwrap()
+        .join("theme.json")
+}
+
+fn theme_script_from_json(text: &str) -> String {
+    let preference = serde_json::from_str::<serde_json::Value>(text)
+        .ok()
+        .and_then(|value| {
+            value
+                .get("preference")
+                .and_then(|p| p.as_str())
+                .map(str::to_owned)
+        })
+        .filter(|p| matches!(p.as_str(), "light" | "dark" | "system"))
+        .unwrap_or_else(|| "system".to_owned());
+    format!(
+        "window.__RT_DESKTOP_THEME__={};",
+        serde_json::to_string(&preference).unwrap()
+    )
+}
+
+/// Seed the bundled startup page before paint, from the app's last saved preference.
+fn theme_script() -> String {
+    theme_script_from_json(&std::fs::read_to_string(theme_path()).unwrap_or_default())
+}
+
 fn start_server(app: &AppHandle) -> Result<(), String> {
     let program = server_program(app).map_err(|e| e.to_string())?;
     let mut command = Command::new(&program);
     // The server exits when this pipe closes, so it never outlives the shell, even
     // when the shell is killed rather than quit.
     command
+        .env("RESUME_TAILOR_THEME_PATH", theme_path())
         .arg("--exit-with-stdin")
         .arg("--app-version")
         .arg(app.package_info().version.to_string())
@@ -240,6 +272,7 @@ fn main_window(app: &AppHandle) -> tauri::Result<tauri::WebviewWindow> {
     let navigation = app.clone();
     let popup = app.clone();
     WebviewWindowBuilder::from_config(app, &config)?
+        .initialization_script(theme_script())
         .on_navigation(move |url| {
             // A link followed in the window itself.
             let server = navigation
@@ -332,7 +365,24 @@ pub fn run() {
 
 #[cfg(test)]
 mod tests {
-    use super::ready_url;
+    use super::{ready_url, theme_script_from_json};
+
+    #[test]
+    fn startup_theme_accepts_saved_preferences_and_defaults_invalid_input() {
+        for preference in ["light", "dark", "system"] {
+            let text = format!(r#"{{"preference":"{preference}"}}"#);
+            assert_eq!(
+                theme_script_from_json(&text),
+                format!("window.__RT_DESKTOP_THEME__=\"{preference}\";")
+            );
+        }
+        for text in ["", "null", "{}", r#"{"preference":"invalid"}"#] {
+            assert_eq!(
+                theme_script_from_json(text),
+                "window.__RT_DESKTOP_THEME__=\"system\";"
+            );
+        }
+    }
 
     #[test]
     fn ready_line_becomes_the_sign_in_url() {

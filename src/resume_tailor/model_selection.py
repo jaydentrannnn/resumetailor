@@ -31,7 +31,9 @@ def is_custom_credential(name: str) -> bool:
     return re.fullmatch(r"CUSTOM_(LIGHT|HEAVY)_[0-9a-f]{24}", name) is not None
 
 
-class ModelSelection(BaseModel):
+class ModelDraft(BaseModel):
+    """Remembered editor input; incomplete URLs are allowed but credentials are not."""
+
     provider: ModelProvider = "ollama"
     model_name: str = Field(default="", max_length=200)
     api_format: Literal["openai", "anthropic"] = "openai"
@@ -40,6 +42,25 @@ class ModelSelection(BaseModel):
     plan: ModelPlan | None = None
     vertex_project: str = Field(default="", max_length=63)
     vertex_location: str = Field(default="", max_length=40)
+
+    @field_validator("model_name", "base_url", "vertex_project", "vertex_location")
+    @classmethod
+    def _strip(cls, value: str) -> str:
+        return value.strip()
+
+    @field_validator("base_url")
+    @classmethod
+    def _draft_url(cls, value: str) -> str:
+        try:
+            parts = urlsplit(value)
+        except ValueError:
+            return value  # An unfinished host is still editable text.
+        if parts.username or parts.password or parts.query or parts.fragment:
+            raise ValueError("Server URL must not contain credentials, a query, or a fragment")
+        return value
+
+
+class ModelSelection(ModelDraft):
 
     def effective_plan(self) -> ModelPlan | None:
         """The chosen plan, else a guess: Gemini's free tier, paid Anthropic/OpenAI.
@@ -51,11 +72,6 @@ class ModelSelection(BaseModel):
         if self.provider in {"anthropic", "openai", "vertex_ai"}:
             return "paid"
         return None
-
-    @field_validator("model_name", "base_url", "vertex_project", "vertex_location")
-    @classmethod
-    def _strip(cls, value: str) -> str:
-        return value.strip()
 
     @field_validator("base_url")
     @classmethod
@@ -120,6 +136,10 @@ class AiModels(BaseModel):
     )
     # Preserved on migration; an explicit light-model edit clears this compatibility map.
     legacy_light_overrides: dict[str, str] = Field(default_factory=dict)
+    # Remember provider drafts independently for Light and Heavy, never API keys.
+    provider_selections: dict[ModelRole, dict[ModelProvider, ModelDraft]] = Field(
+        default_factory=dict
+    )
 
 
 def legacy_routing(defaults: dict[str, Any]) -> tuple[str, dict[str, str] | None, str | None]:

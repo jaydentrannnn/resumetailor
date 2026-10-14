@@ -28,11 +28,30 @@ export const SPEED_PRESETS = [
 export type SpeedPresetId = (typeof SPEED_PRESETS)[number]["id"] | "custom";
 
 export function presetFor(settings: ModelQueueSettings): SpeedPresetId {
+  if (settings.custom_mode) return "custom";
   if (Object.keys(settings.endpoint_limits).length) return "custom";
   const match = SPEED_PRESETS.find(
     (p) => p.local === settings.local_concurrency && p.cloud === settings.cloud_concurrency,
   );
   return match?.id ?? "custom";
+}
+
+/** Presets use their own limits while keeping the last Custom draft available. */
+export function withSpeedPreset(
+  settings: ModelQueueSettings,
+  id: SpeedPresetId,
+): ModelQueueSettings {
+  const limits = {
+    local_concurrency: settings.local_concurrency,
+    cloud_concurrency: settings.cloud_concurrency,
+    endpoint_limits: settings.endpoint_limits,
+  };
+  const remembered = presetFor(settings) === "custom" ? limits : settings.custom_settings;
+  return {
+    ...(id === "custom" ? (remembered ?? limits) : settingsFor(id)),
+    custom_mode: id === "custom",
+    custom_settings: remembered,
+  };
 }
 
 export function settingsFor(id: Exclude<SpeedPresetId, "custom">): ModelQueueSettings {

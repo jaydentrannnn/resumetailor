@@ -1,5 +1,6 @@
 import type { AppConfig, JobSettings } from "../api";
 import { profileDefaultModel } from "./modelLabel";
+import { modelsFor, selectionDefault, selectionProvider } from "./aiModels";
 import { providerInfo } from "./providers";
 
 /** What the collapsed Options tile shows, one plain value per row. */
@@ -32,12 +33,20 @@ export function runOptionsSummary(
 ): RunOptionsSummary {
   const coverOn = settings.cover_letter && !settings.no_cover_letter;
   const tone = TONE_LABEL[settings.cover_angles.tone] ?? "";
-  const modelName = settings.model_name || profileDefaultModel(settings, config);
+  const light = modelsFor(settings).light;
+  const modelName = settings.ai_models
+    ? light.model_name || selectionDefault(light, config)
+    : settings.model_name || profileDefaultModel(settings, config);
   return {
     pages: `${settings.pages} page${settings.pages === 1 ? "" : "s"}`,
     coverLetter: coverOn ? (tone ? `On · ${tone}` : "On") : "Off",
-    provider: providerInfo(settings.model)?.name ?? settings.model,
-    modelName: modelName && !modelName.startsWith("e.g.") ? modelName : null,
+    provider: settings.ai_models
+      ? (selectionProvider(light)?.name ?? light.provider)
+      : (providerInfo(settings.model)?.name ?? settings.model),
+    modelName:
+      modelName && !modelName.startsWith("e.g.") && modelName !== "Enter model name"
+        ? modelName
+        : null,
     pageFit: config ? (config.calibration_source === "fallback" ? "Estimated" : "Measured") : null,
   };
 }

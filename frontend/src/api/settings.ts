@@ -4,6 +4,9 @@ import { apiError, request } from "./core";
 import type { JobSettings } from "./jobs";
 import type { TemplateInfo } from "./templates";
 
+export const saveTheme = (preference: "system" | "light" | "dark") =>
+  request("/api/theme", { method: "PUT", body: JSON.stringify({ preference }) });
+
 export type AppConfig = {
   pages: number;
   experience: number;

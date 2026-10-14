@@ -3,6 +3,8 @@ import {
   modelsFor,
   selectionReady,
   withSelection,
+  withProvider,
+  type ModelProvider,
   type ModelRole,
   type ModelSelection,
 } from "../../lib/aiModels";
@@ -31,5 +33,7 @@ export function useRoleModel(role: ModelRole, secrets: SecretState[]) {
   );
   const patch = (fields: Partial<ModelSelection>) =>
     setSettings(withSelection(settings, role, { ...selection, ...fields }));
-  return { role, selection, connection, ready, check, retest, patch };
+  const selectProvider = (provider: ModelProvider) =>
+    setSettings(withProvider(settings, role, provider));
+  return { role, selection, connection, ready, check, retest, patch, selectProvider };
 }

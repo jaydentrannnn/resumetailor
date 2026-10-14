@@ -59,7 +59,7 @@ def endpoint_key(url: str) -> str:
     return urlunsplit((parts.scheme.lower(), netloc, parts.path.rstrip("/"), "", ""))
 
 
-class QueueSettings(BaseModel):
+class QueueLimits(BaseModel):
     local_concurrency: int = Field(default=1, ge=1, le=16)
     cloud_concurrency: int = Field(default=3, ge=1, le=16)
     endpoint_limits: dict[str, int] = Field(default_factory=dict)
@@ -74,6 +74,11 @@ class QueueSettings(BaseModel):
                 raise ValueError("Endpoint limits need an HTTP(S) URL and a limit from 1 to 16")
             result[endpoint_key(url)] = limit
         return result
+
+
+class QueueSettings(QueueLimits):
+    custom_mode: bool = False
+    custom_settings: QueueLimits | None = None
 
 
 @dataclass
@@ -197,7 +202,8 @@ class RequestQueue:
         self._stamp: tuple[str, int] | None = None
         self._plans: dict[str, int] = {}
         self._file_plans: dict[str, int] = {}
-        self._plan_stamp: int | None = None
+        self._plan_stamp: tuple[str, int] | None = None
+        self._advanced_enabled = True
         self._roles: dict[str, str] = {}
 
     def settings(self) -> QueueSettings:
@@ -241,19 +247,23 @@ class RequestQueue:
         from resume_tailor import app_settings
 
         target = app_settings.path()
-        stamp = target.stat().st_mtime_ns if target.exists() else 0
+        stamp = (str(target), target.stat().st_mtime_ns if target.exists() else 0)
         if stamp != self._plan_stamp:
             self._plan_stamp = stamp
-            ai_models = app_settings.load().get("ai_models") or {}
+            saved = app_settings.load()
+            self._advanced_enabled = saved.get("ai_advanced_enabled", True)
+            ai_models = saved.get("ai_models") or {}
             self._file_plans = _plans_from(ai_models)
             self._roles = _role_endpoints(ai_models)
         return {**self._file_plans, **self._plans}
 
     def _configured(self, key: str, pool: _Pool) -> int:
         settings = self.settings()
+        plans = self._model_plans()
+        if not self._advanced_enabled:
+            settings = QueueSettings()
         if key in settings.endpoint_limits:
             return settings.endpoint_limits[key]
-        plans = self._model_plans()
         if key in plans:
             return plans[key]
         return settings.local_concurrency if pool.local else settings.cloud_concurrency

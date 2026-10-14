@@ -1,9 +1,58 @@
 import { describe, expect, it } from "vitest";
 import { DEFAULT_SETTINGS } from "../state/runDefaults";
-import { customCredentialName, modelsFor, selectionReady, withSelection } from "./aiModels";
+import {
+  customCredentialName,
+  modelsFor,
+  selectionReady,
+  withSelection,
+  withProvider,
+  type ModelProvider,
+} from "./aiModels";
 import { endpointKey, queueEndpoints, selectionEndpoint } from "./modelEndpoints";
 
 describe("shared model settings", () => {
+  it("restores each provider's full draft per role, including after reload", () => {
+    const providers: ModelProvider[] = [
+      "anthropic",
+      "gemini",
+      "openai",
+      "vertex_ai",
+      "custom",
+      "ollama",
+      "ollama-cloud",
+      "lmstudio",
+    ];
+    let settings = { ...DEFAULT_SETTINGS };
+    for (const role of ["light", "heavy"] as const) {
+      for (const provider of providers) {
+        settings = withProvider(settings, role, provider);
+        settings = withSelection(settings, role, {
+          provider,
+          model_name: `${role}-${provider}`,
+          api_format: "anthropic",
+          base_url: "https://proxy.example/api",
+          plan: "subscription",
+          vertex_project: `${role}-project`,
+          vertex_location: "global",
+        });
+      }
+    }
+    settings = JSON.parse(JSON.stringify(settings));
+    for (const role of ["light", "heavy"] as const) {
+      for (const provider of providers) {
+        settings = withProvider(settings, role, provider);
+        expect(modelsFor(settings)[role]).toEqual({
+          provider,
+          model_name: `${role}-${provider}`,
+          api_format: "anthropic",
+          base_url: "https://proxy.example/api",
+          plan: "subscription",
+          vertex_project: `${role}-project`,
+          vertex_location: "global",
+        });
+      }
+    }
+  });
   it("requires a Vertex model, project and location and derives its endpoint", () => {
     const pick = {
       provider: "vertex_ai" as const,

@@ -4,9 +4,19 @@ import {
   useContext,
   useEffect,
   useMemo,
+  useRef,
   useState,
   type ReactNode,
 } from "react";
+import { saveTheme } from "../api";
+import logoMarkBlack from "../assets/logo-mark-black.svg";
+import logoMarkWhite from "../assets/logo-mark-white.svg";
+
+declare global {
+  interface Window {
+    __RT_DESKTOP_THEME__?: ThemePreference | null;
+  }
+}
 
 /** Persisted preference: follow OS, or force light/dark. */
 export type ThemePreference = "system" | "light" | "dark";
@@ -30,6 +40,8 @@ const ThemeContext = createContext<ThemeContextValue | null>(null);
  * Read a stored theme preference, defaulting to system when missing or invalid.
  */
 function readStoredPreference(): ThemePreference {
+  const desktop = window.__RT_DESKTOP_THEME__;
+  if (desktop === "light" || desktop === "dark" || desktop === "system") return desktop;
   try {
     const raw = localStorage.getItem(STORAGE_KEY);
     if (raw === "light" || raw === "dark" || raw === "system") return raw;
@@ -53,6 +65,8 @@ export function resolveTheme(preference: ThemePreference): ResolvedTheme {
 function applyResolved(resolved: ResolvedTheme): void {
   document.documentElement.setAttribute("data-theme", resolved);
   document.documentElement.style.colorScheme = resolved;
+  const icon = document.querySelector<HTMLLinkElement>('link[rel="icon"]');
+  if (icon) icon.href = resolved === "dark" ? logoMarkWhite : logoMarkBlack;
 }
 
 /**
@@ -60,6 +74,7 @@ function applyResolved(resolved: ResolvedTheme): void {
  * Mount above the router so the header toggle works on every page.
  */
 export function ThemeProvider({ children }: { children: ReactNode }) {
+  const themeWrite = useRef<Promise<unknown>>(Promise.resolve());
   const [preference, setPreferenceState] = useState<ThemePreference>(readStoredPreference);
   const [resolved, setResolved] = useState<ResolvedTheme>(() =>
     resolveTheme(readStoredPreference()),
@@ -85,6 +100,19 @@ export function ThemeProvider({ children }: { children: ReactNode }) {
 
   // Keep `data-theme` in sync on mount and when OS scheme changes under "system".
   useEffect(() => {
+    // Serialize desktop writes so a quick sequence of theme changes saves the last.
+    if (window.__RT_DESKTOP_THEME__ !== undefined) {
+      window.__RT_DESKTOP_THEME__ = preference;
+      themeWrite.current = themeWrite.current
+        .catch(() => undefined)
+        .then(() => saveTheme(preference));
+      void themeWrite.current.catch(() => undefined);
+    }
+    try {
+      localStorage.setItem(STORAGE_KEY, preference);
+    } catch {
+      /* blocked storage */
+    }
     applyResolved(resolveTheme(preference));
     setResolved(resolveTheme(preference));
     if (preference !== "system") return;

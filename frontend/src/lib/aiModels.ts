@@ -28,6 +28,7 @@ export type AiModels = {
   light: ModelSelection;
   heavy: ModelSelection;
   legacy_light_overrides: Record<string, string>;
+  provider_selections?: Partial<Record<ModelRole, Partial<Record<ModelProvider, ModelSelection>>>>;
 };
 
 export function modelsFor(settings: JobSettings): AiModels {
@@ -61,6 +62,14 @@ export function withSelection(
     ai_models: {
       ...models,
       [role]: selection,
+      provider_selections: {
+        ...models.provider_selections,
+        [role]: {
+          ...models.provider_selections?.[role],
+          [models[role].provider]: models[role],
+          [selection.provider]: selection,
+        },
+      },
       legacy_light_overrides: role === "light" ? {} : models.legacy_light_overrides,
     },
     // Keep the Apply request snapshot in sync with unsaved edits.
@@ -74,6 +83,29 @@ export function withSelection(
           }
         : settings.apply,
   };
+}
+
+/** Restore this role's last complete draft for a provider, including connection fields. */
+export function withProvider(
+  settings: JobSettings,
+  role: ModelRole,
+  provider: ModelProvider,
+): JobSettings {
+  const models = modelsFor(settings);
+  if (models[role].provider === provider) return settings;
+  return withSelection(
+    settings,
+    role,
+    models.provider_selections?.[role]?.[provider] ?? {
+      provider,
+      model_name: "",
+      base_url: "",
+      api_format: "openai",
+      plan: null,
+      vertex_project: "",
+      vertex_location: "",
+    },
+  );
 }
 
 export function selectionProvider(selection: ModelSelection) {

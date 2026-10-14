@@ -20,6 +20,9 @@ export const DEFAULT_INCLUDE: IncludeOptions = {
 
 /** Defaults for a fresh Tailor session; also the merge base for settings from the server. */
 export const DEFAULT_SETTINGS: JobSettings = {
+  ai_advanced_enabled: false,
+  advanced_settings: null,
+  custom_effort: null,
   pages: 1,
   experience: null,
   projects: null,
@@ -151,7 +154,7 @@ export function resetSettings(settings: JobSettings, config: AppConfig | null): 
     model_name: settings.model_name,
     ollama_model: settings.ollama_model,
     gemini_model: settings.gemini_model,
-    effort: settings.effort,
+    ai_models: settings.ai_models,
     apply: settings.apply,
     pages: config?.pages ?? DEFAULT_SETTINGS.pages,
     experience: config?.experience ?? 3,

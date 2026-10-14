@@ -7,10 +7,11 @@ from contextlib import suppress
 from dataclasses import replace
 
 from fastapi import APIRouter
+from pydantic import BaseModel
 
 from resume_tailor import config, workspace
 from resume_tailor.content import bullet_tags, data, industries, style
-from resume_tailor.infra import model_queue
+from resume_tailor.infra import appearance, model_queue
 from resume_tailor.model_selection import migrated_models
 from resume_tailor.pipeline import coverletter, expand, fit_types, rewrite_prompts
 from resume_tailor.pipeline.events import ProgressEvent
@@ -28,6 +29,16 @@ from resume_tailor.web.schemas import (
 
 router = APIRouter()
 _log = logging.getLogger(__name__)
+
+
+class ThemeUpdate(BaseModel):
+    preference: appearance.ThemePreference
+
+
+@router.put("/api/theme")
+def put_theme(body: ThemeUpdate) -> dict:
+    appearance.save_theme(body.preference)
+    return {"preference": body.preference}
 
 
 @router.get("/api/model-queue")
@@ -206,6 +217,15 @@ def get_settings() -> SettingsResponse:
     """The active profile's saved run defaults, seeded from `JobSettings()` if unset."""
     raw = workspace.load_settings()
     settings = JobSettings.model_validate(raw["defaults"])
+    if "ai_advanced_enabled" not in raw["defaults"]:
+        # Migrate the old hide-only switch by preserving tuning that was actually active.
+        speed = model_queue.queue.settings()
+        settings.ai_advanced_enabled = (
+            settings.effort is not None or settings.extract_runs != 0
+            or settings.max_concurrent_jobs != 2
+            or speed.local_concurrency != 1 or speed.cloud_concurrency != 3
+            or bool(speed.endpoint_limits)
+        )
     if settings.ai_models is None:
         try:
             settings.ai_models = migrated_models(settings.model_dump())

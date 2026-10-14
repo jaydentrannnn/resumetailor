@@ -43,6 +43,9 @@ export type CoverAngles = {
 
 export type JobSettings = {
   ai_models?: AiModels | null;
+  ai_advanced_enabled?: boolean;
+  advanced_settings?: import("../lib/advancedSettings").AdvancedSettings | null;
+  custom_effort?: import("../lib/effortSteps").EffortSetting;
   pages: number;
   experience: number | null;
   projects: number | null;

@@ -28,7 +28,7 @@ export function ModelRow({
   queue?: ModelQueueStatus | null;
 }) {
   const { settings, config } = useRunState();
-  const { role, selection, connection, patch } = model;
+  const { role, selection, connection, patch, selectProvider } = model;
   const id = useId();
   const fallback = selectionDefault(selection, config);
   const privacy = privacyFor(
@@ -53,17 +53,7 @@ export function ModelRow({
           <select
             className="field mt-1"
             value={selection.provider}
-            onChange={(e) =>
-              patch({
-                provider: e.target.value as ModelProvider,
-                model_name: "",
-                base_url: "",
-                api_format: "openai",
-                plan: null,
-                vertex_project: "",
-                vertex_location: "",
-              })
-            }
+            onChange={(e) => selectProvider(e.target.value as ModelProvider)}
           >
             {PROVIDERS.map((p) => (
               <option key={p.id} value={p.id === "claude" ? "anthropic" : p.id}>

@@ -10,6 +10,7 @@ Or from Docker Compose, which is the intended production path.
 from __future__ import annotations
 
 import contextlib
+import json
 import logging
 import os
 import threading
@@ -18,7 +19,7 @@ from pathlib import Path
 from typing import Any
 
 from fastapi import FastAPI
-from fastapi.responses import JSONResponse
+from fastapi.responses import HTMLResponse, JSONResponse
 from fastapi.staticfiles import StaticFiles
 from starlette.exceptions import HTTPException as StarletteHTTPException
 
@@ -28,7 +29,7 @@ from resume_tailor.apply.funnel import daily_progress
 from resume_tailor.apply.funnel import operations as apply_operations
 from resume_tailor.apply.funnel import scheduler as apply_scheduler
 from resume_tailor.content import data, data_transfer
-from resume_tailor.infra import fake_llm, housekeeping, logs
+from resume_tailor.infra import appearance, fake_llm, housekeeping, logs
 from resume_tailor.web import security, skill_refresh, template_migration, template_ops
 from resume_tailor.web import state as web_state
 from resume_tailor.web.schemas import (
@@ -304,6 +305,15 @@ class _SPAStaticFiles(StaticFiles):
             response = await super().get_response(served, scope)
         if response.status_code in (200, 304):
             response.headers["Cache-Control"] = self._cache_control(served)
+        # The desktop server may choose a new port each launch (a new storage origin).
+        # Seed the saved preference before the app's theme script paints anything.
+        if web_state.desktop and Path(getattr(response, "path", "")).name == "index.html":
+            html = Path(response.path).read_text("utf-8")
+            seed = json.dumps(appearance.load_theme())
+            html = html.replace(
+                "<head>", f"<head><script>window.__RT_DESKTOP_THEME__={seed};</script>", 1
+            )
+            return HTMLResponse(html, headers={"Cache-Control": "no-store"})
         return response
 
     @staticmethod

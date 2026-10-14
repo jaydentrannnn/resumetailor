@@ -296,12 +296,11 @@ export function RunProvider({ children }: { children: ReactNode }) {
           }
           next = {
             ...DEFAULT_SETTINGS,
+            // A new profile still inherits this computer's saved AI selections.
+            ...res.settings,
             pages: c.pages,
             experience: c.experience,
             projects: c.projects,
-            model: c.model_profiles.includes(DEFAULT_SETTINGS.model)
-              ? DEFAULT_SETTINGS.model
-              : (c.model_profiles[0] ?? DEFAULT_SETTINGS.model),
             include: { ...DEFAULT_INCLUDE, gpa },
           };
         } else {

@@ -22,7 +22,12 @@ export function tailorModelLabel(
 ): string {
   if (settings.ai_models) {
     const light = settings.ai_models.light;
-    return `${light.provider} ? ${light.model_name || profileDefaultModel({ model: light.provider === "anthropic" ? "claude" : light.provider }, config)}`;
+    const provider = light.provider === "anthropic" ? "claude" : light.provider;
+    const model =
+      light.model_name ||
+      config?.model_defaults?.[light.provider] ||
+      (config ? profileDefaultModel({ model: provider }, config) : "");
+    return model ? `${provider} · ${model}` : provider;
   }
   const model = settings.model_name || (config ? profileDefaultModel(settings, config) : "");
   return model ? `${settings.model} · ${model}` : settings.model;

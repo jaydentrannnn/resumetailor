@@ -94,6 +94,34 @@ for (const width of [1280, 390]) {
     await expect.poll(() => saved.ai_models?.light.model_name).toBe("reasoner");
     expect(saved.ai_models?.heavy.model_name).toBe("filler");
 
+    // Returning to a provider restores its own complete role-specific setup.
+    await heavy.getByLabel("Server URL", { exact: true }).fill("https://");
+    await heavy.getByRole("combobox", { name: "Provider", exact: true }).selectOption("gemini");
+    await heavy.getByLabel("Model", { exact: true }).fill("heavy-flash");
+    await expect.poll(() => saved.ai_models?.heavy.model_name).toBe("heavy-flash");
+    await page.reload();
+    await heavy.getByRole("combobox", { name: "Provider", exact: true }).selectOption("custom");
+    await expect(heavy.getByLabel("Model", { exact: true })).toHaveValue("filler");
+    await expect(heavy.getByLabel("Server URL", { exact: true })).toHaveValue("https://");
+    await heavy.getByLabel("Server URL", { exact: true }).fill("https://other.example/api");
+    await expect(heavy.getByRole("combobox", { name: "API format", exact: true })).toHaveValue(
+      "anthropic",
+    );
+    await light.getByRole("combobox", { name: "Provider", exact: true }).selectOption("gemini");
+    await light.getByLabel("Model", { exact: true }).fill("light-flash");
+    await light.getByRole("combobox", { name: "Provider", exact: true }).selectOption("openai");
+    await expect(light.getByLabel("Model", { exact: true })).toHaveValue("reasoner");
+    await expect.poll(() => saved.ai_models?.light.provider).toBe("openai");
+    await expect.poll(() => saved.ai_models?.heavy.provider).toBe("custom");
+    await expect
+      .poll(() => saved.ai_models?.provider_selections?.light?.gemini?.model_name)
+      .toBe("light-flash");
+    await page.reload();
+    await expect(light.getByLabel("Model", { exact: true })).toHaveValue("reasoner");
+    await expect(heavy.getByLabel("Server URL", { exact: true })).toHaveValue(
+      "https://other.example/api",
+    );
+
     const advanced = tile;
     const toggle = tile.getByRole("switch", { name: "Advanced", exact: true });
     await expect(toggle).not.toBeChecked();
@@ -110,6 +138,21 @@ for (const width of [1280, 390]) {
     await expect(advanced.getByLabel("OpenAI (light) limit")).toHaveValue("");
     await expect(advanced.getByText(/0 running/)).toHaveCount(0);
     await expect(advanced.getByLabel("Custom server (heavy) limit")).toBeVisible();
+    await advanced.getByLabel("Cloud requests at once", { exact: true }).selectOption("8");
+    await advanced.getByLabel("Request concurrency", { exact: true }).selectOption("balanced");
+    await advanced.getByLabel("Request concurrency", { exact: true }).selectOption("custom");
+    await expect(advanced.getByLabel("Cloud requests at once", { exact: true })).toHaveValue("8");
+    await advanced.getByLabel("Job posting reads", { exact: true }).selectOption("5");
+    await advanced.getByLabel("Resumes at once", { exact: true }).selectOption("7");
+    const effort = advanced.getByRole("radiogroup", { name: "Reasoning effort", exact: true });
+    await effort.getByRole("radio", { name: "Custom", exact: true }).click();
+    await advanced.getByLabel("Bullet rewriting effort", { exact: true }).selectOption("high");
+    await effort.getByRole("radio", { name: "Recommended", exact: true }).click();
+    await expect.poll(() => saved.effort).toBeNull();
+    await effort.getByRole("radio", { name: "Custom", exact: true }).click();
+    await expect(advanced.getByLabel("Bullet rewriting effort", { exact: true })).toHaveValue(
+      "high",
+    );
     expect(await page.evaluate(() => document.documentElement.scrollWidth)).toBeLessThanOrEqual(
       width,
     );
@@ -117,5 +160,25 @@ for (const width of [1280, 390]) {
     await toggle.press("Space");
     await expect(toggle).not.toBeChecked();
     await expect(advanced.getByLabel("Request concurrency", { exact: true })).toHaveCount(0);
+    await expect
+      .poll(() => [
+        saved.ai_advanced_enabled,
+        saved.effort,
+        saved.extract_runs,
+        saved.max_concurrent_jobs,
+      ])
+      .toEqual([false, null, 0, 2]);
+    await expect.poll(() => saved.advanced_settings?.extract_runs).toBe(5);
+    await page.reload();
+    await expect(toggle).not.toBeChecked();
+    await toggle.press("Space");
+    await expect(advanced.getByLabel("Job posting reads", { exact: true })).toHaveValue("5");
+    await expect(advanced.getByLabel("Resumes at once", { exact: true })).toHaveValue("7");
+    await expect(advanced.getByLabel("Bullet rewriting effort", { exact: true })).toHaveValue(
+      "high",
+    );
+    await expect(advanced.getByLabel("Cloud requests at once", { exact: true })).toHaveValue("8");
+    await page.getByRole("link", { name: "Tailor", exact: true }).click();
+    await expect(page.getByText("reasoner", { exact: true })).toBeVisible();
   });
 }

@@ -7,21 +7,12 @@ import { AiAdvancedSettings } from "./AiAdvancedSettings";
 import { ModelRow } from "./ModelRow";
 import type { RoleModel } from "./useRoleModel";
 import { VertexConnectionPanel } from "./VertexConnectionPanel";
-
-const ADVANCED_KEY = "rt.settings.aiAdvanced";
-
-function storedAdvanced(): boolean {
-  try {
-    return localStorage.getItem(ADVANCED_KEY) === "1";
-  } catch {
-    return false;
-  }
-}
+import { withAdvanced } from "../../lib/advancedSettings";
 
 /**
  * The one AI models tile: provider, model and plan for Light and Heavy work, each with
  * its connection test and rate-limit state. Keys live below. With `advanced`, a switch in
- * the header reveals effort, posting reads, request speed and resumes at once here too.
+ * the header enables saved effort, posting reads, request speed and resumes at once.
  */
 export function ModelsCard({
   light,
@@ -39,16 +30,11 @@ export function ModelsCard({
   className?: string;
   description?: ReactNode;
 }) {
-  const { settingsLoaded } = useRunState();
-  const [showAdvanced, setShowAdvanced] = useState(storedAdvanced);
+  const { settingsLoaded, settings, setSettings } = useRunState();
+  const showAdvanced = settings.ai_advanced_enabled ?? true;
   const queue = useModelQueue();
   const toggle = (on: boolean) => {
-    setShowAdvanced(on);
-    try {
-      localStorage.setItem(ADVANCED_KEY, on ? "1" : "0");
-    } catch {
-      // Remembering the switch is a convenience only.
-    }
+    setSettings(withAdvanced(settings, on));
   };
   return (
     <Card
@@ -59,7 +45,7 @@ export function ModelsCard({
       actions={
         advanced && (
           <label className="flex items-center gap-2 text-[13px] font-semibold">
-            <Switch checked={showAdvanced} onChange={toggle} />
+            <Switch checked={showAdvanced} onChange={toggle} disabled={!settingsLoaded} />
             Advanced
           </label>
         )

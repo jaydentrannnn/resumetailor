@@ -9,6 +9,31 @@ from resume_tailor.infra import model_queue
 ENDPOINT = "https://generativelanguage.googleapis.com/v1beta/openai"
 
 
+def test_advanced_off_uses_default_limits_and_retains_the_custom_draft():
+    from resume_tailor import app_settings
+
+    q = model_queue.queue
+    q.save_settings(model_queue.QueueSettings(cloud_concurrency=8, endpoint_limits={ENDPOINT: 7}))
+    with q.slot(ENDPOINT, "gemini"):
+        assert _endpoint()["limit"] == 7
+    app_settings.save({"ai_advanced_enabled": False})
+    assert _endpoint()["limit"] == 3
+    assert q.settings().endpoint_limits == {ENDPOINT: 7}
+    app_settings.save({"ai_advanced_enabled": True})
+    assert _endpoint()["limit"] == 7
+
+
+def test_disabled_advanced_still_honors_the_providers_plan():
+    from resume_tailor import app_settings
+
+    app_settings.save({"ai_advanced_enabled": False})
+    q = model_queue.queue
+    q.set_plan(ENDPOINT, "free")
+    q.save_settings(model_queue.QueueSettings(endpoint_limits={ENDPOINT: 7}))
+    with q.slot(ENDPOINT, "gemini"):
+        assert _endpoint()["limit"] == 1
+
+
 def _gemini_429(quota: str, delay: str = "37s") -> httpx.Response:
     body = [{"error": {"code": 429, "status": "RESOURCE_EXHAUSTED", "details": [
         {"@type": "type.googleapis.com/google.rpc.QuotaFailure",

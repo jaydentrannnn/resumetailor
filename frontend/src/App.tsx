@@ -32,8 +32,7 @@ import { ApplicantProfileProvider } from "./state/applicantProfileState";
 import { useApplicantProfile } from "./state/applicantProfileState";
 import { useEditorState } from "./state/editorState";
 import { useConfirm } from "./state/confirmState";
-import logoMarkBlack from "./assets/logo-mark-black.svg";
-import logoMarkWhite from "./assets/logo-mark-white.svg";
+import { LogoMark } from "./components/LogoMark";
 
 // Text links; the active one is ink with a 2px accent underline sitting on the header rule.
 const navLinkClassName = ({ isActive }: { isActive: boolean }) =>
@@ -84,7 +83,8 @@ function WorkspaceScope() {
 
   if (loading) {
     return (
-      <div className="flex min-h-screen items-center justify-center text-sm text-ink-muted">
+      <div className="flex min-h-screen items-center justify-center gap-3 bg-paper text-sm text-ink-muted" role="status">
+        <LogoMark />
         Loading…
       </div>
     );
@@ -133,19 +133,7 @@ function Shell() {
               sideways — the old unwrapped row was the app's one real horizontal-scroll bug. */}
           <div className="flex min-w-0 flex-wrap items-center gap-x-7 gap-y-0">
             <p className="inline-flex items-center gap-2.5 font-display text-lg font-semibold tracking-tight text-ink [overflow-wrap:anywhere]">
-              {/* Two copies of the mark; CSS shows the one that matches data-theme. */}
-              <img
-                src={logoMarkBlack}
-                alt=""
-                aria-hidden="true"
-                className="rt-logo-light h-5 w-auto shrink-0"
-              />
-              <img
-                src={logoMarkWhite}
-                alt=""
-                aria-hidden="true"
-                className="rt-logo-dark h-5 w-auto shrink-0"
-              />
+              <LogoMark />
               ResumeTailor
             </p>
             {/* During first-run setup the wizard is the only page: no nav to wander off by. */}

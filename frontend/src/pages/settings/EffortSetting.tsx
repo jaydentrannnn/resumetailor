@@ -12,10 +12,11 @@ import { useRunState } from "../../state/runState";
 import { SELECT_WIDTH } from "./selectWidth";
 import { SettingRow } from "./SettingRow";
 import { useVertexConnection } from "./useVertexConnection";
+import { withEffortMode } from "../../lib/advancedSettings";
 
 /**
  * Reasoning effort, Recommended or Custom per step (`JobSettings.effort`). Only Custom
- * lists the steps; switching to it starts from the recommended level of each.
+ * lists the steps; returning to it restores the last Custom draft.
  */
 export function EffortSetting() {
   const { settings, setSettings, config } = useRunState();
@@ -46,10 +47,7 @@ export function EffortSetting() {
           value={custom ? "custom" : "recommended"}
           onChange={(id) => {
             if ((id === "custom") === custom) return;
-            setSettings({
-              ...settings,
-              effort: id === "custom" ? customLevels(null, recommended) : null,
-            });
+            setSettings(withEffortMode(settings, id === "custom", customLevels(null, recommended)));
           }}
         />
       </SettingRow>

@@ -24,6 +24,9 @@ from resume_tailor import config
 #: Top-level `JobSettings` keys that are app-wide.
 TOP_KEYS = (
     "ai_models",
+    "ai_advanced_enabled",
+    "advanced_settings",
+    "custom_effort",
     "model",
     "model_name",
     "ollama_model",
