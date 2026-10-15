@@ -426,6 +426,7 @@ export function applicationColumns({
       heading: "Next step",
       className: "w-[11.5rem] text-right",
       end: true,
+      noRowSelect: true,
       cell: (row) => (
         <RowAction row={row} archived={archived} actions={actions} navigate={navigate} />
       ),

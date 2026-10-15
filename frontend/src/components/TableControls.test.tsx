@@ -12,6 +12,37 @@ const columns = [
 ];
 afterEach(cleanup);
 
+type Row = (typeof rows)[number];
+function table({
+  onSelected = () => {},
+  rows: list = rows,
+  columns: cols = columns,
+  selected = new Set<string>(),
+  selectable,
+}: {
+  onSelected?: (next: Set<string>) => void;
+  rows?: Row[];
+  columns?: typeof columns;
+  selected?: Set<string>;
+  selectable?: (row: Row) => boolean;
+}) {
+  return (
+    <DataTable
+      rows={list}
+      id={(row) => row.id}
+      columns={cols}
+      selected={selected}
+      onSelected={onSelected}
+      selectable={selectable}
+      sort="name"
+      direction="asc"
+      onSort={() => {}}
+      empty="Empty"
+    />
+  );
+}
+const renderTable = (props: Parameters<typeof table>[0]) => render(table(props));
+
 describe("shared table controls", () => {
   it("selects only rows passed to the current page", () => {
     const onSelected = vi.fn();
@@ -85,6 +116,53 @@ describe("shared table controls", () => {
     expect(screen.queryAllByRole("checkbox")).toHaveLength(0);
     expect(container.querySelectorAll("thead th")).toHaveLength(1);
     expect((container.firstChild as HTMLElement).className).not.toContain("border");
+  });
+  it("selects a row from a click anywhere on it, but not from its controls", () => {
+    const onSelected = vi.fn();
+    const cols = [
+      ...columns,
+      {
+        id: "go",
+        heading: "Next step",
+        noRowSelect: true,
+        cell: () => (
+          <>
+            <button type="button">Fill</button>
+            <span>near</span>
+          </>
+        ),
+      },
+      { id: "link", heading: "Link", cell: () => <a href="#x">Open</a> },
+    ];
+    renderTable({ onSelected, columns: cols });
+    fireEvent.click(screen.getAllByText("Beta")[0]);
+    expect([...onSelected.mock.lastCall![0]]).toEqual(["b"]);
+    onSelected.mockClear();
+    fireEvent.click(screen.getAllByRole("button", { name: "Fill" })[0]);
+    fireEvent.click(screen.getAllByText("near")[0]);
+    fireEvent.click(screen.getAllByText("Open")[0]);
+    expect(onSelected).not.toHaveBeenCalled();
+  });
+  it("selects a range with Shift-click, from a row or its checkbox", () => {
+    const onSelected = vi.fn();
+    const three = [...rows, { id: "c", name: "Gamma" }];
+    const { rerender } = renderTable({ onSelected, rows: three });
+    fireEvent.click(screen.getAllByText("Alpha")[0]);
+    rerender(table({ onSelected, rows: three, selected: new Set(["a"]) }));
+    fireEvent.click(screen.getAllByRole("checkbox", { name: "Select c" })[0], { shiftKey: true });
+    expect([...onSelected.mock.lastCall![0]].sort()).toEqual(["a", "b", "c"]);
+  });
+  it("leaves rows that can't be selected inert", () => {
+    const onSelected = vi.fn();
+    renderTable({ onSelected, selectable: (row) => row.id === "a" });
+    fireEvent.click(screen.getAllByText("Beta")[0]);
+    expect(onSelected).not.toHaveBeenCalled();
+  });
+  it("clears the selection on Escape", () => {
+    const onSelected = vi.fn();
+    renderTable({ onSelected, selected: new Set(["a"]) });
+    fireEvent.keyDown(document.body, { key: "Escape" });
+    expect([...onSelected.mock.lastCall![0]]).toEqual([]);
   });
   it("shows an empty range with disabled navigation", () => {
     render(<Pagination page={0} size={25} total={0} onPage={() => {}} onSize={() => {}} />);

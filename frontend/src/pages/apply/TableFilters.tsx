@@ -69,7 +69,14 @@ export function TableFilters({
         >
           <option value="">All statuses</option>
           {[...new Set([...ALL_STATUSES, ...Object.keys(state.data?.counts ?? {})])]
-            .filter((value) => archived || REVIEW_STATUSES.has(value) === (scope === "review"))
+            // `counts` covers this table's rows: a running row stays where it ran from, so
+            // "Filling" can show up under Needs you as well.
+            .filter(
+              (value) =>
+                archived ||
+                !!state.data?.counts[value] ||
+                REVIEW_STATUSES.has(value) === (scope === "review"),
+            )
             .map((value) => (
               <option value={value} key={value}>
                 {applicationStatusLabel(value)} ({state.data?.counts[value] ?? 0})

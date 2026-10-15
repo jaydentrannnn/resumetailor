@@ -498,7 +498,8 @@ def list_applications(
     """Search, sort, and page applications within one archive scope.
 
     ``group`` splits the working list into the rows waiting on the applicant
-    (``review``) and everything else (``working``); counts cover the chosen group.
+    (``review``) and everything else (``working``); a row with a task running stays in
+    the group it ran from (`store_models.list_group`). Counts cover the chosen group.
     """
     q = q.strip()
     if len(q) > 200:
@@ -510,11 +511,7 @@ def list_applications(
         q=q, archive=archive, applications=list(all_apps.values())
     )
     if group is not None:
-        matched = [
-            row
-            for row in matched
-            if (row.status in store_models.REVIEW_STATUSES) == (group == "review")
-        ]
+        matched = [row for row in matched if store_models.list_group(row) == group]
     counts: dict[str, int] = {}
     for item in matched:
         counts[item.status] = counts.get(item.status, 0) + 1

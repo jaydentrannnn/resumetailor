@@ -105,38 +105,33 @@ export function ApplicationsTable({
       <div role="tabpanel" className="space-y-3">
         {intro}
         {note}
-        {selectedIds.length > 0 && (
-          <SelectionBar
-            count={selectedIds.length}
-            onClear={state.clearSelection}
-            clearLabel="Clear"
+        {/* Always on screen (0 selected, actions off): selecting never shifts the rows. */}
+        <SelectionBar count={selectedIds.length} onClear={state.clearSelection} clearLabel="Clear">
+          {elsewhere > 0 && (
+            <span className="mr-1 text-xs text-ink-muted">({elsewhere} on other pages)</span>
+          )}
+          {bulk}
+          <Button
+            variant="plain"
+            size="sm"
+            disabled={busy || active || !selectedIds.length}
+            title={active ? "Available when the current Apply task finishes" : undefined}
+            onClick={() => actions.move(selectedIds, !archived)}
           >
-            {elsewhere > 0 && (
-              <span className="mr-1 text-xs text-ink-muted">({elsewhere} on other pages)</span>
-            )}
-            {bulk}
+            {archived ? "Restore" : "Archive"}
+          </Button>
+          {!archived && (
             <Button
-              variant="plain"
               size="sm"
-              disabled={busy || active}
-              title={active ? "Available when the current Apply task finishes" : undefined}
-              onClick={() => actions.move(selectedIds, !archived)}
+              variant="danger"
+              disabled={busy || !skippable.length}
+              title="Mark the selected applications as skipped and move them to Done"
+              onClick={() => actions.skip(skippable)}
             >
-              {archived ? "Restore" : "Archive"}
+              Skip ({skippable.length})
             </Button>
-            {!archived && (
-              <Button
-                size="sm"
-                variant="danger"
-                disabled={busy || !skippable.length}
-                title="Mark the selected applications as skipped and move them to Done"
-                onClick={() => actions.skip(skippable)}
-              >
-                Skip ({skippable.length})
-              </Button>
-            )}
-          </SelectionBar>
-        )}
+          )}
+        </SelectionBar>
         {/* The table sits on the tile itself: no second box around it. */}
         <DataTable
           bare

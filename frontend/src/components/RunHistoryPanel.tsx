@@ -195,6 +195,7 @@ export function RunHistoryPanel() {
       id: "actions",
       heading: "",
       className: "w-12",
+      noRowSelect: true,
       cell: (run) => (
         <RowActionsMenu
           label={`Actions for ${run.title}`}
@@ -258,6 +259,8 @@ export function RunHistoryPanel() {
             onChange={(event) => {
               setQuery(event.target.value);
               setPage(0);
+              // A new filter is a new result set: nothing selected (and now hidden) carries over.
+              setSelected(new Set());
             }}
           />
           <select
@@ -267,6 +270,7 @@ export function RunHistoryPanel() {
             onChange={(event) => {
               setStatus(event.target.value as RunStatusFilter);
               setPage(0);
+              setSelected(new Set());
             }}
           >
             <option value="">All statuses</option>
@@ -278,30 +282,29 @@ export function RunHistoryPanel() {
           <Button onClick={() => void refreshHistory()}>Refresh</Button>
         </div>
 
-        {selectedIds.length > 0 && (
-          <SelectionBar
-            count={selectedIds.length}
-            onClear={() => setSelected(new Set())}
-            clearLabel="Clear"
+        {/* Always on screen (0 selected, actions off): selecting never shifts the rows. */}
+        <SelectionBar
+          count={selectedIds.length}
+          onClear={() => setSelected(new Set())}
+          clearLabel="Clear"
+        >
+          <Button
+            size="sm"
+            disabled={comparable.length !== 2 || selectedIds.length !== 2}
+            title="Select two finished runs to compare their bullets"
+            onClick={openCompare}
           >
-            <Button
-              size="sm"
-              disabled={comparable.length !== 2 || selectedIds.length !== 2}
-              title="Select two finished runs to compare their bullets"
-              onClick={openCompare}
-            >
-              Compare
-            </Button>
-            <Button
-              size="sm"
-              variant="danger"
-              disabled={deleting || busy}
-              onClick={() => void handleDelete(selectedIds)}
-            >
-              {deleting ? "Deleting…" : "Delete"}
-            </Button>
-          </SelectionBar>
-        )}
+            Compare
+          </Button>
+          <Button
+            size="sm"
+            variant="danger"
+            disabled={deleting || busy || !selectedIds.length}
+            onClick={() => void handleDelete(selectedIds)}
+          >
+            {deleting ? "Deleting…" : "Delete"}
+          </Button>
+        </SelectionBar>
 
         {deleteError && (
           <p role="alert" className="rounded-sm bg-danger-soft px-3 py-2 text-sm text-danger">

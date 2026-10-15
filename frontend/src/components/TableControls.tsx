@@ -1,5 +1,6 @@
-import { useEffect, useRef, useState, type ReactNode } from "react";
+import { useEffect, useRef, useState, type MouseEvent as ReactMouseEvent, type ReactNode } from "react";
 import { createPortal } from "react-dom";
+import { clickSelect, isRowSelectClick } from "../lib/rowSelection";
 
 export function Pagination({
   page,
@@ -79,6 +80,8 @@ export type TableColumn<T> = {
   className?: string;
   /** Narrow screens: the cell sits at the right end of its "heading value" line. */
   end?: boolean;
+  /** Clicks in this cell never select the row (row actions: a near miss does nothing). */
+  noRowSelect?: boolean;
 };
 export function DataTable<T>({
   rows,
@@ -133,12 +136,41 @@ export function DataTable<T>({
     if (checkbox.current) checkbox.current.indeterminate = some && !all;
     if (mobileCheckbox.current) mobileCheckbox.current.indeterminate = some && !all;
   }, [some, all]);
-  const toggleRow = (row: T) => {
-    const next = new Set(selected);
-    if (next.has(id(row))) next.delete(id(row));
-    else next.add(id(row));
-    onSelected(next);
+  const order = rows.map(id);
+  const anchor = useRef<string | null>(null);
+  // A Shift range runs over the rows on screen: a new page, sort or filter starts over.
+  const orderKey = order.join("\n");
+  useEffect(() => {
+    anchor.current = null;
+  }, [orderKey]);
+  const eligibleId = (rowId: string) => eligible.some((row) => id(row) === rowId);
+  const toggleRow = (row: T, shift = false) =>
+    onSelected(clickSelect(selected, order, eligibleId, anchor, id(row), shift));
+  const rowClick = (row: T) => (event: ReactMouseEvent) => {
+    if (isRowSelectClick(event, event.currentTarget)) toggleRow(row, event.shiftKey);
   };
+  // Shift-click would otherwise highlight the text between the two clicks.
+  const rowMouseDown = (event: ReactMouseEvent) => {
+    if (event.shiftKey) event.preventDefault();
+  };
+  const rowProps = (row: T) =>
+    withSelection && canSelect(row)
+      ? { onClick: rowClick(row), onMouseDown: rowMouseDown, className: "cursor-pointer" }
+      : { className: "" };
+  // Esc clears the selection, unless a field, menu or dialog wants that key.
+  const hasSelection = withSelection && selected.size > 0;
+  useEffect(() => {
+    if (!hasSelection) return;
+    const onKey = (event: KeyboardEvent) => {
+      if (event.key !== "Escape" || event.defaultPrevented) return;
+      const target = event.target as Element | null;
+      if (target?.closest?.('input, textarea, select, [role="menu"], [role="dialog"]')) return;
+      if (document.querySelector('[role="dialog"], [role="menu"]')) return;
+      onSelected(new Set());
+    };
+    document.addEventListener("keydown", onKey);
+    return () => document.removeEventListener("keydown", onKey);
+  }, [hasSelection, onSelected]);
   const togglePage = (checked: boolean) => {
     const next = new Set(selected);
     eligible.forEach((row) => (checked ? next.add(id(row)) : next.delete(id(row))));
@@ -184,7 +216,8 @@ export function DataTable<T>({
             <tr
               key={id(row)}
               data-selected={selected.has(id(row)) || undefined}
-              className="border-b border-line last:border-0 hover:bg-sunken"
+              {...rowProps(row)}
+              className={`border-b border-line last:border-0 hover:bg-sunken ${rowProps(row).className}`}
             >
               {withSelection && (
                 <td className="px-2 py-3 align-middle">
@@ -195,13 +228,15 @@ export function DataTable<T>({
                     aria-label={label(row)}
                     checked={selected.has(id(row))}
                     disabled={!canSelect(row)}
-                    onChange={() => toggleRow(row)}
+                    onChange={() => {}}
+                    onClick={(e) => toggleRow(row, e.shiftKey)}
                   />
                 </td>
               )}
               {columns.map((col) => (
                 <td
                   key={col.id}
+                  data-row-select={col.noRowSelect ? "off" : undefined}
                   className={`min-w-0 px-2 py-3 align-middle [overflow-wrap:anywhere] ${col.className ?? ""}`}
                 >
                   {col.cell(row)}
@@ -229,7 +264,8 @@ export function DataTable<T>({
           <article
             key={id(row)}
             data-selected={selected.has(id(row)) || undefined}
-            className="rt-record space-y-2 p-3 text-sm"
+            {...rowProps(row)}
+            className={`rt-record space-y-2 p-3 text-sm ${rowProps(row).className}`}
           >
             {withSelection && (
               <label className="flex items-center gap-2 text-xs text-ink-muted">
@@ -238,7 +274,8 @@ export function DataTable<T>({
                   aria-label={label(row)}
                   checked={selected.has(id(row))}
                   disabled={!canSelect(row)}
-                  onChange={() => toggleRow(row)}
+                  onChange={() => {}}
+                  onClick={(e) => toggleRow(row, e.shiftKey)}
                 />{" "}
                 Select
               </label>
@@ -255,8 +292,20 @@ export function DataTable<T>({
                   {col.heading && (
                     <span className="shrink-0 text-xs text-ink-muted">{col.heading}</span>
                   )}
-                  <div className={`min-w-0 ${col.end ? "ml-auto" : "flex-1"}`}>{col.cell(row)}</div>
-                  {joined && <div className="ml-auto shrink-0">{joined.cell(row)}</div>}
+                  <div
+                    data-row-select={col.noRowSelect ? "off" : undefined}
+                    className={`min-w-0 ${col.end ? "ml-auto" : "flex-1"}`}
+                  >
+                    {col.cell(row)}
+                  </div>
+                  {joined && (
+                    <div
+                      data-row-select={joined.noRowSelect ? "off" : undefined}
+                      className="ml-auto shrink-0"
+                    >
+                      {joined.cell(row)}
+                    </div>
+                  )}
                 </div>
               );
             })}

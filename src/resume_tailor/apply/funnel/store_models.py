@@ -79,6 +79,9 @@ REVIEW_STATUSES: frozenset[ApplicationStatus] = frozenset(
     {"awaiting_review", "awaiting_otp", "fill_failed", "submit_unconfirmed"}
 )
 
+#: A task is running on the row; it stays in the table it was in until the task ends.
+RUNNING_STATUSES: frozenset[ApplicationStatus] = frozenset({"filling", "tailoring"})
+
 #: Pipeline order, for sorting by status (not alphabetical by internal name).
 _STATUS_RANK: dict[str, int] = {status: rank for rank, status in enumerate(get_args(ApplicationStatus))}
 
@@ -184,6 +187,25 @@ class Index:
     by_canonical: dict[str, Application] = field(default_factory=dict)
     by_source_ref: dict[tuple[str, str], str] = field(default_factory=dict)
     by_group: dict[str, list[str]] = field(default_factory=dict)
+
+def list_group(app: Application) -> Literal["review", "working"]:
+    """Which Applications table lists ``app``: ``review`` (Needs you) or ``working``.
+
+    A row with a task running keeps the table of the status it ran from, so Retry on a
+    "Needs you" row does not bounce it to In progress and back; it moves when the task
+    ends. With no earlier status on record it counts as working.
+    """
+    status = app.status
+    if status in RUNNING_STATUSES:
+        status = next(
+            (
+                change.status
+                for change in reversed(app.status_history)
+                if change.status not in RUNNING_STATUSES
+            ),
+            status,
+        )
+    return "review" if status in REVIEW_STATUSES else "working"
 
 def _now_iso() -> str:
     """Return the current UTC timestamp in ISO-8601 form."""

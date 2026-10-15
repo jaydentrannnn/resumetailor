@@ -12,6 +12,7 @@ import {
   sourceSummary,
 } from "../../lib/sources";
 import { ownFilterCount } from "../../lib/globalFilters";
+import { isRowSelectClick } from "../../lib/rowSelection";
 
 const HEALTH_TONE = {
   ok: "text-success",
@@ -31,7 +32,7 @@ export function SourceRow({
   update,
   notice,
   keysSaved = null,
-  onSelect,
+  onToggle,
   onChange,
   onEdit,
   onDuplicate,
@@ -46,7 +47,8 @@ export function SourceRow({
   notice?: string;
   /** Whether this search's engine has its keys saved now (null: not a search, or unknown). */
   keysSaved?: boolean | null;
-  onSelect: (on: boolean) => void;
+  /** Tick or untick this row; `shift` asks for a range from the last ticked row. */
+  onToggle: (shift: boolean) => void;
   onChange: (next: SourceConfig) => void;
   onEdit: () => void;
   onDuplicate: () => void;
@@ -66,14 +68,25 @@ export function SourceRow({
   }
 
   return (
-    <li className="rt-record py-4 first:pt-0 last:pb-0" data-selected={selected}>
+    // A click anywhere on the row ticks it, as on the Apply tables; its controls keep theirs.
+    <li
+      className="rt-record cursor-pointer py-4 first:pt-0 last:pb-0"
+      data-selected={selected}
+      onClick={(e) => {
+        if (isRowSelectClick(e, e.currentTarget)) onToggle(e.shiftKey);
+      }}
+      onMouseDown={(e) => {
+        if (e.shiftKey) e.preventDefault();
+      }}
+    >
       <div className="flex flex-wrap items-center gap-x-3 gap-y-2">
         <input
           type="checkbox"
           aria-label={`Select ${name}`}
           className="h-4 w-4 shrink-0 accent-[var(--color-accent)]"
           checked={selected}
-          onChange={(e) => onSelect(e.target.checked)}
+          onChange={() => {}}
+          onClick={(e) => onToggle(e.shiftKey)}
         />
         <div className="min-w-0 flex-1 basis-[calc(100%-2rem)] sm:basis-0">
           {renaming ? (
@@ -158,7 +171,7 @@ export function SourceRow({
       </div>
 
       {update && (
-        <div className="mt-3 pl-7">
+        <div className="mt-3 pl-7" data-row-select="off">
           {reviewing ? (
             <UpdateDiff
               source={source}

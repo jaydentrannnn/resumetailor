@@ -23,7 +23,7 @@ def list_applications(
 ) -> list[store_models.Application]:
     """Return applications sorted over the whole filtered list, then paged.
 
-    ``group="review"`` keeps only `REVIEW_STATUSES`; ``"working"`` drops them. Ties in
+    ``group`` keeps the rows `store_models.list_group` puts in that table. Ties in
     the sort column fall back to newest-discovered, then company, so a coarse column
     (Platform, Status) still reads in a sensible order page after page.
     """
@@ -31,11 +31,7 @@ def list_applications(
     if status is not None:
         apps = [row for row in apps if row.status == status]
     if group is not None:
-        apps = [
-            row
-            for row in apps
-            if (row.status in store_models.REVIEW_STATUSES) == (group == "review")
-        ]
+        apps = [row for row in apps if store_models.list_group(row) == group]
     apps.sort(key=lambda row: row.company.casefold())
     apps.sort(key=lambda row: row.discovered_at or "", reverse=True)
     def sort_value(row: store_models.Application) -> str | float | None:

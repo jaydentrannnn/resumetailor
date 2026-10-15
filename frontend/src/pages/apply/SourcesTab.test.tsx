@@ -481,10 +481,26 @@ describe("removing", () => {
 
     fireEvent.click(within(bar).getByRole("button", { name: "Remove" }));
     expect(ids(onChange)).toEqual(["simplify-internships", "keyword-search", "company-watchlist"]);
-    expect(screen.queryByRole("toolbar", { name: "Selected sources" })).toBeNull();
+    // The bar stays (so nothing shifts), back at 0 with its actions off.
+    expect(bar.textContent).toContain("0 selected");
+    expect((within(bar).getByRole("button", { name: "Remove" }) as HTMLButtonElement).disabled).toBe(
+      true,
+    );
     expect(screen.getByText("Removed 2 sources")).toBeTruthy();
     fireEvent.click(screen.getByRole("button", { name: "Undo" }));
     expect(ids(onChange)).toEqual(LEGACY.map((s) => s.id));
+  });
+
+  it("selects a source from a click on its row, but not from its switch or name", () => {
+    renderTab(LEGACY);
+    const bar = screen.getByRole("toolbar", { name: "Selected sources" });
+    const row = screen.getByRole("switch", { name: "o/my-list on" }).closest("li")!;
+    fireEvent.click(screen.getByRole("switch", { name: "o/my-list on" }));
+    expect(bar.textContent).toContain("0 selected");
+    fireEvent.click(row.querySelector("p.text-xs")!);
+    expect(bar.textContent).toContain("1 selected");
+    fireEvent.click(row.querySelector("p.text-xs")!);
+    expect(bar.textContent).toContain("0 selected");
   });
 
   it("selects every source at once", () => {

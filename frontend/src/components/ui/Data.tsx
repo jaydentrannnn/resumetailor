@@ -136,7 +136,8 @@ export function SelectionBar({
       <button
         type="button"
         onClick={onClear}
-        className="rt-row-action rounded-sm px-3 text-xs font-medium text-ink-muted hover:bg-sunken hover:text-ink"
+        disabled={count === 0}
+        className="rt-row-action rounded-sm px-3 text-xs font-medium text-ink-muted hover:bg-sunken hover:text-ink disabled:opacity-40"
       >
         {clearLabel}
       </button>

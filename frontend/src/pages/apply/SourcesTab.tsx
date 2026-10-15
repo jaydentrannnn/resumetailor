@@ -1,4 +1,5 @@
-import { useMemo, useState } from "react";
+import { useMemo, useRef, useState } from "react";
+import { clickSelect } from "../../lib/rowSelection";
 import type { ApplySettings, SourceConfig, SourceField, SourcesStatus } from "../../api";
 import { Button, SelectionBar, StatusChip, StatusMark } from "../../components/ui";
 import {
@@ -54,6 +55,8 @@ export function SourcesTab({
   onApplyChange?: (patch: Partial<ApplySettings>) => void;
 }) {
   const controller = useSourcesController(sources, onChange);
+  /** The last row ticked by a plain click: where a Shift-click range starts. */
+  const anchor = useRef<string | null>(null);
   const {
     catalog,
     setFlow,
@@ -100,7 +103,8 @@ export function SourcesTab({
     [apply, setEditing, onFlush],
   );
 
-  function renderRow(source: SourceConfig) {
+  // `group` is the source's own list (map's third argument): a Shift range stays inside it.
+  function renderRow(source: SourceConfig, _at: number, group: SourceConfig[]) {
     return (
       <SourceRow
         key={source.id}
@@ -112,13 +116,17 @@ export function SourcesTab({
         keysSaved={
           source.kind === "job_search" && connections ? connections[providerOf(source)] : null
         }
-        onSelect={(on) =>
-          setSelected((prev) => {
-            const next = new Set(prev);
-            if (on) next.add(source.id);
-            else next.delete(source.id);
-            return next;
-          })
+        onToggle={(shift) =>
+          setSelected(
+            clickSelect(
+              selectedIds,
+              group.map((s) => s.id),
+              () => true,
+              anchor,
+              source.id,
+              shift,
+            ),
+          )
         }
         onChange={(next) => update(source.id, next)}
         onEdit={() => setEditing(source.id)}
@@ -167,25 +175,39 @@ export function SourcesTab({
           />
         )}
 
-        {selectedIds.size > 0 && (
-          <SelectionBar
-            count={selectedIds.size}
-            noun="selected"
-            clearLabel="Clear"
-            label="Selected sources"
-            onClear={() => setSelected(new Set())}
+        {/* Always on screen (0 selected, actions off): selecting never shifts the rows. */}
+        <SelectionBar
+          count={selectedIds.size}
+          noun="selected"
+          clearLabel="Clear"
+          label="Selected sources"
+          onClear={() => setSelected(new Set())}
+        >
+          <Button
+            size="sm"
+            variant="secondary"
+            disabled={!selectedIds.size}
+            onClick={() => setEnabled(selectedIds, true)}
           >
-            <Button size="sm" variant="secondary" onClick={() => setEnabled(selectedIds, true)}>
-              Turn on
-            </Button>
-            <Button size="sm" variant="secondary" onClick={() => setEnabled(selectedIds, false)}>
-              Turn off
-            </Button>
-            <Button size="sm" variant="secondary" onClick={() => remove(selectedIds)}>
-              Remove
-            </Button>
-          </SelectionBar>
-        )}
+            Turn on
+          </Button>
+          <Button
+            size="sm"
+            variant="secondary"
+            disabled={!selectedIds.size}
+            onClick={() => setEnabled(selectedIds, false)}
+          >
+            Turn off
+          </Button>
+          <Button
+            size="sm"
+            variant="secondary"
+            disabled={!selectedIds.size}
+            onClick={() => remove(selectedIds)}
+          >
+            Remove
+          </Button>
+        </SelectionBar>
 
         {apply && onApplyChange && (
           <GlobalFiltersTile

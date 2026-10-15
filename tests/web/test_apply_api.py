@@ -482,6 +482,20 @@ def test_review_group_lists_rows_waiting_on_the_applicant_with_a_summary(client)
     assert working["applications"][0]["review_summary"] is None
 
 
+def test_a_retried_review_row_stays_in_review_until_its_fill_ends(client):
+    """Retry on a Needs you row keeps it (and its count) there while it fills."""
+    c, _q = client
+    app = _stored_app("a-retry", "ready")
+    apply_store.set_status(app, "fill_failed")
+    apply_store.set_status(app, "filling")
+    apply_store.upsert(app)
+    review = c.get("/api/applications?archive=active&group=review").json()
+    assert [row["source_job_id"] for row in review["applications"]] == ["a-retry"]
+    assert review["total"] == 1 and review["counts"] == {"filling": 1}
+    working = c.get("/api/applications?archive=active&group=working").json()
+    assert working["applications"] == []
+
+
 def test_archived_application_is_not_preparable_or_retryable(client):
     c, _q = client
     app = _stored_app("a-discovered", "discovered")

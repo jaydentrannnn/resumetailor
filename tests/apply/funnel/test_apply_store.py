@@ -172,6 +172,30 @@ def test_review_group_splits_rows_waiting_on_the_applicant(apps_path):
     assert [row.source_job_id for row in working] == ["w"]
 
 
+def _ran(job_id: str, *statuses: str) -> store_models.Application:
+    """A row whose timeline went through ``statuses``, the last being its status now."""
+    history = [
+        store_models.StatusChange(status=s, at=f"2026-09-0{n + 1}T00:00:00+00:00")
+        for n, s in enumerate(statuses)
+    ]
+    return _sample_app(source_job_id=job_id, status=statuses[-1], status_history=history)
+
+
+def test_running_row_stays_in_the_table_it_ran_from(apps_path):
+    rows = [
+        _ran("retry", "ready", "fill_failed", "filling"),
+        _ran("fresh", "ready", "filling"),
+        _ran("retailor", "awaiting_review", "tailoring"),
+        _ran("done", "fill_failed", "filling", "awaiting_review"),
+        _ran("moved", "fill_failed", "filling", "ready"),
+        _sample_app(source_job_id="bare", status="filling"),
+    ]
+    review = store_views.list_applications(group="review", applications=rows)
+    working = store_views.list_applications(group="working", applications=rows)
+    assert {row.source_job_id for row in review} == {"retry", "retailor", "done"}
+    assert {row.source_job_id for row in working} == {"fresh", "moved", "bare"}
+
+
 @pytest.mark.parametrize(
     ("status", "fill", "summary"),
     [

@@ -1888,3 +1888,19 @@ Validation: 3,532 backend tests passed (two skipped), 641 frontend tests passed,
 **What:** `GET /api/applications` reads `store.rows_view()` (the cached rows, uncopied, read-only) instead of `load_all()`, and list rows carry only the fill fields the table reads (`browser_target_id`, `handoff_reason`, `missing_profile`, `error`); the detail endpoint keeps the full fill. `upsert` refuses a cached row. Prepare writes the experience expansion only for `preparation.EXPANSION_ATS` (Workday, SmartRecruiters) via `_job_settings(..., ats=)`; `preparation.check` asks for it only there. Workday fills a missing description from the resume bullets, as SmartRecruiters already did. The application Files tab gains Generate/Regenerate for the expansion and cover letter (`ArtifactsCard`); `POST /api/jobs/{id}/expansion?force=true` skips the expansion cache, and the cover-letter route rebuilds `packet.json` so Fill pastes the new letter (`cover_on_demand` already rebuilt its own).
 **Why:** Profiled against a snapshot of the live registry (861 rows, 6 MB): SQL fetch was 15 ms but `load_all()` deep-copied every row on every poll — 928 ms cold, 360 ms warm, 1.4–2.4 s for the review group, whose 564 KB body was 452 KB `fill`. After: 143 ms cold, 40 ms warm, 229 ms review group, 145 KB. Stored rows are copy-on-write (`_merge_into`/`_write` build new rows and swap the dict), so uncopied reads are safe while nothing mutates them; the deep copy stays the default for every other caller. Only Workday (476 rows) and SmartRecruiters (18) fills read the expansion, so ~43% of expand calls produced unused text.
 **Impact:** Rows on other ATSs no longer wait on, or pay for, an expand call. A row misdetected as non-Workday still fills Workday's description (bullets). Regenerating an expansion for an older run uses that run's saved backend snapshot, including its recorded effort.
+
+## 2026-10-14 — Rows stay in their table while a task runs; row-click selection
+
+- `store_models.list_group` decides Needs you vs In progress for both group filters
+  (`store_views.list_applications`, `GET /api/applications`). A row in `RUNNING_STATUSES`
+  (filling, tailoring) takes the group of the last non-running status in `status_history`, so
+  Retry/Fill on a Needs you row no longer moves it to In progress and back. No history → working.
+  Tab counts cover the rows listed (running ones included). The extension's "needs you" list and
+  `review_summary` stay on real `REVIEW_STATUSES`: a running row needs nothing from the user.
+- Leaving a table drops the row from the selection (already done by `useApplicationTable`'s
+  "gone from this exact view" prune).
+- Frontend: click anywhere on a row / tap a card selects it (`lib/rowSelection.ts`), Shift-click
+  ticks a range taking the anchor's state, Esc clears. Controls, links, `noRowSelect` columns,
+  portals (row menus) and text highlights never toggle. The selection bar is always shown
+  ("0 selected", actions disabled) so ticking the first row never shifts the table. Drag-select
+  was rejected: it fights text selection and touch scrolling; Shift-click covers 10–20 rows.

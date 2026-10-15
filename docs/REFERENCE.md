@@ -583,7 +583,10 @@ the frame once more so the fields the tick revealed are filled.
 
 **Applications page.** Rows in `store_models.REVIEW_STATUSES` (awaiting review/verification, fill
 failed, submit unconfirmed) sit in a separate "Needs your review" table (`GET
-/api/applications?group=review`, the working table uses `group=working`), each with
+/api/applications?group=review`, the working table uses `group=working`). A row with a task
+running (`RUNNING_STATUSES`: filling, tailoring) stays in the table of the status it ran from
+(`store_models.list_group`), so Retry on a "Needs you" row no longer bounces it to In progress
+and back; it moves (and leaves the selection) when the task ends. Each row carries
 `review_summary` (the first field waiting on the applicant, or the kind of hand-off). Sorting is
 over the whole filtered list before paging; ties fall back to newest-discovered then company,
 and Status sorts in pipeline order. The page's 2s poll refreshes the tables while an operation
