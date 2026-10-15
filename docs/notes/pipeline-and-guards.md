@@ -562,3 +562,17 @@ number-preserving, no longer, and not widowed. Silent by design: telemetry
 `phrase_repeats` / `phrase_repaired`, never a run warning. Alongside, `jd._PROMPT_VERSION`
 5 forbids duty clauses and generic work nouns as phrases; completed jobs keep their saved
 `requirements.json`, only new runs re-extract.
+
+## Hybrid dictionary extraction rejected (2026-10-14)
+
+Tested a dictionary-first JD extractor (`scripts/evals/hybrid_extract.py`: leave-one-out
+dictionary of vocabulary terms + resume skills + other postings' phrases, verbatim scan,
+then one `jd._SYSTEM` labelling call with `<dictionary_candidates>`) against `jd.extract`
+on gemini-3.8-flash: 80 saved tech postings, 25 fetched finance postings against a real
+finance-consulting resume, 15 other non-tech postings, plus a 30-case current-vs-current
+control (`python scripts\eval_models.py extract --name extract-e`). FAIL on 3 of 4 rules:
+tech must-have coverage -6.2 pts (control drift 2.2), non-tech -1.4 pts (finance 0.346 ->
+0.332), and the gpt-5-mini judge preferred current (hybrid lost 28% of pairs vs 23%
+current-vs-itself). Only gain: self-consistency F1 0.842 vs 0.810. Same latency and
+tokens. A dictionary does not help outside tech either; do not re-propose without a new
+argument. Cross-model agreement was not run (could not change the verdict).

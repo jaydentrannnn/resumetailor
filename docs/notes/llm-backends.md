@@ -441,3 +441,17 @@ upgrade.
 **What:** `PROVIDER_DEFAULT_EFFORT["expand"]` gains `vertex_ai: low`.
 **Why:** The provider map covered anthropic/openai/gemini but not `vertex_ai`, so Gemini via Vertex ran expansion at the `medium` fallback. Telemetry (32 gemini-3.8-flash runs): expand 52 s/call median with 85% of output tokens reasoning, while that model's `low` stages (score, facets, skills) showed 0% reasoning. Across 139 runs on all models, 72% of output tokens were reasoning. Rewrite (`medium`, 94% reasoning, 36 s/call on Gemini) is deliberately unchanged until a replay eval shows `low` keeps quality.
 **Impact:** Effort is in the cache fingerprint, so each posting's expansion is redrawn once. Custom OpenAI-format servers still get no effort setting (`forwards_effort`).
+
+## 2026-10-14 — Rewrite effort `low` on Gemini: replay eval passes, not yet adopted
+
+**What:** `scripts\eval_models.py rewrite --arms medium,low --limit 80 --control 30` on
+gemini-3.8-flash (Vertex), judged blind both orders by Azure gpt-5-mini. All four rules
+pass: fallback rate 0.0% -> 0.2%, guard offenders 0 -> 0, must-have mirroring 0.731 ->
+0.731, judge loss 32% vs 37% for medium-vs-medium. Per posting: p50 161 s -> 40 s, output
+tokens 23.7k (22.5k reasoning) -> 1.2k, est. $0.075 -> $0.008.
+**Why not yet:** length accuracy is the cost the gate does not cover. In-band (172-197
+chars at budget 202) falls 95% -> 82%: too-short 27 -> 127 bullets (median 7 chars
+under), too-long 32 -> 81 (median 11 over); worst when compressing a source longer than
+max (91% -> 75% in band). The fit loop measures rendered lines, not the band, so the open
+question is how many extra widow/pull-back/grow calls and rounds this causes end to end.
+`PROVIDER_DEFAULT_EFFORT["rewrite"]` stays unset until that is measured.

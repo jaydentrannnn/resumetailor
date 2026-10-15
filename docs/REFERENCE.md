@@ -1552,4 +1552,35 @@ fixed overhead the fit loop never trims.
   the pattern: a real analyzable upload + its own suggested profile, not
   `_minimal_docx_bytes()`, since `POST /api/template` requires a profile now.
 
+### Model eval harness (`scripts/eval_models.py`)
+
+The way to answer "did quality drop?" before changing a model or effort default. It
+replays saved postings through the **real** stage functions once per arm and compares
+the arms on the same cases. It is eval-only: nothing under `src/` imports
+`scripts/evals/`, and its tests (`tests/tooling/test_evals_*.py`) need no network.
+
+- **Sandbox.** `evals/sandbox.py` copies the desktop app's `data/`, `cache/` and
+  `templates/` (from `%LOCALAPPDATA%\ResumeTailorData`) into
+  `output/eval/<name>/sandbox/` once, and points the `RESUME_TAILOR_*_DIR` vars there
+  before `resume_tailor` is imported. Saved runs are read in place, read-only. Nothing
+  the stages write (caches, telemetry) reaches live data.
+- **Arms.** An arm is a model spec plus an effort. Each task runs in its own
+  `config.use_context(context_for_workspace(...))` plus `config.pinned(...)`, with the
+  run's saved guidance bound (`industries.load(job_dir)`), so parallel cases never share
+  routing, guidance or styles. Each task is wrapped in `telemetry.recording`, which gives
+  per-call tokens, reasoning tokens and latency. Results append to `cases.jsonl`. A rerun
+  skips finished `(case, arm, repeat)` keys, and a 429/quota error backs off and is
+  recorded rather than raised.
+- **Noise floor.** `--control N` reruns the baseline on N cases. A difference counts only
+  beyond the baseline's own run-to-run drift (`report.gate` adds that drift as slack).
+- **Judge.** A blind, pairwise judge from another model family (Azure OpenAI via the
+  custom OpenAI-compatible provider). Each pair is judged in both orders, and a win counts
+  only when both orders agree. Its key is stored with `judge-key` in the secret store, or
+  read from `AZURE_OPENAI_API_KEY`.
+- **Decision rules** are code (`REWRITE_CHECKS`, `EXPAND_CHECKS`,
+  `report_extract.rules`), so `summary.md` prints PASS/FAIL/INCOMPLETE, never a judgement
+  call.
+- **Cost.** At `medium`, rewrite on gemini-3.8-flash is ~$0.06 and ~140 s per posting; at
+  `low` it is ~$0.007 and ~16 s. Smoke-test with `--limit 10` first.
+
 ---
