@@ -1012,6 +1012,24 @@ def _is_official_openai(base_url: str | None) -> bool:
     return bool(base_url) and urlsplit(base_url).hostname == "api.openai.com"
 
 
+#: Azure hosts that serve OpenAI's own API (`/openai/v1`), request shape included.
+_AZURE_OPENAI_HOSTS = (
+    ".openai.azure.com", ".services.ai.azure.com", ".cognitiveservices.azure.com",
+)
+
+
+def openai_request_shape(base_url: str | None) -> bool:
+    """Whether `base_url` takes OpenAI's current request shape (`max_completion_tokens`,
+    no sampling controls): official OpenAI, or Azure OpenAI's v1 API. GPT-5-class models
+    there reject `max_tokens` outright."""
+    from urllib.parse import urlsplit
+
+    if _is_official_openai(base_url):
+        return True
+    parts = urlsplit(base_url or "")
+    return (parts.hostname or "").endswith(_AZURE_OPENAI_HOSTS) and parts.path.startswith("/openai")
+
+
 def max_token_cap_for(purpose: str) -> int:
     """Ceiling `llm._OpenAICompatClient.request` may escalate a truncated stage up to.
 

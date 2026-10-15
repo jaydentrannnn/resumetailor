@@ -437,6 +437,30 @@ def test_schema_mode_sends_json_schema_instead(client):
     assert fmt["json_schema"]["strict"] is True
 
 
+@pytest.mark.parametrize(
+    ("base_url", "openai_shape"),
+    [
+        ("https://api.openai.com/v1", True),
+        ("https://res.openai.azure.com/openai/v1", True),
+        ("https://res.services.ai.azure.com/openai/v1", True),
+        ("https://res.cognitiveservices.azure.com/openai/v1", True),
+        # A Foundry agent or model-inference route is not OpenAI's own API.
+        ("https://res.services.ai.azure.com/models", False),
+        ("https://evil.openai.azure.com.example.com/openai/v1", False),
+        ("http://localhost:11434/v1", False),
+    ],
+)
+def test_azure_openai_gets_the_official_request_shape(base_url, openai_shape):
+    """GPT-5-class models on Azure reject `max_tokens` just like api.openai.com does."""
+    payload = llm._completion_payload(base_url, "gpt-5-mini", 900, [])
+    assert config.openai_request_shape(base_url) is openai_shape
+    if openai_shape:
+        assert payload["max_completion_tokens"] == 900
+        assert "max_tokens" not in payload and "temperature" not in payload
+    else:
+        assert payload["max_tokens"] == 900 and payload["temperature"] == 0
+
+
 def test_max_completion_tokens_is_not_sent(client):
     """Ollama ignores unknown fields; stricter servers reject them."""
     c = client(_completion(VALID))

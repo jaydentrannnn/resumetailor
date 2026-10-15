@@ -51,7 +51,6 @@ import math
 import re
 import time
 from typing import Any, TypeVar
-from urllib.parse import urlsplit
 
 import httpx
 import httpx2
@@ -315,9 +314,10 @@ def _completion_payload(
     base_url: str, model: str, ceiling: int, messages: list[dict[str, Any]],
     effort: str | None = None,
 ) -> dict[str, Any]:
-    """Official OpenAI supports reasoning models; compatible servers retain their shape."""
+    """Official OpenAI (and Azure OpenAI) support reasoning models; compatible servers
+    retain their shape."""
     payload: dict[str, Any] = {"model": model, "messages": messages}
-    if urlsplit(base_url).hostname == "api.openai.com":
+    if config.openai_request_shape(base_url):
         payload["max_completion_tokens"] = ceiling
         # Omit optional sampling controls, which some reasoning models reject.
     else:
