@@ -18,6 +18,13 @@ from .corpus import Case
 MIN_BULLETS = 3
 
 
+def _role(entry) -> str:
+    """The entry heading a bullet sits under: "Title at Company", or a project's name."""
+    if hasattr(entry, "company"):
+        return f"{entry.title} at {entry.company}"
+    return getattr(entry, "name", "")
+
+
 class Replay:
     """One profile's resume, styles and guidance, shared by every case of a batch.
 
@@ -38,6 +45,8 @@ class Replay:
         with config.pinned("ollama", overrides=dict.fromkeys(config.PURPOSES, self.light_spec)):
             tag_infer.prepare_run(self.resume)
         self.by_id = {b.id: b for b in self.resume.all_bullets()}
+        self.role = {b.id: _role(e) for s in self.resume.entry_sections
+                     for e in s.entries for b in e.bullets}
         self.known_tags = bullet_tags.known_terms(self.resume)
         # Fetched postings have no saved run: they get today's profile guidance.
         self.guidance = tailoring_guidance(self.settings, workspace_id, self.resume)
@@ -133,12 +142,20 @@ class Replay:
         requirements = self._requirements(case)
         must = [k.phrase for k in requirements.keywords if k.importance == "must_have"]
         if stage == "rewrite":
-            sources = {i: self.by_id[i].text for i in a["texts"] if i in self.by_id}
-            build = judge.rewrite_prompt(requirements.title, must, sources)
-            return build, a["texts"], b["texts"]
-        sources = [s.text for s in self.sources(case)]
-        build = judge.expand_prompt(requirements.title, must, sources)
-        return build, a["entries"], b["entries"]
+            return judge.rewrite_prompt(requirements.title, must, self.judge_sources(
+                [i for i in a["texts"] if i in self.by_id])), a["texts"], b["texts"]
+        # Expansion reads every bullet of each entry it expands, not only the selected ones.
+        entries = {expand.entry_key(e.id): {
+            "role": _role(e),
+            "sources": [judge.source(x.text, _role(e), x.tags) for x in e.bullets],
+        } for e in self.resume.experience}
+        return judge.expand_prompt(requirements.title, must, entries), a["entries"], b["entries"]
+
+    def judge_sources(self, ids: list[str]) -> dict[str, dict]:
+        """`{bullet id: judge.source(...)}`: each bullet with the role and permitted skills
+        the rewrite model was shown."""
+        return {i: judge.source(self.by_id[i].text, self.role.get(i, ""), self.by_id[i].tags)
+                for i in ids}
 
     def extraction_record(self, case: Case, requirements: JobRequirements) -> dict[str, Any]:
         return {

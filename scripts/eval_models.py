@@ -105,7 +105,7 @@ def _summary(eval_dir: Path) -> str:
 
     meta = _read_meta(eval_dir)
     records = arms_mod.Results(eval_dir / "cases.jsonl").records()
-    verdicts = judge.Verdicts(eval_dir / "judge.jsonl").records()
+    verdicts = judge.Verdicts(judge.verdicts_file(eval_dir)).records()
     if meta["stage"] == "extract":
         from evals import report_extract
 
@@ -276,7 +276,7 @@ def _run_judge(args: argparse.Namespace, eval_dir: Path) -> int:
         print(f"  {record.get('winner', 'error'):5} {record['key']}  "
               f"{record.get('error', '')[:120]}", flush=True)
 
-    judge.run(jobs, stage, spec, judge.Verdicts(eval_dir / "judge.jsonl"),
+    judge.run(jobs, stage, spec, judge.Verdicts(judge.verdicts_file(eval_dir)),
               workers=args.workers, progress=progress)
     print(_summary(eval_dir))
     return 0

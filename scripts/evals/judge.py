@@ -25,12 +25,26 @@ from resume_tailor.model_selection import custom_credential_name
 #: The env var a judge key may come from instead of the secret store.
 KEY_ENV = "AZURE_OPENAI_API_KEY"
 
+#: Bumped when the judge's prompt changes what it can see; each version keeps its own
+#: verdicts file, so old verdicts are kept as history and never mixed into a report.
+#: v2: sources carry the role and permitted skills the model was given, and expansion
+#: is judged against every bullet of each entry, not just the run's selected ones.
+JUDGE_VERSION = 2
+
+
+def verdicts_file(eval_dir: Path) -> Path:
+    return eval_dir / f"judge.v{JUDGE_VERSION}.jsonl"
+
 
 class Verdict(BaseModel):
     winner: Literal["A", "B", "tie"]
     reason: str
 
 
+_SUPPORTED = (
+    "A skill listed in a source bullet's permitted_skills, or the role it sits under, is "
+    "supported by the source, not invented.\n"
+)
 _RUBRIC = {
     "rewrite": (
         "You compare two rewrites of the same resume bullets for one job posting.\n"
@@ -39,12 +53,15 @@ _RUBRIC = {
         "bullet does not state. Any invented claim loses outright.\n"
         "2. Relevance: surfaces what the posting asks for, where the source supports it.\n"
         "3. Clarity and concision: reads like a strong human-written resume bullet.\n"
+        f"{_SUPPORTED}"
     ),
     "expand": (
         "You compare two sets of expanded experience descriptions written for an "
         "application form, from the same source bullets, for one job posting.\n"
-        "Judge, in priority order: faithfulness to the source bullets (invented claims "
-        "lose outright), relevance to the posting, then clarity.\n"
+        "Judge, in priority order: faithfulness to the entry's source bullets (invented "
+        "claims lose outright), relevance to the posting, then clarity. A detail taken "
+        "from any source bullet of the same entry is supported.\n"
+        f"{_SUPPORTED}"
     ),
     "extract": (
         "You compare two keyword lists extracted from the same job posting.\n"
@@ -121,25 +138,49 @@ def _posting(title: str, must_haves: Iterable[str]) -> str:
             "</posting>\n\n")
 
 
-def rewrite_prompt(title: str, must_haves: list[str], sources: dict[str, str]):
-    """`build(a, b)` for two `{bullet id: text}` maps over the same `sources`."""
+def source(text: str, role: str = "", skills: Iterable[str] = ()) -> dict:
+    """One source bullet as the model saw it: its text, role and permitted skills."""
+    return {"text": text, "role": role, "skills": list(skills)}
+
+
+def _source_lines(src: dict, indent: str) -> str:
+    return (f"{indent}<source>{src['text']}</source>\n"
+            f"{indent}<permitted_skills>{', '.join(src['skills'])}</permitted_skills>\n")
+
+
+def rewrite_prompt(title: str, must_haves: list[str], sources: dict[str, dict]):
+    """`build(a, b)` for two `{bullet id: text}` maps over the same `sources`
+    (`{bullet id: source(...)}`)."""
 
     def build(a: dict[str, str], b: dict[str, str]) -> str:
-        rows = [f"<bullet id={i!r}>\n  <source>{src}</source>\n  <A>{a.get(i, src)}</A>\n"
-                f"  <B>{b.get(i, src)}</B>\n</bullet>" for i, src in sources.items()]
+        rows = [f"<bullet id={i!r}>\n  <role>{src['role']}</role>\n" + _source_lines(src, "  ")
+                + f"  <A>{a.get(i, src['text'])}</A>\n  <B>{b.get(i, src['text'])}</B>\n"
+                "</bullet>" for i, src in sources.items()]
         return _posting(title, must_haves) + "\n".join(rows)
 
     return build
 
 
-def expand_prompt(title: str, must_haves: list[str], sources: list[str]):
+def expand_prompt(title: str, must_haves: list[str], entries: dict[str, dict]):
+    """`build(a, b)` for two expansions; `entries` maps each entry key to
+    `{"role": str, "sources": [source(...)]}`: every bullet expansion could draw on."""
+
     def build(a: list[dict], b: list[dict]) -> str:
-        def render(entries: list[dict]) -> str:
-            return "\n".join(f"[{e['entry_key']}]\n" + "\n".join(f"- {x}" for x in e["bullets"])
-                             for e in entries)
-        return (_posting(title, must_haves) + "<source_bullets>\n" + "\n".join(
-            f"- {s}" for s in sources) + "\n</source_bullets>\n\n"
-            f"<A>\n{render(a)}\n</A>\n\n<B>\n{render(b)}\n</B>")
+        a_by, b_by = {e["entry_key"]: e for e in a}, {e["entry_key"]: e for e in b}
+
+        def render(e: dict | None) -> str:
+            return "\n".join(f"- {x}" for x in e["bullets"]) if e else "(no entry)"
+
+        blocks = []
+        for key in [*a_by, *(k for k in b_by if k not in a_by)]:
+            entry = entries.get(key, {"role": "", "sources": []})
+            sources = "".join(f"    <bullet>\n{_source_lines(s, '      ')}    </bullet>\n"
+                              for s in entry["sources"])
+            blocks.append(f"<entry key={key!r}>\n  <role>{entry['role']}</role>\n"
+                          f"  <source_bullets>\n{sources}  </source_bullets>\n"
+                          f"  <A>\n{render(a_by.get(key))}\n  </A>\n"
+                          f"  <B>\n{render(b_by.get(key))}\n  </B>\n</entry>")
+        return _posting(title, must_haves) + "\n".join(blocks)
 
     return build
 
@@ -158,7 +199,7 @@ def extract_prompt(jd_text: str):
 
 
 class Verdicts:
-    """Append-only `judge.jsonl`; keyed by case and the ordered arm pair."""
+    """Append-only verdicts file (`verdicts_file`); keyed by case and the ordered arm pair."""
 
     def __init__(self, path: Path):
         self.path = path

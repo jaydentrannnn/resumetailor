@@ -49,12 +49,44 @@ def test_two_ties_are_a_consistent_tie():
 
 
 def test_rewrite_prompt_shows_source_and_both_versions_per_bullet():
-    build = judge.rewrite_prompt("Data Analyst", ["SQL"], {"b1": "Wrote queries."})
-    text = build({"b1": "Wrote SQL queries."}, {})
+    build = judge.rewrite_prompt("Data Analyst", ["SQL"], {
+        "b1": judge.source("Wrote queries.", "Analyst at Acme", ["sql", "python"])})
+    text = build({"b1": "Wrote SQL queries in Python."}, {})
     assert "Must-haves: SQL" in text
     assert "<source>Wrote queries.</source>" in text
-    assert "<A>Wrote SQL queries.</A>" in text
+    # The judge sees what the rewrite model saw, so a tag-backed skill is not "invented".
+    assert "<role>Analyst at Acme</role>" in text
+    assert "<permitted_skills>sql, python</permitted_skills>" in text
+    assert "<A>Wrote SQL queries in Python.</A>" in text
     assert "<B>Wrote queries.</B>" in text  # a missing id falls back to the source
+    assert "permitted_skills" in judge.system("rewrite")
+
+
+def test_expand_prompt_shows_every_bullet_of_the_entry_beside_each_version():
+    entries = {"e1": {"role": "Engineer at Acme", "sources": [
+        judge.source("Selected bullet.", "Engineer at Acme", ["sql"]),
+        judge.source("Unselected bullet about MySQL.", "Engineer at Acme", ["mysql"])]}}
+    build = judge.expand_prompt("Data Engineer", ["SQL"], entries)
+    text = build([{"entry_key": "e1", "bullets": ["Built MySQL tables."]}],
+                 [{"entry_key": "e1", "bullets": ["Wrote SQL."]}])
+    block = text.split("<entry key='e1'>", 1)[1]
+    assert "<role>Engineer at Acme</role>" in block
+    assert "<source>Unselected bullet about MySQL.</source>" in block
+    assert "<permitted_skills>mysql</permitted_skills>" in block
+    assert block.index("</source_bullets>") < block.index("<A>") < block.index("<B>")
+    assert "- Built MySQL tables." in block.split("<A>", 1)[1].split("</A>", 1)[0]
+    assert "same entry is supported" in judge.system("expand")
+
+
+def test_expand_prompt_marks_an_entry_only_one_side_wrote():
+    build = judge.expand_prompt("t", [], {})
+    text = build([{"entry_key": "e1", "bullets": ["x"]}], [])
+    assert "<B>\n(no entry)\n  </B>" in text
+
+
+def test_verdicts_are_kept_per_judge_version(tmp_path):
+    assert judge.verdicts_file(tmp_path) == tmp_path / f"judge.v{judge.JUDGE_VERSION}.jsonl"
+    assert judge.JUDGE_VERSION >= 2  # v1 verdicts (judge.jsonl) saw too little source
 
 
 def test_extract_prompt_lists_keywords_with_importance():
