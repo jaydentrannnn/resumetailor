@@ -2,7 +2,12 @@ import { useEffect, useState } from "react";
 import { fetchModelQueue, saveModelQueue, type ModelQueueStatus } from "../../api";
 import { Button } from "../../components/ui";
 import { startAdaptivePoll } from "../../lib/adaptivePoll";
-import { presetFor, withSpeedPreset, SPEED_PRESETS, type SpeedPresetId } from "../../lib/speedPresets";
+import {
+  presetFor,
+  withSpeedPreset,
+  SPEED_PRESETS,
+  type SpeedPresetId,
+} from "../../lib/speedPresets";
 import { useToast } from "../../lib/toast";
 import { queueEndpoints } from "../../lib/modelEndpoints";
 import { useRunState } from "../../state/runState";

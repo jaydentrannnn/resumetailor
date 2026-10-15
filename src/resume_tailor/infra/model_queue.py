@@ -23,6 +23,7 @@ from datetime import UTC, datetime
 from email.utils import parsedate_to_datetime
 from functools import wraps
 from inspect import iscoroutinefunction
+from pathlib import Path
 from typing import Any
 from urllib.parse import urlsplit, urlunsplit
 
@@ -194,22 +195,34 @@ def _is_local(url: str, origin: str) -> bool:
         return origin == "lmstudio"
 
 
+def _file_stamp(path: Path) -> tuple[str, int, int, int]:
+    """What tells a re-read settings file apart from the one already loaded.
+
+    The modified time alone misses a second save within the same clock tick (seen on
+    Windows CI); an atomic save is a new file, so its inode/file index and size change too.
+    """
+    if not path.exists():
+        return (str(path), 0, 0, 0)
+    stat = path.stat()
+    return (str(path), stat.st_mtime_ns, stat.st_size, stat.st_ino)
+
+
 class RequestQueue:
     def __init__(self) -> None:
         self._condition = threading.Condition(threading.RLock())
         self._pools: dict[str, _Pool] = {}
         self._settings = QueueSettings()
-        self._stamp: tuple[str, int] | None = None
+        self._stamp: tuple[str, int, int, int] | None = None
         self._plans: dict[str, int] = {}
         self._file_plans: dict[str, int] = {}
-        self._plan_stamp: tuple[str, int] | None = None
+        self._plan_stamp: tuple[str, int, int, int] | None = None
         self._advanced_enabled = True
         self._roles: dict[str, str] = {}
 
     def settings(self) -> QueueSettings:
         with self._condition:
             path = settings_path()
-            stamp = (str(path), path.stat().st_mtime_ns if path.exists() else 0)
+            stamp = _file_stamp(path)
             if stamp != self._stamp:
                 self._settings = (
                     QueueSettings.model_validate_json(path.read_text("utf-8"))
@@ -247,7 +260,7 @@ class RequestQueue:
         from resume_tailor import app_settings
 
         target = app_settings.path()
-        stamp = (str(target), target.stat().st_mtime_ns if target.exists() else 0)
+        stamp = _file_stamp(target)
         if stamp != self._plan_stamp:
             self._plan_stamp = stamp
             saved = app_settings.load()

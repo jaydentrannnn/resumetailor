@@ -53,8 +53,16 @@ describe("rangeSelect", () => {
   const ids = ["a", "b", "c", "d", "e"];
   it("ticks a range in either direction, skipping ineligible rows", () => {
     const eligible = (id: string) => id !== "c";
-    expect([...rangeSelect(new Set(["b"]), ids, eligible, "b", "e")!].sort()).toEqual(["b", "d", "e"]);
-    expect([...rangeSelect(new Set(["d"]), ids, eligible, "d", "a")!].sort()).toEqual(["a", "b", "d"]);
+    expect([...rangeSelect(new Set(["b"]), ids, eligible, "b", "e")!].sort()).toEqual([
+      "b",
+      "d",
+      "e",
+    ]);
+    expect([...rangeSelect(new Set(["d"]), ids, eligible, "d", "a")!].sort()).toEqual([
+      "a",
+      "b",
+      "d",
+    ]);
   });
   it("unticks the range when the anchor is unticked", () => {
     const next = rangeSelect(new Set(["a", "c", "d"]), ids, () => true, "b", "d")!;

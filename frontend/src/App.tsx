@@ -83,7 +83,10 @@ function WorkspaceScope() {
 
   if (loading) {
     return (
-      <div className="flex min-h-screen items-center justify-center gap-3 bg-paper text-sm text-ink-muted" role="status">
+      <div
+        className="flex min-h-screen items-center justify-center gap-3 bg-paper text-sm text-ink-muted"
+        role="status"
+      >
         <LogoMark />
         Loading…
       </div>

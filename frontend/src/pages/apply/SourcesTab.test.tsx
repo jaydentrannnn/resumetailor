@@ -483,9 +483,9 @@ describe("removing", () => {
     expect(ids(onChange)).toEqual(["simplify-internships", "keyword-search", "company-watchlist"]);
     // The bar stays (so nothing shifts), back at 0 with its actions off.
     expect(bar.textContent).toContain("0 selected");
-    expect((within(bar).getByRole("button", { name: "Remove" }) as HTMLButtonElement).disabled).toBe(
-      true,
-    );
+    expect(
+      (within(bar).getByRole("button", { name: "Remove" }) as HTMLButtonElement).disabled,
+    ).toBe(true);
     expect(screen.getByText("Removed 2 sources")).toBeTruthy();
     fireEvent.click(screen.getByRole("button", { name: "Undo" }));
     expect(ids(onChange)).toEqual(LEGACY.map((s) => s.id));

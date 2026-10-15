@@ -102,7 +102,10 @@ function ArtifactRow({
       <div className="min-w-0 flex-1">
         <p className="text-sm font-medium text-ink">
           {label}
-          <span className="font-normal text-ink-muted"> · {exists ? "ready" : "not generated"}</span>
+          <span className="font-normal text-ink-muted">
+            {" "}
+            · {exists ? "ready" : "not generated"}
+          </span>
         </p>
         <p className="mt-0.5 text-xs text-ink-muted">{hint}</p>
         {error && <p className="mt-1 text-xs text-danger">{error}</p>}

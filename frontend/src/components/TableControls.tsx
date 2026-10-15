@@ -1,4 +1,10 @@
-import { useEffect, useRef, useState, type MouseEvent as ReactMouseEvent, type ReactNode } from "react";
+import {
+  useEffect,
+  useRef,
+  useState,
+  type MouseEvent as ReactMouseEvent,
+  type ReactNode,
+} from "react";
 import { createPortal } from "react-dom";
 import { clickSelect, isRowSelectClick } from "../lib/rowSelection";
 
