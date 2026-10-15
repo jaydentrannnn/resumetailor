@@ -64,18 +64,32 @@ from resume_tailor.web.schemas import (
 router = APIRouter()
 _log = logging.getLogger(__name__)
 
+#: The fill fields the Apply table reads (`frontend/src/lib/applyPage.ts`,
+#: `lib/applicationRows.ts`); the detail endpoint returns the whole record.
+_LIST_FILL_KEYS = ("browser_target_id", "handoff_reason", "missing_profile", "error")
+
 
 def _application_out(
     app: store_models.Application,
     *,
     group_size: int = 1,
+    list_row: bool = False,
 ) -> ApplicationOut:
-    """Convert a store row into the API response model with computed fields."""
+    """Convert a store row into the API response model with computed fields.
+
+    ``list_row`` keeps only the fill fields the Apply table reads (`_LIST_FILL_KEYS`);
+    the rest of a fill record was most of every list poll's bytes.
+    """
     payload = app.model_dump()
     if isinstance(payload.get("fill"), dict) and payload["fill"].get("missing_profile"):
         payload["fill"]["missing_profile"] = packet_profile_fields.visible_missing_profile(
             payload["fill"]["missing_profile"]
         )
+    slim_fill = (
+        {key: payload["fill"].get(key) for key in _LIST_FILL_KEYS}
+        if list_row and isinstance(payload.get("fill"), dict)
+        else None
+    )
     payload["sources"] = (
         [ref.source for ref in app.source_refs] if app.source_refs else [app.source]
     )
@@ -96,7 +110,12 @@ def _application_out(
 
         payload["screen_label"] = screen_label(app.screen.reasons)
     payload["review_summary"] = store_views.review_summary(app)
-    return ApplicationOut.model_validate(payload)
+    out = ApplicationOut.model_validate(payload)
+    if slim_fill is not None:
+        # Assigned after validation: validated, the dict would parse back into a full
+        # `FillResult` with every default field.
+        out.fill = slim_fill
+    return out
 
 
 class ResumeAcknowledgeRequest(BaseModel):
@@ -484,7 +503,9 @@ def list_applications(
     q = q.strip()
     if len(q) > 200:
         raise HTTPException(status_code=422, detail="Search must be at most 200 characters")
-    all_apps = apply_store.load_all()
+    # The store's own rows, uncopied: this route only reads them, and it is polled every
+    # few seconds (copying every row was most of each request).
+    all_apps = apply_store.rows_view()
     matched = store_views.filtered_applications(
         q=q, archive=archive, applications=list(all_apps.values())
     )
@@ -507,12 +528,12 @@ def list_applications(
         direction=direction,
         applications=matched,
     )
-    index = apply_store.build_index(all_apps)
+    index = apply_store.build_index(dict(all_apps))
     outs: list[ApplicationOut] = []
     for row in rows:
         gkey = row.group_key
         group_size = len(index.by_group.get(gkey, [])) if gkey else 1
-        outs.append(_application_out(row, group_size=max(1, group_size)))
+        outs.append(_application_out(row, group_size=max(1, group_size), list_row=True))
     body = ApplicationsListResponse(
         applications=outs,
         counts=counts,
@@ -736,10 +757,13 @@ def get_application(source_job_id: str) -> ApplicationDetailResponse:
     if app.jd_text_path and Path(app.jd_text_path).is_file():
         jd_text = Path(app.jd_text_path).read_text(encoding="utf-8")
 
+    from resume_tailor.apply.funnel import preparation
+
     return ApplicationDetailResponse(
         application=_application_out(app),
         packet=packet,
         jd_text=jd_text,
+        expansion_needed=preparation.needs_expansion(app.ats),
     )
 
 

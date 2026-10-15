@@ -252,7 +252,10 @@ def fill(
                 ),
                 "Role Description": workday_rows._attempt(
                     lambda: workday_dates._blank_fill(
-                        page, row, workday_rows._WORK["description"], exp.description
+                        page, row, workday_rows._WORK["description"],
+                        # No expansion (a row Prepare did not take for Workday):
+                        # the resume bullets, as SmartRecruiters does.
+                        exp.description or "\n".join(exp.bullets),
                     )
                 ),
             }

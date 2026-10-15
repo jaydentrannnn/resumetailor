@@ -3,6 +3,7 @@ import { ApplicationReview } from "../../../components/ApplicationReview";
 import { DocumentsCard } from "../../../components/DocumentsCard";
 import { Tile } from "../../../components/ui";
 import { BulletReview } from "../../run/BulletReview";
+import { ArtifactsCard } from "./ArtifactsCard";
 
 /** Form review: what the last fill left on the form, with corrections. */
 export function ReviewPanel({
@@ -38,17 +39,24 @@ export function ReviewPanel({
   );
 }
 
-/** Files: the tailored resume and cover letter, and editing bullets without AI. */
+/**
+ * Files: the tailored resume and cover letter, generating the optional extras, and
+ * editing bullets without AI.
+ */
 export function FilesPanel({
   app,
   job,
   revision,
+  expansionNeeded,
   onBulletsSaved,
+  onArtifactsChanged,
 }: {
   app: ApplicationRow;
   job: JobStatus | null;
   revision: number;
+  expansionNeeded: boolean;
   onBulletsSaved: () => void;
+  onArtifactsChanged: () => void;
 }) {
   if (!app.job_id)
     return (
@@ -67,6 +75,16 @@ export function FilesPanel({
         onCoverRegenerated={() => {}}
         readOnly
       />
+      {!app.archived_at && (
+        <ArtifactsCard
+          jobId={app.job_id}
+          ready={job?.status === "succeeded"}
+          hasExpansion={!!job?.expansion}
+          hasCover={!!job?.cover_letter}
+          expansionNeeded={expansionNeeded}
+          onChanged={onArtifactsChanged}
+        />
+      )}
       {!app.archived_at && (
         <Tile padding="sm">
           <details>

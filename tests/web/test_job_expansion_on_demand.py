@@ -72,6 +72,43 @@ def test_generate_expansion_writes_the_run_files_from_saved_inputs(client, monke
     assert status["expansion"]["entries"][0]["company"] == record["entries"][0]["company"]
 
 
+def test_regenerate_skips_the_expansion_cache_and_rebuilds_the_packet(client, monkeypatch):
+    from resume_tailor.apply.funnel import packet as apply_packet
+
+    c, _ = client
+    out_dir, _ = _seed_finished_run("exp03")
+    calls = _stub_expand(monkeypatch)
+    rebuilt: list[str] = []
+    monkeypatch.setattr(apply_packet, "write_packet", rebuilt.append)
+
+    assert c.post("/api/jobs/exp03/expansion").status_code == 200
+    assert rebuilt == []  # never prepared for Apply: no packet to rebuild
+    (out_dir / "packet.json").write_text("{}", encoding="utf-8")
+    assert c.post("/api/jobs/exp03/expansion?force=true").status_code == 200
+
+    assert [call["use_cache"] for call in calls] == [True, False]
+    assert rebuilt == ["exp03"]
+
+
+def test_cover_letter_regeneration_rebuilds_the_packet(client, monkeypatch):
+    from resume_tailor.web.routes import jobs as jobs_routes
+    from resume_tailor.web.schemas import CoverLetterOut
+
+    c, _ = client
+    _seed_finished_run("exp04")
+    refreshed: list[str] = []
+    monkeypatch.setattr(
+        jobs_routes, "regenerate_cover_letter",
+        lambda job_id, **_k: CoverLetterOut(paragraphs=["New letter."]),
+    )
+    monkeypatch.setattr(jobs_routes, "refresh_packet", refreshed.append)
+
+    res = c.post("/api/jobs/exp04/cover-letter", json={"instruction": ""})
+
+    assert res.status_code == 200, res.text
+    assert refreshed == ["exp04"]
+
+
 def test_generate_expansion_404s_for_unknown_or_incomplete_runs(client, monkeypatch):
     c, _ = client
     _stub_expand(monkeypatch)

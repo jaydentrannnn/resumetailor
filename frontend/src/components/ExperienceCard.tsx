@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react";
+import { type ReactNode, useEffect, useState } from "react";
 import type { ExpandedEntry, Expansion } from "../api";
 import { expansionUrl } from "../api";
 import { buttonClass } from "../lib/buttonClass";
@@ -114,11 +114,14 @@ export function ExperienceCard({
   expansion,
   jobId,
   embedded = false,
+  extraActions,
 }: {
   expansion: Expansion;
   jobId: string;
   /** Inside the Tailor page's "Last result" tile: no box of its own. */
   embedded?: boolean;
+  /** More header actions, e.g. Regenerate. */
+  extraActions?: ReactNode;
 }) {
   const firstKey = expansion.entries[0]?.entry_key ?? null;
   const [openKey, setOpenKey] = useState<string | null>(firstKey);
@@ -149,6 +152,7 @@ export function ExperienceCard({
           <a href={expansionUrl(jobId)} className={buttonClass("secondary", "sm")}>
             Download .md
           </a>
+          {extraActions}
         </>
       }
     >

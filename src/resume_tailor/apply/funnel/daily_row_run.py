@@ -478,7 +478,7 @@ class _RowRun:
             source_job_id=app.source_job_id,
             ats=app.ats,
         )
-        run_settings = daily_rows._job_settings(self.job_defaults, self.settings)
+        run_settings = daily_rows._job_settings(self.job_defaults, self.settings, ats=app.ats)
         store.set_status(app, "tailoring")
         store.upsert(app)
 

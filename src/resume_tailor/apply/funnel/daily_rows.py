@@ -182,19 +182,27 @@ def adopt_run_coverage(
     app.screen.coverage = matched / total if total else 1.0
     return True
 
-def _job_settings(base: JobSettings, apply: ApplySettings) -> JobSettings:
+def _job_settings(
+    base: JobSettings, apply: ApplySettings, *, ats: str | None = None
+) -> JobSettings:
     """Merge Apply knobs into one tailor run.
 
     Model routing is deliberately left as the Tailor tab's (``base``): Prepare tailors
     exactly like a Tailor-tab run would. ``apply.model_spec`` is the autofill model
     only — Fill's form-answer and choice-resolution calls — never the tailoring model.
 
+    The experience expansion is written only for an ``ats`` whose fill pastes it
+    (`preparation.needs_expansion`); without ``ats`` it is always written. Other rows
+    generate it on demand from their detail page.
+
     The cover letter follows Apply's `cover_letter_mode`, never the Tailor tab's switch:
     written here only for ``every``; the other modes leave it to Fill
     (`cover_on_demand`), since most applications never ask for one.
     """
+    from resume_tailor.apply.funnel import preparation
+
     settings = base.model_copy(deep=True)
-    settings.no_expand = False
+    settings.no_expand = ats is not None and not preparation.needs_expansion(ats)
     every = apply.cover_letter_mode == "every"
     settings.cover_letter = every
     settings.no_cover_letter = not every

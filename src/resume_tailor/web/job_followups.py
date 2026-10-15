@@ -170,14 +170,27 @@ def regenerate_cover_letter(
     )
     return out
 
-def generate_expansion(job_id: str) -> ExpansionOut:
+def refresh_packet(job_id: str) -> None:
+    """Rebuild an existing application kit after one of its artifacts changed.
+
+    The packet embeds the expansion (and its hash) and the cover-letter text; Fill pastes
+    from the packet, so without this it would paste the previous version. A job with no
+    packet yet (never prepared for Apply) is left alone.
+    """
+    if (config.OUTPUT_DIR / "jobs" / job_id / "packet.json").is_file():
+        from resume_tailor.apply.funnel import packet as apply_packet
+
+        apply_packet.write_packet(job_id)
+
+def generate_expansion(job_id: str, *, force: bool = False) -> ExpansionOut:
     """Write a finished run's experience expansion now, from its saved inputs.
 
     Runs skip expansion unless Apply needs it (`JobSettings.no_expand` defaults on); this
-    is the on-demand path — the job page's Generate button and Apply's Prepare when a
+    is the on-demand path — the Generate/Regenerate buttons and Apply's Prepare when a
     run is missing only its expansion. Same inputs as the in-run stage: the requirements
     and bullets the run saved, the unfiltered master resume, and the run's relevance
-    scores (usually a cache hit). One expand call; nothing else is re-run.
+    scores (usually a cache hit). One expand call; nothing else is re-run. ``force``
+    skips the expansion cache, so Regenerate drafts new text instead of replaying it.
     """
     out_dir = config.OUTPUT_DIR / "jobs" / job_id
     names = ("requirements.json", "bullets.json", "backends.json")
@@ -212,17 +225,12 @@ def generate_expansion(job_id: str) -> ExpansionOut:
             requirements,
             resume_bullet_ids=set(bullets),
             semantic=semantic,
-            use_cache=True,
+            use_cache=not force,
         )
     out = job_outputs.write_expansion(
         out_dir, expansion, source_experience_count=len(resume.experience)
     )
-    if (out_dir / "packet.json").is_file():
-        # The application kit embeds the expansion and its hash; rebuild it so Fill
-        # pastes the new text.
-        from resume_tailor.apply.funnel import packet as apply_packet
-
-        apply_packet.write_packet(job_id)
+    refresh_packet(job_id)
     return out
 
 def verify_claim(job_id: str | None, text: str) -> coverletter.ClaimCheck:

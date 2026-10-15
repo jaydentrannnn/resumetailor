@@ -113,6 +113,9 @@ def test_expand_is_recommended_low_on_providers_that_take_effort(monkeypatch):
             assert backends["rewrite"].effort == "medium"
     with config.pinned("ollama:gemma4:cloud") as backends:
         assert backends["expand"].effort == "medium"
+    # Vertex (Gemini or Claude) ran expansion at the medium fallback: 52s a call.
+    assert config.default_effort("expand", "vertex_ai") == "low"
+    assert config.default_effort("rewrite", "vertex_ai") == "medium"
 
 
 def test_an_env_effort_still_wins_over_the_provider_default(monkeypatch):

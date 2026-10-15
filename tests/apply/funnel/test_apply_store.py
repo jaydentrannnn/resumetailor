@@ -764,6 +764,21 @@ def test_returned_rows_are_private_copies(apps_path):
     assert stored.company == "Acme" and stored.notes == ""
 
 
+def test_rows_view_shares_the_cached_rows_and_upsert_refuses_them(apps_path):
+    store.upsert(_sample_app(canonical_key="k"))
+    view = store.rows_view()
+    assert view["k"] is store.rows_view()["k"]  # no copy per call
+    with pytest.raises(TypeError):
+        view["x"] = _sample_app()  # the mapping is read-only
+    with pytest.raises(ValueError, match="read-only"):
+        store.upsert(view["k"])
+    fresh = store.get("k")
+    fresh.company = "Beta"
+    store.upsert(fresh)
+    assert view["k"].company == "Acme"  # a write swaps rows, never edits the old one
+    assert store.rows_view()["k"].company == "Beta"
+
+
 def test_posted_date_prefers_the_stated_date_then_the_age_then_the_date_found():
     stated = _sample_app(posted_at="2026-08-30", discovered_at="2026-09-20T10:00:00+00:00", age_days=3)
     aged = _sample_app(discovered_at="2026-09-20T10:00:00+00:00", age_days=3)

@@ -435,3 +435,9 @@ upgrade.
 **What:** Replaced the misleading “Quota used up” pause label with “Requests paused”; surfaced only allowlisted Google Claude lineage quota metric constants from LiteLLM's wrapped error; added managed-partner paid-billing and welcome-credit disclosure.
 **Why:** Direct Google REST testing confirmed RESOURCE_EXHAUSTED for the Haiku US request metric, independently of LiteLLM and the app's saved pause. Google explicitly requests a quota increase. The user confirmed a Paid billing account. Google's current free-trial terms exclude managed partner models from the standard $300 welcome credit, even after upgrading. Endpoint admission remains shared; switching models on the same endpoint can show a saved pause without a fresh request.
 **Impact:** Credit balance no longer looks depleted in the UI. Users can identify a recognized quota and request an increase themselves. Gemini access and OAuth sign-in are live-validated; Haiku US access remains blocked by the project's Google quota. Reading project quotas programmatically was unavailable because Cloud Resource Manager returned SERVICE_DISABLED; no Google Cloud configuration or quota was changed.
+
+## 2026-10-14 — Expansion effort `low` on Vertex
+
+**What:** `PROVIDER_DEFAULT_EFFORT["expand"]` gains `vertex_ai: low`.
+**Why:** The provider map covered anthropic/openai/gemini but not `vertex_ai`, so Gemini via Vertex ran expansion at the `medium` fallback. Telemetry (32 gemini-3.8-flash runs): expand 52 s/call median with 85% of output tokens reasoning, while that model's `low` stages (score, facets, skills) showed 0% reasoning. Across 139 runs on all models, 72% of output tokens were reasoning. Rewrite (`medium`, 94% reasoning, 36 s/call on Gemini) is deliberately unchanged until a replay eval shows `low` keeps quality.
+**Impact:** Effort is in the cache fingerprint, so each posting's expansion is redrawn once. Custom OpenAI-format servers still get no effort setting (`forwards_effort`).

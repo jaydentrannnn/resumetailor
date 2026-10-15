@@ -168,6 +168,38 @@ def test_applications_list_empty(client):
     assert body["total"] == 0
 
 
+def test_list_rows_carry_only_the_fill_fields_the_table_reads(client):
+    c, _q = client
+    fill = store_models.FillResult(
+        browser_target_id="tab-1",
+        handoff_reason="Sign in",
+        long_text_answers={"Why us?": "x" * 5000},
+        field_outcomes=[{"label": "Name", "outcome": "filled"}],
+    )
+    apply_store.save_all({
+        "a": store_models.Application(
+            source="simplify", source_job_id="a", company="Acme", role="Engineer",
+            status="awaiting_review", ats="workday", fill=fill,
+        ),
+        "b": store_models.Application(
+            source="simplify", source_job_id="b", company="Beta", role="Designer",
+            ats="greenhouse",
+        ),
+    })
+    before = {k: row.model_dump_json() for k, row in apply_store.rows_view().items()}
+
+    rows = c.get("/api/applications?group=review").json()["applications"]
+
+    assert set(rows[0]["fill"]) == {"browser_target_id", "handoff_reason", "missing_profile", "error"}
+    assert rows[0]["fill"]["browser_target_id"] == "tab-1"
+    # The list read the store's own rows; it must not have changed them.
+    assert {k: row.model_dump_json() for k, row in apply_store.rows_view().items()} == before
+    detail = c.get("/api/applications/a").json()
+    assert detail["application"]["fill"]["long_text_answers"]["Why us?"] == "x" * 5000
+    assert detail["expansion_needed"] is True
+    assert c.get("/api/applications/b").json()["expansion_needed"] is False
+
+
 def test_archive_endpoint_and_scoped_listing(client):
     c, _q = client
     apply_store.save_all(

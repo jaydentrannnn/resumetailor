@@ -22,6 +22,7 @@ from resume_tailor.pipeline import estimate, include
 from resume_tailor.web import job_routing, template_ops
 from resume_tailor.web.job_followups import (
     generate_expansion,
+    refresh_packet,
     regenerate_cover_letter,
     verify_claim,
 )
@@ -628,6 +629,8 @@ def regenerate_job_cover_letter(
             instruction=body.instruction,
             cover_angles=body.cover_angles,
         )
+        # Fill pastes from the packet; without this it would paste the old letter.
+        refresh_packet(job_id)
     except FileNotFoundError as exc:
         raise HTTPException(status_code=404, detail=str(exc)) from exc
     except Exception as exc:  # noqa: BLE001
@@ -638,8 +641,11 @@ def regenerate_job_cover_letter(
 
 
 @router.post("/api/jobs/{job_id}/expansion", response_model=ExpansionOut)
-def generate_job_expansion(job_id: str) -> ExpansionOut:
-    """Write this finished run's application-form experience text on demand."""
+def generate_job_expansion(job_id: str, force: bool = False) -> ExpansionOut:
+    """Write this finished run's application-form experience text on demand.
+
+    ``force`` (Regenerate) drafts new text rather than replaying the cached expansion.
+    """
     resolved = run_lookup._resolve_run(job_id)
     if resolved is None:
         raise HTTPException(status_code=404, detail=f"Unknown job {job_id!r}.")
@@ -653,7 +659,7 @@ def generate_job_expansion(job_id: str) -> ExpansionOut:
             detail="Cannot generate while another tailoring run is in progress.",
         )
     try:
-        out = generate_expansion(job_id)
+        out = generate_expansion(job_id, force=force)
     except FileNotFoundError as exc:
         raise HTTPException(status_code=404, detail=str(exc)) from exc
     except Exception as exc:  # noqa: BLE001

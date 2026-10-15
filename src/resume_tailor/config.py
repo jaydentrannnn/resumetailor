@@ -459,10 +459,12 @@ DEFAULT_EFFORT: dict[str, str] = {
 
 #: Recommended effort that depends on the provider, used unless `LLM_EFFORT_<STAGE>` is
 #: set. Measured on Haiku 5.5 (2026-10-11): expansion at low took ~4s instead of 9-17s
-#: with a third of the output tokens and no visible loss. Origins missing here keep
+#: with a third of the output tokens and no visible loss. Vertex (2026-10-14 telemetry,
+#: gemini-3.8-flash) ran expansion at the `medium` fallback: 52s a call, 85% of the output
+#: reasoning tokens, where its `low` stages showed none. Origins missing here keep
 #: `DEFAULT_EFFORT`; they ignore effort anyway (`forwards_effort`).
 PROVIDER_DEFAULT_EFFORT: dict[str, dict[str, str]] = {
-    "expand": {"anthropic": "low", "openai": "low", "gemini": "low"},
+    "expand": {"anthropic": "low", "openai": "low", "gemini": "low", "vertex_ai": "low"},
 }
 _EFFORT_FROM_ENV = frozenset(p for p in DEFAULT_EFFORT if os.environ.get(f"LLM_EFFORT_{p.upper()}"))
 

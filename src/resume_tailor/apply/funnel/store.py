@@ -31,10 +31,11 @@ import logging
 import shutil
 import sqlite3
 import threading
-from collections.abc import Callable, Iterator
+from collections.abc import Callable, Iterator, Mapping
 from contextlib import contextmanager
 from datetime import UTC, datetime
 from pathlib import Path
+from types import MappingProxyType
 from typing import Any
 
 from resume_tailor import config
@@ -54,6 +55,19 @@ def load_all() -> dict[str, store_models.Application]:
     """Every application keyed by ``canonical_key`` (or legacy id), as private copies."""
     with _LOCK:
         return {key: _checkout(app) for key, app in _snapshot().items()}
+
+
+def rows_view() -> Mapping[str, store_models.Application]:
+    """Every application as the store's own cached rows: no copy, read-only.
+
+    For hot read paths (the Apply list polls every few seconds): copying all rows was
+    most of that request. Safe without the lock afterwards because stored rows are
+    copy-on-write — a write builds new rows and swaps the cache dict, never edits one.
+    Never mutate a row from here or pass it to `upsert` (which refuses it); `get` or
+    `load_all` return editable copies.
+    """
+    with _LOCK:
+        return MappingProxyType(_snapshot())
 
 
 class StaleApplication(RuntimeError):
@@ -358,6 +372,8 @@ def upsert(app: store_models.Application) -> store_models.Application:
     with _txn():
         apps = dict(_snapshot())
         key = store_models._registry_key(app)
+        if apps.get(key) is app:
+            raise ValueError("A cached read-only row (rows_view); upsert a get()/load_all() copy.")
         base = app._base
         stored_key: str | None = None
         if base is not None:

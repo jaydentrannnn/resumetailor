@@ -3,6 +3,7 @@ import { useSearchParams } from "react-router-dom";
 import { DocumentsCard } from "../../components/DocumentsCard";
 import { ExperienceCard } from "../../components/ExperienceCard";
 import { GenerateExperienceCard } from "../../components/GenerateExperienceCard";
+import { RegenerateExpansionButton } from "../../components/RegenerateExpansionButton";
 import { SkillsCard } from "../../components/SkillsCard";
 import { Tabs } from "../../components/Tabs";
 import { Tile } from "../../components/ui";
@@ -139,7 +140,18 @@ export function RunResults({ jobId }: { jobId: string }) {
             )}
             <div className={skills ? "border-t border-line pt-6" : undefined}>
               {expansion ? (
-                <ExperienceCard expansion={expansion} jobId={jobId} embedded />
+                <ExperienceCard
+                  expansion={expansion}
+                  jobId={jobId}
+                  embedded
+                  extraActions={
+                    <RegenerateExpansionButton
+                      jobId={jobId}
+                      disabled={busy}
+                      onRegenerated={setExpansion}
+                    />
+                  }
+                />
               ) : (
                 <GenerateExperienceCard
                   jobId={jobId}

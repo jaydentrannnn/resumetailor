@@ -16,7 +16,12 @@ import {
 } from "../../../api";
 import { IN_FLIGHT_STATUSES } from "../../../lib/applyPoll";
 
-export type Detail = { application: ApplicationRow; packet: Packet | null; jd_text: string | null };
+export type Detail = {
+  application: ApplicationRow;
+  packet: Packet | null;
+  jd_text: string | null;
+  expansion_needed?: boolean;
+};
 export const DETAIL_TABS = [
   "overview",
   "jd",

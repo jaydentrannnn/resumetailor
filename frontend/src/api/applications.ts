@@ -396,6 +396,8 @@ export function getApplication(sourceJobId: string): Promise<{
   application: ApplicationRow;
   packet: Packet | null;
   jd_text: string | null;
+  /** This row's site pastes the experience expansion (`preparation.needs_expansion`). */
+  expansion_needed?: boolean;
 }> {
   return request(`/api/applications/${encodeURIComponent(sourceJobId)}`);
 }

@@ -22,6 +22,16 @@ class PreparationEligibility(BaseModel):
 #: so a test batch never fills every row.
 _FILLABLE = {"ready", "awaiting_review", "awaiting_otp", "fill_failed"}
 
+#: The ATSs whose fill pastes the experience expansion into a role-description field
+#: (`ats/workday_repeaters.py`, `ats/smartrecruiters_entries.py`). Prepare writes it only
+#: for these; any other row can still generate it on demand from its detail page.
+EXPANSION_ATS = frozenset({"workday", "smartrecruiters"})
+
+
+def needs_expansion(ats: str | None) -> bool:
+    """Whether Prepare must write the experience expansion for a row on ``ats``."""
+    return (ats or "").strip().lower() in EXPANSION_ATS
+
 
 class _PreparedEntry(BaseModel):
     """Validate prepared expansion content without coercing malformed applicant facts."""
@@ -137,7 +147,9 @@ def check(
         elif review.required and require_acknowledgement:
             reasons.append("resume_quality_ack_required")
     expansion_path = job_dir / "expansion.json"
-    if not expansion_path.is_file():
+    if not needs_expansion(app.ats):
+        pass
+    elif not expansion_path.is_file():
         reasons.append("missing_expansion")
     else:
         try:

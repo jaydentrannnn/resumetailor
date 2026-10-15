@@ -92,7 +92,9 @@ export function ApplicationDetailPage() {
             app={app}
             job={job}
             revision={view.docsRevision}
+            expansionNeeded={detail?.expansion_needed ?? false}
             onBulletsSaved={() => void view.refreshEditedResume()}
+            onArtifactsChanged={() => void view.refreshEditedResume()}
           />
         )}
         {tab === "answers" && <AnswersPanel app={app} job={job} packet={detail?.packet} />}

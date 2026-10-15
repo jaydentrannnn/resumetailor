@@ -1474,6 +1474,9 @@ class ApplicationDetailResponse(BaseModel):
     application: ApplicationOut
     packet: dict[str, Any] | None = None
     jd_text: str | None = None
+    #: Whether this row's ATS fill pastes the experience expansion
+    #: (`preparation.needs_expansion`); other rows generate it only on request.
+    expansion_needed: bool = False
 
 
 class ApplicationStatusRequest(BaseModel):

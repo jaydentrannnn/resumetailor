@@ -407,9 +407,16 @@ export function coverLetterPreviewUrl(jobId: string, cacheBuster?: number): stri
   return cacheBuster === undefined ? base : `${base}?v=${cacheBuster}`;
 }
 
-/** Write a finished run's application-form experience text on demand (one model call). */
-export function generateExpansion(jobId: string): Promise<Expansion> {
-  return request<Expansion>(`/api/jobs/${jobId}/expansion`, { method: "POST" });
+/**
+ * Write a finished run's application-form experience text on demand (one model call).
+ * `force` (Regenerate) drafts new text instead of returning the cached expansion.
+ */
+export function generateExpansion(
+  jobId: string,
+  { force = false }: { force?: boolean } = {},
+): Promise<Expansion> {
+  const query = force ? "?force=true" : "";
+  return request<Expansion>(`/api/jobs/${jobId}/expansion${query}`, { method: "POST" });
 }
 
 export function regenerateCoverLetter(jobId: string, instruction: string): Promise<CoverLetter> {

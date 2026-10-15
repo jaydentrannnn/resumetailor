@@ -569,9 +569,9 @@ def test_an_add_press_that_shows_no_new_row_uses_the_row_rendered_late(monkeypat
     monkeypatch.setattr(workday_dates, "_fill_date", lambda *_a, **_k: True)
     packet = SimpleNamespace(education=[], experience=[
         SimpleNamespace(title="Analyst", employer="Acme", location="", description="",
-                        start="2024-01", end="2024-06", current=False),
+                        start="2024-01", end="2024-06", current=False, bullets=[]),
         SimpleNamespace(title="Engineer", employer="Initech", location="", description="",
-                        start="2025-01", end="2025-06", current=False),
+                        start="2025-01", end="2025-06", current=False, bullets=[]),
     ])
     filled, review = repeaters.fill(page, packet, lambda _m: None)
     assert review == []
@@ -609,9 +609,24 @@ def test_dates_cleared_by_a_later_row_are_retyped_before_continue(monkeypatch):
     monkeypatch.setattr(workday_dates, "_fill_date", fill_date)
     packet = SimpleNamespace(education=[], experience=[
         SimpleNamespace(title="Analyst", employer="Acme", location="", description="",
-                        start="2024-01", end="2024-06", current=False),
+                        start="2024-01", end="2024-06", current=False, bullets=[]),
     ])
     filled, review = repeaters.fill(page, packet, lambda _m: None)
     assert review == []
     assert [f["label"] for f in filled] == ["Work experience: Analyst at Acme"]
     assert calls.count(("workExperience-1--", "startDate")) == 3  # fill, re-check, retype
+
+
+def test_a_row_without_an_expansion_fills_its_description_from_the_resume_bullets(monkeypatch):
+    # Prepare writes the expansion only for Workday/SmartRecruiters rows; a row it took
+    # for another site still fills Workday's description, from the resume bullets.
+    page = _Page({**_work_rows(("", "")), "workExperience-1--roleDescription": ""})
+    monkeypatch.setattr(workday_dates, "_fill_date", lambda *_a, **_k: True)
+    packet = SimpleNamespace(education=[], experience=[
+        SimpleNamespace(title="Analyst", employer="Acme", location="", description="",
+                        start="2024-01", end="2024-06", current=False,
+                        bullets=["Built the report.", "Cut costs 10%."]),
+    ])
+    filled, review = repeaters.fill(page, packet, lambda _m: None)
+    assert review == []
+    assert page.values["workExperience-1--roleDescription"] == "Built the report.\nCut costs 10%."

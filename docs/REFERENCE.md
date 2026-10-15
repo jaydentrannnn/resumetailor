@@ -613,6 +613,10 @@ Apply data and observes fields without writing. Python owns matching and policy,
 one-field corrections share the Apply operation lock; a correction requires a fresh
 snapshot and state hash. Prepare records the source employment count with expansion output
 so an empty expansion is accepted only when no source employment existed at preparation.
+Prepare writes the expansion only for rows whose fill pastes it (`preparation.EXPANSION_ATS`:
+Workday, SmartRecruiters); other rows are eligible without it and generate it on demand
+from the application's Files tab (`POST /api/jobs/{id}/expansion`, `?force=true` to
+regenerate). Workday fills a missing description from the resume bullets.
 
 Platforms (plan P4-A): `store_models.AtsKind` also names Taleo, SuccessFactors, Oracle Cloud,
 Jobvite, BambooHR, LinkedIn, Indeed and Handshake; `fetch_jd.detect_ats` and
@@ -1145,7 +1149,7 @@ overrides, friendly provider labels and queue activity only while requests are a
   without it and the `(base_url, model)` remembered (`llm._NO_REASONING_EFFORT`).
   Forwarding backends add `|effort-sent` to `config.fingerprint`. `JobSettings.effort` is
   `None` (recommended: `config.default_effort`, `DEFAULT_EFFORT` plus
-  `PROVIDER_DEFAULT_EFFORT` — expansion is low on Claude/OpenAI/Gemini), one level for
+  `PROVIDER_DEFAULT_EFFORT` — expansion is low on Claude/OpenAI/Gemini/Vertex), one level for
   every stage, or a per-step map over `config.EFFORT_STEPS` (Settings → Advanced, Custom:
   analysis, rewrite, expand, cover, answer). The answer step reaches Fill through
   `ApplySettings.answer_effort`, pinned beside `model_spec`.
