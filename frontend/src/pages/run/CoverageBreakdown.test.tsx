@@ -25,9 +25,7 @@ const funnel: CoverageFunnel = {
 
 it("names where each unexpressed skill stopped, and additions once each", () => {
   render(<CoverageBreakdown funnel={funnel} />);
-  expect(screen.getByText("In your resume, not on this page").nextSibling?.textContent).toBe(
-    "SQL",
-  );
+  expect(screen.getByText("In your resume, not on this page").nextSibling?.textContent).toBe("SQL");
   expect(screen.getByText("Backed on this page, never named").nextSibling?.textContent).toBe(
     "Tableau",
   );
