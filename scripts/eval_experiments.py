@@ -25,6 +25,7 @@ from __future__ import annotations
 import argparse
 import json
 import os
+import shutil
 import subprocess
 import sys
 from pathlib import Path
@@ -118,6 +119,31 @@ def cmd_clause(args, replay: Replay) -> None:
     arm = arms_mod.Arm("clause", replay.light_spec)
     arms_mod.run([(c, arm) for c in _cases(replay, _meta())], stage, _results(),
                  setup=replay.setup, workers=args.workers, out_dir=EVAL_DIR, progress=_progress)
+
+
+def cmd_rescore(args, replay: Replay) -> None:
+    """Recompute every finished record's metrics from its stored texts after a metric
+    change: no model calls. The previous file is kept as `cases.jsonl.bak`."""
+    from resume_tailor import config
+    from resume_tailor.infra import atomic
+
+    path = EVAL_DIR / "cases.jsonl"
+    by_id = {c.case_id: c for c in _cases(replay, _meta())}
+    lines, changed = [], 0
+    for r in _results().records():
+        res = r.get("result") or {}
+        if r.get("status") == "ok" and r["case"] in by_id and "texts" in res:
+            case = by_id[r["case"]]
+            with config.use_context(config.context_for_workspace(case.workspace)):
+                replay.setup(case)
+                fresh = replay._rewrite_record(case, res["texts"], res["fabrications_rejected"],
+                                               res.get("verbs_diversified", 0))
+            changed += fresh["metrics"] != res.get("metrics")
+            res["metrics"], res["must"] = fresh["metrics"], fresh["must"]
+        lines.append(json.dumps(r, ensure_ascii=False))
+    shutil.copy2(path, path.with_name("cases.jsonl.bak"))
+    atomic.write_text(path, "\n".join(lines) + "\n")
+    print(f"rescored {len(lines)} record(s); {changed} changed")
 
 
 def judge_spec(replay: Replay) -> dict:
@@ -217,7 +243,8 @@ def cmd_e2e_report(args, _replay=None) -> None:
     base, cand = e2e.load(E2E_DIR, "base"), e2e.load(E2E_DIR, args.arm)
     verdicts = judge.Verdicts(judge.verdicts_file(E2E_DIR)).records()
     scores = sequential.case_scores(verdicts, "base", args.arm)
-    rows = e2e.gates(base, cand, scores, model=meta["model"], cost_limit=0.10)
+    cases = meta["cases"][: args.limit]
+    rows = e2e.gates(cases, base, cand, scores, model=meta["model"], cost_limit=0.10)
     lines = [f"# End to end: base vs {args.arm} ({meta.get('e2e', {}).get(args.arm)})", "",
              "| Gate | Detail | Result |", "|---|---|---|"]
     lines += [f"| {g} | {d} | {'pass' if ok else 'FAIL'} |" for g, d, ok in rows]
@@ -228,8 +255,8 @@ def cmd_e2e_report(args, _replay=None) -> None:
     print(text)
 
 
-COMMANDS = {"drafts": cmd_drafts, "polish": cmd_polish, "clause": cmd_clause,
-            "judge": cmd_judge, "report": cmd_report, "e2e": cmd_e2e,
+COMMANDS = {"rescore": cmd_rescore, "drafts": cmd_drafts, "polish": cmd_polish,
+            "clause": cmd_clause, "judge": cmd_judge, "report": cmd_report, "e2e": cmd_e2e,
             "e2e-worker": cmd_e2e_worker, "e2e-judge": cmd_e2e_judge,
             "e2e-report": cmd_e2e_report}
 

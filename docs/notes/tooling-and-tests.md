@@ -219,3 +219,14 @@ otherwise lets page cards paint over header popovers.
   that process only to capture the result and the CLI's own collector. An estimated
   page count counts as a failed run. Run the baseline arm first so later arms share its
   extraction and scoring caches.
+
+## Experiment gates refuse incomplete runs (2026-10-16)
+
+A review found the sequential report and the end-to-end gates decided on whichever cases
+finished (set intersection), so a 40-case comparison could PASS on 20, and an e2e verdict
+for an unrelated case counted. Now a declared case missing from any arm, or missing its
+judge verdict, makes a decision INCOMPLETE (`sequential.missing_cases`); the e2e gates
+run over the declared cases, require a verdict for every pair of successful runs, and
+add a fit-round gate (mean change <= +0.5; runtime stays reported only). The eval guard
+metric now passes `preserve_numbers=True` like production; `eval_experiments.py rescore`
+recomputed every stored record (no model calls): 0 of 325 changed, so no decision moved.

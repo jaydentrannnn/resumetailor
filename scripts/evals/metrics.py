@@ -39,7 +39,8 @@ def rewrite_metrics(
     soft_min, hard_max = length_band(budget)
     final = {i: texts.get(i, by_id[i].text) for i in by_id}
     guard = sum(
-        len(bullet_checks.guard_offenders([by_id[i]], t))
+        # The production check: dropped numbers count, as `rewrite_bullets` enforces.
+        len(bullet_checks.guard_offenders([by_id[i]], t, preserve_numbers=True))
         for i, t in final.items() if i not in fabrications_rejected
     )
     must = _must_haves(requirements)

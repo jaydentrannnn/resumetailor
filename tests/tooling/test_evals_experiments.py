@@ -243,18 +243,63 @@ def test_estimated_or_unfitted_runs_count_as_failures():
     assert _e2e("1", _fit(pages=2))["over_target"]
 
 
+CASES = [str(i) for i in range(4)]
+
+
 def test_gates_pass_an_equivalent_arm_and_block_a_worse_one():
-    base = {str(i): _e2e(str(i), _fit()) for i in range(4)}
-    same = {str(i): _e2e(str(i), _fit(), tokens=1050) for i in range(4)}
-    rows = e2e.gates(base, same, {"0": 0, "1": 1}, model="gemini-3.8-flash", cost_limit=0.10)
+    base = {k: _e2e(k, _fit()) for k in CASES}
+    same = {k: _e2e(k, _fit(), tokens=1050) for k in CASES}
+    rows = e2e.gates(CASES, base, same, dict.fromkeys(CASES, 0), model="gemini-3.8-flash",
+                     cost_limit=0.10)
     assert all(ok for *_, ok in rows)
-    worse = {str(i): _e2e(str(i), _fit(fill=0.80, widows=2, estimated=i == 0), tokens=1500)
-             for i in range(4)}
-    failed = {g for g, _d, ok in e2e.gates(base, worse, {"0": -1}, model="gemini-3.8-flash",
-                                            cost_limit=0.10) if not ok}
+    worse = {k: _e2e(k, _fit(fill=0.80, widows=2, estimated=k == "0"), tokens=1500)
+             for k in CASES}
+    failed = {g for g, _d, ok in e2e.gates(CASES, base, worse, dict.fromkeys(CASES, -1),
+                                            model="gemini-3.8-flash", cost_limit=0.10)
+              if not ok}
     assert {"failed or estimated runs", "mean fill change >= -2 points",
             "mean widows-remaining change <= +0.5", "judge net preference >= -10 points",
             "total cost <= +10%"} <= failed
+
+
+def test_gates_never_pass_on_whatever_happened_to_finish():
+    """20 baseline cases, one candidate case, a verdict for an unrelated case, and a
+    candidate that took 100 fit rounds: every gap blocks."""
+    cases = [str(i) for i in range(20)]
+    base = {k: _e2e(k, _fit()) for k in cases}
+    slow = _fit()
+    slow.iterations = 100
+    cand = {"0": _e2e("0", slow)}
+    failed = {g for g, _d, ok in e2e.gates(cases, base, cand, {"unrelated": 1},
+                                            model="gemini-3.8-flash", cost_limit=0.10)
+              if not ok}
+    assert {"every case ran in both arms", "judge net preference >= -10 points",
+            "mean fit-round change <= +0.5"} <= failed
+
+
+def test_a_sequential_decision_needs_every_declared_case():
+    cases = [str(i) for i in range(40)]
+    rec = _rec(["Python"], ["Python"], {"input_tokens": 1, "output_tokens": 1},
+               guard_offenders=0, over_length=0)
+    grouped = {report_seq.BASE: dict.fromkeys(cases, rec),
+               "polish-none#0": dict.fromkeys(cases[:20], rec)}
+    verdicts = [{"case": c, "a": report_seq.BASE, "b": "polish-none#0", "winner": "b"}
+                for c in cases[:20]]
+    crit = report_seq.e1_criteria(grouped, verdicts, "none", cases)
+    assert sequential.decide(crit, 1) == "PASS"  # what the finished half alone would say
+    gap = report_seq.e1_missing(grouped, verdicts, "none", cases)
+    assert gap == cases[20:]
+    assert sequential.decide(crit, 1, missing=gap) == "INCOMPLETE"
+    assert report_seq.e1_choice("INCOMPLETE", "PASS", 1).startswith("incomplete")
+
+
+def test_the_guard_metric_counts_dropped_numbers_like_production():
+    from evals import metrics
+
+    source = Bullet(id="a", text="Built an API handling 42 requests per second.", tags=[])
+    reqs = JobRequirements(title="Engineer", seniority="entry", keywords=[])
+    out = metrics.rewrite_metrics([source], {"a": "Built an API."}, {}, reqs, 200)
+    assert out["guard_offenders"] >= 1
 
 
 def test_workers_are_separate_processes_with_the_arm_environment(tmp_path):

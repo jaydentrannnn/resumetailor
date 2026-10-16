@@ -9,6 +9,8 @@ bound with a pre-registered bar:
   (Non-binding: stopping early for futility never inflates the false-pass rate.)
 * CONTINUE: neither, at look 1; extend the sample once.
 * FAIL: anything but PASS at the last look. Failing means "not shown", not "worse".
+* INCOMPLETE: a declared case lacks a result in either arm or a judge verdict. Never
+  decided on the cases that happened to finish: a gap is rerun, not dropped.
 """
 
 from __future__ import annotations
@@ -132,8 +134,22 @@ class Criterion:
         return "CONTINUE"
 
 
-def decide(criteria: Sequence[Criterion], look: int) -> str:
-    """PASS only when every criterion passes; FUTILE as soon as one is futile."""
+def missing_cases(cases: Sequence[str], *arms: dict, verdicts: Iterable[dict] = (),
+                  pair: tuple[str, str] | None = None) -> list[str]:
+    """Declared `cases` without an ok record in every arm (`{case: record}` maps) or,
+    with `pair`, without a judge verdict for that (a, b) pair."""
+    judged = {v["case"] for v in verdicts
+              if pair is not None and (v.get("a"), v.get("b")) == pair
+              and v.get("winner") in {"a", "b", "tie"}}
+    return [c for c in cases
+            if any(c not in arm for arm in arms) or (pair is not None and c not in judged)]
+
+
+def decide(criteria: Sequence[Criterion], look: int, *, missing: Sequence[str] = ()) -> str:
+    """PASS only when every criterion passes; FUTILE as soon as one is futile;
+    INCOMPLETE whenever a declared case is missing."""
+    if missing:
+        return "INCOMPLETE"
     decisions = [c.decision(look) for c in criteria]
     if all(d == "PASS" for d in decisions):
         return "PASS"

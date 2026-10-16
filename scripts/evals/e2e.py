@@ -147,16 +147,25 @@ def _mean(rows: list[dict], key: str) -> float:
     return mean(values) if values else float("nan")
 
 
-def gates(base: dict[str, dict], cand: dict[str, dict], judge_scores: dict[str, int], *,
-          model: str, cost_limit: float) -> list[tuple[str, str, bool]]:
-    """The pre-registered ship gates on the cases both arms ran: `(gate, detail, passed)`."""
-    common = sorted(set(base) & set(cand))
-    b, c = [base[k] for k in common], [cand[k] for k in common]
+def gates(cases: Sequence[str], base: dict[str, dict], cand: dict[str, dict],
+          judge_scores: dict[str, int], *, model: str,
+          cost_limit: float) -> list[tuple[str, str, bool]]:
+    """The pre-registered ship gates over the declared `cases`: `(gate, detail, passed)`.
+
+    Nothing is decided on whatever happened to finish: a case missing from either arm,
+    or a pair of successful runs without a judge verdict, fails its gate.
+    """
+    absent = [k for k in cases if k not in base or k not in cand]
+    b = [base[k] for k in cases if k in base]
+    c = [cand[k] for k in cases if k in cand]
     ok_b = [r for r in b if not failed(r)]
     ok_c = [r for r in c if not failed(r)]
-    both = [k for k in common if not failed(base[k]) and not failed(cand[k])]
+    both = [k for k in cases if k in base and k in cand
+            and not failed(base[k]) and not failed(cand[k])]
     pb, pc = [base[k] for k in both], [cand[k] for k in both]
-    out = []
+    out = [("every case ran in both arms",
+            f"{len(cases) - len(absent)}/{len(cases)}" + (f" (missing {', '.join(absent)})"
+                                                          if absent else ""), not absent)]
     fails = (len(b) - len(ok_b), len(c) - len(ok_c))
     out.append(("failed or estimated runs", f"{fails[0]} -> {fails[1]}", fails[1] <= fails[0]))
     over = (sum(1 for r in ok_b if r["over_target"]), sum(1 for r in ok_c if r["over_target"]))
@@ -165,16 +174,21 @@ def gates(base: dict[str, dict], cand: dict[str, dict], judge_scores: dict[str, 
         ("fill", -0.02, "mean fill change >= -2 points", False),
         ("widows", 0.5, "mean widows-remaining change <= +0.5", True),
         ("dropped", 0.5, "mean dropped-bullet change <= +0.5", True),
+        ("rounds", 0.5, "mean fit-round change <= +0.5", True),
     ):
         d = _mean(pc, key) - _mean(pb, key)
         passed = d <= limit if higher_is_worse else d >= limit
         detail = f"{_mean(pb, key):.3f} -> {_mean(pc, key):.3f} ({d:+.3f}, n={len(both)})"
         out.append((label, detail, passed))
-    net = mean(judge_scores.values()) if judge_scores else float("nan")
-    out.append(("judge net preference >= -10 points", f"{net:+.3f} (n={len(judge_scores)})",
-                net >= -0.10))
+    scores = {k: judge_scores[k] for k in both if k in judge_scores}
+    unjudged = [k for k in both if k not in judge_scores]
+    net = mean(scores.values()) if scores else float("nan")
+    detail = f"{net:+.3f} (n={len(scores)})" + (
+        f", no verdict for {', '.join(unjudged)}" if unjudged else "")
+    out.append(("judge net preference >= -10 points", detail,
+                not unjudged and net >= -0.10))
     cost = sequential.ratio_bounds([(_cost(base[k], model), _cost(cand[k], model))
-                                    for k in common])
+                                    for k in cases if k in base and k in cand])
     out.append((f"total cost <= +{cost_limit:.0%}", f"{cost.estimate:+.1%}",
                 cost.estimate <= cost_limit))
     return out

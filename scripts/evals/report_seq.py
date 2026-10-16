@@ -98,12 +98,30 @@ def e2_criteria(grouped: dict, verdicts: list[dict], cases: Sequence[str],
     ]
 
 
+def e1_missing(grouped: dict, verdicts: list[dict], cand: str,
+               cases: Sequence[str]) -> list[str]:
+    arm = f"polish-{cand}#0"
+    return sequential.missing_cases(cases, grouped.get(BASE, {}), grouped.get(arm, {}),
+                                    verdicts=verdicts, pair=(BASE, arm))
+
+
+def e2_missing(grouped: dict, verdicts: list[dict], cases: Sequence[str]) -> list[str]:
+    # The cost criterion needs the frozen draft too: the baseline's rewrite is two records.
+    return sequential.missing_cases(
+        cases, *(grouped.get(k, {}) for k in ("draft#0", BASE, "clause#0")),
+        verdicts=verdicts, pair=(BASE, "clause#0"))
+
+
 def e1_choice(none: str, low: str, look: int) -> str:
     """The fixed sequence: "none" first; "low" is tested only once "none" has not passed."""
+    if none == "INCOMPLETE":
+        return "incomplete (none): rerun the missing cases"
     if none == "PASS":
         return "ship polish none"
     if look < sequential.LOOKS and none == "CONTINUE":
         return "extend (none undecided)"
+    if low == "INCOMPLETE":
+        return "incomplete (low): rerun the missing cases"
     if low == "PASS":
         return "ship polish low"
     if look < sequential.LOOKS and low == "CONTINUE":
@@ -154,6 +172,12 @@ def _tally(verdicts: list[dict], a: str, b: str, cases: Sequence[str]) -> str:
             f"({identical} identical, no judge call)")
 
 
+def _gap_line(gap: Sequence[str]) -> list[str]:
+    if not gap:
+        return []
+    return [f"Missing results or verdicts for {len(gap)} case(s): {', '.join(gap)}.", ""]
+
+
 def markdown(grouped: dict, verdicts: list[dict], cases: Sequence[str], look: int,
              model: str, meta: dict) -> str:
     lines = [f"# E1 polish / E2 clause — look {look} (n={len(cases)})", "",
@@ -163,17 +187,19 @@ def markdown(grouped: dict, verdicts: list[dict], cases: Sequence[str], look: in
     decisions = {}
     for cand in ("none", "low"):
         crit = e1_criteria(grouped, verdicts, cand, cases)
-        decisions[cand] = sequential.decide(crit, look)
+        gap = e1_missing(grouped, verdicts, cand, cases)
+        decisions[cand] = sequential.decide(crit, look, missing=gap)
         sens = _net(verdicts, BASE, f"polish-{cand}#0", cases,
                     exclude=lambda v: sequential.cites(v, VNPT_PATTERN))
         lines += [f"## E1: polish {cand} vs medium — **{decisions[cand]}**", "",
-                  *sequential.table(crit, look), "",
+                  *sequential.table(crit, look), "", *_gap_line(gap),
                   f"Judge: {_tally(verdicts, BASE, f'polish-{cand}#0', cases)}. "
                   f"Without vnpt_b2 citations: net {sens.estimate:+.3f} "
                   f"[{sens.lower:+.3f}, {sens.upper:+.3f}] (n={sens.n}).", ""]
     lines += [f"**E1 outcome: {e1_choice(decisions['none'], decisions['low'], look)}**", ""]
     crit = e2_criteria(grouped, verdicts, cases, model)
-    e2 = sequential.decide(crit, look)
+    gap = e2_missing(grouped, verdicts, cases)
+    e2 = sequential.decide(crit, look, missing=gap)
     medium, clause = grouped.get(BASE, {}), grouped.get("clause#0", {})
     common = [c for c in cases if c in medium and c in clause]
     gained = sum(supported_losses(medium[c], clause[c])[1] for c in common)
@@ -181,6 +207,7 @@ def markdown(grouped: dict, verdicts: list[dict], cases: Sequence[str], look: in
     sens = _net(verdicts, BASE, "clause#0", cases,
                 exclude=lambda v: sequential.cites(v, VNPT_PATTERN))
     lines += [f"## E2: clause vs medium — **{e2}**", "", *sequential.table(crit, look), "",
+              *_gap_line(gap),
               f"Judge: {_tally(verdicts, BASE, 'clause#0', cases)}. Without vnpt_b2 "
               f"citations: net {sens.estimate:+.3f} [{sens.lower:+.3f}, {sens.upper:+.3f}]. "
               f"Supported must-haves: {lost} lost, {gained} gained over {len(common)} cases.",
