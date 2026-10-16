@@ -325,7 +325,8 @@ Postings kept outside the authorized countries are answered as needing sponsorsh
 **Answer book** (`apply/answers/answer_book.py`, Profile → Application details): one table
 (the workspace `app.db`'s `answer_memory`, schema migration 3) for review corrections
 ("You"), answers typed on the page into questions the fill left (`funnel/answer_harvest.py`:
-at Continue start, on review refresh, every 20 s on retained review tabs, plus an injected
+at Continue start, on review refresh, every 20 s on retained review tabs and within ~2 s of a
+retained tab's URL changing, plus an injected
 `change`/option-click listener), custom answers (the profile's old `custom_answers`, moved
 once with a backup), the model's dropdown picks (the old `resolver-choices.json`, keyed by the
 resolver's choice key) and learned question types (`classify_questions` results for low-risk

@@ -16,30 +16,57 @@ _SUBMITTED_DATE = re.compile(
     r"\b(?:January|February|March|April|May|June|July|August|September|October|November|December)\s+\d{1,2},?\s+\d{4}\b|\b\d{4}-\d{2}-\d{2}\b|\b\d{1,2}/\d{1,2}/\d{4}\b",
     re.I,
 )
+#: Hosts that serve one board: a posting saved on ``boards.`` is applied to on ``job-boards.``.
+_SAME_SITE = {
+    "boards.greenhouse.io": "job-boards.greenhouse.io",
+    "boards.eu.greenhouse.io": "job-boards.eu.greenhouse.io",
+}
+#: A Workday location variant: the URL's ``R5054820-2`` is requisition ``R5054820`` on the page.
+_WORKDAY_VARIANT = re.compile(r"^(?P<base>.*\d.*)-\d{1,2}$")
+
+
+def _site(url: str) -> str:
+    host = (urlsplit(url).hostname or "").lower()
+    return _SAME_SITE.get(host, host)
+
+
+def _requisitions(key: str, ats: str) -> list[str]:
+    """The key's requisition, then (Workday) the bare id its location variant shows."""
+    requisition = key.rsplit(":", 1)[-1] if key else ""
+    if not requisition:
+        return []
+    variant = _WORKDAY_VARIANT.match(requisition) if ats == "workday" else None
+    return [requisition, variant["base"]] if variant else [requisition]
+
+
+def _mentions(requisitions: list[str], text: str) -> bool:
+    return any(
+        re.search(rf"(?<![\w-]){re.escape(requisition)}(?![\w-])", text, re.I)
+        for requisition in requisitions
+    )
 
 
 def confirmation(
     posting_url: str, current_url: str, body: str, ats: str, rows: list[str] | None = None
 ) -> dict[str, str] | None:
     """Require an explicit confirmation and the matching posting or requisition."""
-    original, current = urlsplit(posting_url), urlsplit(current_url)
-    if original.hostname != current.hostname:
+    if _site(posting_url) != _site(current_url):
         return None
     key = identity.canonical_key(posting_url.rstrip("/").removesuffix("/apply"))
-    requisition = key.rsplit(":", 1)[-1] if key else ""
-    if not requisition:
+    requisitions = _requisitions(key, ats)
+    if not requisitions:
         return None
-    matching_url = identity.canonical_key(current_url.rstrip("/").removesuffix("/apply")) == key
-    matching_body = bool(re.search(rf"(?<![\w-]){re.escape(requisition)}(?![\w-])", body, re.I))
+    requisition = requisitions[0]
+    current_key = identity.canonical_key(current_url.rstrip("/").removesuffix("/apply"))
+    matching_url = current_key == key or (
+        len(requisitions) > 1 and current_key == key.removesuffix(requisition) + requisitions[1]
+    )
+    matching_body = _mentions(requisitions, body)
     if not matching_url and not matching_body:
         return None
     date_signal = ""
     if ats == "workday" and rows is not None and not matching_url:
-        matching_rows = [
-            row
-            for row in rows
-            if re.search(rf"(?<![\w-]){re.escape(requisition)}(?![\w-])", row, re.I)
-        ]
+        matching_rows = [row for row in rows if _mentions(requisitions, row)]
         if any(re.search(r"not (?:yet )?submitted|application (?:draft|not submitted)", row, re.I)
                for row in matching_rows):
             return None

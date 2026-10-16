@@ -46,6 +46,14 @@ def _form_questions(merged: dict[str, Any]) -> list[dict[str, Any]]:
         and (item.get("label") or item.get("key") not in {None, "", "existing"})
     ]
 
+def _only_unrecognized(merged: dict[str, Any]) -> bool:
+    """Nothing filled or written and every control seen unrecognised: a careers page's own
+    "Search by Keyword" box or "Save job" button (Capgemini, Qualtrics 2026-10), not a form."""
+    if merged.get("filled") or merged.get("long_text"):
+        return False
+    left = [item for item in merged.get("leftovers") or [] if isinstance(item, dict)]
+    return bool(left) and all(item.get("reason") == "Unrecognized field" for item in left)
+
 def _synonym_payload() -> list[list[str]]:
     """Serialise ``SYNONYMS`` for the page evaluate argument."""
     return [[pat, key] for pat, key in ats_hints.SYNONYMS]

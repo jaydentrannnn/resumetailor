@@ -6,6 +6,7 @@ import contextlib
 import re
 from collections.abc import Callable
 from typing import Any, Literal
+from urllib.parse import urljoin, urlsplit
 
 from resume_tailor.apply.ats import ats_hints
 from resume_tailor.apply.driver import clicks
@@ -85,9 +86,7 @@ def find_and_click_apply(page: Any, ats: str, context: Any = None) -> Any:
         try:
             loc = current_page.get_by_role(role, name=ats_hints.APPLY_ENTRY_PATTERN).first
             if _is_locator_present_and_visible(loc):
-                current_page = _click_and_track_popup(
-                    current_page, context, lambda loc=loc: clicks.safe_click(loc, purpose="enter", timeout=4000)
-                )
+                current_page = _enter(current_page, context, loc)
                 current_page.wait_for_timeout(1000)
                 break
         except Exception:  # noqa: BLE001
@@ -107,6 +106,85 @@ def find_and_click_apply(page: Any, ats: str, context: Any = None) -> Any:
         pass
 
     return current_page
+
+def _enter(page: Any, context: Any, loc: Any) -> Any:
+    """Click an entry control; when that leaves the page where it was, take the apply item
+    of the menu it opened, else follow the control's own link.
+
+    2026-10: SuccessFactors sites (Capgemini, Royal Caribbean) show "Apply now" as a menu
+    toggle whose "Apply Now" item leads to the sign-in; its ``href`` alone redirects home.
+    Qualtrics' link sits under a chat widget that intercepts the click."""
+    before = str(page.url)
+    href = _entry_href(page, loc)
+    try:
+        landed = _click_and_track_popup(
+            page, context, lambda: clicks.safe_click(loc, purpose="enter", timeout=4000)
+        )
+    except clicks.SubmitRefused:
+        raise
+    except Exception:  # noqa: BLE001 - intercepted or detached: the link may still work
+        landed = page
+    if landed is not page:
+        return landed
+    with contextlib.suppress(Exception):
+        page.wait_for_timeout(1500)
+    if not _same_page(str(page.url), before):
+        return page
+    item = _apply_menu_item(page)
+    if item is not None:
+        try:
+            return _click_and_track_popup(
+                page, context, lambda: clicks.safe_click(item, purpose="enter", timeout=4000)
+            )
+        except clicks.SubmitRefused:
+            raise
+        except Exception:  # noqa: BLE001 - the item vanished: the link may still work
+            pass
+    if href:
+        page.goto(href, wait_until="domcontentloaded", timeout=30_000)
+        if _is_site_home(str(page.url)) and not _is_site_home(href):
+            # The link needs the page's own script (a session) and bounced to the home
+            # page: hand over the posting, not the home page.
+            page.goto(before, wait_until="domcontentloaded", timeout=30_000)
+    return page
+
+
+def _apply_menu_item(page: Any) -> Any | None:
+    """The visible "Apply" item of a menu the entry click just opened, else None."""
+    with contextlib.suppress(Exception):
+        item = page.get_by_role("menuitem", name=ats_hints.APPLY_ENTRY_PATTERN).first
+        if _is_locator_present_and_visible(item):
+            return item
+    return None
+
+
+def _is_site_home(url: str) -> bool:
+    return urlsplit(url).path in {"", "/"}
+
+
+def _entry_href(page: Any, loc: Any) -> str:
+    """The entry control's own link on the posting's site, else ""."""
+    href = ""
+    with contextlib.suppress(Exception):
+        href = loc.get_attribute("href", timeout=2000)
+    if not isinstance(href, str):
+        return ""
+    href = href.strip()
+    if not href or href.startswith("#") or href.lower().startswith("javascript:"):
+        return ""
+    target = urljoin(str(page.url), href)
+    if urlsplit(target).scheme not in {"http", "https"} or _site(target) != _site(str(page.url)):
+        return ""
+    return "" if _same_page(target, str(page.url)) else target
+
+
+def _site(url: str) -> str:
+    return ".".join((urlsplit(url).hostname or "").split(".")[-2:])
+
+
+def _same_page(a: str, b: str) -> bool:
+    return a.split("#", 1)[0].rstrip("/") == b.split("#", 1)[0].rstrip("/")
+
 
 def _detect_barriers(page: Any) -> str | None:
     """Detect blocking barriers like Cloudflare walls or interactive CAPTCHAs.

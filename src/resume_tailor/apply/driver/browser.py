@@ -196,12 +196,21 @@ def open_target_ids() -> set[str] | None:
     whether a retained application tab still exists — one HTTP call, no Playwright,
     safe while a fill owns the browser. ``None`` means unknown, not "no tabs".
     """
+    targets = open_targets()
+    return None if targets is None else set(targets)
+
+
+def open_targets() -> dict[str, str] | None:
+    """Open tabs as ``{target id: url}``, or ``None`` when the browser is unreachable."""
     if extension_mode():
         try:
             infos = _relay_call("Target.getTargets")["targetInfos"]
         except Exception:  # noqa: BLE001 - unknown (or busy) is safer than an empty list
             return None
-        return {str(row["targetId"]) for row in infos if row.get("type") == "page"}
+        return {
+            str(row["targetId"]): str(row.get("url") or "")
+            for row in infos if row.get("type") == "page"
+        }
     try:
         resp = httpx.get(f"{effective_cdp_url()}/json/list", timeout=1.0)
         resp.raise_for_status()
@@ -211,9 +220,23 @@ def open_target_ids() -> set[str] | None:
     if not isinstance(targets, list):
         return None
     return {
-        str(target["id"]) for target in targets
+        str(target["id"]): str(target.get("url") or "") for target in targets
         if isinstance(target, dict) and target.get("type") == "page" and target.get("id")
     }
+
+
+def close_target(target_id: str) -> bool:
+    """Close one tab by target id; False when it was not closed (never raises).
+
+    Retained application tabs pile up otherwise: each holds a full ATS page in memory,
+    and a batch of handed-over Workday tabs ran the fill browser past 8 GB (2026-10)."""
+    if not target_id or extension_mode():
+        return False  # the relay drives the applicant's own tab: never ours to close
+    try:
+        resp = httpx.get(f"{effective_cdp_url()}/json/close/{target_id}", timeout=2.0)
+    except Exception:  # noqa: BLE001 - unreachable browser is an expected state
+        return False
+    return resp.status_code == 200
 
 
 def _tab_gone() -> bool:

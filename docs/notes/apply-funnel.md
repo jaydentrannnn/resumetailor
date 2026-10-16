@@ -1904,3 +1904,36 @@ Validation: 3,532 backend tests passed (two skipped), 641 frontend tests passed,
   portals (row menus) and text highlights never toggle. The selection bar is always shown
   ("0 selected", actions disabled) so ticking the first row never shifts the table. Drag-select
   was rejected: it fights text selection and touch scrolling; Shift-click covers 10–20 rows.
+
+## 2026-10-16 — Manual-submission detection, careers-page entry, tab clean-up
+
+Verified on live reruns (12 apps, 4 parallel, twice) and by replaying `confirmation()` on real URLs.
+Only 7 of the 14 submissions that day were auto-detected.
+
+- `submission_monitor.confirmation`: `boards.greenhouse.io` and `job-boards.greenhouse.io` are one
+  site (Point72/Anduril were saved on the first, applied to on the second). A Workday
+  location-variant key (`R5054820-2`, from the URL tail) also matches the bare id the page shows
+  (`R5054820`); the base must contain a digit, so `R-01418` is never read as `R` + variant.
+  `identity.canonical_key` is unchanged: dedupe keeps location variants separate on purpose.
+- `answer_harvest`: the loop ticks every 2 s on one `/json/list` call (`browser.open_targets`), reads
+  a tab at once when its URL changed, keeps the 20 s full pass, and closes a submitted/skipped
+  application's tab after a 30 s grace. Loop exit and `_THREAD = None` share one lock (a `watch`
+  racing the exit could otherwise be dropped).
+- Tabs: a fresh (initial/reopen) fill closes the application's previously recorded tab. 27 retained
+  tabs had the fill browser at 8.4 GB (2.1 GB after closing). `browser.close_target` never closes in
+  extension mode (that tab is the applicant's own). `tests/conftest.py` stubs it suite-wide: the
+  developer's live fill browser listens on the default port.
+- `fill_buttons._enter`: when the Apply click is intercepted (Qualtrics' Phenom chat widget) or does
+  not leave the page (Capgemini/Royal Caribbean SuccessFactors dropdown toggle), follow the
+  control's own same-site `href`. A `SubmitRefused` is never bypassed by the link.
+- No-form guard: nothing filled and every control "Unrecognized field" (a careers page's search box,
+  "Save job"), no required-empty fields, not Workday → `NO_FORM_MSG`, not "missing answers".
+- Not fixed, diagnostics only: Workday "stuck on unknown" on location variants of an already-applied
+  requisition (signed-in state; not reproducible signed out). `fill_entry` now logs the screen's
+  automation ids + URL (never text). Dropped as not reproduced: 60 s navigation timeouts, unread
+  dropdown options, concurrency as the cause of stops.
+- Amended same day after the live check: following the toggle's `href` on SuccessFactors sites
+  redirects to the site home. `_enter` now first clicks a newly visible "Apply" `menuitem` (the
+  dropdown's "Apply Now" → SuccessFactors sign-in/create-account), follows the `href` only
+  without one, and returns to the posting if the link bounced to `/`. Live: Capgemini →
+  create-account form, Royal Caribbean → sign-in, Qualtrics → application form.

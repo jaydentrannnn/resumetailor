@@ -2,7 +2,12 @@
 
 from __future__ import annotations
 
+import pytest
+
 from resume_tailor.apply.driver import browser
+
+#: The real function, captured before conftest's autouse stub replaces it.
+_CLOSE_TARGET = browser.close_target
 
 
 def test_effective_cdp_url_leaves_localhost(monkeypatch):
@@ -104,3 +109,45 @@ def test_open_target_ids_is_none_when_unreachable(monkeypatch):
     monkeypatch.setattr(browser, "effective_cdp_url", lambda url=None: "http://127.0.0.1:9222")
     monkeypatch.setattr(browser.httpx, "get", _fail)
     assert browser.open_target_ids() is None
+
+
+def test_open_targets_maps_page_ids_to_urls(monkeypatch):
+    class _Resp:
+        def raise_for_status(self) -> None:
+            return None
+
+        def json(self) -> list:
+            return [
+                {"id": "TAB1", "type": "page", "url": "https://example.test/apply"},
+                {"id": "SW1", "type": "service_worker", "url": "https://example.test/sw.js"},
+            ]
+
+    monkeypatch.setattr(browser, "effective_cdp_url", lambda url=None: "http://127.0.0.1:9222")
+    monkeypatch.setattr(browser.httpx, "get", lambda url, **kwargs: _Resp())
+    assert browser.open_targets() == {"TAB1": "https://example.test/apply"}
+
+
+def test_close_target_closes_by_id_and_never_raises(monkeypatch):
+    seen: list[str] = []
+
+    class _Resp:
+        status_code = 200
+
+    def _get(url: str, **kwargs):
+        seen.append(url)
+        if url.endswith("/GONE"):
+            raise browser.httpx.ConnectError("refused")
+        return _Resp()
+
+    monkeypatch.setattr(browser, "effective_cdp_url", lambda url=None: "http://127.0.0.1:9222")
+    monkeypatch.setattr(browser.httpx, "get", _get)
+    assert _CLOSE_TARGET("TAB1") is True
+    assert _CLOSE_TARGET("GONE") is False
+    assert _CLOSE_TARGET("") is False
+    assert seen == ["http://127.0.0.1:9222/json/close/TAB1", "http://127.0.0.1:9222/json/close/GONE"]
+
+
+def test_close_target_leaves_the_extension_tab_alone(monkeypatch):
+    monkeypatch.setattr(browser, "extension_mode", lambda: True)
+    monkeypatch.setattr(browser.httpx, "get", lambda *a, **k: pytest.fail("must not close"))
+    assert _CLOSE_TARGET("TAB1") is False

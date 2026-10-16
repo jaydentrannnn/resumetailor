@@ -187,6 +187,15 @@ def _no_answer_harvest(monkeypatch):
 
 
 @pytest.fixture(autouse=True)
+def _no_tab_closing(monkeypatch):
+    """Never close a real tab: the developer's own fill browser listens on the default
+    debugging port. `test_browser_cdp.py` tests the real function with a faked httpx."""
+    from resume_tailor.apply.driver import browser
+
+    monkeypatch.setattr(browser, "close_target", lambda _target_id: False)
+
+
+@pytest.fixture(autouse=True)
 def _isolated_submit_guard(tmp_path, monkeypatch):
     """Keep the pause switch, blocked hosts and extension pairings per test; never sleep."""
     monkeypatch.setattr(submit_guard, "pause_path", lambda: tmp_path / "automation.json")

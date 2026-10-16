@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import contextlib
+import logging
 from typing import Any
 
 from resume_tailor.apply.answers import questions
@@ -12,6 +13,8 @@ from resume_tailor.apply.forms import form_guards
 from resume_tailor.apply.funnel.store_models import FillResult
 
 from . import fill_buttons, fill_page, fill_state, fill_widgets
+
+_log = logging.getLogger(__name__)
 
 #: Progress line when Continue finds the review tab gone and opens the posting again.
 CLOSED_TAB_REOPENED = (
@@ -37,6 +40,9 @@ class _FillEntry(fill_state._FillState):
                 # A popup left open by the last fill or by the applicant blocks this one.
                 workday_page.close_stray_popups(self.page)
         else:
+            # A fresh fill replaces this application's earlier tab rather than adding one.
+            if self.fill_mode != "continue" and self.previous_fill.browser_target_id:
+                browser.close_target(self.previous_fill.browser_target_id)
             self.page = context.new_page()
             self.target_id = browser.target_id(context, self.page)
             self._record_target(self.url)
@@ -104,6 +110,12 @@ class _FillEntry(fill_state._FillState):
             self.page, self.context, deadline=self.deadline, progress=self.progress,
         )
         self.progress(f"Workday screen: {wd_state}")
+        if wd_state == "unknown":
+            # Not yet explained (location variants of a requisition already applied to,
+            # 2026-10): log what the screen showed — automation ids and URL, never text.
+            snap = workday_page.snapshot(self.page)
+            _log.info("Workday screen unknown at %s; ids=%s",
+                      snap.get("url") or self.page.url, sorted(snap.get("ids") or [])[:80])
         if wd_state == "already_applied":
             from resume_tailor.apply.funnel import submission_monitor  # noqa: PLC0415
             evidence = submission_monitor.confirmation(self.app.final_url or self.app.posting_url,

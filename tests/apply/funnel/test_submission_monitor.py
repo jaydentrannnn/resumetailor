@@ -125,6 +125,53 @@ def test_matching_greenhouse_confirmation_works_without_workday_requisition():
     assert evidence and evidence["requisition"] == "8263774"
 
 
+def test_greenhouse_posting_saved_on_boards_is_confirmed_on_job_boards():
+    # Point72 / Anduril (2026-10-16): saved on boards., applied to on job-boards.
+    posting = "https://boards.greenhouse.io/synthetic/jobs/8885733002"
+    landed = "https://job-boards.greenhouse.io/synthetic/jobs/8885733002/confirmation"
+    evidence = submission_monitor.confirmation(posting, landed, "Thank you for applying", "greenhouse")
+    assert evidence and evidence["requisition"] == "8885733002"
+    other = landed.replace("8885733002", "1111111111")
+    assert submission_monitor.confirmation(posting, other, "Thank you for applying", "greenhouse") is None
+
+
+VARIANT = (
+    "https://synthetic.wd5.myworkdayjobs.com/External/job/Bellevue/"
+    "AI-Intern---Summer-2027_R5054820-2"
+)
+COMPLETED = "https://synthetic.wd5.myworkdayjobs.com/en-US/External/jobTasks/completed/application"
+
+
+def test_workday_location_variant_matches_the_bare_requisition_the_page_shows():
+    # GE Vernova (2026-10-16): the URL's R5054820-2 is requisition R5054820 on the page.
+    row = "AI Intern - Summer 2027\tR5054820\tSubmitted\tOctober 15, 2026"
+    evidence = submission_monitor.confirmation(
+        VARIANT, COMPLETED, "Application Submitted\n" + row, "workday", rows=[row]
+    )
+    assert evidence and evidence["requisition"] == "R5054820-2"
+    bare_url = VARIANT.removesuffix("-2")
+    assert submission_monitor.confirmation(VARIANT, bare_url, "Application Submitted", "workday")
+
+
+@pytest.mark.parametrize(
+    "body",
+    [
+        "Application Submitted\nR5054821",  # another requisition
+        "Application Submitted\nR5054820-3",  # a sibling variant's own id
+        "R5054820\nReview Your Application",  # no confirmation
+    ],
+)
+def test_workday_variant_still_needs_its_own_requisition_and_a_confirmation(body):
+    assert submission_monitor.confirmation(VARIANT, COMPLETED, body, "workday") is None
+
+
+def test_dashed_requisition_without_variant_is_not_shortened():
+    # R-01418 must not be read as requisition "R" plus a variant number.
+    assert submission_monitor.confirmation(
+        POSTING, CANDIDATE_HOME, "R\nApplication Submitted", "workday", rows=["R\nOctober 12, 2026"]
+    ) is None
+
+
 def test_record_persists_confirmation_and_archives_only_matched_application(isolated_store):
     app = _app()
     unrelated = _app(

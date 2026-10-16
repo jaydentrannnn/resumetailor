@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import contextlib
 import time
+from collections.abc import Sequence
 from pathlib import Path
 from typing import Any
 
@@ -37,7 +38,7 @@ class _FillFinish(fill_state._FillState):
         if self.is_workday:
             workday_page.close_stray_popups(page)
         shot = self._capture_screenshot()
-        guarded = self._readiness_guard(attempted_count, shot)
+        guarded = self._readiness_guard(attempted_count, shot, required_empty)
         if guarded is not None:
             return guarded
 
@@ -132,7 +133,9 @@ class _FillFinish(fill_state._FillState):
             shot = None
         return shot
 
-    def _readiness_guard(self, total_controls: int, shot: Path | None) -> FillResult | None:
+    def _readiness_guard(
+        self, total_controls: int, shot: Path | None, required_empty: Sequence[str] = ()
+    ) -> FillResult | None:
         """Fail or hand over a fill that never reached a real form."""
         page = self.page
         if self.barrier_hit:
@@ -150,6 +153,10 @@ class _FillFinish(fill_state._FillState):
         if total_controls and not fill_page._form_questions(self.merged):
             # iCIMS (2026-09): the job page's language picker was "filled", and the
             # untouched posting was reported ready for review.
+            return self._handoff(fill_outcomes.NO_FORM_MSG)
+        if (total_controls and not self.is_workday and not required_empty
+                and fill_page._only_unrecognized(self.merged)):
+            # The posting's own search box was reported as "missing answers".
             return self._handoff(fill_outcomes.NO_FORM_MSG)
         if total_controls:
             return None

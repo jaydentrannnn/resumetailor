@@ -6,7 +6,9 @@ same question should get, so it is collected:
 
 - when Continue fill starts (`collect`, before the fill touches the tab),
 - when the review snapshot is refreshed (`from_review`, inside `review._record`),
-- every `_INTERVAL_S` seconds on retained review tabs no fill is using (`watch`), and
+- every `_INTERVAL_S` seconds, and as soon as the tab's URL changes, on retained review
+  tabs no fill is using (`watch`; the same pass sees a manual submission and closes the
+  tab of a submitted or skipped application), and
 - from a small listener installed on handoff (`LISTENER_JS`): Workday shows one step at a
   time, so a step the applicant already clicked past is only in what the listener saw.
 
@@ -23,6 +25,7 @@ import asyncio
 import contextlib
 import logging
 import threading
+import time
 from collections.abc import Iterable
 from dataclasses import dataclass
 from typing import Any
@@ -37,7 +40,12 @@ _log = logging.getLogger(__name__)
 _LEFT = frozenset({"unanswered", "ambiguous", "invalid_existing", "manual_review", "failed"})
 _SKIP_KINDS = frozenset({"file", "unsupported", "checkbox"})
 _RETAINED = frozenset({"awaiting_review", "awaiting_otp", "submit_unconfirmed"})
+#: Finished applications whose retained tab is closed (it holds a whole ATS page in memory).
+_CLOSES_TAB = frozenset({"submitted", "skipped"})
 _INTERVAL_S = 20.0
+#: Tab URLs are polled this often, so a submission is seen as its confirmation page loads.
+_TICK_S = 2.0
+_CLOSE_GRACE_S = 30.0
 _TIMEOUT_S = 20.0
 
 #: Records what the applicant picks or types, by question label, in ``window.__rtTyped``.
@@ -292,42 +300,86 @@ def stop() -> None:
     _STOP.set()
 
 
+@dataclass
+class _Pass:
+    """What the loop remembers between ticks."""
+
+    urls: dict[str, str]  # application id -> its tab's URL at the last tick
+    closing: dict[str, float]  # application id -> when its finished tab is closed
+    last_full: float
+
+
 def _loop() -> None:
     global _THREAD
-    from resume_tailor.apply.driver import browser  # noqa: PLC0415
-
-    while not _STOP.wait(_INTERVAL_S):
-        open_ids = browser.open_target_ids()
-        if browser.extension_mode() and FILLING:
-            continue  # the relay has one connection; fills take priority
+    state = _Pass(urls={}, closing={}, last_full=time.monotonic())
+    while not _STOP.wait(_TICK_S):
+        _tick(state)
         with _WATCH_LOCK:
-            watched = sorted(_WATCHED - FILLING)
-        if open_ids is None:
-            continue  # browser unreachable: try again later
-        for application_id in watched:
-            app = store.get(application_id)
-            fill = store_models.FillResult.model_validate(app.fill) if app and app.fill else None
-            if app is None or app.status not in _RETAINED or fill is None or (
-                fill.browser_target_id not in open_ids
-            ):
-                with _WATCH_LOCK:
-                    _WATCHED.discard(application_id)
-                continue
-            if collect(application_id):
-                _log.info("saved typed answers for %s", application_id)
-        with _WATCH_LOCK:
+            # Checked and cleared under one lock, so a `watch` racing this exit either
+            # lands before it (and keeps the loop) or sees no thread and starts one.
             if not _WATCHED:
-                break
+                _THREAD = None
+                return
     with _WATCH_LOCK:
         _THREAD = None
 
 
+def _tick(state: _Pass) -> None:
+    """One cheap look at the tabs (one HTTP call); a tab is read when its URL changed —
+    a submission's confirmation page — or on the `_INTERVAL_S` full pass."""
+    from resume_tailor.apply.driver import browser  # noqa: PLC0415
+
+    if browser.extension_mode() and FILLING:
+        return  # the relay has one connection; fills take priority
+    targets = browser.open_targets()
+    if targets is None:
+        return  # browser unreachable: try again later
+    now = time.monotonic()
+    full = now - state.last_full >= _INTERVAL_S
+    if full:
+        state.last_full = now
+    with _WATCH_LOCK:
+        watched = sorted(_WATCHED - FILLING)
+    for application_id in watched:
+        app = store.get(application_id)
+        fill = store_models.FillResult.model_validate(app.fill) if app and app.fill else None
+        target = fill.browser_target_id if fill else ""
+        if app is not None and app.status in _CLOSES_TAB and target in targets:
+            # Submitted or skipped: leave the confirmation in view briefly, then close.
+            due = state.closing.setdefault(application_id, now + _CLOSE_GRACE_S)
+            if now < due:
+                continue
+            browser.close_target(target)
+        if app is None or app.status not in _RETAINED or target not in targets:
+            with _WATCH_LOCK:
+                _WATCHED.discard(application_id)
+            state.urls.pop(application_id, None)
+            state.closing.pop(application_id, None)
+            continue
+        url = targets[target]
+        moved = state.urls.get(application_id, url) != url
+        state.urls[application_id] = url
+        if (full or moved) and collect(application_id):
+            _log.info("saved typed answers for %s", application_id)
+
+
 def restore() -> None:
     """Resume observation of this workspace's retained tabs after startup."""
+    from resume_tailor.apply.driver import browser  # noqa: PLC0415
+
     with _WATCH_LOCK:
         _WATCHED.clear()
+    open_ids: set[str] | None = None
     for app in store.load_all().values():
-        if app.status in _RETAINED and app.fill:
-            fill = store_models.FillResult.model_validate(app.fill)
-            if fill.browser_target_id:
-                watch(app.source_job_id)
+        if app.status not in _RETAINED | _CLOSES_TAB or not app.fill:
+            continue
+        fill = store_models.FillResult.model_validate(app.fill)
+        if not fill.browser_target_id:
+            continue
+        if app.status in _CLOSES_TAB:
+            # A finished application's tab left open across a restart is closed too.
+            if open_ids is None:
+                open_ids = browser.open_target_ids() or set()
+            if fill.browser_target_id not in open_ids:
+                continue
+        watch(app.source_job_id)
