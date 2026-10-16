@@ -230,3 +230,13 @@ run over the declared cases, require a verdict for every pair of successful runs
 add a fit-round gate (mean change <= +0.5; runtime stays reported only). The eval guard
 metric now passes `preserve_numbers=True` like production; `eval_experiments.py rescore`
 recomputed every stored record (no model calls): 0 of 325 changed, so no decision moved.
+
+## E2E cost gate excludes cached stages (2026-10-16)
+
+The baseline arm runs first and fills the extraction, scoring, facets and skills caches
+the later arm reads, so total cost favoured the later arm (no-polish showed -40.7%; the
+comparable rewrite-only figure was -24.0%). `e2e.py` now records per-stage usage
+(`usage_by_stage`, `CACHED_STAGES`); the cost gate compares only uncached stages and
+fails when a record lacks the split, and the runtime line adds seconds spent in
+uncached-stage requests. The existing records were backfilled from their telemetry
+(matched by case and output-token totals).

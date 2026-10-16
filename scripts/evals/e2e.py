@@ -5,8 +5,10 @@ worker ever shares an in-process patch with another. Workers claim postings with
 exclusive-create files (`.claim-<case>`), so several can share an arm without
 duplicating work. Each finished posting appends one record to `<arm>/results.jsonl`:
 pages, fill, widows, dropped bullets, fit rounds, whether the page count was only
-estimated, the final bullets, cost and wall time. Run arms one after another, baseline
-first, so later arms reuse the extraction and scoring caches the first one filled.
+estimated, the final bullets, cost per pipeline stage and wall time. Run arms one after
+another, baseline first, so later arms reuse the extraction and scoring caches the first
+one filled. That reuse is why the cost gate leaves out `CACHED_STAGES`: the first arm
+pays for them and the second does not, which says nothing about the change under test.
 """
 
 from __future__ import annotations
@@ -25,13 +27,31 @@ from typing import Any
 from . import arms as arms_mod
 from . import report, sequential
 
+#: Stages cached per posting: whichever arm runs first pays for them, so they are left
+#: out of the cost gate and reported separately (`total` vs `gated` cost).
+CACHED_STAGES = frozenset({"extract", "score", "facets", "skills"})
+
+
+def stage_usage(collector_data: dict) -> dict[str, dict[str, float]]:
+    """`{stage: {calls, input_tokens, output_tokens, request_ms}}` over the run's requests."""
+    out: dict[str, dict[str, float]] = {}
+    for r in collector_data.get("requests", []):
+        row = out.setdefault(r.get("stage") or "unknown", dict.fromkeys(
+            ("calls", "input_tokens", "output_tokens", "request_ms"), 0))
+        row["calls"] += 1
+        for key in ("input_tokens", "output_tokens", "request_ms"):
+            row[key] += r.get(key) or 0
+    return out
+
 
 def record(case: str, arm: str, *, code: int, result: Any, usage: dict, wall_s: float,
-           error: str | None, target_pages: int) -> dict:
+           error: str | None, target_pages: int,
+           usage_by_stage: dict[str, dict[str, float]] | None = None) -> dict:
     """One posting's outcome. `result` is the run's `FitResult`, or None when the run
     failed before fitting."""
     out: dict[str, Any] = {"case": case, "arm": arm, "exit": code, "error": error,
-                           "wall_s": wall_s, "usage": usage}
+                           "wall_s": wall_s, "usage": usage,
+                           "usage_by_stage": usage_by_stage or {}}
     if result is not None:
         out.update({
             "pages": result.pages,
@@ -105,6 +125,7 @@ def run_worker(out_dir: Path, arm: str, cases: Sequence[tuple[str, str]], *,
         collector = captured.get("collector")
         rec = record(case_id, arm, code=code, result=captured.get("result"),
                      usage=arms_mod.usage(collector.data) if collector else {},
+                     usage_by_stage=stage_usage(collector.data) if collector else {},
                      wall_s=wall, error=error, target_pages=target_pages)
         with (arm_dir / "results.jsonl").open("a", encoding="utf-8") as fh:
             fh.write(json.dumps(rec, ensure_ascii=False) + "\n")
@@ -134,12 +155,21 @@ def load(out_dir: Path, arm: str) -> dict[str, dict]:
     return out
 
 
-def _cost(r: dict, model: str) -> float | None:
+def _cost(r: dict, model: str, *, gated: bool = False) -> float | None:
+    """Model cost of one run; `gated` leaves out `CACHED_STAGES`. None when a gated cost
+    is asked of a record without per-stage usage."""
     price = report._price(model)
-    u = r.get("usage") or {}
-    if price is None or not u:
+    if price is None:
         return None
-    return (u.get("input_tokens", 0) * price[0] + u.get("output_tokens", 0) * price[1]) / 1e6
+    if gated:
+        stages = r.get("usage_by_stage")
+        if not stages:
+            return None
+        rows = [u for s, u in stages.items() if s not in CACHED_STAGES]
+    else:
+        rows = [r.get("usage") or {}]
+    return sum(u.get("input_tokens", 0) * price[0] + u.get("output_tokens", 0) * price[1]
+               for u in rows) / 1e6
 
 
 def _mean(rows: list[dict], key: str) -> float:
@@ -187,16 +217,28 @@ def gates(cases: Sequence[str], base: dict[str, dict], cand: dict[str, dict],
         f", no verdict for {', '.join(unjudged)}" if unjudged else "")
     out.append(("judge net preference >= -10 points", detail,
                 not unjudged and net >= -0.10))
-    cost = sequential.ratio_bounds([(_cost(base[k], model), _cost(cand[k], model))
-                                    for k in cases if k in base and k in cand])
-    out.append((f"total cost <= +{cost_limit:.0%}", f"{cost.estimate:+.1%}",
-                cost.estimate <= cost_limit))
+    ran = [k for k in cases if k in base and k in cand]
+    gated = sequential.ratio_bounds([(_cost(base[k], model, gated=True),
+                                      _cost(cand[k], model, gated=True)) for k in ran])
+    total = sequential.ratio_bounds([(_cost(base[k], model), _cost(cand[k], model))
+                                     for k in ran])
+    out.append((f"cost without cached stages <= +{cost_limit:.0%}",
+                f"{gated.estimate:+.1%} (n={gated.n}; with the first arm's cache fills "
+                f"{total.estimate:+.1%})", gated.n == len(ran) and gated.estimate <= cost_limit))
     return out
 
 
 def runtime(rows: dict[str, dict]) -> str:
+    """Mean wall time, and the part spent in requests of uncached stages."""
     walls = [r["wall_s"] for r in rows.values()]
-    return f"mean {mean(walls):.0f}s over {len(walls)}" if walls else "-"
+    if not walls:
+        return "-"
+    uncached = [sum(u["request_ms"] for s, u in r["usage_by_stage"].items()
+                    if s not in CACHED_STAGES) / 1000
+                for r in rows.values() if r.get("usage_by_stage")]
+    tail = (f" ({mean(uncached):.0f}s in uncached-stage requests)"
+            if len(uncached) == len(walls) else "")
+    return f"mean {mean(walls):.0f}s over {len(walls)}{tail}"
 
 
 def worker_command(script: Path, *args: str) -> list[str]:

@@ -693,3 +693,13 @@ judge gemini-4-argon in both orders (`scripts/eval_experiments.py`; results unde
   (`_SKIP_COSMETIC_POLISH`); every other model keeps the polish. With it skipped, the
   leftover-verb warning counts exact repeats and vague openers only (the near-synonym
   family rule is what the polish was over-correcting) and says no repair ran.
+
+## Correction: the no-polish saving, measured fairly (2026-10-16, supersedes the figures above and in `e86caea`)
+
+The end-to-end "cost -40.7%, runtime 192 s -> 129 s" mixed cache conditions: the
+baseline arm ran first and paid for extraction, scoring, facets and skills (20 calls
+each, 80 in all) that the no-polish arm then read from cache. Only rewrite calls are
+comparable: rewrite cost $1.415 -> $1.076 over 20 cases, **-24.0% end to end**; time in
+those requests 152 s -> 116 s per run. The frozen-draft figure (~40% of rewrite cost,
+E1) is a different measurement: identical drafts, polish only, no fit loop. The skip is
+unchanged; only the claimed saving is. The e2e cost gate now excludes cached stages.

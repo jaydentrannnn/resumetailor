@@ -230,10 +230,17 @@ def _fit(pages=1, estimated=False, fill=0.95, widows=0, dropped=(), bullets=None
                            bullets=bullets or {"a": "x"})
 
 
-def _e2e(case, result, *, code=0, tokens=1000):
-    usage = {"input_tokens": tokens, "output_tokens": tokens}
+def _e2e(case, result, *, code=0, tokens=1000, cached=0):
+    """A run whose rewrite used `tokens` each way, plus `cached` tokens each way in the
+    posting-cached stages (a cache fill the other arm did not pay for)."""
+    stages = {"rewrite": {"calls": 2, "input_tokens": tokens, "output_tokens": tokens,
+                          "request_ms": 1000}}
+    if cached:
+        stages["extract"] = {"calls": 1, "input_tokens": cached, "output_tokens": cached,
+                             "request_ms": 1000}
+    usage = {"input_tokens": tokens + cached, "output_tokens": tokens + cached}
     return e2e.record(case, "arm", code=code, result=result, usage=usage, wall_s=10.0,
-                      error=None, target_pages=1)
+                      error=None, target_pages=1, usage_by_stage=stages)
 
 
 def test_estimated_or_unfitted_runs_count_as_failures():
@@ -259,7 +266,20 @@ def test_gates_pass_an_equivalent_arm_and_block_a_worse_one():
               if not ok}
     assert {"failed or estimated runs", "mean fill change >= -2 points",
             "mean widows-remaining change <= +0.5", "judge net preference >= -10 points",
-            "total cost <= +10%"} <= failed
+            "cost without cached stages <= +10%"} <= failed
+
+
+def test_the_cost_gate_ignores_the_first_arms_cache_fills():
+    """The baseline paid for extraction the candidate read from cache: only the
+    uncached stages are compared, and the total is still reported."""
+    base = {k: _e2e(k, _fit(), tokens=1000, cached=1000) for k in CASES}
+    cand = {k: _e2e(k, _fit(), tokens=1200) for k in CASES}  # +20% where it matters
+    rows = {g: (d, ok) for g, d, ok in e2e.gates(
+        CASES, base, cand, dict.fromkeys(CASES, 0), model="gemini-3.8-flash",
+        cost_limit=0.10)}
+    detail, ok = rows["cost without cached stages <= +10%"]
+    assert not ok and detail.startswith("+20.0%") and "-40.0%" in detail
+    assert "s in uncached-stage requests" in e2e.runtime(base)
 
 
 def test_gates_never_pass_on_whatever_happened_to_finish():
