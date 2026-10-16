@@ -10,6 +10,7 @@ from resume_tailor.content import bullet_tags
 from resume_tailor.content.data import (
     Bullet,
     Contact,
+    Education,
     Experience,
     MasterResume,
     Project,
@@ -26,9 +27,9 @@ DASH = "Built dashboards for the sales team."
 K8S = "Ran the deployment platform for twelve services."
 
 
-def _resume(*, skills: list[str] | None = None) -> MasterResume:
+def _resume(*, skills: list[str] | None = None, education=(), title="Engineer") -> MasterResume:
     job = Experience(
-        company="ACME", title="Engineer", start="2020-01", end="2021-01",
+        company="ACME", title=title, start="2020-01", end="2021-01",
         bullets=[
             Bullet(id="py", text=PY),
             Bullet(id="dash", text=DASH, tags=["Tableau"]),
@@ -40,7 +41,7 @@ def _resume(*, skills: list[str] | None = None) -> MasterResume:
     )
     return MasterResume(
         comment=None, contact=Contact(name="T", email="t@example.com", phone=""),
-        education=[], summary_variants=[], experience=[job], projects=[proj],
+        education=list(education), summary_variants=[], experience=[job], projects=[proj],
         skills=[SkillGroup(label="Tools", items=skills or [])],
     )
 
@@ -112,7 +113,46 @@ def test_dropped_entries_and_disabled_sections_are_not_on_the_page():
     visible = render.visible_text(
         resume, {"py": PY}, layout={"enabled": {"skills": False}}
     )
-    assert visible == [PY], "no project bullets left: its tech drops too; skills disabled"
+    assert visible == ["Engineer", PY], (
+        "no project bullets left: its name and tech drop too; skills disabled")
+
+
+def test_headers_count_as_page_text():
+    """Job titles, project names, degree lines and skill-group labels are on the page."""
+    resume = _resume(skills=["Tableau"], title="Data Engineer", education=[
+        Education(school="UCI", degree="B.S. Computer Science", dates="2024")])
+    bullets = {"py": PY, "side": "Wrote a small tool."}
+    visible = render.visible_text(resume, bullets, layout={})
+    assert {"Data Engineer", "Side", "B.S. Computer Science", "Tools"} <= set(visible)
+    f = coverage.funnel(_reqs("Data Engineer", "Computer Science"), resume, resume,
+                        bullets, visible)
+    assert f.on_page == 2
+
+
+def test_a_bullet_in_a_disabled_section_backs_nothing():
+    resume = _resume()
+    layout = {"enabled": {"experience": False}}
+    bullets = {"dash": DASH}
+    assert render.page_bullet_ids(resume, bullets, layout=layout) == set()
+    f = coverage.funnel(_reqs("Tableau"), resume, resume, bullets,
+                        render.visible_text(resume, bullets, layout=layout),
+                        page_ids=render.page_bullet_ids(resume, bullets, layout=layout))
+    assert _status(f) == {"Tableau": ("stated", "not_selected")}
+    assert f.unsupported_additions == []
+
+
+def test_refresh_follows_an_edit_and_keeps_the_resume_side(inferred_k8s):
+    resume = _resume()
+    reqs = _reqs("Python", "Tableau", "Kubernetes")
+    first = coverage.funnel(reqs, resume, resume, {"py": PY, "dash": DASH},
+                            render.visible_text(resume, {"py": PY, "dash": DASH}, layout={}))
+    assert first.on_page == 1
+    saved = coverage.from_dict(coverage.to_dict(first))
+    after = coverage.refresh(saved, reqs, resume, {"dash": DASH}, layout={})
+    assert after.on_page == 0
+    assert _status(after) == {"Python": ("stated", "not_selected"),
+                              "Tableau": ("stated", "tag_only"),
+                              "Kubernetes": ("inferred", "not_selected")}
 
 
 def test_skills_a_rewrite_adds_beyond_its_source_are_listed():

@@ -17,8 +17,9 @@ from pydantic import ValidationError
 from resume_tailor import config
 from resume_tailor.content import data
 from resume_tailor.document import convert
-from resume_tailor.pipeline import report, resume_quality
+from resume_tailor.pipeline import coverage, report, resume_quality
 from resume_tailor.pipeline.events import ProgressEvent
+from resume_tailor.web import job_outputs
 from resume_tailor.web.job_types import Job
 from resume_tailor.web.jobs import get_queue
 from resume_tailor.web.routes.config import _event_out
@@ -53,10 +54,24 @@ def _job_status_response(job: Job) -> JobStatusResponse:
     )
 
 
+def _page_coverage(out_dir: Path, report: dict) -> int | None:
+    """The history row's page figure: re-measured after a bullet edit, else the run's."""
+    if (out_dir / coverage.COVERAGE_FILE).exists() and (funnel := coverage.read(out_dir)):
+        return funnel.on_page
+    return report.get("page_coverage_matched")
+
+
 def _quality_report(value: RunReportOut | None, out_dir: Path | None) -> RunReportOut | None:
-    if value is None or out_dir is None or not (out_dir / "quality.json").exists():
+    """The report with what a bullet edit re-measured: quality and page coverage."""
+    if value is None or out_dir is None:
         return value
-    return value.model_copy(update={"quality": resume_quality.read(out_dir).model_dump()})
+    update: dict[str, Any] = {}
+    if (out_dir / "quality.json").exists():
+        update["quality"] = resume_quality.read(out_dir).model_dump()
+    if (out_dir / coverage.COVERAGE_FILE).exists() and (funnel := coverage.read(out_dir)):
+        update["page_coverage_matched"] = funnel.on_page
+        update["coverage_funnel"] = job_outputs._to_funnel_out(funnel)
+    return value.model_copy(update=update) if update else value
 
 @dataclass
 class _ResolvedRun:
@@ -213,7 +228,7 @@ def _scan_run_history() -> list[RunHistoryEntryOut]:
                 pages=report.get("pages"),
                 coverage_matched=report.get("coverage_matched"),
                 coverage_total=report.get("coverage_total"),
-                page_coverage_matched=report.get("page_coverage_matched"),
+                page_coverage_matched=_page_coverage(child, report),
                 has_pdf=(child / "tailored.pdf").exists(),
                 has_docx=(child / "tailored.docx").exists(),
             )

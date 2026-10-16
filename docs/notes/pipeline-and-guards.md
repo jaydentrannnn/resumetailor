@@ -657,3 +657,13 @@ real drops or the deliberate cases above.
   neither states nor tags. Worded "potentially unsupported": the guard already accepted
   them (synonyms, licensed variants), so this is a review aid, not a violation.
 - Old runs carry no page figure; the history and report show only the master number.
+
+## Coverage funnel: headers count, hidden bullets don't, edits refresh it (2026-10-16)
+
+Supersedes part of the funnel entry above. `render.visible_text` now includes job titles,
+project names, degree lines and skill-group labels (a reader and an ATS see them), and
+`render.page_bullet_ids` limits page evidence to bullets in enabled sections, so a bullet
+in a disabled section never reads "Backed on this page". A bullet edit (`rerender`)
+recomputes the page side with `coverage.refresh` (the resume side is kept: the master
+resume is not in the run folder and an edit cannot change it), saves `coverage.json`, and
+`run_lookup` overlays it on the run report and history row, as it does `quality.json`.

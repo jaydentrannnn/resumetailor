@@ -229,6 +229,28 @@ def _apply(
     return bullets, flagged
 
 
+def _refresh_coverage(run: _Run, bullets: dict[str, str]):
+    """Recompute the page side of the run's coverage funnel for the edited bullets and
+    save it (`coverage.json`); None for a run without a funnel or saved requirements."""
+    from resume_tailor.pipeline import coverage
+    from resume_tailor.pipeline.jd import JobRequirements
+
+    saved = coverage.read(run.out_dir)
+    req_path = run.out_dir / "requirements.json"
+    if saved is None or not req_path.is_file():
+        return None
+    try:
+        requirements = JobRequirements.model_validate_json(req_path.read_text("utf-8"))
+    except ValueError:
+        return None
+    funnel = coverage.refresh(
+        saved, requirements, run.resume, bullets, layout=run.snapshot["layout"],
+        merges=[(s, tuple(m)) for s, m in run.merged_from.items()],
+    )
+    coverage.save(run.out_dir, funnel)
+    return funnel
+
+
 def rerender(
     out_dir: Path,
     *,
@@ -307,6 +329,7 @@ def rerender(
             and run.snapshot.get("lines_per_page") is not None
         )
         resume_quality.save(out_dir, quality)
+        funnel = _refresh_coverage(run, bullets)
         return {
             "status": "saved",
             "pages": pages,
@@ -314,6 +337,7 @@ def rerender(
             "warnings": warnings,
             "flagged": flagged,
             "quality": quality.model_dump(),
+            "page_coverage_matched": funnel.on_page if funnel else None,
         }
     finally:
         tmp_docx.unlink(missing_ok=True)

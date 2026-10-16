@@ -222,3 +222,32 @@ def test_missing_stored_template_reads_as_no_snapshot(run_dir):
     shutil.rmtree(rerender.template_store(run_dir))
     with pytest.raises(rerender.NoSnapshot):
         rerender.bullet_rows(run_dir)
+
+
+def test_an_edit_refreshes_page_coverage(run_dir, measure):
+    """Removing the only bullet that names a must-have takes it off the page figure."""
+    from resume_tailor.pipeline import coverage
+    from resume_tailor.pipeline.jd import JobRequirements, Keyword
+    from resume_tailor.web.routes import run_lookup
+    from resume_tailor.web.schemas import RunReportOut
+
+    reqs = JobRequirements(title="Engineer", seniority="entry", keywords=[
+        Keyword(phrase="embeddings", canonical="embeddings", importance="must_have")])
+    (run_dir / "requirements.json").write_text(reqs.model_dump_json(), "utf-8")
+    resume = _resume_with_second_bullet()
+    ai = json.loads((run_dir / "bullets.json").read_text("utf-8"))
+    first = coverage.funnel(reqs, resume, resume, ai,
+                            render.visible_text(resume, ai, layout=active_layout()))
+    assert first.on_page == 1
+    (run_dir / "run.json").write_text(json.dumps(
+        {"report": {"page_coverage_matched": 1, "coverage_funnel": coverage.to_dict(first)}}))
+
+    result = rerender.rerender(run_dir, edits={}, reverted=[], removed=["proj_b1"],
+                               confirmed=[])
+    assert result["status"] == "saved" and result["page_coverage_matched"] == 0
+    assert coverage.read(run_dir).on_page == 0
+    assert run_lookup._page_coverage(run_dir, {"page_coverage_matched": 1}) == 0
+    stale = RunReportOut.model_construct(page_coverage_matched=1, coverage_funnel=None)
+    fresh = run_lookup._quality_report(stale, run_dir)
+    assert fresh.page_coverage_matched == 0
+    assert [k.page for k in fresh.coverage_funnel.keywords] == ["not_selected"]
