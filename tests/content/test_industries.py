@@ -230,8 +230,7 @@ def test_all_stages_receive_field_guidance_with_unchanged_output_schemas(profile
     jd.extract("Analyst position", use_cache=False)
     relevance.score_table(resume.all_bullets(), requirements, use_cache=False)
     facets.select_facets(resume, requirements, use_cache=False)
-    rewrite.rewrite_bullets(resume.all_bullets(), requirements, char_budget=300,
-                            repair_widows=False, repair_verbs=False)
+    rewrite.rewrite_bullets(resume.all_bullets(), requirements, char_budget=300, repair_verbs=False)
     expand.expand_experience(resume, requirements, use_cache=False)
     skills.select_skills(resume, requirements, use_cache=False)
     coverletter._call_model(resume=resume, requirements=requirements,

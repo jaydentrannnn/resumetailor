@@ -1189,7 +1189,7 @@ def test_fabrication_retry_accepts_a_clean_second_try(rewrite_calls):
     )
 
     outcome = rewrite.rewrite_bullets(
-        src, _reqs(), char_budget=202, repair_widows=False, repair_verbs=False
+        src, _reqs(), char_budget=202, repair_verbs=False
     )
 
     assert len(calls) == 2
@@ -1211,7 +1211,7 @@ def test_fabrication_retry_is_scoped_to_offending_ids(rewrite_calls):
     )
 
     outcome = rewrite.rewrite_bullets(
-        src, _reqs(), char_budget=202, repair_widows=False, repair_verbs=False
+        src, _reqs(), char_budget=202, repair_verbs=False
     )
 
     assert len(calls) == 2
@@ -1232,7 +1232,7 @@ def test_fabrication_retry_still_fabricating_falls_back_to_source(rewrite_calls)
     )
 
     outcome = rewrite.rewrite_bullets(
-        src, _reqs(), char_budget=202, repair_widows=False, repair_verbs=False
+        src, _reqs(), char_budget=202, repair_verbs=False
     )
 
     assert outcome.texts["a"] == "Built a Python service."
@@ -1249,7 +1249,7 @@ def test_fabrication_retry_missing_id_falls_back_to_source(rewrite_calls):
     )
 
     outcome = rewrite.rewrite_bullets(
-        src, _reqs(), char_budget=202, repair_widows=False, repair_verbs=False
+        src, _reqs(), char_budget=202, repair_verbs=False
     )
 
     assert outcome.texts["a"] == "Built a Python service."
@@ -1273,7 +1273,7 @@ def test_rebound_falls_back_to_source_after_one_retry(rewrite_calls):
     )
 
     outcome = rewrite.rewrite_bullets(
-        src, _reqs(), char_budget=202, repair_widows=False, repair_verbs=False
+        src, _reqs(), char_budget=202, repair_verbs=False
     )
 
     assert outcome.texts["a"] == "Spent 8 years supporting 40 engineers on the platform."
@@ -1297,7 +1297,7 @@ def test_rebound_retry_prompt_names_rebound_claims(rewrite_calls):
     )
 
     outcome = rewrite.rewrite_bullets(
-        src, _reqs(), char_budget=202, repair_widows=False, repair_verbs=False
+        src, _reqs(), char_budget=202, repair_verbs=False
     )
 
     follow_up = calls[1]["messages"][0]["content"]
@@ -1336,7 +1336,7 @@ def test_no_widow_repair_holds_the_run_to_one_call(rewrite_calls):
     calls = rewrite_calls(_reply(a=_text(204)))
 
     outcome = rewrite.rewrite_bullets(
-        src, _reqs(), char_budget=202, repair_widows=False, repair_verbs=False
+        src, _reqs(), char_budget=202, repair_verbs=False
     )
 
     assert len(calls) == 1
@@ -1432,36 +1432,21 @@ def test_verb_collisions_ignores_unknown_openers_for_family_rules():
     assert "photographed" in collisions["b"]
 
 
-def test_a_model_measured_better_unpolished_skips_the_polish_call(rewrite_calls, monkeypatch):
-    """No model keeps the polish (measured worse than none): no follow-up call; collisions
-    are only reported, and near-synonym openers are not counted against it."""
-    monkeypatch.setattr(config, "model_for", lambda purpose: "gemini-3.8-flash")
-    src = [
-        bullet("a", "Designed a Python service for search.", ["python"]),
-        bullet("b", "Designed a Python retrieval pipeline.", ["python"]),
-        bullet("c", "Engineered a SQL router.", ["sql"]),
-        bullet("d", "Architected a cache.", []),
-    ]
+_DESIGNED_TWICE = [
+    bullet("a", "Designed a Python service for search.", ["python"]),
+    bullet("b", "Designed a Python retrieval pipeline.", ["python"]),
+]
+
+
+def test_repeated_openers_are_reported_never_repaired(rewrite_calls):
+    """No cosmetic follow-up call; near-synonym openers are not counted."""
+    src = [*_DESIGNED_TWICE, bullet("c", "Engineered a SQL router.", ["sql"]),
+           bullet("d", "Architected a cache.", [])]
     calls = rewrite_calls(_reply(**{b.id: b.text for b in src}))
-    outcome = rewrite.rewrite_bullets(
-        src, _reqs(), char_budget=202, repair_widows=True, repair_verbs=True
-    )
+    outcome = rewrite.rewrite_bullets(src, _reqs(), char_budget=202)
     assert len(calls) == 1
-    assert outcome.polish_skipped and outcome.verbs_diversified == 0
+    assert outcome.verbs_diversified == 0
     assert outcome.verb_collisions_remaining == 1  # "b" repeats "Designed"; no family rule
-
-
-def test_cosmetic_polish_is_off_unless_a_family_is_listed(monkeypatch):
-    models = ("gemini-3.8-flash", "vertex_ai/gemini-3.8-flash", "gemma4:31b",
-              "claude-haiku-5-5", "google/gemma-4-12b")
-    for model in models:
-        monkeypatch.setattr(config, "model_for", lambda purpose, m=model: m)
-        assert rewrite.cosmetic_polish_enabled() is False, model
-    monkeypatch.setattr(rewrite, "_KEEP_COSMETIC_POLISH", frozenset({"claude-"}))
-    for model, enabled in (("claude-haiku-5-5", True), ("anthropic/claude-sonnet-5", True),
-                           ("gemma4:31b", False)):
-        monkeypatch.setattr(config, "model_for", lambda purpose, m=model: m)
-        assert rewrite.cosmetic_polish_enabled() is enabled, model
 
 
 def test_verb_collisions_without_the_family_rule():
@@ -1471,123 +1456,56 @@ def test_verb_collisions_without_the_family_rule():
     assert set(bullet_checks.verb_collisions(texts, families=False)) == {"d", "e"}
 
 
-def test_polish_swaps_a_colliding_opener(rewrite_calls, cosmetic_polish):
-    """One follow-up call replaces a repeated opener without rewriting the rest."""
-    src = [
-        bullet("a", "Designed a Python service for search.", ["python"]),
-        bullet("b", "Designed a Python retrieval pipeline.", ["python"]),
-    ]
-    # First call: echo source (exact collision). Second: swap b's opener only.
-    calls = rewrite_calls(
-        _reply(
-            a="Designed a Python service for search.",
-            b="Designed a Python retrieval pipeline.",
-        ),
-        _reply(b="Built a Python retrieval pipeline."),
-    )
-
-    outcome = rewrite.rewrite_bullets(
-        src, _reqs(), char_budget=202, repair_widows=False, repair_verbs=True
-    )
-
-    assert len(calls) == 2
-    assert "bullets_to_revoice" in calls[1]["messages"][0]["content"]
-    assert outcome.texts["b"].startswith("Built ")
-    assert outcome.verbs_diversified == 1
-    assert outcome.verb_collisions_remaining == 0
-
-
-def test_polish_discards_a_swap_that_still_collides(rewrite_calls):
-    """Non-regressive: a reply that keeps a forbidden opener leaves the original."""
-    src = [
-        bullet("a", "Designed a Python service for search.", ["python"]),
-        bullet("b", "Designed a Python retrieval pipeline.", ["python"]),
-    ]
-    rewrite_calls(
-        _reply(
-            a="Designed a Python service for search.",
-            b="Designed a Python retrieval pipeline.",
-        ),
-        _reply(b="Designed a Python retrieval pipeline."),  # no change
-    )
-
-    outcome = rewrite.rewrite_bullets(
-        src, _reqs(), char_budget=202, repair_widows=False, repair_verbs=True
-    )
-
-    assert outcome.texts["b"].startswith("Designed ")
-    assert outcome.verbs_diversified == 0
-    assert outcome.verb_collisions_remaining == 1
-
-
-def test_polish_discards_a_fabricating_verb_swap(rewrite_calls):
-    """A cosmetic pass must not kill the run; fabrication on a swap is discarded."""
-    src = [
-        bullet("a", "Designed a Python service for search.", ["python"]),
-        bullet("b", "Designed a Python retrieval pipeline.", ["python"]),
-    ]
-    rewrite_calls(
-        _reply(
-            a="Designed a Python service for search.",
-            b="Designed a Python retrieval pipeline.",
-        ),
-        _reply(b="Built a Kubernetes retrieval pipeline."),
-    )
-
-    outcome = rewrite.rewrite_bullets(
-        src, _reqs(), char_budget=202, repair_widows=False, repair_verbs=True
-    )
-
-    assert outcome.texts["b"].startswith("Designed ")
-    assert outcome.verbs_diversified == 0
-
-
-def test_no_verb_repair_holds_the_run_to_one_call(rewrite_calls):
-    """The control half of the A/B for verb variety."""
-    src = [
-        bullet("a", "Designed a Python service for search.", ["python"]),
-        bullet("b", "Designed a Python retrieval pipeline.", ["python"]),
-    ]
-    calls = rewrite_calls(
-        _reply(
-            a="Designed a Python service for search.",
-            b="Designed a Python retrieval pipeline.",
-        )
-    )
-
-    outcome = rewrite.rewrite_bullets(
-        src, _reqs(), char_budget=202, repair_widows=False, repair_verbs=False
-    )
-
+def test_top_up_drafts_are_told_the_page_openers(rewrite_calls):
+    """Bullets added to a page see the verbs its other bullets open with, in one call."""
+    page = {"x": "Designed a cache.", "y": "Built a router.", "z": "Designed a queue.",
+            "n": "Python service for search."}
+    new = [bullet("a", "Shipped a Python tool.", ["python"])]
+    calls = rewrite_calls(_reply(a="Shipped a Python tool."))
+    rewrite.rewrite_bullets(new, _reqs(), char_budget=202, verb_context=page)
+    prompt = calls[0]["messages"][0]["content"]
     assert len(calls) == 1
-    assert outcome.verb_collisions_remaining == 1
+    assert "<openers_already_used>" in prompt and "designed, built, python" in prompt
+    assert prompt.index("<openers_already_used>") < prompt.index("<bullets_to_rewrite>")
 
 
-def test_widow_and_verb_defects_share_one_polish_call(rewrite_calls, cosmetic_polish):
-    """Both defect kinds ride in a single follow-up, preserving the five-call cap."""
-    # a is widowed (204 chars starting with Designed); b collides on Designed but fits.
-    widowed_text = "Designed " + ("x" * (204 - len("Designed ")))
-    src = [
-        bullet("a", "Designed a Python service.", ["python"]),
-        bullet("b", "Designed a short Python tool.", ["python"]),
-    ]
-    shortened = "Designed " + ("x" * (190 - len("Designed ")))
-    calls = rewrite_calls(
-        _reply(a=widowed_text, b="Designed a short Python tool."),
-        _reply(a=shortened, b="Built a short Python tool."),
-    )
+@pytest.mark.parametrize("kwargs", [
+    {},  # a first draft has no page yet
+    {"verb_context": {"x": "Designed a cache."}, "repair_verbs": False},  # switched off
+    {"verb_context": {"a": "Designed a cache."}},  # its own old text is not "the page"
+])
+def test_no_openers_block_without_other_page_bullets(rewrite_calls, kwargs):
+    new = [bullet("a", "Shipped a Python tool.", ["python"])]
+    calls = rewrite_calls(_reply(a="Shipped a Python tool."))
+    rewrite.rewrite_bullets(new, _reqs(), char_budget=202, **kwargs)
+    assert "openers_already_used" not in calls[0]["messages"][0]["content"]
 
-    outcome = rewrite.rewrite_bullets(src, _reqs(), char_budget=202)
 
-    assert len(calls) == 2
-    follow_up = calls[1]["messages"][0]["content"]
-    assert "bullets_to_shorten" not in follow_up
-    # The physical line repair runs in fit; this call only handles the verb.
-    assert "bullets_to_revoice" in follow_up
-    assert "'b'" in follow_up
-    assert outcome.widows_repaired == 0
-    assert outcome.verbs_diversified == 1
-    assert outcome.verb_collisions_remaining == 0
+# The verb repair itself stays in the shared repair engine (`followups._polish`), which
+# the eval harness still drives on frozen drafts.
+
+
+def _revoice():
+    texts = {b.id: b.text for b in _DESIGNED_TWICE}
+    return followups._polish(texts, {b.id: b for b in _DESIGNED_TWICE}, _reqs(),
+                             repair_widows=False, repair_verbs=True)
+
+
+def test_verb_repair_swaps_a_colliding_opener(rewrite_calls):
+    calls = rewrite_calls(_reply(b="Built a Python retrieval pipeline."))
+    out, _, revoiced, _ = _revoice()
+    assert "bullets_to_revoice" in calls[0]["messages"][0]["content"]
+    assert out["b"].startswith("Built ") and revoiced == 1
+
+
+@pytest.mark.parametrize("reply", [
+    "Designed a Python retrieval pipeline.",  # still collides
+    "Built a Kubernetes retrieval pipeline.",  # fabricates
+])
+def test_verb_repair_discards_a_bad_swap(rewrite_calls, reply):
+    rewrite_calls(_reply(b=reply))
+    out, _, revoiced, _ = _revoice()
+    assert out["b"].startswith("Designed ") and revoiced == 0
 
 
 # --- fit-loop pull-back ---------------------------------------------------------------

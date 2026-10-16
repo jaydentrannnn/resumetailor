@@ -15,7 +15,7 @@ finished tasks and judged pairs.
 End to end (process-isolated workers; baseline first so caches are shared):
 
     python scripts\\eval_experiments.py e2e --arm base --limit 20
-    python scripts\\eval_experiments.py e2e --arm ship --polish none --clause --limit 20
+    python scripts\\eval_experiments.py e2e --arm ship --clause --limit 20
     python scripts\\eval_experiments.py e2e-judge --arm ship
     python scripts\\eval_experiments.py e2e-report --arm ship
 """
@@ -224,10 +224,9 @@ def _e2e_cases(replay: Replay, limit: int) -> list:
 
 
 def cmd_e2e(args, _replay=None) -> None:
-    env = {variants.CLAUSE_ENV: "1" if args.clause else "0",
-           variants.POLISH_ENV: args.polish or ""}
+    env = {variants.CLAUSE_ENV: "1" if args.clause else "0"}
     meta = _meta()
-    meta.setdefault("e2e", {})[args.arm] = {"clause": args.clause, "polish": args.polish}
+    meta.setdefault("e2e", {})[args.arm] = {"clause": args.clause}
     _save_meta(meta)
     command = e2e.worker_command(Path(__file__), "e2e-worker", "--arm", args.arm,
                                  "--limit", str(args.limit))
@@ -310,7 +309,6 @@ def main(argv: list[str] | None = None) -> int:
     p.add_argument("--pairs", default="e1,e2")
     p.add_argument("--look", type=int, default=1, choices=[1, 2])
     p.add_argument("--arm", default="base")
-    p.add_argument("--polish", choices=["none", "low"], default=None)
     p.add_argument("--clause", action="store_true")
     p.add_argument("--ref", default="", help="judge e2e against this arm of EVAL_FROM")
     p.add_argument("--evals", default="", help="survey-report: comma-separated eval names")

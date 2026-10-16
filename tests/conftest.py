@@ -259,12 +259,3 @@ def built_template(tmp_path_factory) -> Path:
 def _pinned_recency_today(monkeypatch):
     """Pin "today" for `selection.entry_recency` so rankings never drift with the calendar."""
     monkeypatch.setattr(config, "RECENCY_TODAY", "2026-09")
-
-
-@pytest.fixture
-def cosmetic_polish(monkeypatch):
-    """Turn the cosmetic polish back on for every model (it ships off: `rewrite.
-    _KEEP_COSMETIC_POLISH` is empty), for tests of the polish machinery itself."""
-    from resume_tailor.pipeline import rewrite
-
-    monkeypatch.setattr(rewrite, "_KEEP_COSMETIC_POLISH", frozenset({""}))

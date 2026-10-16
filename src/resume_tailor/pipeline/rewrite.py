@@ -5,9 +5,9 @@ Three deliberately separate stages:
 1. `score` / `select` — pure, deterministic tag matching. No LLM. Cheap and predictable,
    which is what lets the fit loop retry without cost blowing up.
 2. `rewrite_bullets` — a batched API call that rewords the surviving bullets to mirror the
-   posting's phrasing, plus at most one fabrication-retry call for offending ids, plus at
-   most one polish follow-up carrying only widows and/or verb collisions. Each follow-up
-   fires only when needed.
+   posting's phrasing, plus at most one fabrication-retry call for offending ids (and an
+   optional merge call). There is no cosmetic second pass: varied openers are asked for in
+   the draft prompt itself, which measured better than repairing them afterwards.
 3. `check_fabrication` — a post-hoc check *in code*. The prompt asks the model not to
    invent skills; this function is what actually guarantees it. Never relax it to make a
    run pass.
@@ -32,7 +32,7 @@ from .merge import MergeGroup
 
 @dataclass
 class RewriteOutcome:
-    """Final bullet text plus what the polish pass had to do to get there."""
+    """Final bullet text plus what the follow-up passes had to do to get there."""
 
     texts: dict[str, str]
     widows_repaired: int = 0
@@ -49,9 +49,6 @@ class RewriteOutcome:
     #: block the whole run over one bullet that's better left untailored.
     fabrications_rejected: dict[str, list[str]] = field(default_factory=dict)
     measured_widows_remaining: int | None = None
-    #: The rewrite model skips cosmetic polish (`cosmetic_polish_enabled`), so opening
-    #: verbs are reported, never repaired, and near-synonym openers are not counted.
-    polish_skipped: bool = False
     #: Bullets still rendering past `_TARGET_LINES_PER_BULLET` lines after the fit loop's
     #: one capped shortening attempt (measured by the widow pass).
     overlong_remaining: list[str] = field(default_factory=list)
@@ -64,24 +61,19 @@ class RewriteOutcome:
 
     @property
     def verb_collisions_remaining(self) -> int:
-        """Bullets still opening with a verb another bullet already used."""
-        return len(bullet_checks.verb_collisions(self.texts, families=not self.polish_skipped))
+        """Bullets opening with a verb another bullet already used, or a vague one.
+        Reported, never repaired; near-synonym openers are not counted."""
+        return len(bullet_checks.verb_collisions(self.texts, families=False))
 
 
-#: Model families (name prefixes, e.g. "claude-") whose cosmetic polish (opening-verb and
-#: phrase-repeat repair) measured better than none. Empty: on frozen drafts a blind judge
-#: preferred the unpolished ones on gemini-3.8-flash (17 to 0 over 40 postings),
-#: gemma4:31b (26 to 2 over 40) and claude-haiku-5-5 (4 to 0 over 20), with no guard or
-#: length change. The polish swapped strong verbs for weaker ones, added a call per resume
-#: (4-190 s measured), and a runaway reply could fail the whole run (docs/notes
-#: 2026-10-16).
-_KEEP_COSMETIC_POLISH: frozenset[str] = frozenset()
-
-
-def cosmetic_polish_enabled() -> bool:
-    """Whether the active rewrite model gets the cosmetic polish call."""
-    model = config.model_for("rewrite").strip().lower().rsplit("/", 1)[-1]
-    return any(model.startswith(family) for family in _KEEP_COSMETIC_POLISH)
+def _used_openers(verb_context: dict[str, str] | None, ids: set[str]) -> list[str]:
+    """Opening verbs of the page's other bullets, in first-seen order, without repeats."""
+    seen: dict[str, None] = {}
+    for bid, text in (verb_context or {}).items():
+        verb = None if bid in ids else bullet_checks.opening_verb(text)
+        if verb:
+            seen.setdefault(verb, None)
+    return list(seen)
 
 
 @telemetry.stage("rewrite", "initial")
@@ -90,24 +82,18 @@ def rewrite_bullets(
     requirements: JobRequirements,
     *,
     char_budget: int,
-    repair_widows: bool = True,
     repair_verbs: bool = True,
     merge_groups: list[MergeGroup] | None = None,
     on_event: events.ProgressCallback | None = None,
     verb_context: dict[str, str] | None = None,
-    target_pages: int = config.DEFAULT_PAGE_TARGET,
 ) -> RewriteOutcome:
     """Rewrite `bullets` to surface the posting's keywords.
 
-    `verb_context` is the text of bullets already on the page (`{id: text}`), used only
-    to detect repeated opening verbs: the fit loop's top-up rewrites just the bullets it
-    adds, and those must not open with a verb the page already uses. Context bullets are
-    never re-requested or returned. They also count toward the phrase-repeat cap
-    (`bullet_checks.phrase_collisions`, scaled by `target_pages`), which rides the same
-    follow-up call as verb repair and is gated by `repair_verbs`.
-
-    Verb repair can add one follow-up call here. Widow repair waits until fit has a PDF;
-    character estimates at this stage have too many false positives to trim safely.
+    `verb_context` is the text of bullets already on the page (`{id: text}`): the fit
+    loop's top-up rewrites just the bullets it adds, and with `repair_verbs` the prompt
+    lists the verbs those page bullets already open with so the new ones avoid them. It
+    costs no extra call; context bullets are never re-requested or returned. Widow repair
+    waits until fit has a PDF (`fit_shrink`).
 
     A first draft that fabricates earns one targeted retry of only the offending ids
     (`_retry_fabrications`). A second fabrication — or an id the model drops on retry —
@@ -120,6 +106,12 @@ def rewrite_bullets(
         return RewriteOutcome(texts={})
 
     budget = max(40, char_budget)
+    used = _used_openers(verb_context, {b.id for b in bullets}) if repair_verbs else []
+    openers = (
+        "<openers_already_used>\nOther bullets on the page already open with these verbs; "
+        f"do not open with any of them: {', '.join(used)}\n</openers_already_used>\n\n"
+        if used else ""
+    )
 
     user = (
         f"<role>{requirements.title} ({requirements.seniority})</role>\n\n"
@@ -127,7 +119,8 @@ def rewrite_bullets(
         "<context>\n"
         + "\n".join(f"  - {n}" for n in requirements.domain_notes)
         + "\n</context>\n\n"
-        "<bullets_to_rewrite>\n"
+        + openers
+        + "<bullets_to_rewrite>\n"
         f"{rewrite_prompts._format_bullets(bullets, budget)}\n</bullets_to_rewrite>"
     )
 
@@ -210,106 +203,17 @@ def rewrite_bullets(
     for b in bullets:
         out.setdefault(b.id, b.text)
 
-    polish_skipped = repair_verbs and not cosmetic_polish_enabled()
-    repair_verbs = repair_verbs and not polish_skipped
-
     accepted_merges: list[MergeGroup] = []
     if merge_groups:
         out, accepted_merges = bullet_merge._merge_bullets(
             out, by_id, merge_groups, requirements, budget=budget
         )
 
-    if polish_skipped or (not repair_widows and not repair_verbs):
-        return RewriteOutcome(
-            texts=out,
-            merges=accepted_merges,
-            fabrications_rejected=fabrications_rejected,
-            polish_skipped=polish_skipped,
-        )
-
-    texts, improved, revoiced, rejected_repairs = cosmetic_polish(
-        out, by_id, requirements, repair_verbs=repair_verbs, verb_context=verb_context,
-        target_pages=target_pages, on_event=on_event,
-    )
     return RewriteOutcome(
-        texts=texts,
-        widows_repaired=improved,
-        verbs_diversified=revoiced,
+        texts=out,
         merges=accepted_merges,
-        widow_repairs_rejected=rejected_repairs,
         fabrications_rejected=fabrications_rejected,
     )
-
-
-def cosmetic_polish(
-    out: dict[str, str],
-    by_id: dict[str, Bullet],
-    requirements: JobRequirements,
-    *,
-    repair_verbs: bool,
-    verb_context: dict[str, str] | None = None,
-    target_pages: int = config.DEFAULT_PAGE_TARGET,
-    on_event: events.ProgressCallback | None = None,
-    effort: str | None = None,
-) -> tuple[dict[str, str], int, int, dict[str, list[str]]]:
-    """Repeated-opener and over-used-phrase repair on accepted drafts: `rewrite_bullets`'
-    last step, callable alone so an eval can polish the same frozen drafts two ways.
-
-    Returns `(texts, widows repaired, verbs diversified, rejected repairs)` for `out`'s
-    ids. `effort` overrides the rewrite stage's reasoning effort for this one call.
-    """
-    # Both counts are measured before the call so the progress line says what the follow-up
-    # is for; the pass itself re-derives them, since merging may have changed either.
-    # PDF layout is unavailable until fit has rendered this draft. Do not cut here
-    # based on the character estimate; it often flags full physical lines.
-    stranded = 0
-    context = {bid: text for bid, text in (verb_context or {}).items() if bid not in out}
-    revoice_only = set(out) if context else None
-    combined = {**context, **out}
-    colliding = (
-        sum(
-            1
-            for bid in bullet_checks.verb_collisions(combined)
-            if revoice_only is None or bid in revoice_only
-        )
-        if repair_verbs
-        else 0
-    )
-    if stranded or colliding:
-        wanted = []
-        if stranded:
-            wanted.append(f"{stranded} bullet(s) that spilled onto a near-empty line")
-        if colliding:
-            wanted.append(f"{colliding} repeated or vague opening verb(s)")
-        events.emit(
-            on_event,
-            "rewrite",
-            f"Polishing {' and '.join(wanted)}",
-            widowed=stranded,
-            verb_collisions=colliding,
-        )
-    phrase_overuse = (
-        bullet_checks.phrase_collisions(
-            combined, [kw.phrase for kw in requirements.keywords], by_id,
-            # A bullet already queued for verb repair is sent only for that, so it keeps
-            # the phrase and another bullet gives it up instead.
-            pages=target_pages,
-            repairable=set(out) - set(bullet_checks.verb_collisions(combined)),
-        )
-        if repair_verbs
-        else {}
-    )
-    polished, improved, revoiced, rejected_repairs = followups._polish(
-        combined,
-        by_id,
-        requirements,
-        repair_widows=False,
-        repair_verbs=repair_verbs,
-        revoice_only=revoice_only,
-        phrase_overuse=phrase_overuse,
-        **({"effort": effort} if effort else {}),
-    )
-    return {bid: polished[bid] for bid in out}, improved, revoiced, rejected_repairs
 
 
 def keyword_coverage(

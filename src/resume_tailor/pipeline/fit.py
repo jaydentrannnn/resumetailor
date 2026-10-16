@@ -79,9 +79,9 @@ def fit(
     `coursework_pool` (the education pool `facets` chose from) lets that pass top up or
     trim the coursework line; without it, coursework is left as `facets` selected it.
 
-    `repair_verbs` is passed through the same way and shares that call. It does not affect
-    fitting at all — a repeated opening verb costs no space — so it is purely a readability
-    pass the loop carries rather than owns.
+    `repair_verbs` only affects bullets the loop adds later (the top-up): their draft
+    prompt lists the verbs the page's bullets already open with. It makes no call of its
+    own and does not affect fitting — a repeated opening verb costs no space.
 
     `merge_bullets` enables the combine rung, which fires only after a measured overflow:
     merging is a space lever, and one applied to a page that already fit combined bullets
@@ -325,14 +325,10 @@ class _FitRun(fit_topup._FitTopUp):
             self.warnings.append(
                 f"{len(long_ids)} bullet(s) still run past two lines ({named})."
             )
-        if outcome.verb_collisions_remaining and outcome.polish_skipped:
-            # No repair ran for this model (measured better left alone); say so plainly.
+        if outcome.verb_collisions_remaining:
+            # Openers are never repaired after drafting (a repair pass measured worse than
+            # none); say so plainly.
             self.warnings.append(
                 f"{outcome.verb_collisions_remaining} bullet(s) open with the same verb as "
                 f"another bullet, or with a vague verb; vary them by hand if you like."
-            )
-        elif outcome.verb_collisions_remaining:
-            self.warnings.append(
-                f"{outcome.verb_collisions_remaining} bullet(s) still open with a verb "
-                f"another bullet already used, a near-synonym of one, or a vague verb."
             )

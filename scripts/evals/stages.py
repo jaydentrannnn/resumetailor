@@ -10,7 +10,15 @@ from typing import Any
 
 from resume_tailor import config, workspace
 from resume_tailor.content import bullet_tags, data, industries, style
-from resume_tailor.pipeline import expand, fit_types, jd, rewrite, tag_infer
+from resume_tailor.pipeline import (
+    bullet_checks,
+    expand,
+    fit_types,
+    followups,
+    jd,
+    rewrite,
+    tag_infer,
+)
 from resume_tailor.pipeline.jd import JobRequirements
 
 from . import corpus, hybrid_extract, judge, metrics
@@ -28,6 +36,24 @@ def light_override() -> config.ModelSpec | None:
     if not raw:
         return None
     return json.loads(raw) if raw.startswith("{") else raw
+
+
+def cosmetic_polish(texts: dict[str, str], by_id: dict, requirements: JobRequirements, *,
+                    effort: str | None = None) -> tuple[dict[str, str], int]:
+    """The opening-verb and phrase-repeat repair production ran after drafting until
+    2026-10-16, removed because it measured worse than none on every model tested. Kept
+    here, eval-only, so the frozen-draft experiments can be rerun. Returns
+    `(texts, verbs diversified)`."""
+    phrase_overuse = bullet_checks.phrase_collisions(
+        texts, [kw.phrase for kw in requirements.keywords], by_id,
+        pages=config.DEFAULT_PAGE_TARGET,
+        repairable=set(texts) - set(bullet_checks.verb_collisions(texts)),
+    )
+    polished, _, revoiced, _ = followups._polish(
+        texts, by_id, requirements, repair_widows=False, repair_verbs=True,
+        phrase_overuse=phrase_overuse, **({"effort": effort} if effort else {}),
+    )
+    return {bid: polished[bid] for bid in texts}, revoiced
 
 
 def _role(entry) -> str:
@@ -104,18 +130,17 @@ class Replay:
         """First drafts after the factual retry, before cosmetic polish: the frozen drafts
         every polish arm of experiment E1 starts from (persisted as the `draft` arm)."""
         sources, requirements = self.sources(case), self._requirements(case)
-        outcome = rewrite.rewrite_bullets(sources, requirements, char_budget=self.budget,
-                                          repair_widows=False, repair_verbs=False)
+        outcome = rewrite.rewrite_bullets(sources, requirements, char_budget=self.budget)
         return self._rewrite_record(case, outcome.texts, outcome.fabrications_rejected, 0)
 
     def polish(self, case: Case, draft: dict[str, Any], effort: str) -> dict[str, Any]:
-        """`rewrite.cosmetic_polish` on one case's frozen `draft` record at `effort`;
-        "none" keeps the drafts as they are and makes no call."""
+        """`cosmetic_polish` on one case's frozen `draft` record at `effort` (None: the
+        stage's default); "none" keeps the drafts as they are and makes no call."""
         texts, revoiced = dict(draft["texts"]), 0
         if effort != "none":
             by_id = {b.id: b for b in self.sources(case)}
-            texts, _, revoiced, _ = rewrite.cosmetic_polish(
-                texts, by_id, self._requirements(case), repair_verbs=True, effort=effort)
+            texts, revoiced = cosmetic_polish(texts, by_id, self._requirements(case),
+                                              effort=effort)
         return self._rewrite_record(case, texts, draft["fabrications_rejected"], revoiced)
 
     def _rewrite_record(self, case: Case, texts: dict[str, str],

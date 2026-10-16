@@ -199,10 +199,7 @@ class _FitState:
             self.selected,
             self.requirements,
             char_budget=self.char_budget,
-            repair_widows=self.repair_widows,
-            repair_verbs=self.repair_verbs,
             on_event=self.on_event,
-            target_pages=self.target_pages,
         )
         self.rewritten = self.outcome.texts
         self._set_draft(
@@ -293,14 +290,13 @@ class _FitState:
         return max(1, self.measured_lines - self.capacity)
 
     def rewrite_new(self, new: list[Bullet]) -> dict[str, str]:
-        """Rewrite only `new`, then re-voice any of them whose opening verb the page
-        already uses. Existing bullets are never re-requested: their text and wrap are
-        already measured."""
+        """Rewrite only `new`, telling the draft which verbs the page's bullets already
+        open with (no extra call). Existing bullets are never re-requested: their text and
+        wrap are already measured."""
         fresh = rewrite_bullets(
             new, self.requirements, char_budget=self.char_budget,
-            repair_widows=False, repair_verbs=self.repair_verbs, on_event=self.on_event,
-            verb_context=dict(self.rewritten), target_pages=self.target_pages,
+            repair_verbs=self.repair_verbs, on_event=self.on_event,
+            verb_context=dict(self.rewritten),
         )
         self.outcome.fabrications_rejected.update(fresh.fabrications_rejected)
-        self.outcome.verbs_diversified += fresh.verbs_diversified
         return {b.id: fresh.texts.get(b.id, b.text) for b in new}

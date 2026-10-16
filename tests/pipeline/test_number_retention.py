@@ -48,7 +48,6 @@ def run(sources):
         JobRequirements(title="Engineer", seniority="entry"),
         char_budget=200,
         repair_verbs=False,
-        repair_widows=False,
     )
 
 

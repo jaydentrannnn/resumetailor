@@ -1,6 +1,6 @@
 """End-to-end arm runs through the CLI fit loop, one OS process per worker.
 
-An arm is a name plus environment (`variants.CLAUSE_ENV`, `variants.POLISH_ENV`), so no
+An arm is a name plus environment (`variants.CLAUSE_ENV`, `stages.LIGHT_ENV`), so no
 worker ever shares an in-process patch with another. Workers claim postings with
 exclusive-create files (`.claim-<case>`), so several can share an arm without
 duplicating work. Each finished posting appends one record to `<arm>/results.jsonl`:

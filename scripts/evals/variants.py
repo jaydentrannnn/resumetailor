@@ -2,12 +2,12 @@
 (environment), never by editing production code.
 
 * `CLAUSE`: one extra rule in `rewrite_prompts._system()`, so it reaches every call
-  that prompt serves (first draft, factual retry, polish, merge), exactly as a
+  that prompt serves (first draft, factual retry, widow repair, merge), exactly as a
   production edit would.
-* polish effort: `rewrite.cosmetic_polish` at another effort, or skipped ("none").
 
-In-process arms (`arms.run` threads) use `clause()` / `polish_effort()`; an end-to-end
-worker process sets `CLAUSE_ENV` / `POLISH_ENV` before `install()`.
+In-process arms (`arms.run` threads) use `clause()`; an end-to-end worker process sets
+`CLAUSE_ENV` before `install()`. (The cosmetic-polish switch went with the polish:
+`stages.cosmetic_polish` replays it on frozen drafts.)
 """
 
 from __future__ import annotations
@@ -23,14 +23,11 @@ CLAUSE = (
     "types, scope), even plausible ones.\n"
 )
 CLAUSE_ENV = "RT_EVAL_CLAUSE"
-POLISH_ENV = "RT_EVAL_POLISH_EFFORT"
 #: Every `_system()` variant ends with this line; the clause goes just above it.
 _RETURN_MARKER = "Return one entry per input item"
 
 _CLAUSE_ON: contextvars.ContextVar[bool | None] = contextvars.ContextVar(
     "eval_clause", default=None)
-_POLISH: contextvars.ContextVar[str | None] = contextvars.ContextVar(
-    "eval_polish_effort", default=None)
 _installed = False
 
 
@@ -48,33 +45,20 @@ def _clause_active() -> bool:
     return value if value is not None else os.environ.get(CLAUSE_ENV) == "1"
 
 
-def _polish_effort() -> str | None:
-    return _POLISH.get() or os.environ.get(POLISH_ENV) or None
-
-
 def install() -> None:
-    """Wrap the two seams once per process; with nothing switched on, both are no-ops."""
+    """Wrap the prompt seam once per process; with the clause off it is a no-op."""
     global _installed
     if _installed:
         return
-    from resume_tailor.pipeline import rewrite, rewrite_prompts
+    from resume_tailor.pipeline import rewrite_prompts
 
-    original_system, original_polish = rewrite_prompts._system, rewrite.cosmetic_polish
+    original_system = rewrite_prompts._system
 
     def system() -> str:
         text = original_system()
         return with_clause(text) if _clause_active() else text
 
-    def cosmetic_polish(out, *args, **kwargs):
-        effort = _polish_effort()
-        if effort == "none":
-            return dict(out), 0, 0, {}
-        if effort is not None:
-            kwargs["effort"] = effort
-        return original_polish(out, *args, **kwargs)
-
     rewrite_prompts._system = system
-    rewrite.cosmetic_polish = cosmetic_polish
     _installed = True
 
 
@@ -86,13 +70,3 @@ def clause(on: bool = True) -> Iterator[None]:
         yield
     finally:
         _CLAUSE_ON.reset(token)
-
-
-@contextmanager
-def polish_effort(effort: str | None) -> Iterator[None]:
-    install()
-    token = _POLISH.set(effort)
-    try:
-        yield
-    finally:
-        _POLISH.reset(token)

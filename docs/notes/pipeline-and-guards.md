@@ -725,3 +725,21 @@ Wrote/Coded/Created, Architected -> Produced/Structured, Designed -> Authored) a
 occasional dropped articles or words. Polish cost per resume: Haiku 15 s / $0.0185
 (about a third of its rewrite cost), Nemotron 68 s, bonsai-27b 133-161 s, gemma-4-12b
 187 s, Gemini ~79 s; and on Nemotron one runaway polish reply failed a whole run.
+
+## Cosmetic polish removed; top-up drafts see the page's openers (2026-10-16)
+
+Supersedes the keep-list above: `rewrite.cosmetic_polish`, `cosmetic_polish_enabled` and
+`_KEEP_COSMETIC_POLISH` are gone, and `rewrite_bullets` makes no opener or phrase-repeat
+follow-up call (it also lost its no-op `repair_widows` and `target_pages` parameters).
+The shared repair engine `followups._polish` stays: the fit loop's measured widow repair
+(`fit_shrink`) and merged-bullet pull-back (`bullet_merge`) run on it, and its verb and
+phrase-repeat branches are still tested and driven by the eval harness
+(`scripts/evals/stages.cosmetic_polish` replays the removed pass on frozen drafts).
+
+What replaces the repair for repetition: the draft prompt's existing rule ("no two may
+open with the same verb..."), plus, for bullets the fit loop's top-up adds later, an
+`<openers_already_used>` block listing the verbs the page's other bullets open with
+(`rewrite._used_openers`), at no extra call. `--no-verb-repair` / `no_verb_repair` now
+switch that block off. The run report keeps counting exact repeats and vague openers
+(no near-synonym family rule) and says to vary them by hand. First drafts' prompts are
+byte-identical to before; only top-up prompts change, and the rewrite is uncached.

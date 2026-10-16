@@ -21,7 +21,8 @@ full (§11).
 | `--experience`, `--projects` | Entry caps per section |
 | `--no-cache` | Force re-extraction |
 | `--no-semantic` | Tag-overlap-only ranking (`SEMANTIC_WEIGHT = 0.0`) — the control for an A/B on a surprising ranking |
-| `--no-widow-repair` / `--no-verb-repair` | Disable the corresponding `_polish` repair |
+| `--no-widow-repair` | Disable the fit loop's measured widow repair (`_polish`) |
+| `--no-verb-repair` | Top-up bullets are not told which opening verbs the page already uses |
 | `--merge` / `--no-merge` | On by default: first rung of the overflow ladder (combine, then pull back near-widowed bullets, then drop the weakest); fires only after a measured overflow |
 | `--no-expand` | Skip application-form experience expansion |
 | `--no-skills` | Skip tailored skills-list stage |
@@ -699,7 +700,8 @@ plus opening-verb families) minus what the user hid, plus what the user added.
   error. **Inferred skills are matching-only** (§10).
 - **Weak openers** (`config.WEAK_OPENERS`: assisted, helped, handled, ...) are not a
   dictionary field: `bullet_checks.verb_collisions` flags them like a repeated opener and
-  the existing bounded `followups._polish` call re-voices them at equal scope. Hiding a
+  the run report counts them (openers are never repaired after drafting since 2026-10-16;
+  the draft prompt asks for varied openers instead). Hiding a
   verb does not ban it (an unclassified verb is never flagged); the constant does.
 - **`propose.py`** drafts new spellings/verb assignments from a run's own near-miss
   keyword gaps and unclassified opening verbs, then a deterministic code-side filter

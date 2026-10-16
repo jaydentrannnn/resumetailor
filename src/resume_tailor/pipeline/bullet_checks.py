@@ -450,7 +450,7 @@ def verb_collisions(
     currently in use, plus the whole family (or the weak set) when that is what flagged it.
 
     `families=False` drops the family rule (exact repeats and weak openers only): what is
-    still worth reporting when no repair ran (`rewrite.cosmetic_polish_enabled`).
+    what the run report counts, since openers are never repaired after drafting.
     """
     openers = {bid: opening_verb(text) for bid, text in texts.items()}
     family_cap = config.family_opener_cap(len(texts))

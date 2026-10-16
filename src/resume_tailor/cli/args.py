@@ -108,9 +108,8 @@ def _add_pipeline_flags(parser: argparse.ArgumentParser) -> None:
         "--no-verb-repair",
         action="store_true",
         help=(
-            "Skip replacing opening verbs that repeat another bullet's. Rides in the same "
-            "follow-up call as widow repair, so this only saves a call on a run that has "
-            "no widows; the other half of the same A/B."
+            "Do not tell the drafts of bullets the fit loop adds later which opening "
+            "verbs the page already uses. Costs no call either way."
         ),
     )
     parser.add_argument(

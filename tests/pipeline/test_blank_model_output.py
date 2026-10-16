@@ -66,7 +66,7 @@ def _source(bid: str = "a", text: str = SOURCE) -> Bullet:
 def test_blank_first_draft_keeps_the_source(replies):
     calls = replies(_reply(a="   "))
     outcome = rewrite.rewrite_bullets(
-        [_source()], _reqs(), char_budget=202, repair_widows=False, repair_verbs=False
+        [_source()], _reqs(), char_budget=202, repair_verbs=False
     )
     assert outcome.texts["a"] == SOURCE
     assert len(calls) == 1, "a blank draft is missing, not a fabrication to retry"
@@ -75,7 +75,7 @@ def test_blank_first_draft_keeps_the_source(replies):
 def test_blank_factual_retry_falls_back_to_the_source(replies):
     replies(_reply(a="Built a Kubernetes service in Python."), _reply(a=""))
     outcome = rewrite.rewrite_bullets(
-        [_source()], _reqs(), char_budget=202, repair_widows=False, repair_verbs=False
+        [_source()], _reqs(), char_budget=202, repair_verbs=False
     )
     assert outcome.texts["a"] == SOURCE
     assert "a" in outcome.fabrications_rejected

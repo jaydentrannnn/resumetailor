@@ -20,7 +20,7 @@ from evals import e2e, report_seq, sequential, stages, survey, variants  # noqa:
 from evals.sequential import Bound, Criterion  # noqa: E402
 
 from resume_tailor.content.data import Bullet  # noqa: E402
-from resume_tailor.pipeline import rewrite, rewrite_prompts  # noqa: E402
+from resume_tailor.pipeline import rewrite_prompts  # noqa: E402
 from resume_tailor.pipeline.jd import JobRequirements, Keyword  # noqa: E402
 
 # --- bootstrap and decisions ----------------------------------------------------------
@@ -136,20 +136,11 @@ def test_e2_cost_compares_whole_rewrites():
 @pytest.fixture
 def fresh_variants(monkeypatch):
     """Install the variant wrappers over test-owned seams, restored afterwards."""
-    calls = []
-
-    def fake_polish(out, *args, **kwargs):
-        calls.append(kwargs.get("effort"))
-        return {k: v + "!" for k, v in out.items()}, 0, 1, {}
-
     monkeypatch.setattr(rewrite_prompts, "_system", lambda: "Rules\n" + "Return one entry "
                         "per input item, keyed by the exact id you were given.\n")
-    monkeypatch.setattr(rewrite, "cosmetic_polish", fake_polish)
     monkeypatch.setattr(variants, "_installed", False)
     monkeypatch.delenv(variants.CLAUSE_ENV, raising=False)
-    monkeypatch.delenv(variants.POLISH_ENV, raising=False)
     variants.install()
-    return calls
 
 
 def test_clause_goes_just_above_the_return_shape():
@@ -170,18 +161,6 @@ def test_clause_only_when_switched_on(fresh_variants, monkeypatch):
     assert variants.CLAUSE in rewrite_prompts._system()
 
 
-def test_polish_effort_variants(fresh_variants, monkeypatch):
-    out = {"a": "x"}
-    assert rewrite.cosmetic_polish(out)[0] == {"a": "x!"}
-    with variants.polish_effort("none"):
-        assert rewrite.cosmetic_polish(out) == ({"a": "x"}, 0, 0, {})
-    with variants.polish_effort("low"):
-        rewrite.cosmetic_polish(out)
-    monkeypatch.setenv(variants.POLISH_ENV, "none")
-    assert rewrite.cosmetic_polish(out)[0] == {"a": "x"}
-    assert fresh_variants == [None, "low"]  # "none" never reached the model
-
-
 # --- frozen-draft polish stage ------------------------------------------------------------
 
 
@@ -198,7 +177,7 @@ def _replay():
 
 
 def test_polish_none_keeps_the_frozen_drafts(monkeypatch):
-    monkeypatch.setattr(rewrite, "cosmetic_polish", lambda *a, **k: pytest.fail("called"))
+    monkeypatch.setattr(stages, "cosmetic_polish", lambda *a, **k: pytest.fail("called"))
     draft = {"texts": {"a": "Built a Python billing service.", "b": "Wrote reports."},
              "fabrications_rejected": {}}
     out = _replay().polish(None, draft, "none")
@@ -210,15 +189,37 @@ def test_polish_none_keeps_the_frozen_drafts(monkeypatch):
 def test_polish_passes_its_effort_to_the_polish_call(monkeypatch):
     seen = {}
 
-    def fake(texts, by_id, requirements, *, repair_verbs, effort):
-        seen.update(effort=effort, ids=sorted(by_id), repair_verbs=repair_verbs)
-        return dict(texts), 0, 2, {}
+    def fake(texts, by_id, requirements, *, effort):
+        seen.update(effort=effort, ids=sorted(by_id))
+        return dict(texts), 2
 
-    monkeypatch.setattr(rewrite, "cosmetic_polish", fake)
+    monkeypatch.setattr(stages, "cosmetic_polish", fake)
     draft = {"texts": {"a": "Built a Python billing service."}, "fabrications_rejected": {}}
     out = _replay().polish(None, draft, "low")
-    assert seen == {"effort": "low", "ids": ["a", "b"], "repair_verbs": True}
+    assert seen == {"effort": "low", "ids": ["a", "b"]}
     assert out["verbs_diversified"] == 2
+
+
+def test_the_eval_polish_replays_the_removed_repair_on_frozen_drafts(monkeypatch):
+    """`stages.cosmetic_polish` sends the drafts to the shared repair engine with verb
+    repair on and widow repair off, and returns only the drafted ids."""
+    from resume_tailor.pipeline import followups
+
+    seen = {}
+
+    def fake(texts, sources, requirements, **kwargs):
+        seen.update(kwargs)
+        return {k: v.replace("Built", "Created") for k, v in texts.items()}, 0, 1, {}
+
+    monkeypatch.setattr(followups, "_polish", fake)
+    replay = _replay()
+    by_id = {b.id: b for b in replay.sources(None)}
+    texts, revoiced = stages.cosmetic_polish(
+        {"a": "Built a Python billing service.", "b": "Built reports."}, by_id,
+        replay._requirements(None), effort="low")
+    assert texts == {"a": "Created a Python billing service.", "b": "Created reports."}
+    assert revoiced == 1
+    assert seen["repair_verbs"] and not seen["repair_widows"] and seen["effort"] == "low"
 
 
 # --- end to end -----------------------------------------------------------------------------

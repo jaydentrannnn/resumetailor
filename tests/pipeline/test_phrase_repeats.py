@@ -1,5 +1,6 @@
 """The posting-phrase repeat cap: detection (`bullet_checks.phrase_collisions`) and the
-silent repair that rides the polish call (`followups._polish`)."""
+silent repair in the shared repair engine (`followups._polish`). Production rewriting no
+longer asks for that repair (the cosmetic pass was removed); the eval harness still does."""
 
 from __future__ import annotations
 
@@ -9,9 +10,6 @@ from resume_tailor import config
 from resume_tailor.content.data import Bullet
 from resume_tailor.pipeline import bullet_checks, followups, rewrite, rewrite_prompts
 from resume_tailor.pipeline.jd import JobRequirements, Keyword
-
-#: These exercise the polish pass, which ships off for every model.
-pytestmark = pytest.mark.usefixtures("cosmetic_polish")
 
 PHRASE = "data engineering projects"
 
@@ -146,20 +144,26 @@ def test_matching_ignores_case_and_whitespace_but_needs_whole_words():
 # --- repair ---------------------------------------------------------------------------
 
 
-def _run(model, final_reply):
-    texts, sources = _three_injected()
-    calls, events = model(_reply(**texts), final_reply)
-    outcome = rewrite.rewrite_bullets(
-        list(sources.values()), _reqs(PHRASE), char_budget=202,
-        repair_widows=False, repair_verbs=True,
+def _run(model, final_reply, texts=None, sources=None, repairable=None):
+    if texts is None:
+        texts, sources = _three_injected()
+    calls, events = model(final_reply)
+    overuse = bullet_checks.phrase_collisions(
+        texts, [PHRASE], sources, pages=1,
+        repairable=set(texts) - set(bullet_checks.verb_collisions(texts))
+        if repairable is None else repairable,
     )
-    return outcome, calls, events
+    out, _, _, _ = followups._polish(
+        texts, sources, _reqs(PHRASE), repair_widows=False, repair_verbs=True,
+        phrase_overuse=overuse,
+    )
+    return out, calls, events
 
 
 def test_repair_removes_the_repeat_and_logs_telemetry(model):
-    outcome, calls, events = _run(model, _reply(c="Migrated pipeline c in Python."))
-    assert "bullets_to_rephrase" in calls[1]["messages"][0]["content"]
-    assert outcome.texts["c"] == "Migrated pipeline c in Python."
+    out, calls, events = _run(model, _reply(c="Migrated pipeline c in Python."))
+    assert "bullets_to_rephrase" in calls[0]["messages"][0]["content"]
+    assert out["c"] == "Migrated pipeline c in Python."
     assert {"phrase_repeats": 1, "phrase_repaired": 1} in events
 
 
@@ -169,19 +173,17 @@ def test_repair_removes_the_repeat_and_logs_telemetry(model):
     "Migrated pipeline c in Kubernetes.",  # fabricated
 ])
 def test_unsafe_repair_keeps_the_original_silently(model, reply):
-    outcome, _, events = _run(model, _reply(c=reply))
-    assert outcome.texts["c"] == f"Migrated pipeline c in Python for {PHRASE}."
+    out, _, events = _run(model, _reply(c=reply))
+    assert out["c"] == f"Migrated pipeline c in Python for {PHRASE}."
     assert {"phrase_repeats": 1, "phrase_repaired": 0} in events
-    assert not outcome.fabrications_rejected
 
 
-def test_no_repeats_costs_no_follow_up(model):
-    sources = [_bullet("a", "Built a Python service.")]
-    calls, events = model(_reply(a="Built a Python service."))
-    rewrite.rewrite_bullets(
-        sources, _reqs(PHRASE), char_budget=202, repair_widows=False, repair_verbs=True
-    )
+def test_rewriting_never_makes_a_follow_up_for_repeated_phrases(model):
+    texts, sources = _three_injected()
+    calls, events = model(_reply(**texts))
+    outcome = rewrite.rewrite_bullets(list(sources.values()), _reqs(PHRASE), char_budget=202)
     assert len(calls) == 1
+    assert outcome.texts == texts
     assert not any("phrase_repeats" in e for e in events)
 
 
@@ -190,15 +192,12 @@ def test_a_verb_colliding_bullet_keeps_the_phrase_and_another_gives_it_up(model)
     texts, sources = _three_injected()
     sources["c"] = _bullet("c", "Built pipeline c in Python.")
     texts["c"] = f"Built pipeline c in Python for {PHRASE}."
-    calls, events = model(
-        _reply(**texts),
+    out, calls, events = _run(
+        model,
         _reply(c=f"Wrote pipeline c in Python for {PHRASE}.", b="Automated pipeline b in Python."),
+        texts, sources,
     )
-    outcome = rewrite.rewrite_bullets(
-        list(sources.values()), _reqs(PHRASE), char_budget=202,
-        repair_widows=False, repair_verbs=True,
-    )
-    prompt = calls[1]["messages"][0]["content"]
+    prompt = calls[0]["messages"][0]["content"]
     assert "bullets_to_revoice" in prompt and "bullets_to_rephrase" in prompt
-    assert outcome.texts["b"] == "Automated pipeline b in Python."
+    assert out["b"] == "Automated pipeline b in Python."
     assert {"phrase_repeats": 1, "phrase_repaired": 1} in events

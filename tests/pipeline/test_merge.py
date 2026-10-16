@@ -247,7 +247,6 @@ def test_merge_acceptance_collapses_ids_but_keeps_entry_renderable(monkeypatch, 
         [a, b],
         reqs,
         char_budget=char_budget,
-        repair_widows=False,
         merge_groups=groups,
     )
 
@@ -300,7 +299,6 @@ def test_merge_rejects_when_numbers_are_dropped(monkeypatch, rewrite_calls):
         [a, b],
         reqs,
         char_budget=char_budget,
-        repair_widows=False,
         merge_groups=groups,
     )
 
@@ -363,7 +361,6 @@ def test_merge_rejects_when_number_is_rebound(monkeypatch, rewrite_calls):
         [a, b],
         reqs,
         char_budget=char_budget,
-        repair_widows=False,
         merge_groups=groups,
     )
 
@@ -479,7 +476,6 @@ def test_merge_rejects_redundant_candidate(rewrite_calls):
         [a, b],
         requirements(("python", "must_have")),
         char_budget=char_budget,
-        repair_widows=False,
         repair_verbs=False,
         merge_groups=groups,
     )
