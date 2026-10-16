@@ -57,7 +57,7 @@ import httpx2
 from pydantic import BaseModel, ValidationError
 
 from .. import config
-from . import fake_llm, llm_telemetry, model_queue, telemetry
+from . import fake_llm, llm_telemetry, model_queue, telemetry, vertex_catalog
 
 T = TypeVar("T", bound=BaseModel)
 
@@ -321,7 +321,9 @@ def _completion_payload(
         payload["max_completion_tokens"] = ceiling
         # Omit optional sampling controls, which some reasoning models reject.
     else:
-        payload.update(max_tokens=ceiling, temperature=0)
+        payload["max_tokens"] = ceiling
+        if not vertex_catalog.ignores_sampling(model):
+            payload["temperature"] = 0
     if effort and (base_url, model) not in _NO_REASONING_EFFORT:
         payload["reasoning_effort"] = effort
     return payload

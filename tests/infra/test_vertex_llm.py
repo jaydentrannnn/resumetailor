@@ -123,8 +123,11 @@ def test_vertex_claude_omits_sampling_even_when_sdk_lists_temperature(transport)
     transport.sdk.completion = complete
     assert parse(VertexClient(transport.backend, "extract")).parsed_output.ok
     client = VertexClient(transport.backend, "extract")
-    gemini = client._parameters({"model": "gemini-3.8-flash", "temperature": 0}, 30)
-    assert gemini["temperature"] == 0
+    older = client._parameters({"model": "gemini-2.5-flash", "temperature": 0}, 30)
+    assert older["temperature"] == 0
+    # Gemini Flash 3.6+ ignores sampling controls (Google's latest-model docs).
+    flash = client._parameters({"model": "gemini-3.8-flash", "temperature": 0}, 30)
+    assert "temperature" not in flash
 
 
 def test_truncation_escalates_but_empty_blocked_and_removed_connections_do_not(transport):

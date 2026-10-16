@@ -461,6 +461,25 @@ def test_azure_openai_gets_the_official_request_shape(base_url, openai_shape):
         assert payload["max_tokens"] == 900 and payload["temperature"] == 0
 
 
+@pytest.mark.parametrize(
+    ("model", "sampled"),
+    [
+        ("gemini-3.8-flash", False),
+        ("gemini-3.6-flash", False),
+        ("models/gemini-3.7-flash-lite", False),
+        ("gemini-3.5-flash", True),
+        ("gemini-3.1-flash-lite", True),
+        ("gemini-4-argon", True),
+        ("gemma4:cloud", True),
+        ("qwen3:8b", True),
+    ],
+)
+def test_temperature_is_dropped_only_for_models_that_ignore_it(model, sampled):
+    payload = llm._completion_payload("https://generativelanguage.googleapis.com/v1beta/openai", model, 900, [])
+    assert ("temperature" in payload) is sampled
+    assert payload["max_tokens"] == 900
+
+
 def test_max_completion_tokens_is_not_sent(client):
     """Ollama ignores unknown fields; stricter servers reject them."""
     c = client(_completion(VALID))

@@ -113,6 +113,18 @@ def model_locations(model: str) -> list[str]:
     return list(sdk().model_cost.get(f"vertex_ai/{model}", {}).get("supported_regions") or [])
 
 
+#: Gemini Flash 3.6 and later (Flash-Lite included): Google documents temperature, top_p
+#: and top_k as deprecated and ignored by the backend, to become errors in later models.
+#: https://ai.google.dev/gemini-api/docs/latest-model, checked 2026-10-16.
+_IGNORES_SAMPLING = re.compile(r"(?:^|/)gemini-(\d+)\.(\d+)-flash(?:-lite)?(?:$|-)")
+
+
+def ignores_sampling(model: str) -> bool:
+    """Whether `model` ignores sampling controls, so a request should not send them."""
+    match = _IGNORES_SAMPLING.search(normalize_model(model).lower())
+    return bool(match) and (int(match.group(1)), int(match.group(2))) >= (3, 6)
+
+
 def supports_effort(model: str) -> bool:
     try:
         params = (

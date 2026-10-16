@@ -114,9 +114,11 @@ class _Connection:
         for optional in ("response_format", "reasoning_effort", "temperature"):
             if optional not in params:
                 request.pop(optional, None)
-        if payload["model"].startswith("claude-"):
+        if payload["model"].startswith("claude-") or vertex_catalog.ignores_sampling(
+            payload["model"]
+        ):
             # New Claude models reject temperature=0, and adaptive thinking uses
-            # the model's own sampling defaults. Keep these controls with Claude.
+            # the model's own sampling defaults. Gemini Flash 3.6+ ignores it.
             request.pop("temperature", None)
         return {
             **request,

@@ -518,3 +518,14 @@ Kept:
 Worth testing next if padding matters, with no new calls: add intensifiers
 ("substantially", "significantly") to a qualifier check, and stop "Python" being inserted
 into bullets that don't name it.
+
+## Gemini Flash 3.6+ gets no temperature (2026-10-16)
+
+Google documents temperature, top_p and top_k as deprecated and ignored on Gemini Flash
+3.6 and later (Flash-Lite included), to become errors in later models
+(https://ai.google.dev/gemini-api/docs/latest-model, checked 2026-10-16).
+`vertex_catalog.ignores_sampling` matches `gemini-X.Y-flash[-lite]` at X.Y >= 3.6;
+`vertex_llm._parameters` and `llm._completion_payload` drop `temperature` only for those.
+Cleanup, not a behaviour change: the backend already ignored the field, so no cache key
+moves. Every other model (older Gemini, Gemini Pro/Argon, gemma, Ollama, LM Studio)
+still sends temperature=0.
