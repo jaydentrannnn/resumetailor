@@ -125,6 +125,28 @@ def test_run_history_lists_company_from_posting_metadata(client):
     assert match["company"] == "Acme Capital"
 
 
+def test_run_history_shows_edited_page_coverage_for_a_live_job(client):
+    """A bullet edit's `coverage.json` wins over the in-memory job's original report."""
+    from resume_tailor.pipeline import coverage
+    from resume_tailor.web.schemas import RunReportOut
+
+    c, q = client
+    out_dir = config.OUTPUT_DIR / "jobs" / "editedlive01"
+    out_dir.mkdir(parents=True, exist_ok=True)
+    report = RunReportOut.model_construct(
+        title="Engineer", pages=1, coverage_matched=1, coverage_total=1,
+        page_coverage_matched=1, coverage_funnel=None,
+    )
+    job = job_types.Job(job_id="editedlive01", jd_text="x", settings=JobSettings(),
+                        status="succeeded", report=report, out_dir=out_dir)
+    q._jobs[job.job_id] = job
+    row = lambda: next(r for r in c.get("/api/jobs").json()["runs"]  # noqa: E731
+                       if r["job_id"] == "editedlive01")
+    assert row()["page_coverage_matched"] == 1
+    coverage.save(out_dir, coverage.CoverageFunnel(total=1, in_resume=1, on_page=0))
+    assert row()["page_coverage_matched"] == 0
+
+
 def test_delete_run_history_removes_disk_artifacts(client):
     """POST /api/jobs/history/delete removes a finished run's directory."""
     c, _q = client

@@ -258,7 +258,11 @@ def _scan_run_history() -> list[RunHistoryEntryOut]:
             pages=job.report.pages if job.report else None,
             coverage_matched=job.report.coverage_matched if job.report else None,
             coverage_total=job.report.coverage_total if job.report else None,
-            page_coverage_matched=job.report.page_coverage_matched if job.report else None,
+            page_coverage_matched=(
+                _page_coverage(out_dir, {"page_coverage_matched":
+                                         job.report.page_coverage_matched})
+                if job.report else None
+            ),
             has_pdf=(out_dir / "tailored.pdf").exists(),
             has_docx=(out_dir / "tailored.docx").exists(),
         )
