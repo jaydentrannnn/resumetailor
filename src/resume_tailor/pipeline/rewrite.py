@@ -49,6 +49,9 @@ class RewriteOutcome:
     #: block the whole run over one bullet that's better left untailored.
     fabrications_rejected: dict[str, list[str]] = field(default_factory=dict)
     measured_widows_remaining: int | None = None
+    #: The rewrite model skips cosmetic polish (`cosmetic_polish_enabled`), so opening
+    #: verbs are reported, never repaired, and near-synonym openers are not counted.
+    polish_skipped: bool = False
     #: Bullets still rendering past `_TARGET_LINES_PER_BULLET` lines after the fit loop's
     #: one capped shortening attempt (measured by the widow pass).
     overlong_remaining: list[str] = field(default_factory=list)
@@ -62,7 +65,21 @@ class RewriteOutcome:
     @property
     def verb_collisions_remaining(self) -> int:
         """Bullets still opening with a verb another bullet already used."""
-        return len(bullet_checks.verb_collisions(self.texts))
+        return len(bullet_checks.verb_collisions(self.texts, families=not self.polish_skipped))
+
+
+#: Rewrite models whose cosmetic polish (opening-verb and phrase-repeat repair) measured
+#: worse than none: on gemini-3.8-flash a blind judge preferred the unpolished drafts in
+#: 17 of 40 postings and the polished ones in none (23 ties), with no guard or length
+#: change, and skipping it cut rewrite cost ~40% (experiment E1, docs/notes 2026-10-16).
+#: Untested models keep the polish.
+_SKIP_COSMETIC_POLISH = frozenset({"gemini-3.8-flash"})
+
+
+def cosmetic_polish_enabled() -> bool:
+    """Whether the active rewrite model gets the cosmetic polish call."""
+    model = config.model_for("rewrite").strip().lower().rsplit("/", 1)[-1]
+    return model not in _SKIP_COSMETIC_POLISH
 
 
 @telemetry.stage("rewrite", "initial")
@@ -191,17 +208,21 @@ def rewrite_bullets(
     for b in bullets:
         out.setdefault(b.id, b.text)
 
+    polish_skipped = repair_verbs and not cosmetic_polish_enabled()
+    repair_verbs = repair_verbs and not polish_skipped
+
     accepted_merges: list[MergeGroup] = []
     if merge_groups:
         out, accepted_merges = bullet_merge._merge_bullets(
             out, by_id, merge_groups, requirements, budget=budget
         )
 
-    if not repair_widows and not repair_verbs:
+    if polish_skipped or (not repair_widows and not repair_verbs):
         return RewriteOutcome(
             texts=out,
             merges=accepted_merges,
             fabrications_rejected=fabrications_rejected,
+            polish_skipped=polish_skipped,
         )
 
     texts, improved, revoiced, rejected_repairs = cosmetic_polish(

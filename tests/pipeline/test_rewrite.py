@@ -1432,6 +1432,40 @@ def test_verb_collisions_ignores_unknown_openers_for_family_rules():
     assert "photographed" in collisions["b"]
 
 
+def test_a_model_measured_better_unpolished_skips_the_polish_call(rewrite_calls, monkeypatch):
+    """gemini-3.8-flash (experiment E1): no follow-up call; collisions are only reported,
+    and near-synonym openers are not counted against it."""
+    monkeypatch.setattr(config, "model_for", lambda purpose: "gemini-3.8-flash")
+    src = [
+        bullet("a", "Designed a Python service for search.", ["python"]),
+        bullet("b", "Designed a Python retrieval pipeline.", ["python"]),
+        bullet("c", "Engineered a SQL router.", ["sql"]),
+        bullet("d", "Architected a cache.", []),
+    ]
+    calls = rewrite_calls(_reply(**{b.id: b.text for b in src}))
+    outcome = rewrite.rewrite_bullets(
+        src, _reqs(), char_budget=202, repair_widows=True, repair_verbs=True
+    )
+    assert len(calls) == 1
+    assert outcome.polish_skipped and outcome.verbs_diversified == 0
+    assert outcome.verb_collisions_remaining == 1  # "b" repeats "Designed"; no family rule
+
+
+def test_cosmetic_polish_is_skipped_only_for_the_tested_model(monkeypatch):
+    for model, enabled in (("gemini-3.8-flash", False), ("vertex_ai/gemini-3.8-flash", False),
+                           ("gemini-3.7-flash", True), ("gemma4:cloud", True),
+                           ("claude-haiku-5-5", True)):
+        monkeypatch.setattr(config, "model_for", lambda purpose, m=model: m)
+        assert rewrite.cosmetic_polish_enabled() is enabled, model
+
+
+def test_verb_collisions_without_the_family_rule():
+    texts = {"a": "Designed a service.", "b": "Engineered a pipeline.",
+             "c": "Architected a router.", "d": "Designed a cache.", "e": "Helped a team."}
+    assert set(bullet_checks.verb_collisions(texts)) == {"c", "d", "e"}
+    assert set(bullet_checks.verb_collisions(texts, families=False)) == {"d", "e"}
+
+
 def test_polish_swaps_a_colliding_opener(rewrite_calls):
     """One follow-up call replaces a repeated opener without rewriting the rest."""
     src = [

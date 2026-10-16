@@ -667,3 +667,29 @@ in a disabled section never reads "Backed on this page". A bullet edit (`rerende
 recomputes the page side with `coverage.refresh` (the resume side is kept: the master
 resume is not in the run folder and an edit cannot change it), saves `coverage.json`, and
 `run_lookup` overlays it on the run report and history row, as it does `quality.json`.
+
+## Experiments E1/E2: cosmetic polish skipped on gemini-3.8-flash; the clause did not ship (2026-10-16)
+
+Pre-registered, baseline commit cac1af4, Vertex gemini-3.8-flash at production effort,
+judge gemini-4-argon in both orders (`scripts/eval_experiments.py`; results under
+`output/eval/polish-clause/`). Pocock two looks, one-sided 0.0304 per look.
+
+- **E1, polish on frozen drafts (look 1, 40/40 cases complete): "none" PASSES.** Net judge
+  preference for no polish +0.425 [+0.275, +0.575] (17 wins, 0 losses, 23 ties); guard
+  offenders and over-length bullets unchanged. "low" was CONTINUE (-0.175 [-0.350, 0.000])
+  and, by the fixed sequence, untested further. Read sample: the medium polish mostly
+  swapped a repeated "Built/Developed/Engineered" for a weaker "Coded/Programmed/Created",
+  and the judge preferred the originals. Medium polish cost ~79 s and ~9k reasoning
+  tokens per resume.
+- **E2, "Do not add specifics the bullet never states (audience, frequency, setting,
+  error types, scope), even plausible ones" (look 2, 80/80 complete): FAIL.** Judge net
+  +0.175 [0.000, +0.350] (bar > 0); supported must-haves lost 0.25 per resume
+  [0.15, 0.35] (bar <= 0.10); cost +5.7% [-3.7%, +15.9%] (bar <= +10%). Not shipped.
+- **End to end (20 cases, CLI fit loop, process-isolated workers), baseline vs no polish:
+  SHIP.** 20/20 in both arms, 0 failed or estimated, 0 over target; fill 0.930 -> 0.932;
+  widows 0.15 -> 0; dropped 0 -> 0; fit rounds 1.45 -> 1.75; judge net +0.30; cost
+  -40.7%; mean runtime 192 s -> 129 s.
+- **Shipped:** `rewrite.cosmetic_polish_enabled()` is false only for gemini-3.8-flash
+  (`_SKIP_COSMETIC_POLISH`); every other model keeps the polish. With it skipped, the
+  leftover-verb warning counts exact repeats and vague openers only (the near-synonym
+  family rule is what the polish was over-correcting) and says no repair ran.

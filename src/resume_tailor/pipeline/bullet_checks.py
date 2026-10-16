@@ -423,7 +423,9 @@ def opening_verb(text: str) -> str | None:
     word = stripped.split(maxsplit=1)[0].strip(".,;:")
     return word.lower() if word.isalpha() else None
 
-def verb_collisions(texts: dict[str, str]) -> dict[str, list[str]]:
+def verb_collisions(
+    texts: dict[str, str], *, families: bool = True
+) -> dict[str, list[str]]:
     """`{bullet id: verbs to avoid}` for every bullet whose opener repeats another's.
 
     Two rules, both deterministic and both free:
@@ -446,6 +448,9 @@ def verb_collisions(texts: dict[str, str]) -> dict[str, list[str]]:
 
     The value is the list of verbs that bullet must not come back with: every opener
     currently in use, plus the whole family (or the weak set) when that is what flagged it.
+
+    `families=False` drops the family rule (exact repeats and weak openers only): what is
+    still worth reporting when no repair ran (`rewrite.cosmetic_polish_enabled`).
     """
     openers = {bid: opening_verb(text) for bid, text in texts.items()}
     family_cap = config.family_opener_cap(len(texts))
@@ -463,7 +468,7 @@ def verb_collisions(texts: dict[str, str]) -> dict[str, list[str]]:
             offenders[bullet_id] = set(config.WEAK_OPENERS)
         elif word in used_words:
             offenders[bullet_id] = set()
-        elif family is not None and family_counts.get(family, 0) >= family_cap:
+        elif families and family is not None and family_counts.get(family, 0) >= family_cap:
             offenders[bullet_id] = set(config.family_verbs(family))
         else:
             # Only a bullet that keeps its opener holds a claim on it; an offender is

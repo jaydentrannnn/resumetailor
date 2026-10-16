@@ -325,7 +325,13 @@ class _FitRun(fit_topup._FitTopUp):
             self.warnings.append(
                 f"{len(long_ids)} bullet(s) still run past two lines ({named})."
             )
-        if outcome.verb_collisions_remaining:
+        if outcome.verb_collisions_remaining and outcome.polish_skipped:
+            # No repair ran for this model (measured better left alone); say so plainly.
+            self.warnings.append(
+                f"{outcome.verb_collisions_remaining} bullet(s) open with the same verb as "
+                f"another bullet, or with a vague verb; vary them by hand if you like."
+            )
+        elif outcome.verb_collisions_remaining:
             self.warnings.append(
                 f"{outcome.verb_collisions_remaining} bullet(s) still open with a verb "
                 f"another bullet already used, a near-synonym of one, or a vague verb."
