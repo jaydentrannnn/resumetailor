@@ -591,3 +591,36 @@ cached inference explicitly (`skill_refresh.cached_inference`; regenerated expan
 `tag_infer.annotate_cached` under the run's pins). `_table()` returns its local table so a
 concurrent rebuild of `_TABLE` cannot hand back another run's phrase table. Test:
 `test_parallel_runs_compute_what_serial_runs_compute` fails on the old global.
+
+## Narrow guard equivalences from the retry probe (2026-10-16)
+
+A retry probe (gemini-3.8-flash, 40 postings) recorded every factual-retry batch: 14
+distinct batches, 21 rejected bullets, 25 offenders, and 7 of the 14 batches held only
+false positives. Each equivalence below was added for an observed false positive, with
+paired negatives (`tests/pipeline/test_guard_normalisation.py`) that must still fail and
+existing rejections (versions, ranges, dates, fractions, `24/7`) that must survive:
+
+- **Figure-led hyphen compounds** (`fabrication.split_figure_compounds`): "16K-token" reads
+  as "16K token" in `numbers_dropped` and the rebound windows only (the term check is
+  untouched). A changed unit is then a rebinding ("16K users" -> `rebound:16k users`).
+  A version or range (`GPT-4-turbo`, `2-3`) stays whole.
+- **Identifier compounds** ("E2B-sandboxed"): satisfied by the identifier plus a word sharing
+  the first five letters of the joined word, so "o3" alone does not restate "o3-mini".
+- **Slash lists**: a rewrite's slash compound splits only when a piece is purely alphabetic
+  ("React 19/TypeScript" states 19); a source list of identifiers ("A30/L40S") is
+  satisfied when every piece appears. All-numeric compounds stay whole on both sides.
+- **Number words**: a rewrite's "four" states a source "4"; a source's "three" licenses
+  "3". "zero" and "one" do not license a numeral ("one of the first" is not "#1").
+- **Ampersand initialisms**: "W&B" passes when its letters begin consecutive source words,
+  "&"/"and" skipped ("Weights & Biases", "profit and loss").
+- **Rebound windows**: a closed modifier list (core, key, fundamental, ...) binds without
+  using a window slot; a closed list of outcome verbs (reach/achieve/attain/hit forms)
+  directly before a percentage is skipped like "by". No suffix rule: "staffing" and
+  "testing" are subjects.
+
+Deliberately unchanged: "SQL" on a text-to-SQL bullet, "18 Python and computer science
+topics". Replay against the whole pre-change package in a worktree
+(`scripts/evals/guard_replay.py`): 6 of 14 batches eliminated; 14 violations removed, 6
+relabelled (a real drop of "16K-token" now reads `missing_number:16K`; "85 reached" now
+reads "85 benchmark" for a draft that invented an evaluation benchmark), 5 retained, all
+real drops or the deliberate cases above.

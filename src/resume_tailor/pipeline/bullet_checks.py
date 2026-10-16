@@ -16,6 +16,22 @@ from . import fabrication
 #: an unrelated later noun.
 _NOUN_BIND_WINDOW = 3
 
+#: Modifiers a rewrite inserts before a counted noun ("18 core topics"). Each still binds,
+#: but none uses up a window slot, so the noun after it stays in reach. Closed on purpose:
+#: a broader rule would let any adjective push the real subject out of comparison.
+_FREE_MODIFIERS = frozenset({
+    "core", "key", "fundamental", "major", "distinct", "different", "separate", "unique",
+    "total", "additional", "various", "multiple",
+})
+
+#: Verbs that only introduce a percentage ("reaching 85%"); skipped directly before it.
+#: Closed to the forms seen in rejected drafts, not a suffix rule: "staffing" and
+#: "testing" are subjects.
+_OUTCOME_VERBS = frozenset({
+    "reach", "reaches", "reaching", "reached", "achieve", "achieves", "achieving",
+    "achieved", "attain", "attains", "attaining", "attained", "hit", "hits", "hitting",
+})
+
 #: Prefix marking a rebound claim inside the flat offender list `guard_offenders`
 #: returns. `_format_fabrications` splits on it so the retry prompt can name a
 #: rebinding distinctly from a fabricated term.
@@ -95,6 +111,7 @@ def _number_noun_surface(text: str) -> dict[str, list[tuple[str, str]]]:
     wording ("40 hours") rather than the normalised key, and so the nearest bound
     noun — pair index 0 — can be named on its own.
     """
+    text = fabrication.split_figure_compounds(text)
     matches = list(fabrication._TOKEN.finditer(text))
     tokens = [m.group(0) for m in matches]
     out: dict[str, list[tuple[str, str]]] = {}
@@ -109,24 +126,30 @@ def _number_noun_surface(text: str) -> dict[str, list[tuple[str, str]]]:
         if fabrication._NUMBER_PLUS.fullmatch(key):
             key = key[:-1]
         pairs = out.setdefault(key, [])
-        forward = range(i + 1, min(i + 1 + _NOUN_BIND_WINDOW, len(tokens)))
+        forward = range(i + 1, len(tokens))
         if text[matches[i].end():].startswith("%"):
             # A percentage measures the outcome named before it ("increasing ARR by
             # 12%") as often as the thing after it ("12% of tickets"); a rewrite moves
             # it between the two freely, so it binds both ways. The "by" in "time by
-            # 50-66%" is skipped so the window reaches the outcome itself.
+            # 50-66%" is skipped so the window reaches the outcome itself, and so is an
+            # outcome verb ("reaching 91.3%" -> "achieving 91.3%"), which names no subject.
             start = i - 2 if i > 0 and tokens[i - 1].lower() == "by" else i - 1
-            windows = [range(start, max(-1, start - _NOUN_BIND_WINDOW), -1), forward]
+            while start >= 0 and tokens[start].lower() in _OUTCOME_VERBS:
+                start -= 1
+            windows = [range(start, -1, -1), forward]
         else:
             windows = [forward]
         for indices in windows:
+            taken = 0
             for j in indices:
                 candidate = tokens[j]
-                if fabrication._HAS_DIGIT.search(candidate):
+                if fabrication._HAS_DIGIT.search(candidate) or taken == _NOUN_BIND_WINDOW:
                     break
                 sig = _noun_key(candidate)
                 if sig is not None:
                     pairs.append((candidate.lower(), sig))
+                if candidate.lower() not in _FREE_MODIFIERS:
+                    taken += 1
     return out
 
 def rebound_numbers(sources: Sequence[Bullet], rewritten: str) -> list[str]:

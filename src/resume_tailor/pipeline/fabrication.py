@@ -113,6 +113,43 @@ _LOWER_BOUND = re.compile(
     r"|\b(\d[\d,]*(?:\.\d+)?)\+"
 )
 
+#: Number words and their numerals. A rewrite may restate either spelling ("team of
+#: three" <-> "team of 3"); only the value carries the claim.
+_NUMBER_WORDS = {
+    word: str(value) for value, word in enumerate((
+        "zero", "one", "two", "three", "four", "five", "six", "seven", "eight", "nine", "ten",
+        "eleven", "twelve", "thirteen", "fourteen", "fifteen", "sixteen", "seventeen",
+        "eighteen", "nineteen", "twenty",
+    ))
+}
+
+#: The words that license their numeral in a rewrite. "zero" and "one" are left out:
+#: "one of the first engineers" is an idiom, not a count, and must not license "#1".
+_LICENSING_NUMBER_WORDS = {w: n for w, n in _NUMBER_WORDS.items() if w not in ("zero", "one")}
+
+#: A figure joined to the word it counts ("16K-token", "3-day", "1,000-person"). The
+#: figure is the claim, so `numbers_dropped` and the rebound check read it as "16K token":
+#: "16K tokens" and "(16K context)" keep the figure, and a changed unit ("16K users") is
+#: then a rebinding the rebound check names. Only a figure-led compound: a version
+#: ("GPT-4-turbo", "v1.2-beta") or a range ("2-3 weeks") is preceded by, or ends in, a
+#: digit and stays whole.
+_FIGURE_COMPOUND = re.compile(
+    r"(?<![A-Za-z0-9.,+-])(\d[\d,]*(?:\.\d+)?[A-Za-z]?)-([A-Za-z]{2,})(?![A-Za-z0-9])"
+)
+
+
+def split_figure_compounds(text: str) -> str:
+    """`text` with each figure-led hyphen compound spaced ("16K-token" -> "16K token")."""
+    return _FIGURE_COMPOUND.sub(r"\1 \2", text)
+
+
+#: An identifier joined to a word ("E2B-sandboxed"): satisfied by the identifier plus a
+#: word sharing the joined word's stem, so "E2B sandboxes" restates it while "o3" alone
+#: does not restate "o3-mini".
+_IDENTIFIER_COMPOUND = re.compile(r"([a-z]+\d[a-z0-9]*|\d+[a-z][a-z0-9]*)-([a-z]{2,})")
+_STEM_LENGTH = 5
+
+
 def _lower_bounds(text: str) -> set[str]:
     return {next(group for group in match.groups() if group is not None)
             for match in _LOWER_BOUND.finditer(text)}
@@ -140,6 +177,8 @@ def _vocabulary(bullet: Bullet) -> set[str]:
     # A plus suffix asserts a lower bound. License it only when the source itself
     # states that bound, never merely because it contains the same number.
     words.update(f"{number}+" for number in _lower_bounds(bullet.text))
+    # A spelled-out count licenses its numeral ("three" -> "3"), and only that one.
+    words.update([_LICENSING_NUMBER_WORDS[w] for w in words if w in _LICENSING_NUMBER_WORDS])
     return words
 
 #: An all-caps run this long is worth testing as an initialism ("CS", "GRPO"). Bounded so
@@ -167,6 +206,29 @@ def _initialisms(bullet: Bullet) -> set[str]:
             for i in range(len(words) - n + 1):
                 out.add("".join(w[0] for w in words[i : i + n]).lower())
     return out
+
+#: "W&B", "P&L", "R&D": `_TOKEN` splits at "&", so each letter would be checked alone.
+_AMPERSAND_INITIALISM = re.compile(r"(?<![A-Za-z0-9&])[A-Z]{1,3}&[A-Z]{1,3}(?![A-Za-z0-9&])")
+
+def _mask_ampersand_initialisms(sources: Sequence[Bullet], rewritten: str) -> str:
+    """`rewritten` with each ampersand initialism the sources spell out blanked.
+
+    "W&B" is permitted when its letters begin consecutive source words, "&" and "and"
+    skipped ("Weights & Biases", "profit and loss"). Blanked with spaces, so offsets and
+    sentence starts are unchanged; one the sources cannot spell is left for the token
+    check to reject letter by letter.
+    """
+    def spelled(match: re.Match[str]) -> str:
+        letters = match.group(0).replace("&", "").lower()
+        for source in sources:
+            for text in (source.text, *source.tags):
+                words = [w for w in _WORDS_ONLY.findall(text) if w.lower() != "and"]
+                for i in range(len(words) - len(letters) + 1):
+                    if "".join(w[0] for w in words[i : i + len(letters)]).lower() == letters:
+                        return " " * len(match.group(0))
+        return match.group(0)
+
+    return _AMPERSAND_INITIALISM.sub(spelled, rewritten) if "&" in rewritten else rewritten
 
 def _is_sentence_initial(text: str, start: int) -> bool:
     """Whether the token at `start` opens a sentence (or the whole string)."""
@@ -257,7 +319,7 @@ def _check_fabrication(sources: Sequence[Bullet], rewritten: str) -> list[str]:
             allowed.add(number)
 
     offenders: list[str] = []
-    for match in _TOKEN.finditer(rewritten):
+    for match in _TOKEN.finditer(_mask_ampersand_initialisms(sources, rewritten)):
         term = match.group(0)
         if not _is_permitted(
             term,
@@ -279,26 +341,56 @@ def numbers_dropped(sources: Sequence[Bullet], merged: str) -> list[str]:
 
     This is a code-side answer to a weakness of token-only fabrication checks: a model can
     omit an existing metric without inventing anything new, and the guard would still pass.
+
+    Restatements that keep the figure are not drops: a figure-led compound spaced out
+    (`split_figure_compounds`), a numeral spelled as a word ("4" -> "four"), a name list
+    split at its slash ("React 19/TypeScript" states "19"), and an identifier list spelled
+    out ("A30/L40S" -> "A30 and L40S"). All-numeric compounds ("24/7", "1/2", "10/15")
+    are checked whole on both sides.
     """
+    merged = split_figure_compounds(merged)
     haystack_numbers: set[str] = set()
+    words: set[str] = set()
     for match in _TOKEN.finditer(merged):
-        term = match.group(0)
-        if _HAS_DIGIT.search(term):
-            haystack_numbers.add(term.lower())
-            if _NUMBER_PLUS.fullmatch(term):
-                haystack_numbers.add(term[:-1].lower())
+        term = match.group(0).lower()
+        words.add(term)
+        if term in _NUMBER_WORDS:
+            haystack_numbers.add(_NUMBER_WORDS[term])
+        if not _HAS_DIGIT.search(term):
+            continue
+        haystack_numbers.add(term)
+        if _NUMBER_PLUS.fullmatch(term):
+            haystack_numbers.add(term[:-1])
+        pieces = [p for p in term.split("/") if p]
+        if len(pieces) > 1 and any(p.isalpha() for p in pieces):
+            haystack_numbers.update(pieces)
     haystack_numbers.update(_lower_bounds(merged))
+
+    def stated(lowered: str) -> bool:
+        if lowered in haystack_numbers or (
+            _NUMBER_PLUS.fullmatch(lowered) and lowered[:-1] in haystack_numbers
+        ):
+            return True
+        pieces = [p for p in lowered.split("/") if p]
+        if len(pieces) > 1 and all(_HAS_DIGIT.search(p) and _HAS_LETTER.search(p) for p in pieces):
+            return all(p in haystack_numbers for p in pieces)
+        compound = _IDENTIFIER_COMPOUND.fullmatch(lowered)
+        if compound:
+            ident, word = compound.groups()
+            stem = word[:_STEM_LENGTH]
+            return ident in haystack_numbers and any(w.startswith(stem) for w in words)
+        return False
 
     dropped: list[str] = []
     seen: set[str] = set()
     for source in sources:
         for text in (source.text, " ".join(source.tags)):
-            for match in _TOKEN.finditer(text):
+            for match in _TOKEN.finditer(split_figure_compounds(text)):
                 term = match.group(0)
                 if not _HAS_DIGIT.search(term):
                     continue
                 lowered = term.lower()
-                if lowered in haystack_numbers or (_NUMBER_PLUS.fullmatch(lowered) and lowered[:-1] in haystack_numbers) or lowered in seen:
+                if lowered in seen or stated(lowered):
                     continue
                 seen.add(lowered)
                 dropped.append(term)
