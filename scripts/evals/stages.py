@@ -28,8 +28,9 @@ def _role(entry) -> str:
 class Replay:
     """One profile's resume, styles and guidance, shared by every case of a batch.
 
-    Match tags (`bullet_tags.annotate`) are process-wide, so a batch covers exactly one
-    workspace; build a new `Replay` (sequentially) for the next one.
+    Match tags are inferred once here and re-installed in each task's run context
+    (`setup`). A batch still covers exactly one workspace; build a new `Replay`
+    (sequentially) for the next one.
     """
 
     def __init__(self, workspace_id: str = "default"):
@@ -43,7 +44,7 @@ class Replay:
         self.resume = data.load()
         # Skill inference is cached; a miss calls the model, so route it like a job would.
         with config.pinned("ollama", overrides=dict.fromkeys(config.PURPOSES, self.light_spec)):
-            tag_infer.prepare_run(self.resume)
+            self.inference = tag_infer.prepare_run(self.resume)
         self.by_id = {b.id: b for b in self.resume.all_bullets()}
         self.role = {b.id: _role(e) for s in self.resume.entry_sections
                      for e in s.entries for b in e.bullets}
@@ -55,6 +56,8 @@ class Replay:
     # -- per-task setup (runs inside the task's own config context) -------------------
 
     def setup(self, case: Case) -> None:
+        # Each task runs in its own run context, which reads only its own match tags.
+        bullet_tags.annotate(self.resume, self.inference.skills)
         saved = industries.load(case.job_dir) if case.job_dir is not None else None
         industries.bind(saved or self.guidance)
         style.activate(

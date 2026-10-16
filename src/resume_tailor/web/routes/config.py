@@ -15,8 +15,8 @@ from resume_tailor.infra import appearance, model_queue
 from resume_tailor.model_selection import migrated_models
 from resume_tailor.pipeline import coverletter, expand, fit_types, rewrite_prompts
 from resume_tailor.pipeline.events import ProgressEvent
+from resume_tailor.web import skill_refresh, template_ops
 from resume_tailor.web import state as web_state
-from resume_tailor.web import template_ops
 from resume_tailor.web.schemas import (
     ConfigResponse,
     JobSettings,
@@ -71,7 +71,7 @@ def _config_response(*, consume_migrated: bool = True) -> ConfigResponse:
         resume = data.load()
         contact_name = resume.contact.name
         # Autocomplete for a bullet's Extra skills: every skill the resume already shows.
-        tags = bullet_tags.known_terms(resume)
+        tags = bullet_tags.known_terms(resume, skill_refresh.cached_inference(resume))
     except (FileNotFoundError, ValueError):
         # A missing or malformed master resume still lets the UI load; the editor and
         # the run page will surface the real error when the user tries to use them.

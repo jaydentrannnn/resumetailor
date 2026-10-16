@@ -298,3 +298,15 @@ def prepare_run(
     inference = ensure(resume, preferred=bullet_tags.known_terms(resume), on_event=on_event)
     bullet_tags.annotate(resume, inference.skills)
     return inference
+
+
+def annotate_cached(resume: MasterResume) -> Inference:
+    """Install the match-tag context from what is already inferred — no model call.
+
+    For work that resumes a finished run in a fresh context (regenerating its expansion):
+    under the run's own backend pins it reads the same cache entries the run used. A
+    context that never annotates reads no inferred skills at all (`bullet_tags._current`).
+    """
+    inference = cached(resume)
+    bullet_tags.annotate(resume, inference.skills)
+    return inference

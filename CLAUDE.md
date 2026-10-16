@@ -191,10 +191,11 @@ fit.fit(): over → combine → pull back near-widows → drop weakest (else Fit
   are canonicalised against the skills the resume shows** (`bullet_tags.known_terms`); one read by default (voting is opt-in). Education/skills
   are tailored in wording, never resized. `include.py` is applied once, after scoring,
   before facets.
-- **Web UI and MCP are front doors, not second pipelines**; jobs run one at a time because
-  `config._ACTIVE` is process-wide. Workspaces rebind config module globals — **single
-  process is a hard requirement**; mutating workspace routes hold `get_queue().busy()` then
-  `template_ops.LOCK` (`docs/REFERENCE.md` §2).
+- **Web UI and MCP are front doors, not second pipelines**; jobs run concurrently (up to
+  `max_concurrent_jobs`), each in its own `config.RunContext` — per-run state (routing,
+  styles, match-tag annotation) belongs there, never in a module global. Workspaces rebind
+  config module globals — **single process is a hard requirement**; mutating workspace
+  routes hold `get_queue().busy()` then `template_ops.LOCK` (`docs/REFERENCE.md` §2).
 
 ## Non-obvious gotchas (index — full explanations in `docs/REFERENCE.md` §8)
 

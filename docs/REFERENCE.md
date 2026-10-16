@@ -148,7 +148,7 @@ every mutating workspace route holds `get_queue().busy()` then `template_ops.LOC
 order (and 409s while `apply.daily.daily_busy()`).
 
 Tailoring jobs now run concurrently up to `JobSettings.max_concurrent_jobs` (default 2,
-range 1–4). Each job carries a `RunContext` with its workspace paths, backend routing,
+range 1–8). Each job carries a `RunContext` with its workspace paths, backend routing,
 calibration, vocabulary, and style; worker threads in JD voting and daily processing
 copy that context explicitly. `get_queue().busy()` remains true while any job is queued
 or running, so workspace mutations still wait. `convert.convert()` serializes both Word

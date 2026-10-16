@@ -233,9 +233,9 @@ def _response_format_ladder(  # noqa: UP047 - shares module-level `T` with 3 sib
 #: rewrite-heavy run makes up to five calls; without this, a verbose model pays a full
 #: truncated generation to rediscover the same working ceiling on every one of them.
 #:
-#: Module-global and never cleared in production — the project already requires a single
-#: process and serial jobs (see `config._ACTIVE`), and this is strictly a *measurement*,
-#: not configuration, which is why it lives here rather than growing `config._ACTIVE`.
+#: Module-global and never cleared in production — the project requires a single process,
+#: and this is strictly a *measurement* of the model, not per-run configuration, so
+#: concurrent jobs may share it safely (a race only re-learns the same ceiling).
 #: Tests MUST clear this between cases or a call-count assertion becomes flaky for reasons
 #: that have nothing to do with the test — see the `client` fixture in tests/infra/test_llm.py.
 _LEARNED_CEILING: dict[tuple[str, str], int] = {}

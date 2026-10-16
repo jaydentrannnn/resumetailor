@@ -17,6 +17,7 @@ from resume_tailor.pipeline import (
     jd,
     propose,
     relevance,
+    tag_infer,
 )
 from resume_tailor.pipeline.events import ProgressCallback, ProgressEvent
 from resume_tailor.web import template_ops
@@ -216,6 +217,7 @@ def generate_expansion(job_id: str, *, force: bool = False) -> ExpansionOut:
         if snapshot is not None:
             style.activate(**snapshot.styles)
         resume = data.load()
+        tag_infer.annotate_cached(resume)
         try:
             semantic = relevance.score_table(resume.all_bullets(), requirements, use_cache=True)
         except Exception:  # noqa: BLE001 - ranking falls back to keywords, as in a run

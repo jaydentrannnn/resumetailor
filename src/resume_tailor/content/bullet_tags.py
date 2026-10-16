@@ -51,7 +51,24 @@ class _Annotation:
     inferred: dict[str, tuple[str, ...]] = field(default_factory=dict)
 
 
+#: Fallback outside any run context (CLI, eval replays, tests); a run binds its own via
+#: `config.set_annotation`.
 _ANNOTATION = _Annotation()
+
+
+_EMPTY = _Annotation()
+
+
+def _current() -> _Annotation:
+    """This run's context when one is bound; outside any run, the process fallback.
+
+    A run that has not annotated yet reads an empty context, never the fallback: that
+    fallback is whatever some earlier caller installed, possibly for another resume.
+    """
+    if not config.in_run_context():
+        return _ANNOTATION
+    bound = config.active_annotation()
+    return bound if bound is not None else _EMPTY
 
 
 @dataclass
@@ -108,8 +125,10 @@ def _table(extra: frozenset[str]) -> _Table:
         if phrases
         else None
     )
-    _TABLE = _Table(aliases, terms, extra, canonical, pattern)
-    return _TABLE
+    # Return the local: a concurrent run may already have swapped `_TABLE` for its own.
+    table = _Table(aliases, terms, extra, canonical, pattern)
+    _TABLE = table
+    return table
 
 
 def _accept(phrase: str, surface: str) -> bool:
@@ -145,12 +164,18 @@ def detect(text: str, extra: Iterable[str] = ()) -> list[tuple[str, str]]:
 def annotate(resume: MasterResume, inferred: Mapping[str, Iterable[str]] | None = None) -> None:
     """Install this run's context: `resume`'s own terms and inferred skills by bullet text.
 
-    Process-wide like `config._ACTIVE` (runs are one at a time). Inferred skills are keyed
-    by text, so a bullet rebuilt mid-run (`fit_shrink`, `bullet_merge`) with the same text
-    still finds them, and one with new text simply falls back to detection.
+    Bound to the active `config` run context, so concurrent jobs never see each other's
+    (outside one it sets the process fallback). Inferred skills are keyed by text, so a
+    bullet rebuilt mid-run (`fit_shrink`, `bullet_merge`) with the same text still finds
+    them, and one with new text simply falls back to detection.
     """
+    _install(_Annotation(extra=resume_terms(resume), inferred=_canonical_inferred(inferred)))
+
+
+def _install(annotation: _Annotation) -> None:
     global _ANNOTATION
-    _ANNOTATION = _Annotation(extra=resume_terms(resume), inferred=_canonical_inferred(inferred))
+    if not config.set_annotation(annotation):
+        _ANNOTATION = annotation
 
 
 def _canonical_inferred(
@@ -164,8 +189,7 @@ def _canonical_inferred(
 
 def clear() -> None:
     """Drop the run context (test seam; `annotate` replaces it wholesale anyway)."""
-    global _ANNOTATION
-    _ANNOTATION = _Annotation()
+    _install(_Annotation())
 
 
 def user_tags(bullet: Bullet) -> set[str]:
@@ -178,10 +202,11 @@ def match_tags(bullet: Bullet, *, inferred: bool = True) -> frozenset[str]:
 
     `inferred=False` keeps only what the user wrote (merge affinity wants that).
     """
+    context = _current()
     tags = user_tags(bullet)
-    tags |= {canonical for canonical, _ in detect(bullet.text, _ANNOTATION.extra)}
+    tags |= {canonical for canonical, _ in detect(bullet.text, context.extra)}
     if inferred:
-        tags |= set(_ANNOTATION.inferred.get(bullet.text, ()))
+        tags |= set(context.inferred.get(bullet.text, ()))
     return frozenset(tags)
 
 
@@ -190,7 +215,7 @@ def skill_evidence(bullet: Bullet) -> list[str]:
     detected skills by their surface text ("DCF", never the expansion). No inferred."""
     labels = [t for t in bullet.tags if t.strip()]
     have = user_tags(bullet)
-    for canonical, surface in detect(bullet.text, _ANNOTATION.extra):
+    for canonical, surface in detect(bullet.text, _current().extra):
         if canonical not in have:
             have.add(canonical)
             labels.append(surface)
@@ -209,7 +234,7 @@ def known_terms(
     after `tag_infer.prepare_run`, so both land on one cached JD extraction.
     """
     extra = resume_terms(resume)
-    by_text = _ANNOTATION.inferred if inferred is None else _canonical_inferred(inferred)
+    by_text = _current().inferred if inferred is None else _canonical_inferred(inferred)
     found: set[str] = set()
     for bullet in resume.all_bullets():
         found |= user_tags(bullet)

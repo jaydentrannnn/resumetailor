@@ -576,3 +576,18 @@ tech must-have coverage -6.2 pts (control drift 2.2), non-tech -1.4 pts (finance
 current-vs-itself). Only gain: self-consistency F1 0.842 vs 0.810. Same latency and
 tokens. A dictionary does not help outside tech either; do not re-propose without a new
 argument. Cross-model agreement was not run (could not change the verdict).
+
+## Match-tag annotation is per run (2026-10-16; supersedes "runs are one at a time")
+
+`bullet_tags` kept the run's resume terms and inferred skills in a module global while
+jobs ran concurrently (`max_concurrent_jobs`, default 2): a second job's
+`tag_infer.prepare_run` cleared and replaced the first job's annotation mid-selection, so
+rankings, gaps and JD canonicalisation could silently use the other job's resume. The
+annotation now lives on `config.RunContext` (`set_annotation` / `active_annotation`),
+like routing and styles. Inside a run, an unannotated context reads an empty annotation,
+never the process fallback (the fallback is whatever an earlier caller installed). Outside
+a run (CLI, eval batch setup) the module fallback still applies. Non-job readers pass the
+cached inference explicitly (`skill_refresh.cached_inference`; regenerated expansion calls
+`tag_infer.annotate_cached` under the run's pins). `_table()` returns its local table so a
+concurrent rebuild of `_TABLE` cannot hand back another run's phrase table. Test:
+`test_parallel_runs_compute_what_serial_runs_compute` fails on the old global.

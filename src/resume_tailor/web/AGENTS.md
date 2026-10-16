@@ -9,8 +9,11 @@ same text (`tests/tooling/test_agent_docs.py` enforces it).
 
 ## Rules specific to this package
 
-- **Single process is a hard requirement.** Jobs run one at a time because `config._ACTIVE`
-  is process-wide and workspaces rebind `config` module globals.
+- **Single process is a hard requirement.** Workspaces rebind `config` module globals. Jobs
+  run concurrently (up to `max_concurrent_jobs`), each inside its own `config.RunContext`;
+  per-run state lives there, never in a module global (`bullet_tags` annotation included).
+  Code outside a job that reads match tags passes the cached inference explicitly
+  (`skill_refresh.cached_inference`) instead of reading whatever a job last installed.
 - **`config._ACTIVE` is populated only by `job_tailor_run.py`'s runner.** A route calling an LLM
   outside a job uses `job_routing.pinned_role("light")` for app tools or `"heavy"` for
   application answers. This uses saved app-wide selections without repointing a running job.

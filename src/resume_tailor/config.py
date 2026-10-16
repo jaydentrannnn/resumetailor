@@ -1394,6 +1394,9 @@ class RunContext:
     verb_families: dict[str, tuple[str, ...]] | None = None
     styles: dict[str, str | None] | None = None
     guidance: GuidanceSnapshot | None = None
+    #: This run's match-tag context (`bullet_tags.annotate`), so a concurrent job's
+    #: `tag_infer.prepare_run` never clears or replaces it mid-selection.
+    annotation: Any = None
 
 
 def _legacy_paths() -> dict[str, Path]:
@@ -1526,6 +1529,26 @@ def set_guidance(guidance: GuidanceSnapshot | None) -> None:
 def active_styles() -> dict[str, str | None] | None:
     current = _RUN_CONTEXT.get()
     return current.styles if current is not None else None
+
+
+def set_annotation(annotation: Any) -> bool:
+    """Bind match-tag context to the active run; return False outside a run context."""
+    current = _RUN_CONTEXT.get()
+    if current is None:
+        return False
+    _RUN_CONTEXT.set(replace(current, annotation=annotation))
+    return True
+
+
+def active_annotation() -> Any:
+    """This run's match-tag context, or None outside a run (or before `annotate`)."""
+    current = _RUN_CONTEXT.get()
+    return current.annotation if current is not None else None
+
+
+def in_run_context() -> bool:
+    """Whether a run context is active (`use_context`), as opposed to the process default."""
+    return _RUN_CONTEXT.get() is not None
 
 
 def run_in_context[T](fn: Callable[..., T]) -> Callable[..., T]:
