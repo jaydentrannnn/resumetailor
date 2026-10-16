@@ -16,7 +16,7 @@ import pytest
 ROOT = Path(__file__).resolve().parents[2]
 sys.path.insert(0, str(ROOT / "scripts"))
 
-from evals import e2e, report_seq, sequential, stages, variants  # noqa: E402
+from evals import e2e, report_seq, sequential, stages, survey, variants  # noqa: E402
 from evals.sequential import Bound, Criterion  # noqa: E402
 
 from resume_tailor.content.data import Bullet  # noqa: E402
@@ -332,3 +332,67 @@ def test_workers_are_separate_processes_with_the_arm_environment(tmp_path):
     files = list(out.iterdir())
     assert bad == 0 and len(files) == 3 and str(os.getpid()) not in {f.name for f in files}
     assert {f.read_text() for f in files} == {"1"}
+
+
+# --- per-model polish decision and survey -----------------------------------------------
+
+
+def _verdicts(results: list[str]) -> list[dict]:
+    """One verdict per case for (polished, unpolished); "b" means no polish won."""
+    return [{"case": f"c{i}", "a": survey.POLISHED, "b": survey.UNPOLISHED, "winner": w}
+            for i, w in enumerate(results)]
+
+
+def _polish_arms(n: int, *, changed: int = 0) -> dict:
+    def rec(i, text):
+        return {"result": {"texts": {"b": text}, "metrics": dict.fromkeys(survey._DIFFS, 0)},
+                "usage": {"input_tokens": 10, "output_tokens": 10, "wall_ms": 1000}}
+    return {
+        survey.DRAFT: {f"c{i}": rec(i, "draft") for i in range(n)},
+        survey.POLISHED: {f"c{i}": rec(i, "polished" if i < changed else "draft")
+                          for i in range(n)},
+        survey.UNPOLISHED: {f"c{i}": rec(i, "draft") for i in range(n)},
+    }
+
+
+@pytest.mark.parametrize(("results", "expected"), [
+    (["a"] * 15 + ["tie"] * 5, "KEEP"),          # polish clearly wins
+    (["a", "b", "tie", "tie"] * 5, "REMOVE"),    # a wash: remove unless it wins
+    (["b"] * 10 + ["tie"] * 10, "REMOVE"),
+    (["a"] * 5, "INDICATIVE"),                   # too few cases to decide
+])
+def test_polish_stays_only_when_it_wins(results, expected):
+    cases = [f"c{i}" for i in range(len(results))]
+    decision, _ = survey.polish_decision(_polish_arms(len(cases)), _verdicts(results), cases)
+    assert decision == expected
+
+
+def test_a_missing_verdict_makes_the_polish_decision_incomplete():
+    cases = [f"c{i}" for i in range(20)]
+    decision, _ = survey.polish_decision(_polish_arms(20), _verdicts(["a"] * 19), cases)
+    assert decision == "INCOMPLETE"
+
+
+def test_polish_fired_counts_cases_whose_drafts_changed():
+    cases = [f"c{i}" for i in range(4)]
+    assert survey.polish_fired(_polish_arms(4, changed=3), cases) == (3, 4)
+
+
+def test_stage_usage_counts_retries_apart_from_first_calls():
+    data = {"requests": [
+        {"stage": "rewrite", "reason": "generation", "request_ms": 5},
+        {"stage": "rewrite", "reason": "token_escalation", "request_ms": 7},
+        {"stage": "score", "request_ms": 1},
+    ]}
+    usage = e2e.stage_usage(data)
+    assert usage["rewrite"]["calls"] == 2 and usage["rewrite"]["retries"] == 1
+    assert usage["score"]["retries"] == 0
+
+
+def test_eval_light_overrides_the_profile_model(monkeypatch):
+    monkeypatch.setenv(stages.LIGHT_ENV, "lmstudio:google/gemma-4-12b")
+    assert stages.light_override() == "lmstudio:google/gemma-4-12b"
+    monkeypatch.setenv(stages.LIGHT_ENV, '{"provider": "openai", "model": "m"}')
+    assert stages.light_override() == {"provider": "openai", "model": "m"}
+    monkeypatch.delenv(stages.LIGHT_ENV)
+    assert stages.light_override() is None

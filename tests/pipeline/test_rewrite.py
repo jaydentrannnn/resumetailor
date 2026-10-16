@@ -1433,8 +1433,8 @@ def test_verb_collisions_ignores_unknown_openers_for_family_rules():
 
 
 def test_a_model_measured_better_unpolished_skips_the_polish_call(rewrite_calls, monkeypatch):
-    """gemini-3.8-flash (experiment E1): no follow-up call; collisions are only reported,
-    and near-synonym openers are not counted against it."""
+    """No model keeps the polish (measured worse than none): no follow-up call; collisions
+    are only reported, and near-synonym openers are not counted against it."""
     monkeypatch.setattr(config, "model_for", lambda purpose: "gemini-3.8-flash")
     src = [
         bullet("a", "Designed a Python service for search.", ["python"]),
@@ -1451,10 +1451,15 @@ def test_a_model_measured_better_unpolished_skips_the_polish_call(rewrite_calls,
     assert outcome.verb_collisions_remaining == 1  # "b" repeats "Designed"; no family rule
 
 
-def test_cosmetic_polish_is_skipped_only_for_the_tested_model(monkeypatch):
-    for model, enabled in (("gemini-3.8-flash", False), ("vertex_ai/gemini-3.8-flash", False),
-                           ("gemini-3.7-flash", True), ("gemma4:cloud", True),
-                           ("claude-haiku-5-5", True)):
+def test_cosmetic_polish_is_off_unless_a_family_is_listed(monkeypatch):
+    models = ("gemini-3.8-flash", "vertex_ai/gemini-3.8-flash", "gemma4:31b",
+              "claude-haiku-5-5", "google/gemma-4-12b")
+    for model in models:
+        monkeypatch.setattr(config, "model_for", lambda purpose, m=model: m)
+        assert rewrite.cosmetic_polish_enabled() is False, model
+    monkeypatch.setattr(rewrite, "_KEEP_COSMETIC_POLISH", frozenset({"claude-"}))
+    for model, enabled in (("claude-haiku-5-5", True), ("anthropic/claude-sonnet-5", True),
+                           ("gemma4:31b", False)):
         monkeypatch.setattr(config, "model_for", lambda purpose, m=model: m)
         assert rewrite.cosmetic_polish_enabled() is enabled, model
 
@@ -1466,7 +1471,7 @@ def test_verb_collisions_without_the_family_rule():
     assert set(bullet_checks.verb_collisions(texts, families=False)) == {"d", "e"}
 
 
-def test_polish_swaps_a_colliding_opener(rewrite_calls):
+def test_polish_swaps_a_colliding_opener(rewrite_calls, cosmetic_polish):
     """One follow-up call replaces a repeated opener without rewriting the rest."""
     src = [
         bullet("a", "Designed a Python service for search.", ["python"]),
@@ -1558,7 +1563,7 @@ def test_no_verb_repair_holds_the_run_to_one_call(rewrite_calls):
     assert outcome.verb_collisions_remaining == 1
 
 
-def test_widow_and_verb_defects_share_one_polish_call(rewrite_calls):
+def test_widow_and_verb_defects_share_one_polish_call(rewrite_calls, cosmetic_polish):
     """Both defect kinds ride in a single follow-up, preserving the five-call cap."""
     # a is widowed (204 chars starting with Designed); b collides on Designed but fits.
     widowed_text = "Designed " + ("x" * (204 - len("Designed ")))

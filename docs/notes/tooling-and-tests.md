@@ -240,3 +240,42 @@ comparable rewrite-only figure was -24.0%). `e2e.py` now records per-stage usage
 fails when a record lacks the split, and the runtime line adds seconds spent in
 uncached-stage requests. The existing records were backfilled from their telemetry
 (matched by case and output-token totals).
+
+## Cross-model polish test and local-model survey (2026-10-16)
+
+`EVAL_LIGHT` (a model spec, string or JSON) replaces the profile's Light model for every
+arm; the profile's own model still judges. `EVAL_FROM=<eval>` seeds a new eval from that
+eval's sandbox and case order, so every model sees the same resume and postings, and a
+smoke run of a few cases grows to the full sample. `polish --efforts default,none` polishes
+at the model's production effort; `judge --pairs polish`, `polish-report`, then
+`e2e --arm run`, `e2e-judge --arm run --ref ship` (against the source eval's arm) and
+`survey-report --evals a,b,...`. `stage_usage` now counts retries (any request whose
+reason is not the stage's first generation).
+
+Survey on an RTX 5080 Laptop (16 GB), LM Studio, full GPU offload, 64k context, one
+request at a time; reference is gemini-3.8-flash's end-to-end bullets:
+
+- gemma4:31b (Ollama Cloud): 40/40 drafts, ~4-5 min each with intermittent HTTP 429
+  (each costs a 5-minute wait; concurrency 2 or 3 across one account made it worse).
+- nemotron-3-super (Ollama Cloud): 3/4 end-to-end runs fitted one page (fill 0.95, 4.3
+  fit rounds vs Gemini's 1.75, ~32 min per run); the judge preferred Gemini 3/3: it tacks
+  unsupported keyword phrases onto bullets. The failed run was a runaway polish reply.
+- gemma-4-12b (local, 40 tok/s): 1 of 2 drafts looped ("Wait, I should check ... again")
+  to 32k tokens; the finished one dropped specifics (vaguer bullets). Skipped.
+- qwen3.5-9b (local, 63 tok/s): 3 of 4 calls looped the same way; the finished draft kept
+  specifics but stuffed posting phrases ("demonstrating ... data analytics skills").
+  Skipped.
+- gpt-oss-20b (LM Studio): almost every call failed with "The model produced output that
+  does not match the expected peg-native format" (LM Studio's harmony parser). Skipped.
+- bonsai-27b 1-bit (local, ~48 tok/s): 2 of 3 drafts, 169-246 s each after a ~12-minute
+  first-run skill inference; faithful, specific wording, but ignores the per-bullet
+  length budget (10 of 14 over on one posting) and mirrors fewer must-haves.
+- claude-haiku-5-5: fastest (22-38 s per draft, ~$0.035); one draft of 20 failed
+  `RewriteResult` validation and passed on rerun.
+
+Production defects these runs exposed (not fixed here): after a reply hits the token
+limit on a local backend, the escalated retry cannot finish (it timed out after 15 min
+while LM Studio kept generating, blocking the next request); a failed polish call fails
+the whole run instead of keeping the drafts (moot while polish is off); LM Studio rejects
+the first structured-output rung (`json_object`, HTTP 400) on every call; and one posting
+(4d3e7fe4069a) made three different models loop or fail.

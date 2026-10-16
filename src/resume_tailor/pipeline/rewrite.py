@@ -68,18 +68,20 @@ class RewriteOutcome:
         return len(bullet_checks.verb_collisions(self.texts, families=not self.polish_skipped))
 
 
-#: Rewrite models whose cosmetic polish (opening-verb and phrase-repeat repair) measured
-#: worse than none: on gemini-3.8-flash a blind judge preferred the unpolished drafts in
-#: 17 of 40 postings and the polished ones in none (23 ties), with no guard or length
-#: change, and skipping it cut rewrite cost ~40% (experiment E1, docs/notes 2026-10-16).
-#: Untested models keep the polish.
-_SKIP_COSMETIC_POLISH = frozenset({"gemini-3.8-flash"})
+#: Model families (name prefixes, e.g. "claude-") whose cosmetic polish (opening-verb and
+#: phrase-repeat repair) measured better than none. Empty: on frozen drafts a blind judge
+#: preferred the unpolished ones on gemini-3.8-flash (17 to 0 over 40 postings),
+#: gemma4:31b (26 to 2 over 40) and claude-haiku-5-5 (4 to 0 over 20), with no guard or
+#: length change. The polish swapped strong verbs for weaker ones, added a call per resume
+#: (4-190 s measured), and a runaway reply could fail the whole run (docs/notes
+#: 2026-10-16).
+_KEEP_COSMETIC_POLISH: frozenset[str] = frozenset()
 
 
 def cosmetic_polish_enabled() -> bool:
     """Whether the active rewrite model gets the cosmetic polish call."""
     model = config.model_for("rewrite").strip().lower().rsplit("/", 1)[-1]
-    return model not in _SKIP_COSMETIC_POLISH
+    return any(model.startswith(family) for family in _KEEP_COSMETIC_POLISH)
 
 
 @telemetry.stage("rewrite", "initial")

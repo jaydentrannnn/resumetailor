@@ -10,6 +10,9 @@ from resume_tailor.content.data import Bullet
 from resume_tailor.pipeline import bullet_checks, followups, rewrite, rewrite_prompts
 from resume_tailor.pipeline.jd import JobRequirements, Keyword
 
+#: These exercise the polish pass, which ships off for every model.
+pytestmark = pytest.mark.usefixtures("cosmetic_polish")
+
 PHRASE = "data engineering projects"
 
 

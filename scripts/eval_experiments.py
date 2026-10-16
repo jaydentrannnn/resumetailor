@@ -38,15 +38,21 @@ from evals import corpus, sandbox  # noqa: E402  (no resume_tailor imports yet)
 
 EVAL_DIR = ROOT / "output" / "eval" / os.environ.get("EVAL_NAME", "polish-clause")
 E2E_DIR = EVAL_DIR / "e2e"
-os.environ.update(sandbox.environment(sandbox.prepare(EVAL_DIR)))
+#: Another eval whose sandbox (same resume, templates and caches) and cases this one
+#: reuses, so a second model is measured on exactly the first one's inputs.
+SOURCE_DIR = (ROOT / "output" / "eval" / os.environ["EVAL_FROM"]
+              if os.environ.get("EVAL_FROM") else None)
+os.environ.update(sandbox.environment(sandbox.prepare(
+    EVAL_DIR, *([SOURCE_DIR / "sandbox"] if SOURCE_DIR else []))))
 
 from evals import arms as arms_mod  # noqa: E402
-from evals import e2e, judge, report, report_seq, sequential, variants  # noqa: E402
+from evals import e2e, judge, report, report_seq, sequential, survey, variants  # noqa: E402
 from evals.stages import Replay  # noqa: E402
 
 JUDGE_MODEL = os.environ.get("JUDGE_MODEL", "gemini-4-argon")
 PAIRS = {"e1": [(report_seq.BASE, "polish-none#0"), (report_seq.BASE, "polish-low#0")],
-         "e2": [(report_seq.BASE, "clause#0")]}
+         "e2": [(report_seq.BASE, "clause#0")],
+         "polish": [(survey.POLISHED, survey.UNPOLISHED)]}
 
 
 def _meta() -> dict:
@@ -84,10 +90,21 @@ def cmd_drafts(args, replay: Replay) -> None:
     if not meta:
         commit = subprocess.run(["git", "rev-parse", "HEAD"], cwd=ROOT, capture_output=True,
                                 text=True, check=True).stdout.strip()
-        chosen = corpus.sample(eligible, args.limit, seed=args.seed)
+        if SOURCE_DIR is not None:
+            by_id = {c.case_id: c for c in eligible}
+            source = json.loads((SOURCE_DIR / "meta.json").read_text("utf-8"))["cases"]
+            chosen = [by_id[c] for c in source[: args.limit] if c in by_id]
+        else:
+            chosen = corpus.sample(eligible, args.limit, seed=args.seed)
         meta = {"commit": commit, "seed": args.seed, "model": _model(replay.light_spec),
                 "spec": replay.light_spec, "judge_model": JUDGE_MODEL,
                 "cases": [c.case_id for c in chosen], "look1": len(chosen)}
+    if SOURCE_DIR is not None and args.limit > len(meta["cases"]):
+        # A smoke run of a few cases grows to the full sample, in the source's order.
+        by_id = {c.case_id: c for c in eligible}
+        source = json.loads((SOURCE_DIR / "meta.json").read_text("utf-8"))["cases"]
+        meta["cases"] = [c for c in source[: args.limit] if c in by_id]
+        meta["look1"] = len(meta["cases"])
     if args.extend and len(meta["cases"]) == meta["look1"]:
         rest = [c for c in eligible if c.case_id not in set(meta["cases"])]
         meta["cases"] += [c.case_id for c in corpus.sample(rest, args.extend, seed=args.seed)]
@@ -106,7 +123,9 @@ def cmd_polish(args, replay: Replay) -> None:
     cases = [c for c in _cases(replay, meta) if c.case_id in drafts]
     for effort in args.efforts.split(","):
         def stage(case, effort=effort):
-            return replay.polish(case, drafts[case.case_id]["result"], effort)
+            # "default" is the stage's production effort for this model.
+            return replay.polish(case, drafts[case.case_id]["result"],
+                                 None if effort == "default" else effort)
         arm = arms_mod.Arm(f"polish-{effort}", replay.light_spec)
         arms_mod.run([(c, arm) for c in cases], stage, _results(), setup=replay.setup,
                      workers=args.workers, out_dir=EVAL_DIR, progress=_progress)
@@ -147,7 +166,7 @@ def cmd_rescore(args, replay: Replay) -> None:
 
 
 def judge_spec(replay: Replay) -> dict:
-    spec = dict(replay.light_spec)
+    spec = dict(replay.profile_spec)
     spec["model"] = JUDGE_MODEL
     spec.pop("base_url", None)
     spec["vertex_location"] = os.environ.get("JUDGE_LOCATION", "global")
@@ -222,7 +241,9 @@ def cmd_e2e_worker(args, replay: Replay) -> None:
 
 
 def cmd_e2e_judge(args, replay: Replay) -> None:
-    base, cand = e2e.load(E2E_DIR, "base"), e2e.load(E2E_DIR, args.arm)
+    # `--ref ship` judges against the source eval's arm (a survey's reference model).
+    ref_dir = SOURCE_DIR / "e2e" if args.ref and SOURCE_DIR else E2E_DIR
+    base, cand = e2e.load(ref_dir, args.ref or "base"), e2e.load(E2E_DIR, args.arm)
     jobs = []
     for case in _e2e_cases(replay, args.limit):
         a, b = base.get(case.case_id), cand.get(case.case_id)
@@ -255,10 +276,27 @@ def cmd_e2e_report(args, _replay=None) -> None:
     print(text)
 
 
+def cmd_polish_report(args, _replay=None) -> None:
+    meta = _meta()
+    text = survey.polish_markdown(report.by_arm(_results().records()),
+                                  judge.Verdicts(judge.verdicts_file(EVAL_DIR)).records(),
+                                  meta["cases"], meta["model"])
+    (EVAL_DIR / "summary.polish.md").write_text(text, encoding="utf-8")
+    print(text)
+
+
+def cmd_survey_report(args, _replay=None) -> None:
+    dirs = [ROOT / "output" / "eval" / name for name in args.evals.split(",")]
+    text = survey.survey_markdown(dirs)
+    (ROOT / "output" / "eval" / "survey-summary.md").write_text(text, encoding="utf-8")
+    print(text)
+
+
 COMMANDS = {"rescore": cmd_rescore, "drafts": cmd_drafts, "polish": cmd_polish,
             "clause": cmd_clause, "judge": cmd_judge, "report": cmd_report, "e2e": cmd_e2e,
             "e2e-worker": cmd_e2e_worker, "e2e-judge": cmd_e2e_judge,
-            "e2e-report": cmd_e2e_report}
+            "e2e-report": cmd_e2e_report, "polish-report": cmd_polish_report,
+            "survey-report": cmd_survey_report}
 
 
 def main(argv: list[str] | None = None) -> int:
@@ -274,8 +312,10 @@ def main(argv: list[str] | None = None) -> int:
     p.add_argument("--arm", default="base")
     p.add_argument("--polish", choices=["none", "low"], default=None)
     p.add_argument("--clause", action="store_true")
+    p.add_argument("--ref", default="", help="judge e2e against this arm of EVAL_FROM")
+    p.add_argument("--evals", default="", help="survey-report: comma-separated eval names")
     args = p.parse_args(argv)
-    if args.cmd in {"report", "e2e", "e2e-report"}:
+    if args.cmd in {"report", "e2e", "e2e-report", "polish-report", "survey-report"}:
         COMMANDS[args.cmd](args)
         return 0
     COMMANDS[args.cmd](args, Replay("default"))

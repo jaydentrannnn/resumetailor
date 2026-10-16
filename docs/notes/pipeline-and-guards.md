@@ -703,3 +703,25 @@ comparable: rewrite cost $1.415 -> $1.076 over 20 cases, **-24.0% end to end**; 
 those requests 152 s -> 116 s per run. The frozen-draft figure (~40% of rewrite cost,
 E1) is a different measurement: identical drafts, polish only, no fit loop. The skip is
 unchanged; only the claimed saving is. The e2e cost gate now excludes cached stages.
+
+## Cosmetic polish off for every model (2026-10-16, supersedes the gemini-only skip)
+
+Rule set in advance: "remove unless it wins". Polish stays for a model family only if,
+on the same frozen drafts, the one-sided 95% upper bound on net judge preference for the
+unpolished drafts is below 0 (gemini-4-argon, both orders; `scripts/evals/survey.py`).
+
+| Model | Cases | Unpolished wins | Polished wins | Ties | Net for none [bounds] |
+|---|---|---|---|---|---|
+| gemini-3.8-flash (E1) | 40 | 17 | 0 | 23 | +0.425 [+0.275, +0.575] |
+| gemma4:31b (Ollama Cloud, the default model) | 40 | 26 | 2 | 12 | +0.600 [+0.450, +0.750] |
+| claude-haiku-5-5 | 20 | 4 | 0 | 16 | +0.200 [+0.050, +0.350] |
+| nemotron-3-super (survey, indicative) | 4 | 1 | 0 | 3 | +0.25 |
+
+No model's polish won, so `rewrite._KEEP_COSMETIC_POLISH` (family prefixes) ships empty
+and `cosmetic_polish_enabled()` is false everywhere; the polish code stays for evals and
+for a family that later measures better. A blind read of Haiku's 16 changed cases found
+the same pattern as Gemini's: strong, specific openers swapped for weaker ones (Built ->
+Wrote/Coded/Created, Architected -> Produced/Structured, Designed -> Authored) and
+occasional dropped articles or words. Polish cost per resume: Haiku 15 s / $0.0185
+(about a third of its rewrite cost), Nemotron 68 s, bonsai-27b 133-161 s, gemma-4-12b
+187 s, Gemini ~79 s; and on Nemotron one runaway polish reply failed a whole run.

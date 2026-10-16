@@ -4,6 +4,8 @@ model and effort and records telemetry around every call."""
 
 from __future__ import annotations
 
+import json
+import os
 from typing import Any
 
 from resume_tailor import config, workspace
@@ -16,6 +18,16 @@ from .corpus import Case
 
 #: A case needs this many of its saved bullet ids still in today's resume.
 MIN_BULLETS = 3
+#: A model spec (string, or a JSON object) that replaces the profile's Light model for
+#: every arm; the profile's own model still judges (`profile_spec`).
+LIGHT_ENV = "EVAL_LIGHT"
+
+
+def light_override() -> config.ModelSpec | None:
+    raw = os.environ.get(LIGHT_ENV, "").strip()
+    if not raw:
+        return None
+    return json.loads(raw) if raw.startswith("{") else raw
 
 
 def _role(entry) -> str:
@@ -40,7 +52,8 @@ class Replay:
         self.workspace_id = workspace_id
         workspace.bootstrap(workspace_id=workspace_id, migrate=False)
         self.settings = JobSettings.model_validate(workspace.load_settings()["defaults"])
-        self.light_spec = self.settings.ai_models.light.spec("light")
+        self.profile_spec = self.settings.ai_models.light.spec("light")
+        self.light_spec = light_override() or self.profile_spec
         self.resume = data.load()
         # Skill inference is cached; a miss calls the model, so route it like a job would.
         with config.pinned("ollama", overrides=dict.fromkeys(config.PURPOSES, self.light_spec)):

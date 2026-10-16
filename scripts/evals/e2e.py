@@ -33,12 +33,15 @@ CACHED_STAGES = frozenset({"extract", "score", "facets", "skills"})
 
 
 def stage_usage(collector_data: dict) -> dict[str, dict[str, float]]:
-    """`{stage: {calls, input_tokens, output_tokens, request_ms}}` over the run's requests."""
+    """`{stage: {calls, retries, input_tokens, output_tokens, request_ms}}` over the run's
+    requests."""
     out: dict[str, dict[str, float]] = {}
     for r in collector_data.get("requests", []):
         row = out.setdefault(r.get("stage") or "unknown", dict.fromkeys(
-            ("calls", "input_tokens", "output_tokens", "request_ms"), 0))
+            ("calls", "retries", "input_tokens", "output_tokens", "request_ms"), 0))
         row["calls"] += 1
+        # Escalations, repairs and HTTP retries: anything but a stage's own first call.
+        row["retries"] += (r.get("reason") or "generation") != "generation"
         for key in ("input_tokens", "output_tokens", "request_ms"):
             row[key] += r.get(key) or 0
     return out
