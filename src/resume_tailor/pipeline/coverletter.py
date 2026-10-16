@@ -292,6 +292,23 @@ class _GuardResult:
     hard_offenders: list[str]
     soft_offenders: list[str]
     warnings: list[str]
+    #: `hard_offenders` split by kind, for the warning a leftover earns after the retry:
+    #: unsupported numbers or claims, the word band, and style (long dashes, "I" runs).
+    factual: list[str] = field(default_factory=list)
+    style: list[str] = field(default_factory=list)
+    length: str | None = None
+
+    def leftover_warnings(self) -> list[str]:
+        """One warning per kind of hard offender still present; only factual ones are
+        called unsupported claims."""
+        out = []
+        if self.factual:
+            out.append("Unsupported claims remain after retry: " + "; ".join(self.factual))
+        if self.length:
+            out.append(self.length)
+        if self.style:
+            out.append("Style issues remain: " + "; ".join(self.style))
+        return out
 
 
 def _accept_letter(
@@ -314,16 +331,22 @@ def _accept_letter(
     soft: list[str] = []
     warnings = list(field_warnings)
 
-    hard.extend(coverletter_style._numbers_not_in_source(body, source_bullets, jd_text))
-    hard.extend(_claim_fabrication_offenders(paragraphs, source_bullets))
+    factual = [
+        *coverletter_style._numbers_not_in_source(body, source_bullets, jd_text),
+        *_claim_fabrication_offenders(paragraphs, source_bullets),
+    ]
+    hard.extend(factual)
+    style: list[str] = []
 
     for tell in coverletter_style.ai_tells(body):
         if tell.startswith("long dash"):
-            hard.append(tell)
+            style.append(tell)
         else:
             soft.append(tell)
 
-    hard.extend(coverletter_style.consecutive_first_person(paragraphs))
+    style.extend(coverletter_style.consecutive_first_person(paragraphs))
+    hard.extend(style)
+    length = None
     soft.extend(
         coverletter_models._genericness_offenders(paragraphs, company=company, jd_text=jd_text)
     )
@@ -332,6 +355,7 @@ def _accept_letter(
     lo, hi = word_band
     if count < lo or count > hi:
         hard.append(f"word count {count} outside band {lo}-{hi}")
+        length = f"Letter is {count} words (band {lo}–{hi})"
     elif aim is not None and not aim[0] <= count <= aim[1]:
         warnings.append(f"Letter is {count} words; aimed for {aim[0]}-{aim[1]}")
 
@@ -340,12 +364,16 @@ def _accept_letter(
     if cleaned != paragraphs:
         warnings.append("Replaced long dashes with commas")
         paragraphs = cleaned
+        style = [o for o in style if not o.startswith("long dash")]
 
     return _GuardResult(
         paragraphs=paragraphs,
         hard_offenders=hard,
         soft_offenders=soft,
         warnings=warnings,
+        factual=factual,
+        style=style,
+        length=length,
     )
 
 
@@ -556,10 +584,7 @@ def draft_letter(
     warnings = accepted.warnings + [
         f"AI tell: {o}" for o in accepted.soft_offenders
     ]
-    if accepted.hard_offenders:
-        warnings.append(
-            "Guard issues remain after retry: " + "; ".join(accepted.hard_offenders)
-        )
+    warnings += accepted.leftover_warnings()
 
     letter = coverletter_models.CoverLetter(
         company=company,

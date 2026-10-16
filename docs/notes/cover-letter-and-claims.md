@@ -90,3 +90,16 @@ earlier ones. Cross-check any number against the code.
   in sentences per paragraph (opening 2–3, two bodies of 3–4, close 2;
   `_COVER_PROMPT_VERSION` 5); outside the aim is a warning only, and the retry fires on
   length only outside `COVER_WORD_BAND` (230–400). Other hard offenders still retry.
+
+## Leftover guard offenders are reported by kind (2026-10-16)
+
+After the one retry, `_GuardResult.leftover_warnings` splits what remains: unsupported
+numbers or claims read "Unsupported claims remain after retry: ..."; a word count
+outside the hard band reads "Letter is N words (band lo-hi)"; long dashes and "I" runs
+read "Style issues remain: ...". The old single "Guard issues remain" line called a
+too-short letter an unsupported claim. Long dashes the mechanical fix replaced are not
+reported as leftovers. Retry behaviour is unchanged (`hard_offenders` still drives it).
+
+Expansion (`expand._accept_bullets`) now runs `bullet_checks.delegated_authorship` and
+warns once per entry when a bullet claims first-hand work its source credits to a
+vendor or contractor. Report only: no retry, no drop (the paste text is advisory).

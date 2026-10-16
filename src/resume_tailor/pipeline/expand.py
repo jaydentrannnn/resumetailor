@@ -27,7 +27,7 @@ from ..content import industries, style
 from ..content.data import Experience, MasterResume
 from ..infra import atomic, llm, telemetry
 from . import events
-from .bullet_checks import verb_collisions
+from .bullet_checks import delegated_authorship, verb_collisions
 from .fabrication import _check_fabrication, numbers_dropped
 from .fit_types import FitResult
 from .jd import JobRequirements
@@ -294,6 +294,7 @@ def _accept_bullets(
 
     Returns `(kept_bullets, warnings)`. Guard failures drop the bullet; length overflow
     truncates from the end (last bullets first) so earlier, usually stronger claims stay.
+    A first-hand claim on delegated work is only warned about, never dropped.
     """
     warnings: list[str] = []
     kept: list[str] = []
@@ -319,6 +320,17 @@ def _accept_bullets(
     missing = numbers_dropped(entry.bullets, _description_text(kept))
     if missing:
         warnings.append(f"Source number(s) missing from expansion: {', '.join(missing)}")
+
+    # Work the source credits to a vendor or contractor, now claimed first-hand. Report
+    # only: the paste text is advisory and the user edits it before submitting.
+    escalated = list(dict.fromkeys(c for text in kept
+                                   for c in delegated_authorship(entry.bullets, text)))
+    if escalated:
+        verbs = ", ".join(c.split(" ", 1)[0] for c in escalated)
+        warnings.append(
+            f"Claims direct authorship of work the source credits to someone else ({verbs}); "
+            "check before pasting"
+        )
 
     # Verb collisions within the entry are advisory — do not drop, just warn.
     numbered = {str(i): b for i, b in enumerate(kept)}

@@ -188,7 +188,22 @@ def test_draft_letter_word_band_enforced(cover_calls):
         CoverLetterLLM(paragraphs=["Still too short."]),
     )
     letter = draft_letter(resume, reqs, bullets, jd, use_cache=False)
-    assert any("word count" in w for w in letter.warnings)
+    assert "Letter is 3 words (band 10–80)" in letter.warnings
+    assert not any("Unsupported claims" in w for w in letter.warnings)
+
+
+def test_leftover_offenders_are_reported_by_kind(cover_calls):
+    """Only factual leftovers read as unsupported claims; style has its own line."""
+    resume = synthetic_resume()
+    invented = _words(12) + " for 9999 users. " + _words(10)
+    first_person = "I " + _words(10) + ". I " + _words(10) + "."
+    cover_calls(CoverLetterLLM(paragraphs=[invented, first_person]),
+                CoverLetterLLM(paragraphs=[invented, first_person]))
+    letter = draft_letter(resume, _reqs(), _bullets(resume), "Python role.", use_cache=False)
+    claims = [w for w in letter.warnings if w.startswith("Unsupported claims remain")]
+    style_lines = [w for w in letter.warnings if w.startswith("Style issues remain")]
+    assert len(claims) == 1 and "9999" in claims[0] and "consecutive" not in claims[0]
+    assert len(style_lines) == 1 and "consecutive" in style_lines[0]
 
 
 def test_a_letter_short_of_the_aim_but_inside_the_band_is_kept(cover_calls, monkeypatch):
@@ -200,7 +215,7 @@ def test_a_letter_short_of_the_aim_but_inside_the_band_is_kept(cover_calls, monk
     assert len(calls) == 1
     assert "<word_band>60-80</word_band>" in calls[0]["messages"][0]["content"]
     assert any(w.startswith("Letter is 55 words; aimed for 60-80") for w in letter.warnings)
-    assert not any("Guard issues" in w for w in letter.warnings)
+    assert not any("remain" in w for w in letter.warnings)
 
 
 def test_cache_key_changes_when_cover_style_changes(cover_calls):

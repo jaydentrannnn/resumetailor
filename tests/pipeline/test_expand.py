@@ -279,6 +279,24 @@ def test_accept_bullets_strips_leading_glyphs():
     assert kept[1].startswith("Shipped")
 
 
+def test_accept_bullets_warns_on_claimed_authorship_of_delegated_work():
+    """Coordinating a vendor must not quietly become "built"; report it, keep the bullet."""
+    entry = Experience(
+        company="Alpha Co", title="Engineer", start="2024", end="Present",
+        bullets=[_bullet("a1", "Coordinated a vendor to deliver the ingestion layer for "
+                         "the billing pipeline.", ["ingestion"])],
+    )
+    kept, warnings = _accept_bullets(
+        entry, ["Built the ingestion layer for the billing pipeline."], char_limit=2000)
+    assert kept == ["Built the ingestion layer for the billing pipeline."]
+    assert any("direct authorship" in w and "built" in w for w in warnings)
+
+    kept, warnings = _accept_bullets(
+        entry, ["Coordinated a vendor delivering the billing pipeline's ingestion layer."],
+        char_limit=2000)
+    assert not any("direct authorship" in w for w in warnings)
+
+
 def test_format_markdown_includes_hard_facts():
     """The copy-all markdown carries title/company/dates for form fields."""
     from resume_tailor.pipeline.expand import ExpandedEntry, Expansion
