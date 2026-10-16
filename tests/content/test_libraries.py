@@ -73,9 +73,9 @@ def test_add_alias_refuses_a_term_and_a_conflicting_builtin():
 
 
 def test_add_alias_may_retarget_the_users_own_alias():
-    user = libraries.add_alias(UV(), "sql", "mysql")
-    user = libraries.add_alias(user, "sql", "postgresql")
-    assert user.tag_aliases == {"sql": "postgresql"}
+    user = libraries.add_alias(UV(), "rdbms", "mysql")
+    user = libraries.add_alias(user, "rdbms", "postgresql")
+    assert user.tag_aliases == {"rdbms": "postgresql"}
 
 
 def test_add_term_and_refusals():
@@ -105,7 +105,7 @@ def test_remove_addition_only_removes_the_users_own():
 
 
 def test_removing_a_term_that_only_an_alias_created():
-    user = libraries.add_alias(UV(), "sql", "mysql")
+    user = libraries.add_alias(UV(), "rdbms", "mysql")
     assert libraries.remove_addition(user, "term", "mysql").tag_aliases == {}
 
 

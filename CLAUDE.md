@@ -242,6 +242,31 @@ user's own open Word (`convert._convert_word`).
   `output/`, treat it as a regression; whether `data/`/`templates/` *should* be gitignored
   is an open question, so never silently change `.gitignore`.
 
+## Versions and releases
+
+The version is the git tag `vMAJOR.MINOR.PATCH`, following semantic versioning.
+`release.yml` stamps it into the installers, `latest.json` and the extension zip, while
+`pyproject.toml`/`tauri.conf.json` stay `0.1.0`. Bump exactly one number, counting from
+the latest **published** tag (`gh release list`), and reset the numbers to its right
+to 0:
+
+| Number | Bump it when the release… | Example |
+|---|---|---|
+| 1st, MAJOR | breaks compatibility: an older app cannot read the data back (master resume, workspace or settings format change without a migration), or a feature is removed | v1.14.2 → v2.0.0 |
+| 2nd, MINOR | adds a feature or changes what users see or get, including guard, dictionary or prompt changes that alter tailored output | v1.13.0 → v1.14.0 |
+| 3rd, PATCH | only fixes bugs, crashes, packaging or performance, with no new behaviour | v1.14.0 → v1.14.1 |
+
+When a release mixes kinds, the biggest one decides. Docs-, test- and eval-only commits
+ride along with the next release and never get a tag of their own.
+
+Tags use plain numbers only: MSI rejects `-beta` and similar suffixes. Each tag must be
+higher than the last, and a tag is never moved or reused; installers upgrade only when
+the version goes up. Title every release `vX.Y.Z - <short user-facing summary>`. A draft
+that cannot ship is retitled `vX.Y.Z - Unpublished, superseded by vX.Y.Z+1`, and the fix
+ships as the next patch. Every release ships Windows + macOS: tag → draft → check that
+both platforms' assets are attached → publish. Publishing the draft is what makes the
+in-app updater see it.
+
 ## Tool Guidelines
 
 When you need the exact syntactic footprint of a function, type definition, or class ecosystem, use `ast-bro <symbol_name>`.

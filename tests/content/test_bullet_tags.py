@@ -41,6 +41,7 @@ def test_detects_dictionary_terms_and_spellings_with_their_surface_text():
         ("discounted cash flow", "DCF"),
         ("excel", "Excel"),
         ("postgresql", "Postgres"),
+        ("etl", "ETL"),
     ]
 
 
@@ -111,3 +112,8 @@ def test_known_terms_with_explicit_inferred_skills_ignores_the_run_context():
     assert "mocking" not in bullet_tags.known_terms(resume, {})
     # The installed context is read, never replaced, by an explicit call.
     assert "mocking" in bullet_tags.known_terms(resume)
+
+
+def test_tool_names_that_are_ordinary_words_need_capitals():
+    assert bullet_tags.detect("Shipped a swift rollout and a spark of interest") == []
+    assert [c for c, _ in bullet_tags.detect("Built jobs in Spark and Swift")] == ["spark", "swift"]

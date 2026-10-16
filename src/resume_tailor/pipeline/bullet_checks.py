@@ -7,6 +7,7 @@ import re
 from collections.abc import Sequence
 
 from .. import config
+from ..content import bullet_tags
 from ..content.data import Bullet
 from . import fabrication
 
@@ -249,6 +250,36 @@ def delegated_authorship(sources: Sequence[Bullet], rewritten: str) -> list[str]
         offenders.append(claim)
     return offenders
 
+def _squash(text: str) -> str:
+    return re.sub(r"[^a-z0-9]", "", text.lower())
+
+
+def licensed_synonyms(sources: Sequence[Bullet], rewritten: str) -> set[str]:
+    """Squashed spellings (whole and per word) of skills in `rewritten` that the sources
+    state under another name, in the safe direction only.
+
+    The rewrite may use a skill's canonical (general) name or the source's own spelling
+    — "Postgres" -> "PostgreSQL", "VLOOKUP" -> "Excel" — or spell out a source acronym
+    ("RAG" -> "retrieval-augmented generation"); never a narrower alias ("Excel" ->
+    "VLOOKUP"), since dictionary aliases are built for matching, not as true synonyms.
+    """
+    backed = [hit for b in sources for hit in bullet_tags.detect(b.text)]
+    backed += [(config.canonical_tag(t), t) for b in sources for t in b.tags if t.strip()]
+    licensed: set[str] = set()
+    for canonical, surface in bullet_tags.detect(rewritten):
+        words = re.findall(r"[A-Za-z0-9]+", surface)
+        spelled = "".join(w[0] for w in words).lower()
+        for source_canonical, source_surface in backed:
+            if source_canonical != canonical:
+                continue
+            if (_squash(surface) in (_squash(canonical), _squash(source_surface))
+                    or (len(words) > 1 and spelled == _squash(source_surface))):
+                # The guard names a multi-word skill one word at a time.
+                licensed.update(_squash(part) for part in (surface, *surface.split()))
+                break
+    return licensed
+
+
 def guard_offenders(
     sources: Sequence[Bullet], rewritten: str, *, preserve_numbers: bool = False,
 ) -> list[str]:
@@ -260,8 +291,15 @@ def guard_offenders(
     Rebound and authorship claims are prefixed so the retry formatter can name
     them distinctly. Cover-letter and expand callers keep using
     `check_fabrication` / `_check_fabrication` unchanged.
+
+    A term the guard rejects only because the source spells the same skill differently
+    ("PostgreSQL" for "Postgres") is excused when the dictionary maps it in the safe
+    direction (`licensed_synonyms`); a narrower alias still fails.
     """
     offenders = list(fabrication._check_fabrication(sources, rewritten))
+    if offenders:
+        synonyms = licensed_synonyms(sources, rewritten)
+        offenders = [o for o in offenders if _squash(o) not in synonyms]
     for claim in rebound_numbers(sources, rewritten):
         offenders.append(f"{_REBOUND_PREFIX}{claim}")
     for claim in delegated_authorship(sources, rewritten):

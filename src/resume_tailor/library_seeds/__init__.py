@@ -7,9 +7,16 @@ tags are detected from bullet text (`content/bullet_tags.py`) an entry that neve
 in a resume or posting does nothing — so a finance alias costs an engineering resume
 nothing, while a per-profile on/off switch only added a way to get matching wrong.
 
-`terms` maps each canonical term to the other spellings that mean it; `verb_families`
-maps a family name to its opening verbs. Users layer app-wide additions and hidden
-built-ins on top (`libraries.resolve_effective`); this file itself is read-only.
+`terms` maps each canonical term to the other spellings that mean it — a true synonym or a
+*narrower* name ("pyspark" -> "spark"), never a broader one, because the rewrite guard
+accepts a term's canonical name wherever the source states any of its spellings
+(`bullet_checks.licensed_synonyms`); `concepts` lists the terms that name a method
+rather than a tool (`builtin_concepts`); `verb_families` maps a family name to its
+opening verbs. Tool
+coverage was cross-checked against O*NET's Hot Technologies list (O*NET 30, U.S. Department
+of Labor, CC BY 4.0); the entries and spellings here are curated, not copied. Users layer
+app-wide additions and hidden built-ins on top (`libraries.resolve_effective`); this file
+itself is read-only.
 
 Invariants (pinned by `tests/content/test_library_seeds.py`):
 - No alias is also a canonical term (no `a -> b -> c` chains).
@@ -33,6 +40,7 @@ class Dictionary(TypedDict):
     """The shipped dictionary, verb lists normalised to tuples."""
 
     terms: dict[str, tuple[str, ...]]
+    concepts: frozenset[str]
     verb_families: dict[str, tuple[str, ...]]
 
 
@@ -43,8 +51,16 @@ def load() -> Dictionary:
     data = json.loads(raw)
     return Dictionary(
         terms={term: tuple(aliases) for term, aliases in data["terms"].items()},
+        concepts=frozenset(data.get("concepts", ())),
         verb_families={family: tuple(verbs) for family, verbs in data["verb_families"].items()},
     )
+
+
+def builtin_concepts() -> frozenset[str]:
+    """Terms that name a method or practice ("data analysis", "unit testing") rather than a
+    tool, product or credential. Not read by the pipeline yet: a 2026-10 claim check that
+    treated them as soft was measured and dropped (`docs/notes/llm-backends.md`)."""
+    return load()["concepts"]
 
 
 def builtin_aliases() -> dict[str, str]:

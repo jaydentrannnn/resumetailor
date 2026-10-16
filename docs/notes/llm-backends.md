@@ -455,3 +455,66 @@ under), too-long 32 -> 81 (median 11 over); worst when compressing a source long
 max (91% -> 75% in band). The fit loop measures rendered lines, not the band, so the open
 question is how many extra widow/pull-back/grow calls and rounds this causes end to end.
 `PROVIDER_DEFAULT_EFFORT["rewrite"]` stays unset until that is measured.
+
+## 2026-10-15 — Claim check for rewrites: soft tier warns, never retries
+
+**What:** `pipeline/claims.py` flags rewrite claims the fabrication guard's shape test cannot
+see. Hard (`unsupported:`): a named tool/skill the source does not back, in any case or
+position, or a name-like opener. Soft (`keyword:` posting keywords, dictionary concepts,
+sibling tags; `qualifier:` 24 descriptors like "secure"). Hard rides the existing single
+retry, then falls back to source text. Soft-only drafts are kept with a run warning and
+cost no call. Polish, retry and merge candidates that add a claim are discarded. The
+built-in dictionary grew from 120 to 481 terms, with a `concepts` list (soft) and 24
+ordinary-word names that need capitals.
+**Prompt line rejected first:** a rewrite-prompt rule against unsupported descriptors and
+keywords changed nothing beyond noise (30 control postings × Gemini medium, Gemini low,
+gemma4:cloud).
+**Why soft never retries:** e2e, 20 postings, v2 judge (Azure gpt-5-mini), both orders.
+Retrying soft flags took Gemini medium soft flags from 14% to 0%, but:
+- the old code won 15–5 across two baselines;
+- rewrite calls rose 67% (73 → 122);
+- 39% of retried bullets came back as verbatim source text, and the rest got shorter, so
+  the fit loop added a grow round in 12 of 20 postings.
+
+Warn-only, old wins – new wins (ties) against the old code:
+
+| Model | Result |
+|---|---|
+| Gemini medium | 7–5 (8) and 3–1 (16) |
+| Gemini low | 3–8 (9) and 7–5 (8) |
+| gemma4:cloud | 5–5 (10) and 3–6 (11) |
+| claude-haiku-5-5 | 4–2 (13) |
+| Azure gpt-5-mini | 9–4 (6) |
+
+Pooled, that is 41 old wins to 36 new: neutral.
+**Noise:** the same old code run twice scored 3–6, 1–7 and 3–6 (old run first). A
+single-model swing under about 6 postings out of 20 is not a signal.
+**Impact:**
+- Rewrite calls are flat on four models (Gemini medium 74 vs 73/79, Haiku 144 vs 152,
+  Azure 106 vs 106, gemma 108 vs 100/109). Gemini low rose 17% (75 → 88).
+- Source-text fallbacks did not rise, and hard flags were 0 on every model's final output.
+- Must-have coverage over 287 saved postings went from 56.8% to 57.2%.
+- The quality case is not proven; the value is transparency (about 1.6 warnings per posting
+  on Gemini medium, 3.7 on low) and stopping polish/merge from adding claims.
+- Cached JD extractions are redone once, because `tag_alias_fingerprint` changed.
+
+## 2026-10-15 — Claim check not shipped; only the dictionary and the synonym licence
+
+**What:** after the warn-only results above, a blind hand review of 8 Gemini medium
+postings (scored 1–5 for faithful, relevant, specific and clear) agreed with the judge:
+old 14.9/20 vs new 15.2/20, 2 old wins, 4 new, 2 ties. Both versions kept the same
+padding habits (inserting "Python", forcing posting phrases in), because warn-only never
+changes text. Bullet selection, not wording, decided most postings. The hard tier never
+fired in about 2,900 final bullets. CPU cost was negligible (about 3 ms per bullet).
+**Decision:** `pipeline/claims.py`, its warnings, the polish/merge blocking and the
+retry-prompt change are not shipped. They added about 450 lines and a list of terms to
+maintain, for no measured gain.
+Kept:
+- the 481-term dictionary, whose `concepts` list is loaded but not yet read;
+- 24 capital-only ambiguous words;
+- `bullet_checks.licensed_synonyms`, which cut needless fact-check retries 16 → 13 on
+  Gemini medium.
+
+Worth testing next if padding matters, with no new calls: add intensifiers
+("substantially", "significantly") to a qualifier check, and stop "Python" being inserted
+into bullets that don't name it.

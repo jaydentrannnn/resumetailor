@@ -1,10 +1,18 @@
 {
   "schema_version": 1,
   "terms": {
+    ".net": [
+      ".net core",
+      "dotnet"
+    ],
+    "3d printing": [],
     "a/b testing": [
       "a/b tests",
       "ab testing",
       "split testing"
+    ],
+    "accessibility": [
+      "wcag"
     ],
     "account reconciliation": [
       "balance sheet reconciliation",
@@ -27,30 +35,133 @@
     "adaptive insights": [
       "adaptive planning"
     ],
+    "agile": [
+      "agile development",
+      "agile methodology"
+    ],
+    "airflow": [
+      "apache airflow"
+    ],
+    "aladdin": [],
+    "algorithms": [
+      "algorithm design"
+    ],
     "alteryx": [
       "alteryx designer"
     ],
+    "altium": [
+      "altium designer"
+    ],
+    "amazon bedrock": [
+      "aws bedrock"
+    ],
+    "amazon ec2": [
+      "aws ec2"
+    ],
+    "amazon s3": [
+      "aws s3"
+    ],
+    "amplitude": [],
+    "android": [
+      "android development"
+    ],
+    "angular": [
+      "angular.js",
+      "angularjs"
+    ],
+    "anomaly detection": [],
+    "ansible": [],
+    "ansys": [],
+    "anti-money laundering": [
+      "aml"
+    ],
+    "api design": [],
+    "arduino": [],
+    "argus": [],
+    "asana": [],
+    "asic": [],
+    "asp.net": [],
+    "asset management": [],
     "audit": [
       "auditing",
       "external audit"
     ],
+    "autocad": [],
+    "aws": [
+      "amazon web services"
+    ],
+    "aws lambda": [],
+    "azure": [
+      "microsoft azure"
+    ],
+    "azure devops": [],
+    "backend development": [
+      "back end",
+      "back-end",
+      "backend"
+    ],
+    "basel iii": [
+      "basel 3"
+    ],
+    "bash": [
+      "bash scripting"
+    ],
+    "benchmarking": [],
+    "big data": [],
+    "bigquery": [
+      "google bigquery"
+    ],
+    "bitbucket": [],
+    "black-scholes": [
+      "black scholes"
+    ],
     "bloomberg": [
       "bloomberg terminal"
     ],
+    "bpmn": [],
     "budgeting": [
       "budget management",
       "budget planning"
     ],
+    "business analysis": [],
+    "business case": [
+      "business cases"
+    ],
+    "business intelligence": [],
+    "business requirements": [
+      "brd",
+      "business requirements documents"
+    ],
     "buy-side": [
       "buy side"
     ],
+    "c": [],
+    "c#": [
+      "c sharp",
+      "csharp"
+    ],
+    "c++": [
+      "cpp"
+    ],
+    "caching": [],
+    "cadence": [
+      "cadence virtuoso"
+    ],
+    "can bus": [],
     "capital iq": [
       "cap iq",
       "capiq",
       "s&p capital iq"
     ],
+    "capital markets": [],
+    "cash management": [],
+    "cbap": [],
+    "celery": [],
     "certified financial planner": [
       "cfp"
+    ],
+    "cfa": [
+      "chartered financial analyst"
     ],
     "cfa level 1": [
       "cfa l1",
@@ -71,45 +182,159 @@
       "organisational change management",
       "organizational change management"
     ],
+    "chromadb": [],
     "cicd": [
       "ci / cd",
       "ci/cd"
     ],
+    "circuit design": [],
+    "classification": [],
+    "client management": [],
+    "cloud computing": [],
+    "cloud run": [],
+    "cloudformation": [
+      "aws cloudformation"
+    ],
+    "clustering": [],
+    "code review": [
+      "code reviews"
+    ],
+    "commercial banking": [],
     "comparable company analysis": [
       "comparable companies",
       "comps",
       "trading comps"
     ],
+    "competitive analysis": [
+      "competitive landscape",
+      "competitor analysis"
+    ],
+    "compilers": [],
+    "computer architecture": [],
+    "computer networking": [
+      "computer networks"
+    ],
+    "computer vision": [],
+    "computer-aided design": [
+      "cad"
+    ],
+    "concurrency": [
+      "multi-threading",
+      "multithreading"
+    ],
+    "confluence": [],
     "content strategy": [
       "content marketing strategy"
     ],
+    "control systems": [],
+    "cost accounting": [],
     "cost reduction": [
       "cost optimisation",
       "cost optimization",
       "cost savings"
     ],
+    "cost-benefit analysis": [
+      "cost benefit analysis"
+    ],
     "cpa": [
       "certified public accountant"
     ],
+    "credit analysis": [],
+    "credit risk": [],
     "crm": [
       "customer relationship management"
     ],
+    "css": [
+      "css3"
+    ],
+    "cuda": [],
+    "customer segmentation": [],
+    "cybersecurity": [
+      "cyber security",
+      "information security"
+    ],
+    "cypress": [],
+    "dashboards": [
+      "dashboard",
+      "dashboarding"
+    ],
+    "data analysis": [
+      "data analytics"
+    ],
+    "data cleaning": [
+      "data cleansing"
+    ],
+    "data engineering": [],
+    "data governance": [],
+    "data mining": [],
+    "data modeling": [
+      "data modelling"
+    ],
+    "data pipelines": [
+      "data pipeline"
+    ],
+    "data quality": [],
+    "data structures": [
+      "data structure"
+    ],
+    "data visualization": [
+      "data visualisation"
+    ],
+    "data warehousing": [
+      "data warehouse"
+    ],
+    "database design": [],
+    "databricks": [],
+    "datadog": [],
+    "dbt": [],
+    "debt capital markets": [
+      "dcm"
+    ],
+    "debugging": [],
+    "deep learning": [],
+    "deepspeed": [],
+    "derivatives": [],
+    "design patterns": [],
+    "devops": [],
+    "digital transformation": [],
     "discounted cash flow": [
       "dcf",
       "discounted cash flows"
     ],
+    "distributed systems": [],
+    "django": [],
+    "docker": [
+      "docker compose"
+    ],
     "due diligence": [
       "financial due diligence"
     ],
+    "dynamodb": [
+      "amazon dynamodb"
+    ],
+    "elasticsearch": [
+      "elastic search"
+    ],
+    "electron": [],
     "email marketing": [
       "email campaigns"
     ],
+    "embedded c": [],
+    "embedded systems": [],
     "embeddings": [
       "dense embeddings",
       "dense retrieval"
     ],
+    "equity capital markets": [
+      "ecm"
+    ],
+    "equity research": [],
     "erp": [
       "enterprise resource planning"
+    ],
+    "etl": [
+      "etl pipelines",
+      "extract transform load"
     ],
     "evaluation": [
       "offline evaluation"
@@ -131,10 +356,19 @@
       "excel macros",
       "vba"
     ],
+    "experiment design": [],
+    "express.js": [
+      "expressjs"
+    ],
     "factset": [
       "factset data",
       "factset research"
     ],
+    "faiss": [],
+    "fastapi": [],
+    "feature engineering": [],
+    "figma": [],
+    "financial analysis": [],
     "financial modeling": [
       "3 statement model",
       "3-statement model",
@@ -148,26 +382,59 @@
       "fp and a",
       "fp&a"
     ],
+    "financial reporting": [],
     "financial risk manager": [
       "frm"
     ],
+    "financial statement analysis": [],
     "fine-tuning": [
       "fine tuning",
       "finetuning",
       "model fine-tuning"
     ],
+    "firebase": [],
+    "firmware development": [
+      "firmware"
+    ],
+    "fixed income": [],
+    "flask": [],
+    "flutter": [],
     "forecasting": [
       "demand forecasting",
       "demand planning"
+    ],
+    "fpga": [],
+    "frontend development": [
+      "front end",
+      "front-end",
+      "frontend"
     ],
     "full stack": [
       "full-stack",
       "fullstack"
     ],
+    "functional programming": [],
+    "fusion 360": [],
     "gaap": [
       "generally accepted accounting principles",
       "u.s. gaap",
       "us gaap"
+    ],
+    "gap analysis": [],
+    "gcp": [
+      "google cloud",
+      "google cloud platform"
+    ],
+    "generative ai": [
+      "gen ai",
+      "genai"
+    ],
+    "git": [],
+    "github": [],
+    "github actions": [],
+    "gitlab": [],
+    "go": [
+      "golang"
     ],
     "go-to-market": [
       "go to market",
@@ -187,8 +454,32 @@
       "g suite",
       "google workspace"
     ],
+    "google sheets": [],
+    "grafana": [],
+    "graphql": [],
+    "growth strategy": [],
+    "grpc": [],
+    "hadoop": [
+      "apache hadoop"
+    ],
+    "hardware testing": [],
+    "helm": [],
+    "heroku": [],
+    "hive": [
+      "apache hive"
+    ],
+    "html": [
+      "html5"
+    ],
+    "http": [
+      "https"
+    ],
     "hubspot": [
       "hubspot crm"
+    ],
+    "hugging face": [
+      "hugging face transformers",
+      "huggingface"
     ],
     "hybrid retrieval": [
       "hybrid search"
@@ -197,16 +488,21 @@
       "hyperion planning",
       "oracle hyperion"
     ],
+    "hypothesis testing": [],
     "hypothesis-driven": [
       "hypothesis driven",
       "hypothesis-driven analysis"
     ],
+    "i2c": [],
     "ifrs": [
       "international financial reporting standards"
     ],
     "information retrieval": [
       "keyword matching",
       "keyword search"
+    ],
+    "integration testing": [
+      "integration tests"
     ],
     "internal audit": [
       "internal auditing"
@@ -217,15 +513,41 @@
     "investment banking": [
       "ibd"
     ],
+    "ios": [
+      "ios development"
+    ],
     "irr": [
       "internal rate of return"
     ],
+    "java": [],
     "javascript": [
       "js"
+    ],
+    "jenkins": [],
+    "jest": [],
+    "jira": [
+      "atlassian jira"
     ],
     "journal entries": [
       "journal entry"
     ],
+    "jquery": [],
+    "junit": [],
+    "jupyter": [
+      "jupyter notebook",
+      "jupyter notebooks"
+    ],
+    "jwt": [],
+    "kafka": [
+      "apache kafka"
+    ],
+    "kanban": [],
+    "keras": [],
+    "kicad": [],
+    "know your customer": [
+      "kyc"
+    ],
+    "kotlin": [],
     "kpi": [
       "key performance indicator",
       "key performance indicators",
@@ -234,12 +556,24 @@
     "kubernetes": [
       "k8s"
     ],
+    "labview": [],
+    "langchain": [],
+    "langgraph": [],
+    "laravel": [],
     "lean": [
       "lean manufacturing"
     ],
     "leveraged buyout": [
       "lbo",
       "leveraged buyouts"
+    ],
+    "lightgbm": [],
+    "linux": [
+      "red hat linux",
+      "ubuntu"
+    ],
+    "llamaindex": [
+      "llama index"
     ],
     "llm": [
       "large language model",
@@ -250,8 +584,12 @@
       "llm as judge",
       "llm-as-judge evaluation"
     ],
+    "load balancing": [],
     "logistics": [
       "logistics management"
+    ],
+    "looker": [
+      "looker studio"
     ],
     "lseg workspace": [
       "eikon",
@@ -259,13 +597,21 @@
       "refinitiv",
       "refinitiv eikon"
     ],
+    "lucidchart": [],
     "machine learning": [
       "ml"
     ],
+    "market entry strategy": [
+      "market entry"
+    ],
+    "market research": [],
+    "market risk": [],
     "market sizing": [
       "market size analysis",
       "tam sam som"
     ],
+    "matlab": [],
+    "matplotlib": [],
     "mergers and acquisitions": [
       "m & a",
       "m&a",
@@ -275,40 +621,108 @@
       "facebook ads",
       "instagram ads"
     ],
+    "microcontrollers": [
+      "mcu",
+      "microcontroller",
+      "stm32"
+    ],
+    "microservices": [
+      "microservice architecture"
+    ],
     "microsoft 365": [
       "ms 365",
       "ms office",
       "office 365"
     ],
+    "microsoft access": [
+      "ms access"
+    ],
+    "mixpanel": [],
+    "mlflow": [],
+    "mlops": [],
+    "mobile development": [],
+    "model evaluation": [],
+    "mongodb": [
+      "mongo"
+    ],
+    "monte carlo simulation": [
+      "monte carlo"
+    ],
     "month end close": [
       "month end closing",
       "month-end close"
     ],
+    "morningstar": [],
+    "murex": [],
     "natural language processing": [
       "nlp"
     ],
     "net present value": [
       "npv"
     ],
+    "netlify": [],
     "netsuite": [
       "oracle netsuite"
     ],
+    "next.js": [
+      "nextjs"
+    ],
+    "nginx": [],
     "nodejs": [
       "node",
       "node.js"
     ],
+    "nosql": [],
+    "numpy": [],
+    "oauth": [
+      "oauth 2.0",
+      "oauth2"
+    ],
+    "object-oriented programming": [
+      "object oriented programming",
+      "object-oriented design",
+      "oop"
+    ],
+    "observability": [],
+    "ollama": [],
+    "openai api": [],
+    "openapi": [
+      "swagger"
+    ],
+    "opencv": [],
+    "opengl": [],
+    "openshift": [],
     "operating model": [
       "target operating model"
+    ],
+    "operating systems": [],
+    "operational excellence": [],
+    "oracle database": [
+      "oracle db"
+    ],
+    "organizational design": [
+      "org design",
+      "organisational design"
+    ],
+    "oscilloscope": [
+      "oscilloscopes"
     ],
     "paid search": [
       "pay per click",
       "pay-per-click",
       "ppc"
     ],
+    "pandas": [],
+    "pcb design": [
+      "pcb layout"
+    ],
     "performance": [
       "latency optimization",
       "performance measurement"
     ],
+    "perl": [],
+    "php": [],
+    "pinecone": [],
     "pitch book": [
       "pitch books"
     ],
@@ -316,27 +730,51 @@
       "pitchbook data",
       "pitchbook platform"
     ],
+    "playwright": [],
+    "plc programming": [
+      "plc"
+    ],
+    "plotly": [],
     "pmo": [
       "project management office"
     ],
+    "pmp": [
+      "project management professional"
+    ],
+    "portfolio management": [],
     "postgresql": [
       "postgres"
+    ],
+    "postman": [],
+    "power apps": [
+      "powerapps"
+    ],
+    "power automate": [
+      "microsoft power automate"
     ],
     "power bi": [
       "microsoft power bi",
       "power-bi",
       "powerbi"
     ],
+    "power electronics": [],
     "powerpoint": [
       "microsoft powerpoint",
       "ms powerpoint"
     ],
+    "powershell": [],
     "precedent transactions": [
       "precedent transaction analysis",
       "precedents"
     ],
+    "pricing strategy": [],
+    "prince2": [],
     "private equity": [
       "pe"
+    ],
+    "process mapping": [
+      "process flow diagrams",
+      "process flows"
     ],
     "process optimization": [
       "continuous improvement",
@@ -346,27 +784,73 @@
       "purchasing",
       "strategic sourcing"
     ],
+    "product management": [],
+    "product roadmap": [
+      "roadmapping"
+    ],
     "profit and loss": [
       "p and l",
       "p&l",
       "pnl",
       "profit & loss"
     ],
+    "project management": [],
+    "prometheus": [],
+    "prompt engineering": [],
+    "pydantic": [],
+    "pytest": [],
     "python": [
       "py",
       "py3",
       "python3"
     ],
+    "pytorch": [],
+    "qlik": [
+      "qlik sense",
+      "qlikview"
+    ],
+    "quantitative analysis": [
+      "quantitative finance"
+    ],
+    "quartus": [],
+    "query optimization": [],
     "quickbooks": [
       "qbo",
       "quickbooks online"
     ],
+    "r": [],
+    "rabbitmq": [],
     "rag": [
       "retrieval augmented generation",
       "retrieval-augmented generation"
     ],
+    "raspberry pi": [],
+    "ray": [],
+    "react": [
+      "react.js",
+      "reactjs"
+    ],
+    "react native": [],
+    "real estate finance": [],
+    "recommender systems": [
+      "recommendation systems"
+    ],
+    "redis": [],
+    "redshift": [
+      "amazon redshift"
+    ],
+    "redux": [],
+    "regression analysis": [
+      "linear regression",
+      "logistic regression"
+    ],
+    "regulatory reporting": [],
     "reinforcement learning": [
       "rl"
+    ],
+    "requirements gathering": [
+      "requirements analysis",
+      "requirements elicitation"
     ],
     "reranking": [
       "cross-encoder",
@@ -375,15 +859,38 @@
       "reranker tuning",
       "rerankers"
     ],
+    "responsive design": [],
     "rest": [
       "rest api",
       "restful"
     ],
+    "restructuring": [],
     "retrieval eval": [
       "recall@k"
     ],
     "return on invested capital": [
       "roic"
+    ],
+    "revenue recognition": [
+      "asc 606"
+    ],
+    "risk management": [],
+    "robotics": [],
+    "root cause analysis": [],
+    "ros": [
+      "robot operating system",
+      "ros2"
+    ],
+    "rtos": [
+      "freertos",
+      "real-time operating system"
+    ],
+    "ruby": [],
+    "ruby on rails": [],
+    "rust": [],
+    "sagemaker": [
+      "amazon sagemaker",
+      "aws sagemaker"
     ],
     "salesforce": [
       "salesforce crm",
@@ -397,10 +904,23 @@
       "sox",
       "sox compliance"
     ],
+    "sas": [],
+    "sass": [
+      "scss"
+    ],
+    "scala": [],
+    "scikit-learn": [
+      "scikit learn",
+      "sklearn"
+    ],
+    "scipy": [],
+    "scrum": [],
+    "seaborn": [],
     "sec filings": [
       "10-k",
       "10-q"
     ],
+    "selenium": [],
     "sell-side": [
       "sell side"
     ],
@@ -413,6 +933,7 @@
     "sensitivity analysis": [
       "sensitivity analyses"
     ],
+    "sentiment analysis": [],
     "seo": [
       "search engine optimisation",
       "search engine optimization"
@@ -426,36 +947,140 @@
     "series 79": [
       "series 79 license"
     ],
+    "serverless": [],
+    "servicenow": [],
+    "sharepoint": [
+      "microsoft sharepoint"
+    ],
+    "shell scripting": [
+      "shell scripts"
+    ],
     "sie": [
       "securities industry essentials"
     ],
+    "signal processing": [
+      "dsp"
+    ],
+    "simulink": [],
     "six sigma": [
       "6 sigma",
       "6σ",
       "lean six sigma",
       "six-sigma"
     ],
+    "smartsheet": [],
+    "snowflake": [],
     "social media marketing": [
       "smm",
       "social media management"
     ],
+    "software development lifecycle": [
+      "sdlc"
+    ],
+    "soldering": [],
+    "solidworks": [],
+    "spark": [
+      "apache spark",
+      "pyspark"
+    ],
+    "spice": [
+      "ltspice",
+      "ngspice",
+      "pspice"
+    ],
+    "splunk": [],
+    "spring boot": [
+      "spring framework"
+    ],
+    "spss": [
+      "ibm spss"
+    ],
+    "sql": [
+      "structured query language"
+    ],
+    "sql server": [
+      "microsoft sql server",
+      "ms sql server",
+      "mssql"
+    ],
+    "sqlalchemy": [],
+    "sqlite": [],
     "stakeholder management": [
       "stakeholder communications",
       "stakeholder engagement"
     ],
+    "stata": [],
+    "statistics": [
+      "statistical analysis",
+      "statistical modeling"
+    ],
+    "statsmodels": [],
+    "strategic planning": [],
+    "supabase": [],
     "supply chain": [
       "scm",
       "supply chain management"
     ],
+    "svelte": [],
+    "swift": [],
+    "swot analysis": [
+      "swot"
+    ],
+    "synergy analysis": [],
+    "system design": [],
+    "systemverilog": [],
     "tableau": [
       "tableau desktop"
     ],
+    "tailwind css": [
+      "tailwind",
+      "tailwindcss"
+    ],
+    "taxation": [],
+    "tcp/ip": [],
+    "tensorflow": [],
+    "terraform": [],
+    "test automation": [
+      "automated testing"
+    ],
+    "test-driven development": [
+      "tdd",
+      "test driven development"
+    ],
+    "time series analysis": [
+      "time series",
+      "time series forecasting"
+    ],
+    "trading": [],
+    "transfer learning": [],
+    "treasury": [],
+    "trello": [],
     "typescript": [
       "ts"
     ],
+    "uart": [],
+    "uml": [],
     "underwriting": [
       "commercial underwriting",
       "credit underwriting"
+    ],
+    "unit economics": [],
+    "unit testing": [
+      "unit tests"
+    ],
+    "unity": [
+      "unity3d"
+    ],
+    "unix": [],
+    "unreal engine": [],
+    "use cases": [],
+    "user acceptance testing": [
+      "uat"
+    ],
+    "user stories": [],
+    "valuation": [
+      "business valuation",
+      "company valuation"
     ],
     "variance analysis": [
       "budget variance analysis",
@@ -465,13 +1090,281 @@
       "vector databases",
       "vector store"
     ],
+    "vendor management": [],
     "venture capital": [
       "vc"
     ],
+    "vercel": [],
+    "verilog": [],
+    "version control": [],
+    "vhdl": [],
+    "visio": [
+      "microsoft visio"
+    ],
+    "vite": [],
+    "vllm": [],
+    "vlsi": [],
+    "vue": [
+      "vue.js",
+      "vuejs"
+    ],
     "wacc": [
       "weighted average cost of capital"
-    ]
+    ],
+    "wealth management": [],
+    "web development": [],
+    "webassembly": [
+      "wasm"
+    ],
+    "webpack": [],
+    "websockets": [
+      "websocket"
+    ],
+    "weights & biases": [
+      "w&b",
+      "wandb"
+    ],
+    "workflow automation": [],
+    "workshop facilitation": [],
+    "xcode": [],
+    "xgboost": [],
+    "xilinx vivado": [
+      "vivado"
+    ],
+    "yardi": []
   },
+  "concepts": [
+    "3d printing",
+    "a/b testing",
+    "accessibility",
+    "account reconciliation",
+    "accounts payable",
+    "accounts receivable",
+    "accretion dilution analysis",
+    "agile",
+    "algorithms",
+    "anomaly detection",
+    "anti-money laundering",
+    "api design",
+    "asset management",
+    "audit",
+    "backend development",
+    "basel iii",
+    "benchmarking",
+    "big data",
+    "budgeting",
+    "business analysis",
+    "business case",
+    "business intelligence",
+    "business requirements",
+    "buy-side",
+    "caching",
+    "capital markets",
+    "cash management",
+    "change management",
+    "cicd",
+    "circuit design",
+    "classification",
+    "client management",
+    "cloud computing",
+    "clustering",
+    "code review",
+    "commercial banking",
+    "comparable company analysis",
+    "competitive analysis",
+    "compilers",
+    "computer architecture",
+    "computer networking",
+    "computer vision",
+    "computer-aided design",
+    "concurrency",
+    "content strategy",
+    "control systems",
+    "cost accounting",
+    "cost reduction",
+    "cost-benefit analysis",
+    "credit analysis",
+    "credit risk",
+    "crm",
+    "customer segmentation",
+    "cybersecurity",
+    "dashboards",
+    "data analysis",
+    "data cleaning",
+    "data engineering",
+    "data governance",
+    "data mining",
+    "data modeling",
+    "data pipelines",
+    "data quality",
+    "data structures",
+    "data visualization",
+    "data warehousing",
+    "database design",
+    "debt capital markets",
+    "debugging",
+    "deep learning",
+    "derivatives",
+    "design patterns",
+    "devops",
+    "digital transformation",
+    "discounted cash flow",
+    "distributed systems",
+    "due diligence",
+    "email marketing",
+    "embedded systems",
+    "embeddings",
+    "equity capital markets",
+    "equity research",
+    "erp",
+    "etl",
+    "evaluation",
+    "experiment design",
+    "feature engineering",
+    "financial analysis",
+    "financial modeling",
+    "financial planning and analysis",
+    "financial reporting",
+    "financial statement analysis",
+    "fine-tuning",
+    "firmware development",
+    "fixed income",
+    "forecasting",
+    "frontend development",
+    "full stack",
+    "functional programming",
+    "gaap",
+    "gap analysis",
+    "generative ai",
+    "go-to-market",
+    "growth strategy",
+    "hardware testing",
+    "http",
+    "hybrid retrieval",
+    "hypothesis testing",
+    "hypothesis-driven",
+    "ifrs",
+    "information retrieval",
+    "integration testing",
+    "internal audit",
+    "inventory management",
+    "investment banking",
+    "irr",
+    "journal entries",
+    "kanban",
+    "know your customer",
+    "kpi",
+    "lean",
+    "leveraged buyout",
+    "llm",
+    "llm-as-judge",
+    "load balancing",
+    "logistics",
+    "machine learning",
+    "market entry strategy",
+    "market research",
+    "market risk",
+    "market sizing",
+    "mergers and acquisitions",
+    "microservices",
+    "mlops",
+    "mobile development",
+    "model evaluation",
+    "monte carlo simulation",
+    "month end close",
+    "natural language processing",
+    "net present value",
+    "object-oriented programming",
+    "observability",
+    "operating model",
+    "operating systems",
+    "operational excellence",
+    "organizational design",
+    "paid search",
+    "pcb design",
+    "performance",
+    "pitch book",
+    "portfolio management",
+    "power electronics",
+    "precedent transactions",
+    "pricing strategy",
+    "private equity",
+    "process mapping",
+    "process optimization",
+    "procurement",
+    "product management",
+    "product roadmap",
+    "profit and loss",
+    "project management",
+    "prompt engineering",
+    "quantitative analysis",
+    "query optimization",
+    "rag",
+    "real estate finance",
+    "recommender systems",
+    "regression analysis",
+    "regulatory reporting",
+    "reinforcement learning",
+    "requirements gathering",
+    "reranking",
+    "responsive design",
+    "rest",
+    "restructuring",
+    "retrieval eval",
+    "return on invested capital",
+    "revenue recognition",
+    "risk management",
+    "robotics",
+    "root cause analysis",
+    "sarbanes-oxley",
+    "scrum",
+    "sec filings",
+    "sell-side",
+    "sem",
+    "semantic search",
+    "sensitivity analysis",
+    "sentiment analysis",
+    "seo",
+    "serverless",
+    "signal processing",
+    "six sigma",
+    "social media marketing",
+    "software development lifecycle",
+    "soldering",
+    "stakeholder management",
+    "statistics",
+    "strategic planning",
+    "supply chain",
+    "swot analysis",
+    "synergy analysis",
+    "system design",
+    "taxation",
+    "tcp/ip",
+    "test automation",
+    "test-driven development",
+    "time series analysis",
+    "trading",
+    "transfer learning",
+    "treasury",
+    "underwriting",
+    "unit economics",
+    "unit testing",
+    "use cases",
+    "user acceptance testing",
+    "user stories",
+    "valuation",
+    "variance analysis",
+    "vector database",
+    "vendor management",
+    "venture capital",
+    "version control",
+    "vlsi",
+    "wacc",
+    "wealth management",
+    "web development",
+    "workflow automation",
+    "workshop facilitation"
+  ],
   "verb_families": {
     "advise": [
       "advised",

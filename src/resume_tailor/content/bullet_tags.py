@@ -31,7 +31,13 @@ if TYPE_CHECKING:
 #: Dictionary words that are also ordinary English ("the rest of the team", "a lean
 #: budget"). Detected only when the text capitalises them ("REST", "Lean"); otherwise
 #: they are left to the user's Extra skills or the model's inference.
-AMBIGUOUS = frozenset({"rest", "lean", "node", "performance", "evaluation", "comps", "precedents"})
+AMBIGUOUS = frozenset({
+    "rest", "lean", "node", "performance", "evaluation", "comps", "precedents",
+    # Tool names that are ordinary words ("a swift rollout", "a spark of interest").
+    "rust", "swift", "spark", "flask", "react", "unity", "ruby", "hive", "snowflake",
+    "airflow", "ray", "cadence", "spice", "confluence", "electron", "celery", "helm",
+    "jest", "amplitude", "redshift", "argus", "trading", "treasury", "derivatives",
+})
 
 #: Longest resume-own phrase (Skills item, tech, course) treated as a detectable term.
 _MAX_TERM_WORDS = 4

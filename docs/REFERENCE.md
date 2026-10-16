@@ -1457,6 +1457,15 @@ fixed overhead the fit loop never trims.
   raisable in principle, but nothing in the rewrite modules raises it any more — the fallback
   text is always the verbatim source, so the "never invent" invariant holds without
   failing the whole run over one stubborn bullet.
+- **Safe-direction synonyms** (rewrite path only): `guard_offenders` excuses a term only
+  when `bullet_checks.licensed_synonyms` finds it is the canonical name or the source's
+  own spelling of a skill the source states ("Postgres" → "PostgreSQL"), or a source
+  acronym spelled out ("RAG" → "retrieval-augmented generation"). A narrower alias still
+  fails (Excel → VLOOKUP). That is why dictionary aliases must be true synonyms or narrower
+  names (see `library_seeds/__init__.py`). Inferred skills never license anything here.
+  A broader claim check (lowercase tools, posting keywords, qualifiers like "secure") was
+  built, measured on 5 models, and not shipped: it was quality-neutral at best (see
+  `docs/notes/llm-backends.md`).
 - **Cover-letter guard** (`coverletter.py`, narrower than the rewrite guard): numbers and
   first-person claim sentences are checked against the tailored bullets plus resume entry
   headers (employer/title/school/project names packed into a synthetic context bullet —

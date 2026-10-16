@@ -112,3 +112,20 @@ def test_a_page_can_open_with_four_leadership_and_teamwork_verbs():
         "d": "Partnered with Support Operations",
     }
     assert bullet_checks.verb_collisions(texts) == {}
+
+
+def test_concepts_are_terms_and_aliases_point_to_the_general_name():
+    seed = library_seeds.load()
+    assert seed["concepts"] <= set(seed["terms"])
+    # A spelling may be narrower than its term ("pyspark" -> "spark"), never broader:
+    # the rewrite guard lets a source's spelling license the canonical name.
+    for raw, canonical in {"pyspark": "spark", "sklearn": "scikit-learn", "golang": "go",
+                           "freertos": "rtos", "uat": "user acceptance testing",
+                           "wandb": "weights & biases"}.items():
+        assert config.canonical_tag(raw) == canonical, raw
+
+
+def test_tools_are_named_and_methods_are_concepts():
+    concepts = library_seeds.builtin_concepts()
+    assert {"data analysis", "unit testing", "forecasting", "fine-tuning"} <= concepts
+    assert not {"pandas", "kubernetes", "tableau", "cpa", "verilog"} & concepts
