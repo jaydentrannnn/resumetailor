@@ -11,7 +11,7 @@ export interface GlossaryEntry {
 export const GLOSSARY = {
   mustHaves: {
     label: "Required skills covered",
-    help: "How many of the posting's must-have skills your tailored resume shows.",
+    help: "How many of the posting's must-have skills your master resume supports, and how many this tailored page actually names.",
   },
   widows: {
     label: "Short last lines",
@@ -23,7 +23,7 @@ export const GLOSSARY = {
   },
   coverage: {
     label: "Skill match",
-    help: "Share of the posting's skills that appear in your resume.",
+    help: "Share of the posting's must-have skills your master resume supports, before tailoring.",
   },
   calibrated: {
     label: "Page fit tuned for your template",

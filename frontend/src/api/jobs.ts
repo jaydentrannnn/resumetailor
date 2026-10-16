@@ -144,12 +144,35 @@ export type KeywordGap = {
   evidence_tier?: string;
 };
 
+/** One must-have's path from master resume to page. */
+export type KeywordCoverage = {
+  canonical: string;
+  phrase: string;
+  /** How the master resume supports it; null when it doesn't. */
+  resume: "stated" | "inferred" | null;
+  /** Where it ends on the page; null when neither resume nor page has it. */
+  page: "expressed" | "tag_only" | "inferred_only" | "not_selected" | null;
+};
+
+export type CoverageFunnel = {
+  total: number;
+  in_resume: number;
+  on_page: number;
+  keywords: KeywordCoverage[];
+  /** [bullet id, skill] pairs a final bullet names beyond its source. */
+  unsupported_additions: string[][];
+};
+
 export type RunReport = {
   quality?: import("../lib/resumeQuality").ResumeQuality | null;
   title: string;
   seniority: string;
+  /** Must-haves the master resume supports, out of `coverage_total`. */
   coverage_matched: number;
   coverage_total: number;
+  /** Must-haves the tailored page names; absent on runs saved before it existed. */
+  page_coverage_matched?: number | null;
+  coverage_funnel?: CoverageFunnel | null;
   missing_must_haves: string[];
   unmatched_canonicals: string[][];
   gaps: KeywordGap[];
@@ -257,6 +280,8 @@ export type RunHistoryEntry = {
   pages: number | null;
   coverage_matched: number | null;
   coverage_total: number | null;
+  /** Must-haves the tailored page names; absent on older runs. */
+  page_coverage_matched?: number | null;
   has_pdf: boolean;
   has_docx: boolean;
 };

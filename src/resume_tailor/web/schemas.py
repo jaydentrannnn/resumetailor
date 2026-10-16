@@ -578,6 +578,24 @@ class KeywordGapOut(BaseModel):
     evidence_tier: str = "inferred"
 
 
+class KeywordCoverageOut(BaseModel):
+    """One must-have's path from master resume to page (`pipeline/coverage.py`)."""
+
+    canonical: str
+    phrase: str
+    resume: Literal["stated", "inferred"] | None = None
+    page: Literal["expressed", "tag_only", "inferred_only", "not_selected"] | None = None
+
+
+class CoverageFunnelOut(BaseModel):
+    total: int
+    in_resume: int
+    on_page: int
+    keywords: list[KeywordCoverageOut] = Field(default_factory=list)
+    #: `[bullet id, canonical skill]` pairs a final bullet names beyond its source.
+    unsupported_additions: list[list[str]] = Field(default_factory=list)
+
+
 class RunReportOut(BaseModel):
     """Structured end-of-run summary for the results panel."""
 
@@ -617,6 +635,9 @@ class RunReportOut(BaseModel):
     topped_up: list[str] = Field(default_factory=list)
     fit_trace: list[dict] = Field(default_factory=list)
     quality: dict | None = None
+    #: Must-haves the rendered page names; None for runs saved before it existed.
+    page_coverage_matched: int | None = None
+    coverage_funnel: CoverageFunnelOut | None = None
 
 
 class ExpandedEntryOut(BaseModel):
@@ -750,6 +771,7 @@ class RunHistoryEntryOut(BaseModel):
     pages: int | None = None
     coverage_matched: int | None = None
     coverage_total: int | None = None
+    page_coverage_matched: int | None = None
     has_pdf: bool = False
     has_docx: bool = False
 

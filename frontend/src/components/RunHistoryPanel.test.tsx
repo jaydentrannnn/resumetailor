@@ -19,9 +19,23 @@ const failed: RunHistoryEntry = {
   has_docx: false,
 };
 
+const tailored: RunHistoryEntry = {
+  ...failed,
+  job_id: "run-2",
+  status: "succeeded",
+  title: "Analyst",
+  error: null,
+  pages: 1,
+  coverage_matched: 4,
+  coverage_total: 5,
+  page_coverage_matched: 3,
+};
+const older: RunHistoryEntry = { ...tailored, job_id: "run-3", title: "Older" };
+delete older.page_coverage_matched;
+
 vi.mock("../state/runState", () => ({
   useRunState: () => ({
-    history: [failed],
+    history: [failed, tailored, older],
     jobId: null,
     loadRun: vi.fn(),
     busy: false,
@@ -47,5 +61,16 @@ describe("RunHistoryPanel", () => {
     expect(screen.getByRole("dialog", { name: "Error details" }).textContent).toContain(
       "Traceback line two",
     );
+  });
+
+  it("shows the on-page count beside the resume match, and only when the run has one", () => {
+    render(<RunHistoryPanel />);
+    // Each row may render in more than one layout; count per run, not in total.
+    const withPage = screen.getAllByRole("progressbar", { name: "Skill match for Analyst" });
+    expect(screen.getAllByRole("progressbar", { name: "Skill match for Older" })).toHaveLength(
+      withPage.length,
+    );
+    expect(screen.getAllByText(/on page$/)).toHaveLength(withPage.length);
+    expect(screen.getAllByText("3/5 on page")).toHaveLength(withPage.length);
   });
 });

@@ -9,6 +9,7 @@ from resume_tailor import config
 from resume_tailor.content import bullet_tags
 from resume_tailor.content.data import Bullet, MasterResume
 from resume_tailor.pipeline import bullet_checks, fit_selection, selection
+from resume_tailor.pipeline import coverage as page_coverage
 from resume_tailor.pipeline.expand import Expansion
 from resume_tailor.pipeline.jd import JobRequirements, verify_verbatim
 from resume_tailor.pipeline.rewrite_prompts import length_band
@@ -64,6 +65,26 @@ def rewrite_metrics(
         "phrase_collisions": len(collisions),
         "changed_rate": sum(1 for i, t in final.items() if t != by_id[i].text) / n,
         "mean_chars": sum(len(t) for t in final.values()) / n,
+        **funnel_metrics(sources, final, requirements),
+    }
+
+
+def funnel_metrics(
+    sources: Sequence[Bullet], final: dict[str, str], requirements: JobRequirements
+) -> dict[str, float]:
+    """`pipeline/coverage.py`'s funnel at bullet level: must-haves the sources state or
+    only infer, the ones the final texts name, and skills the rewrites added."""
+    must = _must_haves(requirements)
+    stated = page_coverage._stated(sources, frozenset())
+    inferred = {t for b in sources for t in bullet_tags.match_tags(b)} - stated
+    shown = [k for k in must if any(_shows(t, k) for t in final.values())]
+    by_id = {b.id: b for b in sources}
+    return {
+        "must_stated": sum(1 for k in must if k.canonical in stated),
+        "must_inferred_only": sum(1 for k in must if k.canonical in inferred),
+        "must_expressed": len(shown),
+        "must_expressed_unstated": sum(1 for k in shown if k.canonical not in stated),
+        "unsupported_additions": len(page_coverage._additions(by_id, final, {}, frozenset())),
     }
 
 

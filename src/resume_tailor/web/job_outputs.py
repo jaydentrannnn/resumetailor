@@ -7,15 +7,18 @@ from datetime import UTC, datetime
 from pathlib import Path
 
 from resume_tailor.pipeline import (
+    coverage,
     coverletter_models,
     expand,
     report,
     skills,
 )
 from resume_tailor.web.schemas import (
+    CoverageFunnelOut,
     CoverLetterOut,
     ExpandedEntryOut,
     ExpansionOut,
+    KeywordCoverageOut,
     KeywordGapOut,
     RunReportOut,
     SectionSummaryOut,
@@ -203,4 +206,21 @@ def _to_report_out(data: report.RunReport) -> RunReportOut:
         topped_up=data.topped_up,
         fit_trace=data.fit_trace,
         quality=data.quality,
+        page_coverage_matched=data.page_coverage_matched,
+        coverage_funnel=_to_funnel_out(data.coverage_funnel),
+    )
+
+
+def _to_funnel_out(funnel: coverage.CoverageFunnel | None) -> CoverageFunnelOut | None:
+    if funnel is None:
+        return None
+    return CoverageFunnelOut(
+        total=funnel.total,
+        in_resume=funnel.in_resume,
+        on_page=funnel.on_page,
+        keywords=[
+            KeywordCoverageOut(canonical=k.canonical, phrase=k.phrase, resume=k.resume, page=k.page)
+            for k in funnel.keywords
+        ],
+        unsupported_additions=[[bid, skill] for bid, skill in funnel.unsupported_additions],
     )

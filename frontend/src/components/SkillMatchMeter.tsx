@@ -18,7 +18,7 @@ export function SkillMatchMeter({
   return (
     <span
       className="inline-flex items-center gap-2"
-      title={`${matched} of ${total} skills matched`}
+      title={`${matched} of ${total} required skills in your resume`}
     >
       <span className="font-mono text-[13px] tabular-nums text-ink">{pct}</span>
       <Meter
@@ -26,7 +26,7 @@ export function SkillMatchMeter({
         tone="ink"
         value={pct}
         label={label}
-        valueText={`${matched} of ${total} skills matched`}
+        valueText={`${matched} of ${total} required skills in your resume`}
       />
     </span>
   );

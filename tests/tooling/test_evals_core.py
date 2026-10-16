@@ -216,6 +216,18 @@ def test_rewrite_metrics_count_fallbacks_mirroring_and_length():
     assert m["changed_rate"] == 0.5
 
 
+def test_rewrite_metrics_follow_must_haves_to_the_final_text():
+    sources = [
+        Bullet(id="a", text="Built a service in Python for billing.", tags=[]),
+        Bullet(id="b", text="Built dashboards.", tags=["Tableau"]),
+    ]
+    texts = {"a": "Built a Python and Docker service for billing.", "b": "Built dashboards."}
+    reqs = _requirements(("Python", "must_have"), ("Tableau", "must_have"))
+    m = metrics.rewrite_metrics(sources, texts, {}, reqs, budget=202)
+    assert (m["must_stated"], m["must_expressed"], m["must_expressed_unstated"]) == (2, 1, 0)
+    assert m["unsupported_additions"] == 1, "Docker: neither stated nor tagged in the source"
+
+
 def test_rewrite_metrics_count_leftover_guard_hits():
     sources = [Bullet(id="a", text="Built a service in Python.", tags=["python"])]
     texts = {"a": "Built a Kubernetes service in Python."}

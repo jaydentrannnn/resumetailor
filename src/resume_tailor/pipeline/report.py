@@ -20,6 +20,7 @@ from typing import TYPE_CHECKING, Literal
 from .. import config
 from ..content import bullet_tags as computed_tags
 from ..content.data import Experience, MasterResume, Project
+from . import coverage
 from .facets_labels import labels_are_equivalent
 from .fit_types import FitResult
 from .jd import JobRequirements, extraction_diagnosis
@@ -371,6 +372,11 @@ class RunReport:
     fit_trace: list[dict] = field(default_factory=list)
     quality: dict | None = None
 
+    #: Must-haves the rendered page names, out of `coverage_total`, and the funnel from
+    #: master resume to page behind it (`coverage.py`).
+    page_coverage_matched: int | None = None
+    coverage_funnel: coverage.CoverageFunnel | None = None
+
 
 def report_data(
     resume: MasterResume,
@@ -389,6 +395,7 @@ def report_data(
     """
     master = master or resume
     matched, total = keyword_coverage(requirements, master)
+    funnel = coverage.for_run(requirements, master, resume, result)
     return RunReport(
         title=requirements.title,
         seniority=requirements.seniority,
@@ -434,6 +441,8 @@ def report_data(
         topped_up=list(result.topped_up),
         fit_trace=[dict(step) for step in result.trace],
         quality=result.quality,
+        page_coverage_matched=funnel.on_page,
+        coverage_funnel=funnel,
     )
 
 
@@ -454,7 +463,11 @@ def format_report(
     diagnosis = extraction_diagnosis(requirements)
     if diagnosis is None:
         pct = f"{matched / total:.0%}" if total else "n/a"
-        coverage_line = f"Must-have keyword coverage: {matched}/{total} ({pct})"
+        on_page = coverage.for_run(requirements, master, resume, result).on_page
+        coverage_line = (
+            f"Must-have keyword coverage: {matched}/{total} ({pct}) in your resume, "
+            f"{on_page}/{total} on this page"
+        )
     else:
         labels = {
             "no_keywords": "no keywords extracted — coverage inconclusive",

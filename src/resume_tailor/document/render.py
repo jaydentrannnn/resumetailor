@@ -354,6 +354,39 @@ def _contact_richtext(
     return rt
 
 
+def visible_text(
+    resume: MasterResume, bullets: dict[str, str], *, layout: dict | None = None
+) -> list[str]:
+    """The skill-bearing text `build_context` puts on the page, one string per item.
+
+    Same selection rules as `build_context`: enabled sections only, an entry whose
+    bullets all dropped is omitted (its project tech with it), bullets in their final
+    wording. Items: bullets, project tech, coursework and education details, skills
+    items, list items. Pure: no template, no document.
+    """
+    layout = layout if layout is not None else active_layout()
+    enabled = layout.get("enabled") or {}
+    out: list[str] = []
+    for section in resume.sections:
+        key = config.SECTION_KIND_ENABLED_KEY[section.kind]
+        if not enabled.get(key, config.SECTION_KIND_ENABLED_DEFAULT[section.kind]):
+            continue
+        for entry in section.entries:
+            if section.kind in ("experience", "project"):
+                lines = [bullets[b.id] for b in entry.bullets if b.id in bullets]
+                if lines:
+                    out.extend(lines)
+                    out.extend(getattr(entry, "tech", []) or [])
+            elif section.kind == "education":
+                out.extend(entry.coursework)
+                out.extend(entry.details)
+            elif section.kind == "skills":
+                out.extend(entry.items)
+            else:
+                out.append(entry.text)
+    return out
+
+
 def build_context(
     resume: MasterResume,
     tpl: DocxTemplate,

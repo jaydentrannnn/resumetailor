@@ -170,11 +170,21 @@ export function RunHistoryPanel() {
       sortable: true,
       cell: (run) =>
         run.coverage_total != null && run.coverage_total > 0 ? (
-          <SkillMatchMeter
-            matched={run.coverage_matched ?? 0}
-            total={run.coverage_total}
-            label={`Skill match for ${run.title || "this run"}`}
-          />
+          <span className="inline-flex items-center gap-2">
+            <SkillMatchMeter
+              matched={run.coverage_matched ?? 0}
+              total={run.coverage_total}
+              label={`Skill match for ${run.title || "this run"}`}
+            />
+            {run.page_coverage_matched != null && (
+              <span
+                className="whitespace-nowrap text-xs text-ink-muted"
+                title={`${run.page_coverage_matched} of ${run.coverage_total} required skills named on the tailored page`}
+              >
+                {run.page_coverage_matched}/{run.coverage_total} on page
+              </span>
+            )}
+          </span>
         ) : (
           <span className="text-ink-muted">—</span>
         ),

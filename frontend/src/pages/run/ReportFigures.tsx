@@ -2,6 +2,7 @@ import type { ReactNode } from "react";
 import type { RunReport } from "../../api";
 import { DataList, InlineHelp, Stat } from "../../components/ui";
 import { GLOSSARY, type GlossaryKey } from "../../lib/glossary";
+import { CoverageBreakdown } from "./CoverageBreakdown";
 
 /** A glossary term as a label, with its "?" explanation. */
 function Term({ term }: { term: GlossaryKey }) {
@@ -38,8 +39,13 @@ export function ReportFigures({ report }: { report: RunReport }) {
           <span className="block font-mono tabular-nums">
             {diagnosis
               ? "couldn't be measured"
-              : `${report.coverage_matched} of ${report.coverage_total}`}
+              : `${report.coverage_matched} of ${report.coverage_total} in your resume`}
           </span>
+          {!diagnosis && report.page_coverage_matched != null && (
+            <span className="block font-mono tabular-nums">
+              {`${report.page_coverage_matched} of ${report.coverage_total} on this page`}
+            </span>
+          )}
         </>
       ),
     },
@@ -70,6 +76,7 @@ export function ReportFigures({ report }: { report: RunReport }) {
           },
         ]}
       />
+      {!diagnosis && <CoverageBreakdown funnel={report.coverage_funnel} />}
     </div>
   );
 }

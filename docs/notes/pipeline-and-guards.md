@@ -641,3 +641,19 @@ real drops or the deliberate cases above.
 - **A corrupt cache file is a miss** (`infra/atomic.read_cached`): logged, never deleted;
   the stage recomputes and replaces it through `atomic.write_text`. Before, a torn score
   cache raised, and the run fell back to keyword-only ranking.
+
+## Coverage funnel: "in your resume" vs "on this page" (2026-10-16)
+
+- The old must-have figure counted keywords the *master resume* supports, so a run that
+  dropped every matching bullet still showed full coverage. `pipeline/coverage.py` now
+  derives, per must-have keyword: resume evidence (`stated` = Extra skills, detected text
+  or the Skills/tech/coursework pools; `inferred` = `tag_infer` only, matching-only and
+  never counted as substantiated) and page evidence (`expressed` = named in the rendered
+  text from `render.visible_text`; `tag_only` = an on-page bullet is tagged for it but
+  never names it; `inferred_only`; `not_selected`).
+- The denominator is every `must_have` keyword (soft included), so `in_resume` equals the
+  existing `coverage_matched`; soft skills are expected to land as "backed, never named".
+- `unsupported_additions` lists dictionary skills a final bullet names that its source
+  neither states nor tags. Worded "potentially unsupported": the guard already accepted
+  them (synonyms, licensed variants), so this is a review aid, not a violation.
+- Old runs carry no page figure; the history and report show only the master number.
