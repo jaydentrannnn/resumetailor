@@ -10,7 +10,7 @@ from pydantic import BaseModel, Field
 from .. import config
 from ..content import industries
 from ..content.data import Bullet
-from ..infra import llm, telemetry
+from ..infra import atomic, llm, telemetry
 from . import events, rewrite_prompts
 from .jd import JobRequirements
 
@@ -113,9 +113,9 @@ def score_table(
 
     config.CACHE_DIR.mkdir(parents=True, exist_ok=True)
     cache_path = _score_cache_path(bullets, requirements)
-    if use_cache and cache_path.exists():
+    cached = atomic.read_cached(cache_path, ScoreTable) if use_cache else None
+    if cached is not None:
         events.emit(on_event, "score", "Reusing cached relevance scores", cached=True)
-        cached = ScoreTable.model_validate_json(cache_path.read_text(encoding="utf-8"))
         return {s.id: s.relevance for s in cached.scores}
 
     events.emit(
@@ -162,7 +162,5 @@ def score_table(
         if s.id in known
     ]
 
-    cache_path.write_text(
-        ScoreTable(scores=kept).model_dump_json(indent=2), encoding="utf-8"
-    )
+    atomic.write_text(cache_path, ScoreTable(scores=kept).model_dump_json(indent=2))
     return {s.id: s.relevance for s in kept}

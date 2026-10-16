@@ -624,3 +624,20 @@ topics". Replay against the whole pre-change package in a worktree
 relabelled (a real drop of "16K-token" now reads `missing_number:16K`; "85 reached" now
 reads "85 benchmark" for a draft that invented an evaluation benchmark), 5 retained, all
 real drops or the deliberate cases above.
+
+## Blank replies, estimated fit, cache keys and corrupt caches (2026-10-16)
+
+- **Blank model text never replaces text.** A blank first draft counts as missing (source
+  text stands, no retry); a blank factual retry falls back to source; `_keep_opener`
+  discards a blank polish candidate (the pull-back path accepted "" as shorter); a blank
+  merge keeps the members. Expansion already ignored blanks.
+- **Estimated page counts always warn** (`resume_quality.ESTIMATED_WARNING`), even at full
+  fill, so Fill asks for acknowledgement. No extra measurement retry: `convert.py`
+  already retries its known transient failure.
+- **Cache keys cover every prompt-visible input**: expansion adds each bullet's tags,
+  skills the per-tag bullet counts, cover letters the education/skills/entry-header
+  blocks (`resume` is a required key input), facets the formatted project, coursework and
+  skill blocks (names, link setting, `MAX_PROJECT_TECH`, coursework budget).
+- **A corrupt cache file is a miss** (`infra/atomic.read_cached`): logged, never deleted;
+  the stage recomputes and replaces it through `atomic.write_text`. Before, a torn score
+  cache raised, and the run fell back to keyword-only ranking.

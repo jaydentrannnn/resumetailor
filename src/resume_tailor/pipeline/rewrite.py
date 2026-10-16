@@ -147,6 +147,9 @@ def rewrite_bullets(
             # An unknown id means the mapping is unreliable; skip rather than guess.
             continue
         text = item.text.strip()
+        if not text:
+            # A blank rewrite is a missing one: the source text stands (below).
+            continue
         offenders = bullet_checks.guard_offenders([source], text, preserve_numbers=True)
         if offenders:
             rejected[item.id] = (text, offenders)

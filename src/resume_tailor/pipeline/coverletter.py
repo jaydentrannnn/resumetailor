@@ -22,7 +22,7 @@ from pathlib import Path
 from .. import config
 from ..content import industries, style
 from ..content.data import Bullet, MasterResume
-from ..infra import llm, telemetry
+from ..infra import atomic, llm, telemetry
 from . import coverletter_format, coverletter_models, coverletter_style, events
 from .fabrication import _check_fabrication
 from .jd import JobRequirements
@@ -357,9 +357,18 @@ def _cache_path(
     word_band: tuple[int, int],
     instruction: str = "",
     angles: coverletter_models.CoverAngles | None = None,
+    resume: MasterResume,
 ) -> Path:
-    """Cache key covering everything the cover letter depends on."""
+    """Cache key covering everything the cover letter depends on.
+
+    `resume` adds the education, skills and entry-header blocks the prompt shows.
+    """
     angles = angles or coverletter_models.CoverAngles()
+    shown = (
+        coverletter_format._format_education(resume),
+        coverletter_format._format_skills(resume),
+        coverletter_format._format_tailored_entries(resume, bullets),
+    )
     payload = "\n".join(
         [
             str(_COVER_PROMPT_VERSION),
@@ -371,6 +380,7 @@ def _cache_path(
             requirements.model_dump_json(),
             jd_text,
             *(f"{bid}:{text}" for bid, text in sorted(bullets.items())),
+            *shown,
         ]
     )
     digest = hashlib.sha256(payload.encode("utf-8")).hexdigest()[:12]
@@ -478,14 +488,16 @@ def draft_letter(
         word_band=word_band,
         instruction=instruction,
         angles=angles,
+        resume=resume,
     )
 
-    llm_result: coverletter_models.CoverLetterLLM | None = None
-    if use_cache and cache_path.exists() and not instruction.strip():
+    llm_result = (
+        atomic.read_cached(cache_path, coverletter_models.CoverLetterLLM)
+        if use_cache and not instruction.strip()
+        else None
+    )
+    if llm_result is not None:
         events.emit(on_event, "cover", "Reusing cached cover letter", cached=True)
-        llm_result = coverletter_models.CoverLetterLLM.model_validate_json(
-            cache_path.read_text(encoding="utf-8")
-        )
     else:
         events.emit(
             on_event,
@@ -504,7 +516,7 @@ def draft_letter(
             angles=angles,
         )
         if not instruction.strip():
-            cache_path.write_text(llm_result.model_dump_json(indent=2), encoding="utf-8")
+            atomic.write_text(cache_path, llm_result.model_dump_json(indent=2))
 
     accepted = _accept_letter(
         llm_result,
@@ -538,7 +550,7 @@ def draft_letter(
             word_band=limits,
             aim=word_band,
         )
-        cache_path.write_text(llm_result.model_dump_json(indent=2), encoding="utf-8")
+        atomic.write_text(cache_path, llm_result.model_dump_json(indent=2))
 
     company, location, addressee, _ = _validate_posting_fields(llm_result, jd_text)
     warnings = accepted.warnings + [

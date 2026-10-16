@@ -99,10 +99,10 @@ def _merge_bullets(
     accepted: list[MergeGroup] = []
 
     for group in groups:
-        candidate = by_id.get(group.survivor_id)
+        candidate = (by_id.get(group.survivor_id) or "").strip()
         if not candidate:
+            # Blank: no merge, the constituent bullets stay.
             continue
-        candidate = candidate.strip()
 
         if len(candidate) > hard_max:
             continue

@@ -30,7 +30,7 @@ from pydantic import BaseModel, Field
 
 from .. import config
 from ..content import libraries, library_models
-from ..infra import llm
+from ..infra import atomic, llm
 from . import bullet_checks, events, report
 from .events import ProgressCallback
 
@@ -192,9 +192,10 @@ def propose_vocabulary(
     config.CACHE_DIR.mkdir(parents=True, exist_ok=True)
     cache_path = _cache_path(known_tags, unmatched, unknown_verbs, families, jd_text)
 
-    if use_cache and cache_path.exists():
+    cached = atomic.read_cached(cache_path, VocabularyProposal) if use_cache else None
+    if cached is not None:
         events.emit(on_event, "propose", "Reusing cached vocabulary proposal", cached=True)
-        return VocabularyProposal.model_validate_json(cache_path.read_text(encoding="utf-8"))
+        return cached
 
     events.emit(
         on_event,
@@ -241,7 +242,7 @@ def propose_vocabulary(
             f"Model did not return a parseable vocabulary proposal "
             f"(stop_reason={response.stop_reason!r})."
         )
-    cache_path.write_text(raw.model_dump_json(indent=2), encoding="utf-8")
+    atomic.write_text(cache_path, raw.model_dump_json(indent=2))
     return raw
 
 

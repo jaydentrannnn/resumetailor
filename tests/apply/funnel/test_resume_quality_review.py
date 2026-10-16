@@ -46,6 +46,17 @@ def test_entire_selected_section_only_and_underfill():
     ).warnings
 
 
+def test_estimated_page_count_warns_even_at_full_fill():
+    resume = synthetic_resume()
+    bullets = {b.id: b.text for b in resume.all_bullets()}
+    measured = resume_quality.assess(resume, bullets, {}, fill_ratio=0.95, fill_target=0.93)
+    estimated = resume_quality.assess(
+        resume, bullets, {}, fill_ratio=0.95, fill_target=0.93, estimated=True
+    )
+    assert resume_quality.ESTIMATED_WARNING not in measured.warnings
+    assert estimated.warnings == [resume_quality.ESTIMATED_WARNING]
+
+
 def test_unsupported_section_warning_uses_section_identity():
     resume = synthetic_resume()
     quality = resume_quality.assess(

@@ -3,13 +3,19 @@
 from __future__ import annotations
 
 import json
-import os
 from pathlib import Path
 
 from pydantic import BaseModel, Field
 
 from resume_tailor import config
 from resume_tailor.content.data import MasterResume
+from resume_tailor.infra import atomic
+
+#: Shown whenever the page count came from the text estimate, even at full fill: the
+#: estimate cannot see the template, so the page fit itself is unverified.
+ESTIMATED_WARNING = (
+    "Page count is estimated (PDF measurement was unavailable), so the page fit isn't verified."
+)
 
 
 class MissingSection(BaseModel):
@@ -43,6 +49,8 @@ class ResumeQuality(BaseModel):
         ):
             prefix = "Estimated page fill" if self.estimated else "Page fill"
             result.append(f"{prefix} is {self.fill_ratio:.0%}; target is {self.fill_target:.0%}.")
+        if self.estimated:
+            result.append(ESTIMATED_WARNING)
         for section in self.missing_sections:
             result.append(f"{section.title} is missing: {section.reason}.")
         return result
@@ -83,10 +91,7 @@ def assess(
 
 
 def save(out_dir: Path, quality: ResumeQuality) -> None:
-    path = out_dir / "quality.json"
-    partial = path.with_suffix(".partial")
-    partial.write_text(quality.model_dump_json(indent=2), "utf-8")
-    os.replace(partial, path)
+    atomic.write_text(out_dir / "quality.json", quality.model_dump_json(indent=2))
 
 
 def read(out_dir: Path) -> ResumeQuality:

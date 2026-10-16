@@ -9,11 +9,16 @@ reader holds the destination open.
 
 from __future__ import annotations
 
+import logging
 import os
 import threading
 import time
 import uuid
 from pathlib import Path
+
+from pydantic import BaseModel
+
+log = logging.getLogger(__name__)
 
 #: One rename at a time across the process; renames are fast, so a single lock is enough.
 _REPLACE_LOCK = threading.Lock()
@@ -40,3 +45,19 @@ def write_text(path: Path, text: str) -> None:
         replace_with_retry(tmp, path)
     finally:
         tmp.unlink(missing_ok=True)
+
+
+def read_cached[M: BaseModel](path: Path, model: type[M]) -> M | None:
+    """``path`` parsed as ``model``, or None when it is absent, unreadable or corrupt.
+
+    A corrupt cache entry is a miss: the stage recomputes and replaces it with
+    `write_text`. Nothing is deleted here, so a file another job has just rewritten is
+    never removed from under it.
+    """
+    try:
+        return model.model_validate_json(path.read_text(encoding="utf-8"))
+    except FileNotFoundError:
+        return None
+    except (OSError, ValueError) as exc:
+        log.warning("Ignoring unreadable cache file %s: %s", path.name, exc)
+        return None

@@ -211,11 +211,11 @@ def test_cache_key_changes_when_cover_style_changes(cover_calls):
     jd = "Python role at Example Corp."
     style.activate(cover=None)
     path_default = _cache_path(
-        bullets, reqs, jd_text=jd, word_band=config.COVER_WORD_AIM
+        bullets, reqs, jd_text=jd, word_band=config.COVER_WORD_AIM, resume=resume
     )
     style.activate(cover="Use shorter sentences.")
     path_override = _cache_path(
-        bullets, reqs, jd_text=jd, word_band=config.COVER_WORD_AIM
+        bullets, reqs, jd_text=jd, word_band=config.COVER_WORD_AIM, resume=resume
     )
     assert path_default != path_override
 
@@ -353,7 +353,9 @@ def test_cache_key_changes_with_each_angle_field():
     reqs = _reqs()
     bullets = _bullets(resume)
     jd = "Python role."
-    base = _cache_path(bullets, reqs, jd_text=jd, word_band=config.COVER_WORD_AIM)
+    base = _cache_path(
+        bullets, reqs, jd_text=jd, word_band=config.COVER_WORD_AIM, resume=resume
+    )
     for field, value in (
         ("why_company", "why"),
         ("problem", "prob"),
@@ -366,6 +368,7 @@ def test_cache_key_changes_with_each_angle_field():
             jd_text=jd,
             word_band=config.COVER_WORD_AIM,
             angles=coverletter_models.CoverAngles(**{field: value}),
+            resume=resume,
         )
         assert other != base, field
 
@@ -401,7 +404,8 @@ def test_angles_do_not_disable_caching_or_guard_retry(cover_calls, tmp_path, mon
     )
     assert len(calls) == 2, "angles must not skip the guard retry"
     cache = _cache_path(
-        bullets, reqs, jd_text=jd, word_band=config.COVER_WORD_AIM, angles=angles
+        bullets, reqs, jd_text=jd, word_band=config.COVER_WORD_AIM, angles=angles,
+        resume=resume,
     )
     assert cache.exists(), "angles must not skip the cache write"
     assert letter.paragraphs == good.paragraphs

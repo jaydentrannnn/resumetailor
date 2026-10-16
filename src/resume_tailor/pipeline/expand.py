@@ -25,7 +25,7 @@ from pydantic import BaseModel, Field
 from .. import config
 from ..content import industries, style
 from ..content.data import Experience, MasterResume
-from ..infra import llm, telemetry
+from ..infra import atomic, llm, telemetry
 from . import events
 from .bullet_checks import verb_collisions
 from .fabrication import _check_fabrication, numbers_dropped
@@ -244,7 +244,7 @@ def _cache_path(
             requirements.model_dump_json(),
             *(
                 f"{key}\t{e.company}\t{e.title}\t"
-                + "\t".join(f"{b.id}:{b.text}" for b in e.bullets)
+                + "\t".join(f"{b.id}:{b.text}:{','.join(sorted(b.tags))}" for b in e.bullets)
                 for key, e in keyed
             ),
         ]
@@ -397,13 +397,10 @@ def expand_experience(
 
     config.CACHE_DIR.mkdir(parents=True, exist_ok=True)
     cache_path = _cache_path(keyed, requirements, char_limit=char_limit)
-    llm_result: ExpansionLLMResult | None = None
+    llm_result = atomic.read_cached(cache_path, ExpansionLLMResult) if use_cache else None
 
-    if use_cache and cache_path.exists():
+    if llm_result is not None:
         events.emit(on_event, "expand", "Reusing cached experience expansion", cached=True)
-        llm_result = ExpansionLLMResult.model_validate_json(
-            cache_path.read_text(encoding="utf-8")
-        )
     else:
         events.emit(
             on_event,
@@ -442,7 +439,7 @@ def expand_experience(
         llm_result = ExpansionLLMResult(
             entries=[e for e in llm_result.entries if e.entry_key in by_key]
         )
-        cache_path.write_text(llm_result.model_dump_json(indent=2), encoding="utf-8")
+        atomic.write_text(cache_path, llm_result.model_dump_json(indent=2))
 
     returned = {e.entry_key: e.bullets for e in llm_result.entries}
     entries_out: list[ExpandedEntry] = []

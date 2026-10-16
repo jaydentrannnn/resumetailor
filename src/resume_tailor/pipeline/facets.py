@@ -18,7 +18,7 @@ from pathlib import Path
 from .. import config
 from ..content import industries
 from ..content.data import MasterResume
-from ..infra import llm, telemetry
+from ..infra import atomic, llm, telemetry
 from . import events, facets_budget, facets_models, facets_resolve
 from .jd import JobRequirements
 
@@ -102,12 +102,16 @@ def apply(
     return copy
 
 
-def _cache_path(resume: MasterResume, requirements: JobRequirements) -> Path:
+def _cache_path(
+    resume: MasterResume, requirements: JobRequirements, *, include_project_links: bool = True
+) -> Path:
     """Cache key covering prompt, backend, JD, every candidate pool, and the char budget.
 
     `CHARS_PER_LINE` is included because the prompt advertises per-project and per-group
     character budgets computed from it — recalibration changes what the model is told to
     optimise for, so it must invalidate cached selections the same way a prompt edit does.
+    The formatted prompt blocks are keyed whole, so a project name, the link setting,
+    `MAX_PROJECT_TECH` or the coursework budget invalidates too.
     """
     pool_lines: list[str] = []
     for proj in resume.projects:
@@ -124,6 +128,10 @@ def _cache_path(resume: MasterResume, requirements: JobRequirements) -> Path:
             str(config.project_header_chars()),
             requirements.model_dump_json(),
             *pool_lines,
+            _format_projects(resume, include_project_links=include_project_links),
+            _format_coursework_pool(resume),
+            f"{facets_budget.coursework_char_budget()}/{config.COURSEWORK_MAX_LINES}",
+            _format_skills(resume),
         ]
     )
     digest = hashlib.sha256(payload.encode("utf-8")).hexdigest()[:12]
@@ -201,14 +209,11 @@ def select_facets(
     back to budget-only truncation).
     """
     config.CACHE_DIR.mkdir(parents=True, exist_ok=True)
-    cache_path = _cache_path(resume, requirements)
-    raw: facets_models.FacetSelection | None = None
+    cache_path = _cache_path(resume, requirements, include_project_links=include_project_links)
+    raw = atomic.read_cached(cache_path, facets_models.FacetSelection) if use_cache else None
 
-    if use_cache and cache_path.exists():
+    if raw is not None:
         events.emit(on_event, "facets", "Reusing cached facet selection", cached=True)
-        raw = facets_models.FacetSelection.model_validate_json(
-            cache_path.read_text(encoding="utf-8")
-        )
     else:
         events.emit(
             on_event,
@@ -248,7 +253,7 @@ def select_facets(
                 f"Model did not return parseable facet selection "
                 f"(stop_reason={response.stop_reason!r})."
             )
-        cache_path.write_text(raw.model_dump_json(indent=2), encoding="utf-8")
+        atomic.write_text(cache_path, raw.model_dump_json(indent=2))
 
     return facets_resolve.finalise_selection(
         resume,

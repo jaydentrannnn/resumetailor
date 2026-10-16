@@ -22,6 +22,10 @@ export function qualityWarnings(quality?: ResumeQuality | null): string[] {
       `${quality.estimated ? "Estimated page fill" : "Page fill"} is ${Math.round(quality.fill_ratio * 100)}%; target is ${Math.round(quality.fill_target * 100)}%.`,
     );
   }
+  if (quality.estimated)
+    warnings.push(
+      "Page count is estimated (PDF measurement was unavailable), so the page fit isn't verified.",
+    );
   warnings.push(...quality.missing_sections.map((s) => `${s.title} is missing: ${s.reason}.`));
   return warnings;
 }

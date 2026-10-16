@@ -32,7 +32,7 @@ from pydantic import BaseModel, Field
 from .. import config
 from ..content import bullet_tags, industries
 from ..content.data import MasterResume
-from ..infra import llm, telemetry
+from ..infra import atomic, llm, telemetry
 from . import events
 from .facets_labels import (
     _norm_ws,
@@ -258,7 +258,7 @@ def _cache_path(
             config.fingerprint("skills"),
             str(limit),
             requirements.model_dump_json(),
-            *(f"{c.key}\t{c.label}\t{','.join(c.sources)}" for c in pool),
+            *(f"{c.key}\t{c.label}\t{','.join(c.sources)}\t{c.bullet_count}" for c in pool),
         ]
     )
     digest = hashlib.sha256(payload.encode("utf-8")).hexdigest()[:12]
@@ -429,13 +429,10 @@ def select_skills(
 
     config.CACHE_DIR.mkdir(parents=True, exist_ok=True)
     cache_path = _cache_path(pool, requirements, limit=limit or config.SKILLS_POOL_LIMIT)
-    llm_result: SkillsSelectionLLM | None = None
+    llm_result = atomic.read_cached(cache_path, SkillsSelectionLLM) if use_cache else None
 
-    if use_cache and cache_path.exists():
+    if llm_result is not None:
         events.emit(on_event, "skills", "Reusing cached skills selection", cached=True)
-        llm_result = SkillsSelectionLLM.model_validate_json(
-            cache_path.read_text(encoding="utf-8")
-        )
     else:
         events.emit(
             on_event,
@@ -482,7 +479,7 @@ def select_skills(
         to_cache = SkillsSelectionLLM(
             selected=[s for s in llm_result.selected if pool_key(s.skill) in by_key]
         )
-        cache_path.write_text(to_cache.model_dump_json(indent=2), encoding="utf-8")
+        atomic.write_text(cache_path, to_cache.model_dump_json(indent=2))
 
     suggestions, warnings = _accept(llm_result.selected, pool, requirements)
     telemetry.event("skills", available=bool(suggestions))

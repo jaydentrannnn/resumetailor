@@ -246,7 +246,8 @@ def _retry_fabrications(
 
     for bullet_id, (_draft, _offenders) in rejected.items():
         candidate = by_reply.get(bullet_id)
-        if candidate is None:
+        if not candidate:
+            # Missing or blank: the caller falls back to verified source text.
             survivors[bullet_id] = _offenders
             continue
         source = sources[bullet_id]
@@ -316,8 +317,11 @@ def _keep_opener(texts: dict[str, str], bid: str, candidate: str) -> str | None:
     verb pass just replaced ("Built…" for the third time), and nothing else re-checks the
     opener. A candidate that adds a collision gets the current opener back when its own is
     a known resume verb, a one-word swap that keeps the grammar. One that cannot be
-    swapped that way ("Using Python, built…") returns None and is discarded.
+    swapped that way ("Using Python, built…") returns None and is discarded, as does a
+    blank one: the accepted text stands.
     """
+    if not candidate.strip():
+        return None
     if len(bullet_checks.verb_collisions({**texts, bid: candidate})) <= len(
         bullet_checks.verb_collisions(texts)
     ):

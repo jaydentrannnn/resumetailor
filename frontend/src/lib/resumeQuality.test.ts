@@ -15,7 +15,15 @@ it("shows underfill and missing sections with estimated measurements identified"
     }),
   ).toEqual([
     "Estimated page fill is 81%; target is 93%.",
+    "Page count is estimated (PDF measurement was unavailable), so the page fit isn't verified.",
     "Projects is missing: template does not support it.",
+  ]);
+});
+it("flags an estimated page count even when fill meets the target", () => {
+  const base = { fill_ratio: 0.95, fill_target: 0.93, verified: true, missing_sections: [] };
+  expect(qualityWarnings({ ...base, estimated: false })).toEqual([]);
+  expect(qualityWarnings({ ...base, estimated: true })).toEqual([
+    "Page count is estimated (PDF measurement was unavailable), so the page fit isn't verified.",
   ]);
 });
 it("allows the review dialog only when acknowledgement is the only blocker", () => {
