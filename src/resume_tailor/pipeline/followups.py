@@ -311,19 +311,20 @@ def _accept_rephrase(
             and not fabrication.numbers_dropped([floor], candidate))
 
 def _keep_opener(texts: dict[str, str], bid: str, candidate: str) -> str | None:
-    """`candidate` for `bid` with an opener that repeats no more verbs than `texts[bid]`.
+    """`candidate` for `bid`, unless its opener adds an exact repeat or a vague verb.
 
-    A length repair is shown the master source, which often opens with the very verb the
-    verb pass just replaced ("Built…" for the third time), and nothing else re-checks the
-    opener. A candidate that adds a collision gets the current opener back when its own is
-    a known resume verb, a one-word swap that keeps the grammar. One that cannot be
-    swapped that way ("Using Python, built…") returns None and is discarded, as does a
-    blank one: the accepted text stands.
+    A length repair is shown the master source, which often opens with a verb another
+    bullet on the page already uses ("Built…" for the third time), and nothing else
+    re-checks the opener. A candidate that adds such a collision gets the current opener
+    back when its own is a known resume verb, a one-word swap that keeps the grammar. One
+    that cannot be swapped that way ("Using Python, built…") returns None and is
+    discarded, as does a blank one: the accepted text stands. Near-synonym openers are
+    not collisions here, matching what the run report counts.
     """
     if not candidate.strip():
         return None
-    if len(bullet_checks.verb_collisions({**texts, bid: candidate})) <= len(
-        bullet_checks.verb_collisions(texts)
+    if len(bullet_checks.verb_collisions({**texts, bid: candidate}, families=False)) <= len(
+        bullet_checks.verb_collisions(texts, families=False)
     ):
         return candidate
     new = bullet_checks.opening_verb(candidate)
@@ -378,6 +379,7 @@ def _polish(
     rendered bullet, so the fit loop's top-up can re-voice only the bullets it just added
     against openers the page already uses, without touching (and re-wrapping) the rest.
     The guard and numeric-preservation check apply to both shortening and extension.
+    A `ceilings` bullet's numbers are checked against its current text.
     `number_floor` (`{id: text}`) checks a target's numbers against that text instead of
     its master source — for capping an over-long rewrite, which may already have dropped
     a minor figure the master states; the guard itself still runs against the source.
@@ -492,7 +494,9 @@ def _polish(
     number_floor = number_floor or {}
 
     def keeps_numbers(bid: str, candidate: str) -> bool:
-        floor = number_floor.get(bid)
+        # A shorten request keeps every figure its current text states: the prompt asks
+        # for it, and a cut that drops one is a regression, not a repair.
+        floor = number_floor.get(bid, texts[bid] if bid in ceilings else None)
         base = (
             sources[bid] if floor is None
             else sources[bid].model_copy(update={"text": floor, "tags": []})
@@ -551,6 +555,8 @@ def _polish(
                 rejected[item.id] = offenders
                 retry_candidates[item.id] = (candidate, offenders)
                 continue
+            if not keeps_numbers(item.id, candidate):
+                continue
             original = texts[item.id]
             if pullback:
                 # The ceiling is one line below where the text ends — measured from the
@@ -594,10 +600,7 @@ def _polish(
                 candidate != raw and bullet_checks.guard_offenders([sources[bid]], candidate)
             ):
                 continue
-            if bid in number_floor:
-                if not keeps_numbers(bid, candidate):
-                    continue
-            elif fabrication.numbers_dropped([sources[bid]], candidate):
+            if not keeps_numbers(bid, candidate):
                 continue
             if bid in targets:
                 valid = fits_target(bid, candidate)

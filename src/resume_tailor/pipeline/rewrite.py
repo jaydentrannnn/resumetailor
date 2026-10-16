@@ -67,11 +67,15 @@ class RewriteOutcome:
 
 
 def _used_openers(verb_context: dict[str, str] | None, ids: set[str]) -> list[str]:
-    """Opening verbs of the page's other bullets, in first-seen order, without repeats."""
+    """Opening verbs of the page's other bullets, in first-seen order, without repeats.
+
+    Only known resume verbs (`config.verb_family`) are listed: a first word like "Python"
+    or "The" is not an opener worth steering away from.
+    """
     seen: dict[str, None] = {}
     for bid, text in (verb_context or {}).items():
         verb = None if bid in ids else bullet_checks.opening_verb(text)
-        if verb:
+        if verb and config.verb_family(verb) is not None:
             seen.setdefault(verb, None)
     return list(seen)
 
@@ -108,8 +112,9 @@ def rewrite_bullets(
     budget = max(40, char_budget)
     used = _used_openers(verb_context, {b.id for b in bullets}) if repair_verbs else []
     openers = (
-        "<openers_already_used>\nOther bullets on the page already open with these verbs; "
-        f"do not open with any of them: {', '.join(used)}\n</openers_already_used>\n\n"
+        "<openers_already_used>\nOther bullets on the page already open with these verbs: "
+        f"{', '.join(used)}. Prefer a different opening verb when an equally accurate one "
+        "exists; accuracy comes first.\n</openers_already_used>\n\n"
         if used else ""
     )
 

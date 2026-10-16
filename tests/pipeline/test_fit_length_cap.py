@@ -153,6 +153,15 @@ def test_a_length_repair_keeps_the_opener_the_verb_pass_chose(monkeypatch):
     assert fixed == 1 and out["c"] == "Engineered a c pipeline in Python."
 
 
+def test_a_length_repair_may_change_to_a_near_synonym_opener():
+    """Only exact repeats and vague verbs count; "Built" beside "Designed" and
+    "Engineered" stays as written."""
+    texts = {"a": "Designed X.", "b": "Engineered Y.", "c": "Documented Z with care."}
+    assert followups._keep_opener(texts, "c", "Built Z.") == "Built Z."
+    texts["d"] = "Built W."
+    assert followups._keep_opener(texts, "c", "Built Z.") == "Documented Z."
+
+
 def test_a_length_repair_that_cannot_keep_its_opener_is_discarded():
     texts = {"a": "Built X.", "b": "Built Y.", "c": "Engineered Z with care."}
     assert followups._keep_opener(texts, "c", "Using Python, built Z.") == "Using Python, built Z."

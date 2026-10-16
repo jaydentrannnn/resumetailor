@@ -1465,7 +1465,9 @@ def test_top_up_drafts_are_told_the_page_openers(rewrite_calls):
     rewrite.rewrite_bullets(new, _reqs(), char_budget=202, verb_context=page)
     prompt = calls[0]["messages"][0]["content"]
     assert len(calls) == 1
-    assert "<openers_already_used>" in prompt and "designed, built, python" in prompt
+    block = prompt[prompt.index("<openers_already_used>"):prompt.index("</openers_already_used>")]
+    assert "designed, built." in block, "known verbs only, once each; not 'python'"
+    assert "python" not in block and "accuracy comes first" in block
     assert prompt.index("<openers_already_used>") < prompt.index("<bullets_to_rewrite>")
 
 
@@ -1540,6 +1542,21 @@ def test_pull_back_accepts_only_a_reply_that_saves_a_line(rewrite_calls):
     assert pulled == 1 and rejected == {}
     assert out["a"] == "y" * (ceiling - 1)
     assert out["b"] == long_text, "a cut that keeps the line count is discarded"
+
+
+def test_pull_back_never_drops_a_number(rewrite_calls):
+    """A shorter reply that loses a figure is no repair; one that keeps it is accepted."""
+    text = "Built a service handling 120 requests per second with retries and logging."
+    src = {"a": bullet("a", text, ["python"]), "b": bullet("b", text, ["python"])}
+    texts = {"a": text, "b": text}
+    calls = rewrite_calls(_reply(a="Built a service with retries.",
+                                 b="Built a service handling 120 requests per second."))
+
+    out, pulled, rejected = bullet_merge.pull_back(texts, src, _reqs(), {"a": 60, "b": 60})
+
+    assert len(calls) == 1 and rejected == {}
+    assert out["a"] == text, "the reply dropped '120'"
+    assert out["b"] == "Built a service handling 120 requests per second." and pulled == 1
 
 
 def test_pull_back_sends_only_the_requested_bullets(rewrite_calls):

@@ -743,3 +743,25 @@ open with the same verb..."), plus, for bullets the fit loop's top-up adds later
 switch that block off. The run report keeps counting exact repeats and vague openers
 (no near-synonym family rule) and says to vary them by hand. First drafts' prompts are
 byte-identical to before; only top-up prompts change, and the rewrite is uncached.
+
+## Length repairs keep numbers and drop the near-synonym rule; the openers hint is a preference (2026-10-16)
+
+Correction to the note above: `followups._polish` also shortens ordinary bullets, not
+only merged ones. On overflow, `bullet_merge.pull_back` cuts near-widow bullets, and the
+measured pass in `fit_shrink` fixes widows and over-long bullets. A review of the kept
+engine found three gaps, all fixed:
+
+- **Pull-back could drop a number.** The `ceilings` path checked the guard and the
+  length but never `numbers_dropped`, so "…handling 120 requests per second with
+  retries…" -> "Built a service with retries." counted as a repair. The prompt already
+  asks to keep every number. Now a `ceilings` bullet's numbers are checked against its
+  current text, on the first reply and on the fabrication retry alike
+  (`test_pull_back_never_drops_a_number`).
+- **`_keep_opener` still used the retired near-synonym rule** (`verb_collisions`
+  defaults to `families=True`), so a shortened "Built…" became "Documented…" only
+  because other bullets opened with "Designed" and "Engineered". It now counts exact
+  repeats and vague verbs only, like the run report.
+- **The `<openers_already_used>` block forbade any first word**, "Python" included. It
+  now lists known resume verbs only (`config.verb_family`) and asks for a different
+  opener only when an equally accurate one exists ("accuracy comes first"). Top-up
+  prompts only; first drafts are unchanged.
