@@ -358,6 +358,7 @@ def _polish(
     revoice_only: set[str] | None = None,
     number_floor: dict[str, str] | None = None,
     phrase_overuse: dict[str, list[str]] | None = None,
+    effort: str | None = None,
 ) -> tuple[dict[str, str], int, int, dict[str, list[str]]]:
     """Re-request only the defective bullets.
 
@@ -467,7 +468,7 @@ def _polish(
         system=rewrite_prompts._system(),
         messages=[{"role": "user", "content": user}],
         output_format=rewrite_prompts.RewriteResult,
-        output_config={"effort": config.effort_for("rewrite")},
+        output_config={"effort": effort or config.effort_for("rewrite")},
     )
 
     result = response.parsed_output

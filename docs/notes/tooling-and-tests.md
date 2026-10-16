@@ -199,3 +199,23 @@ otherwise lets page cards paint over header popovers.
 **What:** Initialize LiteLLM's cl100k_base encoding before PyInstaller collects its data files, so the verified encoding cache is shipped with the modules.
 **Why:** The new offline check caught a fresh Windows release build attempting to fetch encoding data, although a warm developer environment and the macOS build passed. Build-time initialization verifies/fills the cache; the installed runtime must remain offline-capable.
 **Impact:** The first v1.11.3 draft was not published. The corrected v1.11.4 release is rebuilt and must pass the frozen offline smoke check on both platforms.
+
+## Sequential experiments and the end-to-end harness (2026-10-16)
+
+- `scripts/eval_experiments.py` runs E1 (cosmetic polish at medium / low / none on the
+  same frozen drafts: `Replay.prepolish` persists them as the `draft` arm, then
+  `Replay.polish` calls `rewrite.cosmetic_polish`, split out of `rewrite_bullets` with no
+  behaviour change) and E2 (fresh drafts with one extra `_system()` rule, so the first
+  draft, factual retry, polish and merge all see it). Variants are eval-only wrappers
+  (`evals/variants.py`): a context variable in-process, an environment variable in an
+  end-to-end worker process. Production code has no experiment switch.
+- Statistics (`evals/sequential.py`): the posting case is the unit; a two-order judge
+  verdict is one observation; percentile bootstrap over whole cases; Pocock two-look
+  boundary at one-sided 0.0304 per look (overall 0.05). PASS / FUTILE (non-binding) /
+  CONTINUE / FAIL; fewer than 20 cases never decides. Identical outputs are recorded as
+  ties without a judge call.
+- `evals/e2e.py`: each worker is its own OS process running the CLI fit loop
+  (`--no-expand --no-cover-letter`); `fit.fit` and `telemetry.recording` are wrapped in
+  that process only to capture the result and the CLI's own collector. An estimated
+  page count counts as a failed run. Run the baseline arm first so later arms share its
+  extraction and scoring caches.

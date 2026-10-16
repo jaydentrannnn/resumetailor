@@ -204,6 +204,37 @@ def rewrite_bullets(
             fabrications_rejected=fabrications_rejected,
         )
 
+    texts, improved, revoiced, rejected_repairs = cosmetic_polish(
+        out, by_id, requirements, repair_verbs=repair_verbs, verb_context=verb_context,
+        target_pages=target_pages, on_event=on_event,
+    )
+    return RewriteOutcome(
+        texts=texts,
+        widows_repaired=improved,
+        verbs_diversified=revoiced,
+        merges=accepted_merges,
+        widow_repairs_rejected=rejected_repairs,
+        fabrications_rejected=fabrications_rejected,
+    )
+
+
+def cosmetic_polish(
+    out: dict[str, str],
+    by_id: dict[str, Bullet],
+    requirements: JobRequirements,
+    *,
+    repair_verbs: bool,
+    verb_context: dict[str, str] | None = None,
+    target_pages: int = config.DEFAULT_PAGE_TARGET,
+    on_event: events.ProgressCallback | None = None,
+    effort: str | None = None,
+) -> tuple[dict[str, str], int, int, dict[str, list[str]]]:
+    """Repeated-opener and over-used-phrase repair on accepted drafts: `rewrite_bullets`'
+    last step, callable alone so an eval can polish the same frozen drafts two ways.
+
+    Returns `(texts, widows repaired, verbs diversified, rejected repairs)` for `out`'s
+    ids. `effort` overrides the rewrite stage's reasoning effort for this one call.
+    """
     # Both counts are measured before the call so the progress line says what the follow-up
     # is for; the pass itself re-derives them, since merging may have changed either.
     # PDF layout is unavailable until fit has rendered this draft. Do not cut here
@@ -253,16 +284,9 @@ def rewrite_bullets(
         repair_verbs=repair_verbs,
         revoice_only=revoice_only,
         phrase_overuse=phrase_overuse,
+        **({"effort": effort} if effort else {}),
     )
-    out = {bid: polished[bid] for bid in out}
-    return RewriteOutcome(
-        texts=out,
-        widows_repaired=improved,
-        verbs_diversified=revoiced,
-        merges=accepted_merges,
-        widow_repairs_rejected=rejected_repairs,
-        fabrications_rejected=fabrications_rejected,
-    )
+    return {bid: polished[bid] for bid in out}, improved, revoiced, rejected_repairs
 
 
 def keyword_coverage(

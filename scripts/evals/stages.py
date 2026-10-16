@@ -84,14 +84,38 @@ class Replay:
         """Rewrite the run's own bullets against its own saved extraction."""
         sources, requirements = self.sources(case), self._requirements(case)
         outcome = rewrite.rewrite_bullets(sources, requirements, char_budget=self.budget)
+        return self._rewrite_record(case, outcome.texts, outcome.fabrications_rejected,
+                                    outcome.verbs_diversified)
+
+    def prepolish(self, case: Case) -> dict[str, Any]:
+        """First drafts after the factual retry, before cosmetic polish: the frozen drafts
+        every polish arm of experiment E1 starts from (persisted as the `draft` arm)."""
+        sources, requirements = self.sources(case), self._requirements(case)
+        outcome = rewrite.rewrite_bullets(sources, requirements, char_budget=self.budget,
+                                          repair_widows=False, repair_verbs=False)
+        return self._rewrite_record(case, outcome.texts, outcome.fabrications_rejected, 0)
+
+    def polish(self, case: Case, draft: dict[str, Any], effort: str) -> dict[str, Any]:
+        """`rewrite.cosmetic_polish` on one case's frozen `draft` record at `effort`;
+        "none" keeps the drafts as they are and makes no call."""
+        texts, revoiced = dict(draft["texts"]), 0
+        if effort != "none":
+            by_id = {b.id: b for b in self.sources(case)}
+            texts, _, revoiced, _ = rewrite.cosmetic_polish(
+                texts, by_id, self._requirements(case), repair_verbs=True, effort=effort)
+        return self._rewrite_record(case, texts, draft["fabrications_rejected"], revoiced)
+
+    def _rewrite_record(self, case: Case, texts: dict[str, str],
+                        rejected: dict[str, list[str]], revoiced: int) -> dict[str, Any]:
+        sources, requirements = self.sources(case), self._requirements(case)
+        final = {b.id: texts.get(b.id, b.text) for b in sources}
         return {
-            "texts": outcome.texts,
-            "fabrications_rejected": outcome.fabrications_rejected,
-            "verbs_diversified": outcome.verbs_diversified,
-            "metrics": metrics.rewrite_metrics(
-                sources, outcome.texts, outcome.fabrications_rejected, requirements,
-                self.budget,
-            ),
+            "texts": texts,
+            "fabrications_rejected": rejected,
+            "verbs_diversified": revoiced,
+            "must": metrics.must_sets(sources, final, requirements),
+            "metrics": metrics.rewrite_metrics(sources, texts, rejected, requirements,
+                                               self.budget),
         }
 
     def expand(self, case: Case) -> dict[str, Any]:

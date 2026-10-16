@@ -88,6 +88,20 @@ def funnel_metrics(
     }
 
 
+def must_sets(
+    sources: Sequence[Bullet], final: dict[str, str], requirements: JobRequirements
+) -> dict[str, list[str]]:
+    """Non-soft must-have phrases the final texts name (`shown`), and the ones the sources
+    back by their own text or Extra skills, inferred skills excluded (`backed`). A keyword
+    one arm shows and another drops counts as a supported loss only when it is backed."""
+    must = _must_haves(requirements)
+    tags = set().union(*(bullet_tags.match_tags(b, inferred=False) for b in sources))
+    return {
+        "shown": sorted(k.phrase for k in must if any(_shows(t, k) for t in final.values())),
+        "backed": sorted(k.phrase for k in must if selection._matches(k, tags)),
+    }
+
+
 def expand_metrics(expansion: Expansion) -> dict[str, float]:
     """Entries and bullets produced, bullets the guard dropped, and length."""
     entries = expansion.entries
