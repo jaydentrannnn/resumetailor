@@ -187,6 +187,64 @@ def test_auto_submit_reservation_caps_parallel_fills(batch, monkeypatch):
     assert (operation.submitted, operation.completed, operation.failed) == (1, 4, 0)
 
 
+def test_an_unconfirmed_submit_uses_its_slot(batch, monkeypatch):
+    modes: list[str] = []
+
+    def fake_fill(_application_id, **kwargs):
+        modes.append(kwargs["submit_mode"])
+        if kwargs["submit_mode"] == "auto_submit":
+            return store_models.FillResult(status="submit_unconfirmed")
+        return store_models.FillResult(status="awaiting_review", ready_to_submit=True)
+
+    monkeypatch.setattr(operations.fill, "fill_application", fake_fill)
+    operation = batch(
+        settings=ApplySettings(max_parallel_fills=1, auto_submit_max_per_run=1),
+        auto_submit=True,
+    )
+    assert modes.count("auto_submit") == 1
+    assert operation.submitted == 0  # it is not reported as submitted
+
+
+def test_a_fill_that_raised_after_dispatching_uses_its_slot(batch, monkeypatch):
+    modes: list[str] = []
+
+    def fake_fill(application_id, **kwargs):
+        modes.append(kwargs["submit_mode"])
+        if kwargs["submit_mode"] == "auto_submit":
+            # What `_dispatch_submit` stores before pressing submit, then a crash.
+            operations.store.get(application_id).fill = store_models.FillResult(
+                status="submit_unconfirmed"
+            )
+            raise RuntimeError("page crashed")
+        return store_models.FillResult(status="awaiting_review", ready_to_submit=True)
+
+    monkeypatch.setattr(operations.fill, "fill_application", fake_fill)
+    operation = batch(
+        settings=ApplySettings(max_parallel_fills=1, auto_submit_max_per_run=1),
+        auto_submit=True,
+    )
+    assert modes.count("auto_submit") == 1
+    assert operation.failed == 1
+
+
+def test_a_fill_that_raised_before_dispatching_frees_its_slot(batch, monkeypatch):
+    modes: list[str] = []
+
+    def fake_fill(_application_id, **kwargs):
+        modes.append(kwargs["submit_mode"])
+        if len(modes) == 1:
+            raise RuntimeError("posting did not load")
+        return store_models.FillResult(status="submitted")
+
+    monkeypatch.setattr(operations.fill, "fill_application", fake_fill)
+    operation = batch(
+        settings=ApplySettings(max_parallel_fills=1, auto_submit_max_per_run=1),
+        auto_submit=True,
+    )
+    assert modes[:2] == ["auto_submit", "auto_submit"]
+    assert operation.submitted == 1
+
+
 def test_prepare_uses_tailor_job_concurrency(batch, monkeypatch):
     barrier = threading.Barrier(2, timeout=3)
     lock = threading.Lock()

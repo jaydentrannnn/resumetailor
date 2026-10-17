@@ -645,11 +645,11 @@ def _process_item(
                     on_deadline=_on_deadline(operation, item),
                 )
             except BaseException:
-                release_submit(submit_allowed, False)
+                release_submit(submit_allowed, _stored_submit_status(application_id))
                 raise
             finally:
                 answer_harvest.FILLING.discard(application_id)
-            release_submit(submit_allowed, result.status == "submitted")
+            release_submit(submit_allowed, result.status)
             if result.status in {"awaiting_review", "awaiting_otp"}:
                 answer_harvest.watch(application_id)
             if result.status == "submitted":
@@ -736,25 +736,29 @@ def _dispatch_items(
     pending = deque(operation.application_ids)
     dispatch_lock = threading.Lock()
     reserved = 0
+    # A submit whose confirmation never showed may well have gone out: it uses a slot.
+    unconfirmed = 0
 
     def reserve_submit() -> bool:
         nonlocal reserved
         with _LOCK:
-            allowed = (
-                request.auto_submit
-                and operation.submitted + reserved < settings.auto_submit_max_per_run
+            allowed = request.auto_submit and (
+                operation.submitted + unconfirmed + reserved < settings.auto_submit_max_per_run
             )
             if allowed:
                 reserved += 1
             return allowed
 
-    def release_submit(was_reserved: bool, submitted: bool) -> None:
-        nonlocal reserved
+    def release_submit(was_reserved: bool, status: str) -> None:
+        nonlocal reserved, unconfirmed
         with _LOCK:
-            if was_reserved:
-                reserved -= 1
-            if submitted:
+            if not was_reserved:
+                return
+            reserved -= 1
+            if status == "submitted":
                 operation.submitted += 1
+            elif status == "submit_unconfirmed":
+                unconfirmed += 1
 
     # Fill only: one application per Workday site at a time (see fill_hosts).
     gate = fill_hosts.HostGate() if operation.action == "fill" else None
@@ -864,6 +868,20 @@ def _note_model_limit(
         + (" (Light answers where it can)" if light else "")
         + ". They are filled again at the end if it recovers.",
     )
+
+
+def _stored_submit_status(application_id: str) -> str:
+    """After a fill raised: the submit status it recorded before dispatching, if any."""
+    try:
+        app = store.get(application_id)
+    except Exception:  # noqa: BLE001 - unknown counts as dispatched, the safe side
+        return "submit_unconfirmed"
+    fill_status = ""
+    if app is not None and app.fill is not None:
+        fill = app.fill
+        fill_status = str(fill.get("status") if isinstance(fill, dict) else fill.status)
+    statuses = {app.status if app else "", fill_status}
+    return next((s for s in ("submitted", "submit_unconfirmed") if s in statuses), "")
 
 
 def _retry_model_limited(
