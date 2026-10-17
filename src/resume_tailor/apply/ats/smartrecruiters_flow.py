@@ -340,7 +340,7 @@ def fill_screening(
         if answer is None:
             review.append(f"{label}: could not set {answers[0]!r}")
             continue
-        progress(f"SmartRecruiters: answered {label[:60]} = {answer}")
+        progress(f"SmartRecruiters: answered {label[:60]} = {answer_memory.shown(label, answer)}")
         filled.append({"label": label, "value": answer})
     return filled, review
 

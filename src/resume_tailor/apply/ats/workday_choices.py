@@ -7,7 +7,7 @@ from collections.abc import Callable, Iterable
 from datetime import date
 from typing import Any
 
-from resume_tailor.apply.answers import questions
+from resume_tailor.apply.answers import answer_memory, questions
 from resume_tailor.apply.driver import clicks
 from resume_tailor.apply.forms import field_matcher
 
@@ -116,7 +116,8 @@ def fill_radios(
         except Exception:  # noqa: BLE001
             checked = False
         if checked:
-            progress(f"Workday: answered {question[:60]} = {matches[0]['label']}")
+            shown = answer_memory.shown(question, matches[0]["label"], key=key)
+            progress(f"Workday: answered {question[:60]} = {shown}")
             committed.append({"key": key, "label": question, "value": matches[0]["label"],
                               "selector": f"[id='{matches[0]['id']}']"})
     return committed
@@ -263,7 +264,7 @@ def fill_choice_checkboxes(
             except Exception:  # noqa: BLE001
                 ticked = False
             if ticked:
-                progress(f"Workday: ticked {chosen[:70]}")
+                progress(f"Workday: ticked {answer_memory.shown(question, chosen[:70], key=key or '')}")
                 committed.append({"key": key, "label": question, "value": chosen, "selector": f"[id='{box_id}']"})
             elif review is not None:
                 review.append(f"{question}: could not tick {chosen}")

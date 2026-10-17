@@ -8,7 +8,7 @@ import time
 from collections.abc import Callable
 from typing import Any
 
-from resume_tailor.apply.answers import questions, salary
+from resume_tailor.apply.answers import answer_memory, questions, salary
 from resume_tailor.apply.driver import clicks
 from resume_tailor.apply.forms import field_matcher
 
@@ -90,6 +90,11 @@ last_listbox: dict[str, Any] = {}
 def _options_text(options: list[str], limit: int = 8) -> str:
     shown = [option[:80] for option in options[:limit]]
     return " | ".join(shown) + (f" | … ({len(options) - limit} more)" if len(options) > limit else "")
+
+def _shown(label: str, value: str, key: str) -> str:
+    """An answer as the (persisted) progress log may print it (`answer_memory.shown`)."""
+    return answer_memory.shown(label, value, key=key)
+
 
 def choice_failure(label: str, value: str, options: list[str], status: str = "no_match") -> str:
     """One review line for a profile fact no option named: the value, why, and the options."""
@@ -305,10 +310,11 @@ def fill_dropdowns(
             if not is_blank and not (key == "country" and not _same_option(current, value, key)):
                 continue
             tried.add(selector)
+            label = item["label"]
             # A source list is read once: `any_option` ranks its fallbacks in one look.
             for candidate in answers[:1] if key in _ANY_OPTION_KEYS else answers:
                 if select(page, selector, candidate, key=key):
-                    progress(f"Workday: selected {item['label']} = {candidate}")
+                    progress(f"Workday: selected {label} = {_shown(label, candidate, key)}")
                     committed.append(
                         {"key": key, "label": item["label"], "value": candidate, "selector": selector}
                     )
@@ -317,7 +323,10 @@ def fill_dropdowns(
             else:
                 if is_blank and key in _ANY_OPTION_KEYS and select(page, selector, value, key=ANY_OPTION_KEY):
                     chosen = str(last_listbox.get("chosen") or value)
-                    progress(f"Workday: no exact option for {item['label']} = {value}; chose {chosen}")
+                    progress(
+                        f"Workday: no exact option for {label} = {_shown(label, value, key)}; "
+                        f"chose {_shown(label, chosen, key)}"
+                    )
                     committed.append({"key": key, "label": item["label"], "value": chosen, "selector": selector})
                     progressed = True
             if key == "country" and not progressed and review is not None:
@@ -335,7 +344,11 @@ def fill_dropdowns(
                 seen = last_listbox if last_listbox.get("selector") == selector else {}
                 line = choice_failure(item["label"], value, list(seen.get("options") or []),
                                       str(seen.get("status") or "no_match"))
-                progress(f"Workday: {line}")
+                # The review line keeps the value; the persisted log does not.
+                if _shown(label, value, key) == value:
+                    progress(f"Workday: {line}")
+                else:
+                    progress(f"Workday: {label}: no option for {answer_memory.HIDDEN}")
                 if review is not None and key in field_matcher.EEO_KEYS:
                     review.append(line)
             if progressed and key == "country":

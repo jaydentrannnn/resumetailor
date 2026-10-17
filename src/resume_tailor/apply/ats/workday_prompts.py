@@ -6,7 +6,7 @@ import contextlib
 from collections.abc import Callable
 from typing import Any
 
-from resume_tailor.apply.answers import questions
+from resume_tailor.apply.answers import answer_memory, questions
 from resume_tailor.apply.driver import clicks
 from resume_tailor.apply.forms import field_matcher
 
@@ -221,10 +221,11 @@ def fill_prompts(
                     "selector": f"[id='{item['input_id']}']",
                 })
             continue
+        label = item["label"]
         any_ok = key in workday_dropdowns._ANY_OPTION_KEYS
         for candidate in answers[:1] if any_ok else answers:
             if choose(page, item["input_id"], candidate, key=key):
-                progress(f"Workday: selected {item['label']} = {candidate}")
+                progress(f"Workday: selected {label} = {answer_memory.shown(label, candidate, key=key)}")
                 committed.append({
                     "key": key, "label": item["label"], "value": candidate,
                     "selector": f"[id='{item['input_id']}']",
@@ -237,13 +238,20 @@ def fill_prompts(
                 else None
             )
             if chip:
-                progress(f"Workday: no exact option for {item['label']} = {value}; chose {chip}")
+                progress(
+                    f"Workday: no exact option for {label} = "
+                    f"{answer_memory.shown(label, value, key=key)}; "
+                    f"chose {answer_memory.shown(label, chip, key=key)}"
+                )
                 committed.append({
                     "key": key, "label": item["label"], "value": chip,
                     "selector": f"[id='{item['input_id']}']",
                 })
             else:
-                progress(f"Workday: no exact option for {item['label']} = {value}; left for review")
+                progress(
+                    f"Workday: no exact option for {label} = "
+                    f"{answer_memory.shown(label, value, key=key)}; left for review"
+                )
     return committed
 
 # -- Phone country code (multiselect prompt) --------------------------------------------

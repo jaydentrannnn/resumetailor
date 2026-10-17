@@ -19,7 +19,7 @@ from typing import Any, Literal
 from pydantic import BaseModel, Field
 
 from resume_tailor import config, workspace
-from resume_tailor.apply.answers import profile
+from resume_tailor.apply.answers import answer_memory, profile
 from resume_tailor.apply.driver import browser
 from resume_tailor.apply.forms import fill, submit_guard
 from resume_tailor.apply.funnel import attention as attention_mod
@@ -264,6 +264,8 @@ def _mirror_item(operation: ApplyOperation, item: InFlightItem) -> None:
 
 
 def _event(operation: ApplyOperation, stage: str, message: str, application_id: str = "") -> None:
+    # Before any copy: the message lands in the operation, its in-flight item and events.
+    message = answer_memory.redact(message)
     with _LOCK:
         operation.stage = stage
         operation.message = message

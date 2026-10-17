@@ -185,6 +185,28 @@ def is_sensitive(label: str) -> bool:
     return _NEVER.search(label or "") is not None
 
 
+#: What a progress line shows instead of a sensitive answer.
+HIDDEN = "[hidden]"
+#: The answer part of a progress line: after " = " (up to "; chose"), else everything
+#: after "chose", "ticked" or "no option for" (an options list names answers too).
+_SHOWN_VALUE = re.compile(r"(\s=\s)[^;]*|(;\s*chose\s|\bticked\s|\bno option for\s).*")
+
+
+def shown(label: str, value: object, *, key: str = "") -> str:
+    """``value`` as a progress line may print it: hidden for a self-identification or
+    credential question. Progress lines are persisted (operation events), and these
+    answers are never copied around."""
+    return HIDDEN if key in _EEO_KEYS or is_sensitive(label) else str(value)
+
+
+def redact(message: str) -> str:
+    """A progress line with any answer hidden when it names a sensitive question: the
+    backstop behind the call sites' own `shown`."""
+    if not is_sensitive(message):
+        return message
+    return _SHOWN_VALUE.sub(lambda found: f"{found.group(1) or found.group(2)}{HIDDEN}", message)
+
+
 def storable(label: str, *, canonical_key: str = "", input_type: str = "") -> bool:
     """Whether an answer to this question may be remembered at all."""
     if not label.strip() or canonical_key in _EEO_KEYS:
