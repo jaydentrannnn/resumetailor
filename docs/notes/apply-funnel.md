@@ -1937,3 +1937,51 @@ Only 7 of the 14 submissions that day were auto-detected.
   dropdown's "Apply Now" → SuccessFactors sign-in/create-account), follows the `href` only
   without one, and returns to the posting if the link bounced to `/`. Live: Capgemini →
   create-account form, Royal Caribbean → sign-in, Qualtrics → application form.
+
+## 2026-10-17 — Autofill correctness fixes (Phase A of the autofill review)
+
+From two outside reviews of the Apply pipeline, checked against the code and 255 live fills. Each
+is a bug against an existing rule, not new policy.
+
+- Written answers (`fill_answers._answer_one_long_text`): the model call goes through
+  `model_fallback.call` (Heavy → Light on a limit), and any other error costs that one question:
+  a progress line, plus `"<label>: could not draft an answer"` when it is required. Cancellation
+  and the fill deadline still stop the fill. With Heavy and Light both on one model, the per-field
+  catch is what matters.
+- Review flags carry their reason (`"<label>: shortened to fit the form's limit"`, the policy of
+  "Fill edge cases (P4-E)" E18), so `_reconcile_observed`, which drops bare labels the form now
+  shows filled, never clears them.
+- Profile switch vs Apply: `activate_workspace` refuses while `apply_operations.active()`, inside
+  `template_ops.LOCK`; `operations.start` and `start_review_action` hold the same lock from their
+  first workspace read through registration and thread start. Apply workers read the
+  process-default workspace (threads do not copy the `RunContext`), so a switch mid-fill mixed
+  profiles.
+- Progress redaction: `answer_memory.shown(label, value, key=)` hides values of self-ID/credential
+  questions (`_EEO_KEYS`, `is_sensitive`) at the Workday/SmartRecruiters progress call sites, and
+  `operations._event` runs `answer_memory.redact` before the message reaches any persisted field.
+  `fill.json` keeps filled values; the review panel needs them.
+- Readiness (`filler_readiness.js`) now returns `{required_empty, invalid}`: a visible control
+  with a value that fails native `validity` (not `valueMissing`) or carries `aria-invalid="true"`.
+  Before handoff those are focused, changed and blurred once (a stale marker from before the value
+  was typed clears), then re-read; any still rejected becomes `"<label>: the form rejects this
+  value"`, so `ready_to_submit` is false. Not the planned `resolve_step_blockers(only_invalid)`
+  pass: the resolver only sees empty dropdowns/radios, never a filled text field.
+- Continue tab identity (`identity.retained_tab`): the kept tab's URL against the posting, final
+  and last recorded tab URLs. `different` (another requisition on the same ATS, or no requisition
+  and off every known site) → the tab stays open untouched and the posting opens in a new tab;
+  `unknown` (no requisition id, same site: Workday sign-in/step pages) → continue. Workday's
+  `/apply/<step>` tail hid the id (`canonical_key` fell back to `_R123`, dropping `-2`); the check
+  keys the posting part. Checked on 281 recorded end-of-fill URLs vs the posting URLs alone: 3
+  cross-site redirects read `different`, 0 with the last tab URL included (as Continue does).
+- Stale uploads (`upload_replace`, legacy engine only): upload records carry `uploaded_by_app` and
+  `artifact_sha256`. On a later fill, the app's own file under the same name with a changed
+  document is replaced (native input: `set_input_files`; listing widget: its own delete control,
+  `clicks` purpose `remove`, found inside the upload component only, stopping at any other kind of
+  form control so a work-experience row's Delete is never pressed). Removal failing → reported, not
+  uploaded twice. Seen only off its step (Workday Review) → reported, not verified. Anything else
+  attached is `kept_existing`, including records from before these fields existed. UI:
+  "uploaded and verified" / "uploaded by an earlier fill" / "kept the file already attached"
+  (`lib/attachmentState.ts`). The plan named `ApplicationReview.tsx`'s "Verified / preserved"
+  group; that label is for fields, attachments render in `AttachmentResults`.
+- Per-run auto-submit cap counts `submit_unconfirmed` too, and a fill that raised after storing
+  its pre-dispatch `submit_unconfirmed` record; `operation.submitted` stays confirmed only.
