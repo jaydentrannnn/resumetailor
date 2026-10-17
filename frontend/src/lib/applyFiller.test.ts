@@ -114,8 +114,11 @@ describe("Apply form filler", () => {
 
   it("reports one radio question instead of each option label", () => {
     document.body.innerHTML = `<fieldset><legend>Willing to relocate?</legend><label for="tx">Texas</label><input id="tx" type="radio" name="relocate" required><label for="vt">Vermont</label><input id="vt" type="radio" name="relocate" required></fieldset>`;
-    const readiness = window.eval(readinessScript) as (_args: unknown) => string[];
-    expect(readiness({})).toEqual(["Willing to relocate?"]);
+    const readiness = window.eval(readinessScript) as (_args: unknown) => {
+      required_empty: string[];
+      invalid: string[];
+    };
+    expect(readiness({})).toEqual({ required_empty: ["Willing to relocate?"], invalid: [] });
   });
 
   it("routes Greenhouse education comboboxes, fills the end year, and answers salary", () => {
