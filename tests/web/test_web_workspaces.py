@@ -376,3 +376,39 @@ def test_profile_template_install_works_on_a_freshly_created_profile(
     )
     assert res.status_code == 200, res.json()
     assert res.json()["ok"] is True
+
+
+def test_activate_workspace_409_while_an_apply_operation_runs(client, tmp_path, monkeypatch):
+    """A manual Find/Prepare/Fill or review action reads the process-default workspace from
+    its worker threads, so a profile switch is refused until it finishes."""
+    from resume_tailor.apply.funnel import operations as apply_operations  # noqa: PLC0415
+
+    c, _q = client
+    _point_workspaces_at(tmp_path, monkeypatch)
+    real_bootstrap()
+    c.post("/api/workspaces", json={"label": "Second"})
+    monkeypatch.setattr(apply_operations, "active", lambda: object())
+
+    res = c.post("/api/workspaces/second/activate")
+    assert res.status_code == 409
+    assert "apply operation" in res.json()["detail"].lower()
+    assert config.active_workspace_id() == "default"
+
+
+@pytest.mark.parametrize("entry", ["start", "start_review_action"])
+def test_apply_operation_starts_under_the_workspace_lock(monkeypatch, entry):
+    """Both Apply entry points hold `template_ops.LOCK` (the lock `activate_workspace`
+    checks under) from their first workspace read through registration."""
+    from resume_tailor.apply.funnel import operations as apply_operations  # noqa: PLC0415
+
+    held: list[bool] = []
+    body = "_start_locked" if entry == "start" else "_start_review_locked"
+    monkeypatch.setattr(
+        apply_operations, body, lambda *a, **k: held.append(template_ops.LOCK.locked()) or "op"
+    )
+    if entry == "start":
+        assert apply_operations.start(object()) == "op"  # type: ignore[arg-type]
+    else:
+        assert apply_operations.start_review_action("app", action="inspect") == "op"
+    assert held == [True]
+    assert not template_ops.LOCK.locked()

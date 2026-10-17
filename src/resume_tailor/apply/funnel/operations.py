@@ -35,6 +35,7 @@ from resume_tailor.apply.funnel import (
 )
 from resume_tailor.apply.funnel.daily_row_run import PrepareInterrupted
 from resume_tailor.infra import atomic, logs
+from resume_tailor.web import template_ops
 from resume_tailor.web.schemas import ApplyOperationRequest, ApplySettings, JobSettings
 
 OperationState = Literal[
@@ -393,6 +394,14 @@ def _effective_model(request: ApplyOperationRequest) -> str:
 
 
 def start(request: ApplyOperationRequest) -> ApplyOperation:
+    """Start an operation. Holds `template_ops.LOCK` (as `activate_workspace` does) from
+    its first workspace read until it is registered active, so a profile switch
+    cannot land in between."""
+    with template_ops.LOCK:
+        return _start_locked(request)
+
+
+def _start_locked(request: ApplyOperationRequest) -> ApplyOperation:
     global _ACTIVE_ID
     if request.action != "find" and not request.application_ids:
         raise ValueError(f"{request.action} requires at least one selected application")
@@ -1004,7 +1013,18 @@ def start_review_action(
     action: Literal["inspect", "correct"],
     correction: dict[str, Any] | None = None,
 ) -> ApplyOperation:
-    """Schedule one short review action under the same Apply worker ownership."""
+    """Schedule one short review action under the same Apply worker ownership (and the
+    same profile-switch exclusion as `start`)."""
+    with template_ops.LOCK:
+        return _start_review_locked(source_job_id, action=action, correction=correction)
+
+
+def _start_review_locked(
+    source_job_id: str,
+    *,
+    action: Literal["inspect", "correct"],
+    correction: dict[str, Any] | None,
+) -> ApplyOperation:
     global _ACTIVE_ID
     app = store.get(source_job_id)
     if app is None:

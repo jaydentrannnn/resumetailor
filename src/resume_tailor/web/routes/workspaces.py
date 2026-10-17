@@ -10,6 +10,7 @@ from resume_tailor import (
     workspace,
 )
 from resume_tailor.apply.funnel import daily_progress
+from resume_tailor.apply.funnel import operations as apply_operations
 from resume_tailor.model_selection import migrated_models
 from resume_tailor.web import section_title_sync, template_info, template_ops
 from resume_tailor.web.jobs import get_queue
@@ -94,6 +95,13 @@ def activate_workspace(workspace_id: str) -> WorkspaceActivateResponse:
             raise HTTPException(
                 status_code=409,
                 detail="Cannot switch profiles while the daily apply funnel is running.",
+            )
+        # Apply workers read the process-default workspace; `operations.start` registers
+        # under this same lock, so a switch can't land between its reads and its start.
+        if apply_operations.active() is not None:
+            raise HTTPException(
+                status_code=409,
+                detail="Cannot switch profiles while an Apply operation is running.",
             )
         try:
             workspace.activate(workspace_id)
