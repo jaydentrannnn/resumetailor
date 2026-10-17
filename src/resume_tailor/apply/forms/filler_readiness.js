@@ -1,9 +1,12 @@
 /**
- * Return labels of visible required controls that are still empty.
- * Injected via Playwright page.evaluate with { hints, synonyms } (unused today).
+ * Return { required_empty, invalid }: labels of visible required controls that are still
+ * empty, and of visible controls whose value the form rejects (native validity or
+ * aria-invalid). With { revalidate: true }, rejected controls are focused, changed and
+ * blurred first, so a marker left over from before the fill typed the value can clear.
  */
-(_args) => {
+(args) => {
   const empty = [];
+  const invalid = [];
   const skipTypes = new Set(["hidden", "file", "submit", "button", "image", "reset"]);
 
   function isVisible(el) {
@@ -100,6 +103,19 @@
     }
   }
 
+  /** The form holds a value here and refuses it; an empty field is `isEmpty`'s case. */
+  function isRejected(el, type) {
+    if (type === "checkbox" || type === "radio" || isEmpty(el)) return false;
+    if (el.getAttribute("aria-invalid") === "true") return true;
+    return !!el.validity && !el.validity.valid && !el.validity.valueMissing;
+  }
+
+  function revalidate(el) {
+    el.focus({ preventScroll: true });
+    el.dispatchEvent(new Event("change", { bubbles: true }));
+    el.blur();
+  }
+
   const seenGroups = new Set();
   for (const [index, el] of deepQueryAll(document, "input, select, textarea").entries()) {
     if (!isVisible(el)) continue;
@@ -108,6 +124,11 @@
     // React Select's internal required/search inputs belong to the parent question.
     if (el.closest('.select__control, [class*="-control"]') && el.getAttribute('role') !== 'combobox') continue;
     const lever = leverQuestion(el);
+    if (isRejected(el, type)) {
+      if (args?.revalidate) revalidate(el);
+      invalid.push(lever?.text.trim() || labelFor(el) || el.id || el.getAttribute("name") || `Unlabeled field ${index + 1}`);
+      continue;
+    }
     const required = el.required || el.getAttribute("aria-required") === "true" || lever?.required === true;
     if (!required) continue;
     if ((type === "radio" || type === "checkbox") && el.name) {
@@ -132,5 +153,5 @@
     }
   }
 
-  return empty;
+  return { required_empty: empty, invalid: [...new Set(invalid)] };
 }

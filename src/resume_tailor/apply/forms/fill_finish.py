@@ -16,6 +16,8 @@ from resume_tailor.apply.funnel.store_models import FillResult
 
 from . import fill_buttons, fill_outcomes, fill_page, fill_state, fill_widgets
 
+REJECTED_NOTE = "the form rejects this value"
+
 
 def upload_failed(uploads: list[dict[str, Any]]) -> bool:
     """An attachment that should be on the form is not; an optional cover-letter field
@@ -66,14 +68,36 @@ class _FillFinish(fill_state._FillState):
         return result
 
     def _final_required_empty(self) -> list[str]:
+        """Required fields still empty; a value the form rejects becomes a review line."""
+        required_empty, rejected = self._scan_readiness()
+        if rejected:
+            # The marker can be stale from before the value was typed: validate again.
+            self._scan_readiness(revalidate=True)
+            with contextlib.suppress(Exception):
+                self.page.wait_for_timeout(500)
+            required_empty, rejected = self._scan_readiness()
+        for label in rejected:
+            self.progress(f"the form rejects the value in {label[:60]}")
+            note = f"{label}: {REJECTED_NOTE}"
+            if note not in self.needs_review:
+                self.needs_review.append(note)
+        return required_empty
+
+    def _scan_readiness(self, *, revalidate: bool = False) -> tuple[list[str], list[str]]:
+        """(required fields still empty, fields whose value the form rejects)."""
         required_empty: list[str] = []
+        rejected: list[str] = []
         for frame_index, frame in enumerate(self.page.frames):
             try:
-                ready = frame.evaluate(self.readiness_js)
+                ready = (
+                    frame.evaluate(self.readiness_js, {"revalidate": True}) if revalidate
+                    else frame.evaluate(self.readiness_js)
+                )
                 if isinstance(ready, list):
                     required_empty.extend(str(item) for item in ready)
                 elif isinstance(ready, dict):
                     required_empty.extend(str(item) for item in ready.get("required_empty") or [])
+                    rejected.extend(str(item) for item in ready.get("invalid") or [])
                 else:
                     raise ValueError("Unexpected readiness result")
             except Exception:  # noqa: BLE001
@@ -83,7 +107,7 @@ class _FillFinish(fill_state._FillState):
                     if item.get("required") and item.get("frame_index", 0) == frame_index
                 )
                 required_empty.append(f"Could not verify required fields in frame {frame_index}")
-        return list(dict.fromkeys(required_empty))
+        return list(dict.fromkeys(required_empty)), list(dict.fromkeys(rejected))
 
     def _reconcile_observed(self) -> None:
         """Replace the fill's own records with what the form shows now."""

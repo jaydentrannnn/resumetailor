@@ -59,7 +59,7 @@ def test_captured_greenhouse_questions_fill_supported_facts(page):
     assert page.locator("#privacy").is_checked()
     assert page.locator("#cpp").is_checked() and page.locator("#python").is_checked()
     assert not page.locator("#java").is_checked() and not page.locator("#none").is_checked()
-    assert page.evaluate(READY, {}) == []
+    assert page.evaluate(READY, {})["required_empty"] == []
 
 
 def test_transcript_uses_question_not_attach_caption(page):
@@ -87,9 +87,9 @@ def test_readiness_accepts_chips_and_ignores_internal_required_input(page):
     page.set_content(
         '<label for="skills">Skills</label><div class="select__control"><div class="select__multi-value">Python</div><input id="skills" role="combobox" required><input required></div>'
     )
-    assert page.evaluate(READY, {}) == []
+    assert page.evaluate(READY, {})["required_empty"] == []
     page.locator(".select__multi-value").evaluate("e=>e.remove()")
-    assert page.evaluate(READY, {}) == ["Skills"]
+    assert page.evaluate(READY, {})["required_empty"] == ["Skills"]
 
 
 @pytest.mark.parametrize(
@@ -160,7 +160,7 @@ def test_successful_empty_final_scan_does_not_restore_old_missing_fields():
         readiness_js="ready",
         merged={"required_empty": ["Old question"], "leftovers": []},
     )
-    assert fill_finish._FillFinish._final_required_empty(state) == []
+    assert fill_finish._FillFinish._scan_readiness(state) == ([], [])
 
 
 def test_failed_final_scan_still_blocks_readiness():
@@ -172,7 +172,7 @@ def test_failed_final_scan_still_blocks_readiness():
         readiness_js="ready",
         merged={"leftovers": []},
     )
-    assert fill_finish._FillFinish._final_required_empty(state)
+    assert fill_finish._FillFinish._scan_readiness(state)[0]
 
 
 def test_known_start_month_never_goes_to_model_or_cached_guess(monkeypatch):

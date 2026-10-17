@@ -304,9 +304,9 @@ def test_shadow_dom_inputs_are_labelled_and_filled(page):
 
 def test_readiness_sees_empty_required_fields_in_shadow_roots(page):
     page.set_content(_SHADOW)
-    assert page.evaluate(_READINESS, {}) == ["First name"]
+    assert page.evaluate(_READINESS, {})["required_empty"] == ["First name"]
     page.locator("#f").fill("Alex")
-    assert page.evaluate(_READINESS, {}) == []
+    assert page.evaluate(_READINESS, {})["required_empty"] == []
 
 
 _PHONES = """
@@ -459,4 +459,33 @@ def test_lever_cards_use_the_question_and_required_flag_from_the_template(page):
     team = [row for row in result["leftovers"] if row["label"] == "Which team interests you most?"]
     assert team and team[0]["required"] is True
     assert result["required_empty"] == ["Which team interests you most?"]
-    assert page.evaluate(_READINESS, {}) == ["Which team interests you most?"]
+    assert page.evaluate(_READINESS, {})["required_empty"] == ["Which team interests you most?"]
+
+
+_REJECTED = """
+<label for="email">Email</label><input id="email" type="email" required>
+<label for="site">Website</label><input id="site" aria-invalid="true">
+<label for="blank">LinkedIn</label><input id="blank" aria-invalid="true">
+"""
+
+
+def test_readiness_reports_values_the_form_rejects(page):
+    page.set_content(_REJECTED)
+    page.locator("#email").fill("not-an-email")
+    page.locator("#site").fill("example")
+    # An empty field marked invalid is the empty-field check's business, not this one.
+    assert page.evaluate(_READINESS, {}) == {"required_empty": [], "invalid": ["Email", "Website"]}
+    page.locator("#email").fill("alex@example.com")
+    assert page.evaluate(_READINESS, {})["invalid"] == ["Website"]
+
+
+def test_readiness_revalidates_a_stale_rejection(page):
+    # The form marks the field on load and clears the marker only when it validates on blur.
+    page.set_content(
+        '<label for="phone">Phone</label>'
+        '<input id="phone" value="555 010 0000" aria-invalid="true"'
+        """ onblur="this.removeAttribute('aria-invalid')">"""
+    )
+    assert page.evaluate(_READINESS, {})["invalid"] == ["Phone"]
+    page.evaluate(_READINESS, {"revalidate": True})
+    assert page.evaluate(_READINESS, {})["invalid"] == []
