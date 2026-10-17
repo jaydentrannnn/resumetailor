@@ -6,11 +6,22 @@ import contextlib
 from pathlib import Path
 from typing import Any
 
-from resume_tailor.apply.answers import answer, answer_memory, education, form_facts, widget_actions
+from resume_tailor.apply.answers import (
+    answer,
+    answer_memory,
+    education,
+    form_facts,
+    model_fallback,
+    widget_actions,
+)
 from resume_tailor.apply.forms import form_guards, form_routes
 from resume_tailor.apply.funnel import cover_on_demand
 
 from . import fill_buttons, fill_outcomes, fill_state, fill_widgets
+
+#: Review notes that carry their reason, so an observed value never clears them.
+SHORTENED_NOTE = "shortened to fit the form's limit"
+NOT_DRAFTED_NOTE = "could not draft an answer"
 
 
 class _FillAnswers(fill_state._FillState):
@@ -239,23 +250,32 @@ class _FillAnswers(fill_state._FillState):
             # always left for review (a form limit, not resume truncation).
             saved_answer, shortened = form_guards.fit_to_limit(recalled.answer, maxlength)
             if shortened:
-                self.needs_review.append(label)
+                # Its own note, so the observed text does not clear it (`_reconcile_observed`).
+                self.needs_review.append(f"{label}: {SHORTENED_NOTE}")
                 if not saved_answer:
                     return
             self.long_text_answers[label] = saved_answer
             self._fill_if_empty(item, saved_answer)
             return
-        ans = answer.answer_question(
-            label,
-            resume=self.resume,
-            bullets=self.bullets,
-            requirements=self.requirements,
-            profile=self.profile,
-            max_chars=maxlength if maxlength > 0 else 1500,
-            jd_text=self.jd_text,
-            deadline=self.deadline,
-            extras=answer.AnswerExtras(company=self.app.company or self.pkt.company or ""),
-        )
+        try:
+            ans = model_fallback.call(lambda: answer.answer_question(
+                label,
+                resume=self.resume,
+                bullets=self.bullets,
+                requirements=self.requirements,
+                profile=self.profile,
+                max_chars=maxlength if maxlength > 0 else 1500,
+                jd_text=self.jd_text,
+                deadline=self.deadline,
+                extras=answer.AnswerExtras(company=self.app.company or self.pkt.company or ""),
+            ))
+        except Exception as exc:  # noqa: BLE001 - one question must not end the fill
+            if self._out_of_time():
+                return  # the step's own deadline check stops the fill
+            self.progress(f"could not draft an answer for {label[:60]} ({type(exc).__name__})")
+            if item.get("required"):
+                self.needs_review.append(f"{label}: {NOT_DRAFTED_NOTE}")
+            return
         if ans.offenders or not ans.answer:
             self.needs_review.append(label)
             return
@@ -272,7 +292,7 @@ class _FillAnswers(fill_state._FillState):
             return
         fitted, shortened = form_guards.fit_to_limit(text, int(item.get("maxlength") or 0))
         if shortened:
-            self.needs_review.append(label)
+            self.needs_review.append(f"{label}: {SHORTENED_NOTE}")
             if not fitted:
                 return
         self.long_text_answers[label] = fitted
