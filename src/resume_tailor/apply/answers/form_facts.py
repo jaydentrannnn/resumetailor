@@ -37,6 +37,8 @@ _NOTICE = re.compile(
     r"|understand and (?:agree|accept|acknowledge)|\bconsent|privacy|personal information policy"
     r"|read.{0,35}(?:statement|notice|policy)|certif|attest|signature"
     r"|terms (?:and|&) conditions|\bi authori[sz]e\b|\bdeclar(?:e|ation)\b"
+    r"|\bi\s+(?:fully\s+|also\s+)?understand\b|\bi\s+have\s+read\b"
+    r"|electronic(?:ally)?\s+sign|background\s+(?:check|screen)|drug\s+(?:screen|test)"
 )
 #: A declaration that states a fact about the applicant ("I confirm that I am legally
 #: authorized to work..."): answered from that fact, never agreed to blindly.
@@ -48,19 +50,164 @@ _FACT_CLAIM = re.compile(
     r"|sponsor|\bvisa\b|non[- ]?compet|non[- ]?solicit|convict|felon|criminal|\b18\b"
     r"|years\s+of\s+age|clearance)"
 )
-#: Optional opt-ins the applicant declines (marketing, alerts, texts, talent pools).
+#: Optional opt-ins the applicant declines (marketing, alerts, texts, talent pools, news
+#: about other openings). "Other positions" is a preference instead (`questions`).
 _OPT_IN = re.compile(
-    r"marketing|newsletter|promotional|job alerts?|text messages?|\bsms\b"
-    r"|talent (?:community|network|pool)|advertising partners?|share.{0,70}personal information.{0,70}partners"
+    r"marketing|newsletter|promotional|job\s+(?:alerts?|notifications?|recommendations?)"
+    r"|text\s+messag|\bsms\b|whatsapp|talent (?:community|network|pool)|advertising partners?"
+    r"|share.{0,70}personal information.{0,70}partners|\bnews\b|hiring\s+events?"
+    r"|event\s+invitations?|updates\s+about\s+(?:new\s+)?(?:openings|jobs|roles|opportunit)"
+    r"|(?:future|other|new|additional|similar|upcoming)\s+(?:job\s+|career\s+|employment\s+)?"
+    r"(?:opportunit|openings?\b|roles?\b|vacanc)"
 )
 _OPT_IN_ACTION = re.compile(
-    r"\b(?:i|we)\s+(?:(?:would|do)\s+)?(?:like|want|wish|agree|consent|authori[sz]e|allow|permit)\b"
+    r"\b(?:i|we)\s+(?:(?:would|do)\s+)?(?:not\s+)?(?:like|want|wish|agree|consent|authori[sz]e"
+    r"|allow|permit)\b"
     r"|\b(?:would|do|will)\s+you\s+(?:like|want|wish|agree|consent|allow|permit)\b"
-    r"|\bmay\s+we\s+(?:contact|send|keep|retain|share)\b"
-    r"|^\s*(?:opt[- ]?in|join|subscribe|sign\s*up|receive|send\s+me|email\s+me|text\s+me|keep\s+me)\b"
+    r"|\bmay\s+(?:we\s+)?(?:contact|send|text|email|call|keep|retain|share|reach)\b"
+    r"|\bcan\s+(?:contact|send|text|email|call|reach)\s+me\b|\bagreement\s+to\s+receive\b"
+    r"|\bopt(?:ed)?[- ]?in\b"
+    r"|^\s*(?:join|subscribe|sign\s*(?:me\s+)?up|receive|send\s+me|email\s+me|text\s+me|keep\s+me)\b"
     r"|^\s*(?:consent|agree|permission)\s+(?:to|for)\b"
     r"|^\s*(?:sms|text messages?|marketing|newsletter|job alerts?)\s+(?:opt[- ]?in|consent)\b"
 )
+
+# -- one statement at a time: a notice is routine only when every statement in it is ----
+_SENTENCE_BREAK = re.compile(r"(?<=[.;!?])\s+|\s+[-–—•]\s+|\s*;\s*|\.\.\.+")
+#: Where a sentence holds a second statement: "and" before a new verb ("I agree to the
+#: terms and would like to join..."), but not "terms and conditions".
+_CLAUSE_BREAK = re.compile(
+    r",?\s+(?:and|but|as\s+well\s+as|&)\s+"
+    r"(?=(?:that|i|to|also|further|hereby|would|will|am|opt|confirm|certify|agree|acknowledge"
+    r"|consent|understand|authori[sz]e|accept|attest|declare|receive|join|have|do|did|are|is"
+    r"|can|were)\b)"
+)
+#: A statement the applicant makes: first person, an instruction to them, "you agree...".
+_APPLICANT_VOICE = re.compile(
+    r"(?<![\w-])(?:i|i'm|i've|me|my|mine|myself)(?![\w-])"  # not the "I-9" form
+    r"|^(?:please\s+)?(?:acknowledge|confirm|agree|accept|certify|attest|consent|authori[sz]e"
+    r"|declare|read|review|check|select|tick|indicate|sign)\b"
+    r"|\byou\s+(?:hereby\s+)?(?:agree|consent|acknowledge|accept|certify|confirm|understand"
+    r"|authori[sz]e|attest|declare)\b"
+)
+#: A requirement placed on the applicant ("Candidates must be authorized to work", "This
+#: role is based on-site"): acknowledging it can claim the applicant meets it.
+_REQUIREMENT = re.compile(
+    r"\b(?:you|applicants?|candidates?|interns?|employees?)\s+(?:must|should|will\s+need\s+to"
+    r"|need\s+to|are\s+required\s+to|will\s+be\s+required\s+to)\s+(?:be|have|hold|possess"
+    r"|reside|live|work|relocate|commit)\b"
+    r"|\b(?:role|position|job|internship|program|opportunity)\s+(?:requires?|is\s+(?:a\s+|an\s+)?"
+    r"(?:located|based|on[- ]?site|in[- ]office|remote|hybrid|full[- ]time|part[- ]time))\b"
+    r"|\bmust\s+be\s+(?:legally|authori|eligible|able|willing|at\s+least|currently|enrolled)"
+)
+_ASSENTING = (
+    r"aware|electronically|signing|submitting|applying|providing|giving|consenting|agreeing"
+    r"|accepting|acknowledging|confirming|certifying|attesting|authori[sz]ing|voluntarily|hereby"
+)
+#: A statement of fact about the applicant ("I am authorized", "I have never been
+#: convicted", "you are a member of..."), unlike the verbs that accept a notice ("I am
+#: aware", "I have read", "you agree", "I will be asked to complete a background check").
+_STATE_CLAIM = re.compile(
+    rf"\b(?:i(?:'m|\s+am)|you(?:'re|\s+are))\b(?!\s+(?:{_ASSENTING})\b)"
+    r"|\b(?:i|you)(?:'ve|\s+have)\b(?!\s+(?:read|reviewed|received|answered|understood|carefully"
+    r"|fully|provided|submitted|completed\s+(?:this|the)|been\s+(?:informed|advised|given"
+    r"|provided|made\s+aware)|had\s+the\s+opportunity)\b)"
+    r"|\b(?:i|you)\s+(?:hold|possess|meet|satisfy|qualify|could|won'?t|do\s+not|don'?t|did\s+not"
+    r"|didn'?t|was|were|currently|live|reside|plan|intend|expect|graduat\w*|speak|own|require"
+    r"|need|work)\b"
+    r"|\bi\s+can\b(?!\s+(?:withdraw|revoke|opt|unsubscribe|request|change|update|access|ask)\b)"
+    r"|\b(?:i|you)\s+will\b(?!\s+(?:be\s+)?(?:asked|required|subject|expected|redirected)\s+to\b"
+    r"|\s+receive\b)"
+    r"|\bapply\s+to\s+me\b|\bme\s+to\s+(?:be|have|hold|work|relocate)\b"
+    r"|consider(?:ed)?\s+(?:me\s+)?for\s+(?:other|additional|similar)\b"
+)
+#: A question or request for something about the applicant ...
+_QUESTION_START = re.compile(
+    r"^(?:are|is|do|does|did|have|has|had|will|would|can|could|were|was|what|when|where|which"
+    r"|who|how|why)\b"
+    r"|^(?:please\s+)?(?:list|describe|provide|enter|tell\s+us|share|explain|specify|state)\b"
+)
+_QUESTION = re.compile(rf"{_QUESTION_START.pattern}|\?\W*$")
+#: ... unless it asks for assent to a process ("Do you agree to the terms?", "Are you
+#: comfortable with a background check?").
+_ASSENT_QUESTION = re.compile(
+    r"^(?:do|will|would|can)\s+you\s+(?:hereby\s+)?(?:agree|consent|accept|acknowledge"
+    r"|understand|authori[sz]e|certify|attest)\b"
+    r"|^(?:have|did)\s+you\s+read\b"
+    r"|^(?:are|would)\s+you\s+(?:be\s+)?(?:comfortable|willing|okay|ok|able)\s+"
+    r"(?:with|to\s+(?:undergo|complete|consent|submit|pass|sign))\b"
+)
+#: What a routine statement is about: the documents, processes and declarations agreed
+#: to without asserting anything about the applicant.
+_PROCESS = re.compile(
+    r"\bterms\b|\bconditions\b|\bt\s*&\s*c|polic(?:y|ies)|\bnotice|privacy|statements?\b|disclosures?"
+    r"|agreements?\b|provisions?\b|poster|handbook|code\s+of\s+conduct|consent\s+form"
+    r"|authori[sz]ation\s+form|the\s+(?:above|following|preceding)\b"
+    r"|(?:checkbox(?:es)?|boxes|items)\s+(?:above|below)|job\s+description"
+    r"|(?:this|the|my)\s+application\b|information\b|\bdata\b|responses|truthful|accura(?:te|cy)"
+    r"|\btrue\b|\bcomplete\b|\bcorrect\b|arbitration|disputes?\b|at[- ]will|e-?verify|background"
+    r"|\bdrug|screen(?:ing)?\b|reference\s+checks?|verif(?:y|ication)|investigat"
+    r"|electronic(?:ally)?|signature|\bsign(?:ing|ed)?\b|record(?:ed|ing)\b|automated"
+    r"|contingent|\bfalse\b|omission|misrepresent|rejection|termination|dismissal"
+    r"|equal\s+(?:employment\s+)?opportunity|pay\s+transparency|know\s+your\s+rights|\beeo\b"
+    r"|demographic|self[- ]identification|(?:tobacco|smoke|drug|alcohol)[- ]free"
+    r"|communications?\b|hiring\s+process|payment|cookies?|retention|withdraw"
+)
+#: The words of a bare acceptance ("I acknowledge", "Yes, I have read and agree", "Type
+#: 'I agree' to continue"): a statement made of these alone accepts what it captions.
+_ASSENT_WORDS = re.compile(
+    r"\b(?:i|we|you|hereby|have|has|fully|carefully|willingly|voluntarily|yes|ok(?:ay)?|and|or"
+    r"|to|the|that|this|these|all|it|of|a|an|my|will|shall|please|by|submit(?:ting)?"
+    r"|application|form|checking|selecting|ticking|clicking|check"
+    r"|select|tick|click|box|checkbox|type|enter|write|continue|proceed|here|below|above"
+    r"|following|acknowledg\w*|confirm\w*|agree\w*|accept\w*|consent\w*|understand|understood"
+    r"|read|review(?:ed)?|certif(?:y|ied)|attest\w*|declar\w*|authori[sz]\w*|sign(?:ed)?)\b"
+)
+#: Subjects that bear on the applicant's eligibility, availability or background: a
+#: notice that mentions one is never routine on its wording alone.
+_CLAIM_TOPIC = re.compile(
+    r"authori[sz]ed\s+to\s+work|work\s+authori[sz]ation|eligib\w*\s+to\s+work|citizen"
+    r"|permanent\s+resident|green\s+card|sponsor|\bvisas?\b|non[- ]?compet|non[- ]?solicit"
+    r"|restrictive\s+covenant|convict|felon|criminal\s+(?:record|offen[cs]e|charge)|\b18\b"
+    r"|years\s+of\s+age|legal\s+age|clearance|relocat|on[- ]?site|in[- ]office|\bhybrid\b"
+    r"|\bremote\b|commut|hours?\s*(?:per|a|/)\s*week|full[- ]time|part[- ]time|\bshifts?\b"
+    r"|weekends?|\btravel|start\s+date|available\s+to\s+(?:work|start)|availability|graduat"
+    r"|enrol|\bdegree\b|\bgpa\b|grade\s+point|coursework|licen[cs]ed|licensure"
+    r"|driver'?s?\s+licen|(?:professional|valid|active)\s+licen|certified|certifications?"
+    r"|fluen|proficien|\bqualifications?\b|relatives?\b|family\s+members?|related\s+to"
+    r"|government\s+(?:employee|official)|former\s+employee|previously\s+(?:worked|employed)"
+    r"|currently\s+employed|(?:years?|work|professional|relevant|prior|previous)\s+(?:of\s+)?"
+    r"experience|experience\s+(?:with|in)\b|\bskills?\b"
+)
+
+
+def _strip(part: str) -> str:
+    return part.strip(" *:,-–—\"'“”")
+
+
+def _statements(low: str, *, asks: bool = True) -> list[tuple[str, bool]]:
+    """Each clause in ``low``, with whether it is a question put to the applicant (only
+    when ``asks``: help text's "Questions? Contact us" is not). A question's later
+    clauses are questions of their own only when worded as one ("..., and are you...")."""
+    out = []
+    for sentence in filter(None, map(_strip, _SENTENCE_BREAK.split(low))):
+        asked = asks and bool(_QUESTION.search(sentence))
+        clauses = filter(None, map(_strip, _CLAUSE_BREAK.split(sentence)))
+        out.extend((clause, asked and (index == 0 or bool(_QUESTION_START.search(clause))))
+                   for index, clause in enumerate(clauses))
+    return out
+
+
+def _claims(statement: str, question: bool) -> bool:
+    """Whether ``statement`` asserts or asks something about the applicant."""
+    if question and not _ASSENT_QUESTION.search(statement):
+        return True
+    return bool(_STATE_CLAIM.search(statement))
+
+
+def _process(statement: str) -> bool:
+    bare = not re.sub(r"[\W\d_]+", " ", _ASSENT_WORDS.sub(" ", statement)).strip()
+    return bare or bool(_PROCESS.search(statement))
 
 
 #: A text box the applicant fills to accept a notice: an e-signature, today's date beside
@@ -84,7 +231,7 @@ def typed_consent(text: str, help_text: str = "") -> str:
     token = _TYPE_TOKEN.search(context)
     # Only a notice's token ("Type 'I agree'"), never "Enter 'N/A' if none" or a quoted
     # word that would assert a fact about the applicant.
-    if token and acknowledgement(context) == "routine":
+    if token and acknowledgement(text, help_text) == "routine":
         return token.group(1).strip()
     label = re.sub(r"[*:]\s*$", "", text.strip()).strip().casefold()
     if _SIGNED_DATE.search(label):
@@ -94,23 +241,44 @@ def typed_consent(text: str, help_text: str = "") -> str:
     return ""
 
 
-def acknowledgement(text: str) -> str:
-    """What kind of notice ``text`` is, using the whole question, not a box's caption:
-    "routine" (a notice, process or declaration of accuracy to agree to: privacy,
-    background check, screening, terms, arbitration, signature), "fact" (it asserts
-    something about the applicant), "optional" (an opt-in to decline), else ""."""
-    low = text.casefold()
-    if _OPT_IN.search(low):
-        if _OPT_IN_ACTION.search(low):
-            return "optional"
-        if re.search(r"\bexperience\b|\bskills?\b|\bexpertise\b", low):
-            return "fact"
+def acknowledgement(text: str, help_text: str = "") -> str:
+    """What kind of notice ``text`` (with the ``help_text`` beside it) is, using the whole
+    question, not a box's caption.
+
+    In priority order: "optional" (any statement is an opt-in to decline), "fact" (one
+    asserts or asks something about the applicant), "routine" (every statement the
+    applicant makes is process language: a notice, policy, check or declaration of
+    accuracy to agree to), "unclear" (a notice that is neither, which is never agreed
+    to on its wording), else "" (not a notice).
+    """
+    low = f"{text} {help_text}".casefold()
+    caption = _statements(text.casefold())
+    statements = caption + _statements(help_text.casefold(), asks=False)
+    if talent_pool(low) or any(
+        _OPT_IN.search(part) and _OPT_IN_ACTION.search(part)
+        for part in (low, *(part for part, _question in statements))
+    ):
+        return "optional"
+    if _OPT_IN.search(low) and re.search(r"\bexperience\b|\bskills?\b|\bexpertise\b", low):
+        return "fact"
     if re.search(r"graduat|date of birth|\bminimum\s+qualification", low):
         return "fact"
     if not _NOTICE.search(low):
         return ""
-    if _FACT_CLAIM.search(low):
+    voiced = [(part, question) for part, question in statements
+              if question or _APPLICANT_VOICE.search(part)]
+    if _FACT_CLAIM.search(low) or any(_claims(part, question) for part, question in voiced):
         return "fact"
+    # Third-person context ("Acme participates in E-Verify") asserts nothing, unless it is
+    # a requirement placed on the applicant; a caption with no statement of the
+    # applicant's own ("Privacy Notice") must itself be process language.
+    own = [part for part, _question in voiced]
+    required = [part for part, _question in statements if _REQUIREMENT.search(part)]
+    if any(_CLAIM_TOPIC.search(part) for part in own + required):
+        return "unclear"
+    checked = own or [part for part, _question in caption or statements]
+    if not all(_process(part) for part in checked):
+        return "unclear"
     return "routine"
 
 
@@ -138,7 +306,7 @@ def semantic_key(text: str, help_text: str = "") -> str:
         return "relatives_at_company"
     if talent_pool(text):
         return TALENT_POOL
-    if acknowledgement(f"{text} {help_text}"):
+    if acknowledgement(text, help_text):
         return ACKNOWLEDGEMENT
     return ""
 

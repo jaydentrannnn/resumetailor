@@ -28,8 +28,10 @@ def classify(field: FieldObservation) -> tuple[Classification, str]:
         return "manual_review", "not_an_education_question"
     semantic = form_facts.semantic_key(field.label, field.help_text)
     if semantic:
-        kind = (form_facts.acknowledgement(f"{field.label} {field.help_text}")
+        kind = (form_facts.acknowledgement(field.label, field.help_text)
                 if semantic == form_facts.ACKNOWLEDGEMENT else "")
+        if kind == "unclear":
+            return "manual_review", "notice_needs_review"
         if kind != "fact":
             return "known", semantic
     # Self-identification before salary: VEVRAA's veteran question quotes "entitled to

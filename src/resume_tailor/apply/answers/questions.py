@@ -333,7 +333,7 @@ def classify(question: Question) -> Match | None:
     # A declaration that states a fact ("I confirm I am authorized to work") is answered
     # from that fact; a notice never answers a text box ("Confirm your email").
     claim = semantic == form_facts.ACKNOWLEDGEMENT and (
-        typed or form_facts.acknowledgement(f"{text} {question.help_text}") == "fact"
+        typed or form_facts.acknowledgement(text, question.help_text) == "fact"
     )
     if semantic and not claim:
         return Match(semantic)
@@ -519,7 +519,7 @@ def answers(match: Match | None, question: Question, facts: Facts) -> list[str]:
     if match.key == form_facts.SKILLS:
         return form_facts.skill_options(question.options, facts.skills)
     if match.key == form_facts.ACKNOWLEDGEMENT:
-        kind = form_facts.acknowledgement(f"{question.text} {question.help_text}")
+        kind = form_facts.acknowledgement(question.text, question.help_text)
         if kind == "optional":
             return _DECLINE
         opted_in = facts.fields.get("auto_accept_routine_acknowledgements") == "Yes"

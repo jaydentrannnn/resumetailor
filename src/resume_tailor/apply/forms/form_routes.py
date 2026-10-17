@@ -131,8 +131,9 @@ def consent_candidates(
 
     Every required notice is agreed to when ``allow_routine`` (the applicant's "Agree to
     required notices and consents"): privacy, background checks, screening, accuracy,
-    terms, arbitration, signatures. A box that states a fact about the applicant ("I
-    confirm I am authorized to work...") is left for them (2026-10-12).
+    terms, arbitration, signatures. Only a box `form_facts.acknowledgement` reads as
+    routine is ticked; one that states a fact about the applicant ("I confirm I am
+    authorized to work..."), opts in, or reads as neither is left for them.
     """
     accepted = []
     unresolved = []
@@ -144,8 +145,11 @@ def consent_candidates(
             unresolved.append(row)
             continue
         if _CONSENT.search(label) or _NOTICE_WORDS.search(label):
-            fact = form_facts.acknowledgement(str(row.get("context") or label)) == "fact"
-            target = accepted if allow_routine and not fact and row.get("enabled") \
+            # `CONSENT_JS` context is the caption, then its description and help text.
+            context = str(row.get("context") or "").strip()
+            context = context[len(label):] if context.startswith(label) else context
+            routine = form_facts.acknowledgement(label, context) == "routine"
+            target = accepted if allow_routine and routine and row.get("enabled") \
                 and row.get("visible") else unresolved
             target.append(row)
     return accepted, [str(row.get("label") or "Consent") for row in unresolved]
@@ -214,7 +218,7 @@ def is_required_consent(leftover: dict[str, Any]) -> bool:
         and leftover.get("selector")
         and _CONSENT.search(label)
         and not _EXCLUDE.search(label)
-        and form_facts.acknowledgement(label) != "fact"
+        and form_facts.acknowledgement(label) == "routine"
     )
 
 
