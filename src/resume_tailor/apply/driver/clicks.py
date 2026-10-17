@@ -10,7 +10,8 @@ three checked what they were about to press. Now:
   cannot be read at all (fail closed). ``select`` (options, labels, checkboxes)
   refuses a real submit control. ``auth`` (Sign In, Create Account, the email-route
   chooser) is not text-checked, because Workday labels its sign-in overlay "Submit".
-  Only the auth flows use it.
+  Only the auth flows use it. ``remove`` (an upload widget's delete control, used to
+  replace the app's own outdated attachment) is text-checked like navigation.
 - `submit_click` is the one function that may press a final submit, and only with an
   ``auto_submit`` decision from `fill_buttons.decide_submit_action`.
 - `mouse_click` / `async_mouse_click` wrap coordinate clicks (Workday's click-filter
@@ -25,7 +26,7 @@ from __future__ import annotations
 import re
 from typing import Any, Literal
 
-Purpose = Literal["advance", "enter", "dismiss", "select", "auth", "upload"]
+Purpose = Literal["advance", "enter", "dismiss", "select", "auth", "upload", "remove"]
 
 #: Text that means "this sends the application". "Apply" alone is not here: it opens
 #: an application (posting pages, Workday's "Apply Manually").
@@ -36,7 +37,7 @@ SUBMIT_TEXT = re.compile(
 )
 
 #: Purposes whose target must not read as a submit.
-_TEXT_CHECKED: frozenset[str] = frozenset({"advance", "enter", "dismiss", "upload"})
+_TEXT_CHECKED: frozenset[str] = frozenset({"advance", "enter", "dismiss", "upload", "remove"})
 
 _LABEL_JS = """el => [el.innerText || '', el.getAttribute('aria-label') || '',
   el.getAttribute('value') || '', el.getAttribute('title') || ''].join(' ')"""

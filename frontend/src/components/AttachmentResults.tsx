@@ -1,4 +1,5 @@
 import type { ApplyAttachment } from "../api";
+import { attachmentStateLabel } from "../lib/attachmentState";
 
 export function AttachmentResults({ uploads }: { uploads: ApplyAttachment[] }) {
   if (uploads.length === 0) return null;
@@ -7,8 +8,7 @@ export function AttachmentResults({ uploads }: { uploads: ApplyAttachment[] }) {
       <h4 className="rt-eyebrow mb-2">Documents</h4>
       <ul className="space-y-1 text-xs text-ink-muted">
         {uploads.map((upload, index) => {
-          const state =
-            upload.state?.replaceAll("_", " ") || (upload.verified ? "verified" : "unverified");
+          const state = attachmentStateLabel(upload);
           const filename = upload.observed_filename || upload.expected_filename || upload.filename;
           return (
             <li key={`${upload.purpose}-${index}`}>

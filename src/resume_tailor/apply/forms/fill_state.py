@@ -305,6 +305,14 @@ class _FillState:
     def cover_path(self) -> Any:
         return self.pkt.artifacts.get("cover_pdf") or self.pkt.artifacts.get("cover_docx")
 
+    def artifact_path(self, purpose: str) -> Any:
+        """The prepared document an upload of ``purpose`` attaches."""
+        if purpose == "resume":
+            return self.resume_path
+        if purpose in {"transcript", "portfolio"}:
+            return self.pkt.artifacts.get(f"{purpose}_pdf")
+        return self.cover_path
+
     def _cover_letter(self, required: bool) -> tuple[str, bool]:
         """`cover_on_demand.resolve` for one cover-letter field, with a progress line
         when a letter has to be written."""

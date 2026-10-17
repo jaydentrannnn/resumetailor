@@ -14,7 +14,14 @@ from resume_tailor.apply.forms import submit_guard
 from resume_tailor.apply.funnel import packet_profile_fields, store
 from resume_tailor.apply.funnel.store_models import FillResult
 
-from . import fill_buttons, fill_outcomes, fill_page, fill_state, fill_widgets
+from . import (
+    fill_buttons,
+    fill_outcomes,
+    fill_page,
+    fill_state,
+    fill_widgets,
+    upload_replace,
+)
 
 REJECTED_NOTE = "the form rejects this value"
 
@@ -213,10 +220,20 @@ class _FillFinish(fill_state._FillState):
                 ):
                     continue
                 visible = bool(filename) and self._filename_visible(str(filename))
+                # Seen only off its upload step (Workday's Review page): an outdated copy
+                # of the app's own upload cannot be swapped from here.
+                stale = visible and upload_replace.attached_by_app(
+                    [prior], str(purpose), str(filename),
+                    upload_replace.artifact_sha256(self.artifact_path(str(purpose))),
+                ) == "stale"
+                ours = {key: prior[key] for key in ("uploaded_by_app", "artifact_sha256")
+                        if key in prior}
                 uploads.append({
-                    "purpose": purpose, "filename": filename or "", "verified": visible,
-                    "preserved": visible,
-                    "error": "" if visible else "Previous attachment is not visible in this tab",
+                    "purpose": purpose, "filename": filename or "",
+                    "verified": visible and not stale, "preserved": visible,
+                    "error": upload_replace.EARLIER_STEP_NOTE if stale
+                    else "" if visible else "Previous attachment is not visible in this tab",
+                    **(ours or ({"state": "kept_existing"} if visible else {})),
                 })
         by_purpose: dict[str, dict[str, Any]] = {}
         for item in uploads:

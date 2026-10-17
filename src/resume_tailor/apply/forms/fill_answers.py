@@ -17,7 +17,7 @@ from resume_tailor.apply.answers import (
 from resume_tailor.apply.forms import form_guards, form_routes
 from resume_tailor.apply.funnel import cover_on_demand
 
-from . import fill_buttons, fill_outcomes, fill_state, fill_widgets
+from . import fill_buttons, fill_outcomes, fill_state, fill_widgets, upload_replace
 
 #: Review notes that carry their reason, so an observed value never clears them.
 SHORTENED_NOTE = "shortened to fit the form's limit"
@@ -101,12 +101,7 @@ class _FillAnswers(fill_state._FillState):
                 })
                 self.uploaded_controls.add(("file", sel))
             return False
-        path = (
-            self.resume_path if purpose == "resume"
-            else self.pkt.artifacts.get(f"{purpose}_pdf")
-            if purpose in {"transcript", "portfolio"}
-            else self.cover_path
-        )
+        path = self.artifact_path(purpose)
         key = (purpose, f"{frame_index}:{sel}")
         if (purpose, frame_index) in self.verified_purposes:
             return False
@@ -119,14 +114,15 @@ class _FillAnswers(fill_state._FillState):
         record = {"selector": sel, "label": label, "purpose": purpose}
         if purpose == "cover_letter":
             record["cover_letter_mode"] = self.settings.cover_letter_mode
+        sha = upload_replace.artifact_sha256(path)
         existing_filename = fill_outcomes._attached_filename(upload_target, sel)
+        # A native input replaces its file on the next upload; a listing widget needs the
+        # old file removed first.
+        replacing = False
         if isinstance(existing_filename, str) and existing_filename:
-            self.uploads.append({
-                **record, "filename": existing_filename, "verified": True, "preserved": True,
-                "frame_index": frame_index,
-            })
-            self.verified_purposes.add((purpose, frame_index))
-            return False
+            replacing = self._keep_attached(record, existing_filename, sha, frame_index)
+            if not replacing:
+                return False
         if purpose == "cover_letter":
             action, written = self._cover_letter(bool(is_dict and fin.get("required")))
             if action == "skip":
@@ -138,6 +134,7 @@ class _FillAnswers(fill_state._FillState):
                 })
                 return False
             path = self.cover_path
+            sha = upload_replace.artifact_sha256(path)
             if written:
                 record["reason"] = cover_on_demand.GENERATED_NOTE
         if not path or not Path(path).is_file():
@@ -164,14 +161,19 @@ class _FillAnswers(fill_state._FillState):
         with contextlib.suppress(Exception):
             listed = upload_target.get_by_text(staged_name, exact=False).count()
             already_listed = isinstance(listed, int) and listed > 0
-        if already_listed:
-            self.uploads.append({
-                **record, "filename": staged_name, "verified": True, "preserved": True,
-                "frame_index": frame_index,
-            })
-            self.verified_purposes.add((purpose, frame_index))
-            self.progress(f"{purpose.replace('_', ' ')} already attached: {staged_name}")
-            return False
+        if already_listed and not replacing:
+            if not self._keep_attached(record, staged_name, sha, frame_index):
+                self.progress(f"{purpose.replace('_', ' ')} already attached: {staged_name}")
+                return False
+            replacing = True
+            if not upload_replace.remove_listed(upload_target, staged_name):
+                self.uploads.append({
+                    **record, "filename": staged_name, "verified": False,
+                    "error": upload_replace.NOT_REPLACED_NOTE, "frame_index": frame_index,
+                })
+                return False
+        if replacing:
+            self.progress(f"replacing the earlier {purpose.replace('_', ' ')} upload")
         self.progress(f"uploading {purpose.replace('_', ' ')}: {staged_name}")
         uploaded = False
         upload_error = "Upload could not be verified on the form"
@@ -188,12 +190,32 @@ class _FillAnswers(fill_state._FillState):
         self.uploads.append({
             **record, "filename": staged_name, "verified": uploaded,
             "error": "" if uploaded else upload_error, "frame_index": frame_index,
+            "uploaded_by_app": uploaded, "artifact_sha256": sha,
+            **({"reason": upload_replace.REPLACED_NOTE} if uploaded and replacing else {}),
         })
         if not uploaded:
             return False
         self.verified_purposes.add((purpose, frame_index))
         self.progress(f"{purpose.replace('_', ' ')} attachment verified")
         return purpose == "resume"
+
+    def _keep_attached(
+        self, record: dict[str, Any], shown: str, sha: str, frame_index: int
+    ) -> bool:
+        """Record a file already attached as kept, unless it is the app's own outdated
+        upload: True means replace it."""
+        purpose = str(record["purpose"])
+        whose = upload_replace.attached_by_app(self.previous_fill.uploads, purpose, shown, sha)
+        if whose == "stale":
+            return True
+        self.uploads.append({
+            **record, "filename": shown, "verified": True, "preserved": True,
+            "frame_index": frame_index,
+            **({"state": "preserved", "uploaded_by_app": True, "artifact_sha256": sha}
+               if whose == "current" else {"state": "kept_existing"}),
+        })
+        self.verified_purposes.add((purpose, frame_index))
+        return False
 
     def _fill_if_empty(self, item: dict[str, Any], text: str) -> None:
         sel = item.get("selector")

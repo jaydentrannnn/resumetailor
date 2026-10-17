@@ -65,6 +65,7 @@ export type ApplyAttachment = {
   state?:
     | "not_requested"
     | "preserved"
+    | "kept_existing"
     | "uploading"
     | "verified"
     | "missing_artifact"
@@ -73,6 +74,9 @@ export type ApplyAttachment = {
   expected_filename?: string;
   observed_filename?: string;
   reason?: string;
+  preserved?: boolean;
+  /** The app attached this file itself (a Continue fill replaces it once outdated). */
+  uploaded_by_app?: boolean;
 };
 
 export type ApplicationRow = {
