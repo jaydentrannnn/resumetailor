@@ -1,0 +1,1114 @@
+{
+ "about": "Notice texts labelled for the acknowledgement detector (form_facts.acknowledgement). live-*: distinct labels from real fills, company names replaced with Acme. syn-*: hard cases. Labels: routine = a process notice or accuracy declaration to agree to; optional = an opt-in to decline; fact = a claim about the applicant, or a question asking for one, never agreed to and answered only from fact_key (the question key the fill looks up; 'resume' = answered from the resume text; 'applicant' = no source, left for the applicant); not_a_notice = any other question or field (an echo of another field, a credential, an essay, the application source), never agreed to (any result but routine passes).",
+ "cases": [
+  {
+   "id": "live-000",
+   "source": "live",
+   "text": "Acknowledge, confirm, and agree to the following statements. *",
+   "label": "routine",
+   "note": "caption only: the statements themselves were separate boxes"
+  },
+  {
+   "id": "live-001",
+   "source": "live",
+   "text": "I willingly accept the Terms and Conditions for submitting an application with Acme.*",
+   "label": "routine"
+  },
+  {
+   "id": "live-002",
+   "source": "live",
+   "text": "I acknowledge and agree to Acme’s Recruiting Privacy Notice.",
+   "label": "routine"
+  },
+  {
+   "id": "live-003",
+   "source": "live",
+   "text": "I willingly accept the Terms and Conditions.*",
+   "label": "routine"
+  },
+  {
+   "id": "live-004",
+   "source": "live",
+   "text": "I accept to the processing of my Personal Data in accordance with Acme's Privacy Notice*",
+   "label": "routine"
+  },
+  {
+   "id": "live-005",
+   "source": "live",
+   "text": "I agree to the Terms and Conditions and Voluntary Disclosures*",
+   "label": "routine"
+  },
+  {
+   "id": "live-006",
+   "source": "live",
+   "text": "What is your expected graduation month & year?*",
+   "label": "fact",
+   "fact_key": "graduation_month"
+  },
+  {
+   "id": "live-007",
+   "source": "live",
+   "text": "I agree to the Terms and Agreement exercises as use of its Career Site.*",
+   "label": "routine"
+  },
+  {
+   "id": "live-008",
+   "source": "live",
+   "text": "Yes, I have read and consent to the terms and conditions*",
+   "label": "routine"
+  },
+  {
+   "id": "live-009",
+   "source": "live",
+   "text": "I have read and accept these Terms and Conditions.*",
+   "label": "routine"
+  },
+  {
+   "id": "live-010",
+   "source": "live",
+   "text": "Yes, I have read and consent to the acknowledgments, terms, and conditions*",
+   "label": "routine"
+  },
+  {
+   "id": "live-011",
+   "source": "live",
+   "text": "What is your graduation date?",
+   "label": "fact",
+   "fact_key": "graduation_month"
+  },
+  {
+   "id": "live-012",
+   "source": "live",
+   "text": "Check Yes or No to indicate your agreement to receive text message updates from Acme regarding your job application. Frequency may vary. Message and data rates may apply. Reply STOP to opt out of future messaging.View our privacy policy here: Privacy Policy and our terms and conditions here: Terms and Conditions",
+   "label": "optional",
+   "note": "SMS opt-in; the current detector says routine"
+  },
+  {
+   "id": "live-013",
+   "source": "live",
+   "text": "Yes, I have read and consent to the terms and conditions.*",
+   "label": "routine"
+  },
+  {
+   "id": "live-014",
+   "source": "live",
+   "text": "What is your expected graduation year?",
+   "label": "fact",
+   "fact_key": "graduation_month"
+  },
+  {
+   "id": "live-015",
+   "source": "live",
+   "text": "I confirm that my graduation date will be either Fall 2026 or Spring 2027*",
+   "label": "fact",
+   "fact_key": "graduation_month",
+   "note": "states the applicant's graduation term"
+  },
+  {
+   "id": "live-016",
+   "source": "live",
+   "text": "I agree*",
+   "label": "routine"
+  },
+  {
+   "id": "live-017",
+   "source": "live",
+   "text": "When do you plan to graduate?",
+   "label": "fact",
+   "fact_key": "graduation_month"
+  },
+  {
+   "id": "live-018",
+   "source": "live",
+   "text": "Graduation Date",
+   "label": "fact",
+   "fact_key": "graduation_month"
+  },
+  {
+   "id": "live-019",
+   "source": "live",
+   "text": "When is your expected graduation date (Month & Year)?*",
+   "label": "fact",
+   "fact_key": "graduation_month"
+  },
+  {
+   "id": "live-020",
+   "source": "live",
+   "text": "If you are in a Bachelor's program, do you plan to pursue a Master's program after you graduate? *",
+   "label": "fact",
+   "fact_key": "applicant"
+  },
+  {
+   "id": "live-021",
+   "source": "live",
+   "text": "Check Yes or No to indicate your agreement to receive text message updates from Acme regarding your job application. Frequency may vary. Message and data rates may apply. Reply STOP to opt out of future messaging.View our privacy policy here: Privacy Policy",
+   "label": "optional",
+   "note": "SMS opt-in; the current detector says routine"
+  },
+  {
+   "id": "live-022",
+   "source": "live",
+   "text": "Graduation Date or Anticipated Graduation Date",
+   "label": "fact",
+   "fact_key": "graduation_month"
+  },
+  {
+   "id": "live-023",
+   "source": "live",
+   "text": "Confirm your email*",
+   "label": "not_a_notice",
+   "note": "an email confirmation field"
+  },
+  {
+   "id": "live-024",
+   "source": "live",
+   "text": "I have read and consent to the terms. The information I have provided is true and accurate.*",
+   "label": "routine"
+  },
+  {
+   "id": "live-025",
+   "source": "live",
+   "text": "By electronically checking this box I acknowledge that I have read and understand the content above.*",
+   "label": "routine"
+  },
+  {
+   "id": "live-026",
+   "source": "live",
+   "text": "What is your expected graduation date (Month & Year; e.g. May 2028)?*",
+   "label": "fact",
+   "fact_key": "graduation_month"
+  },
+  {
+   "id": "live-027",
+   "source": "live",
+   "text": "Please select the year you anticipate graduating from your academic program.*",
+   "label": "fact",
+   "fact_key": "graduation_month"
+  },
+  {
+   "id": "live-028",
+   "source": "live",
+   "text": "By submitting an application, I acknowledge that I have read and understand the Acme Candidate Privacy Notice.*",
+   "label": "routine"
+  },
+  {
+   "id": "live-029",
+   "source": "live",
+   "text": "By checking this box, I acknowledge that this is a 40 hour/week, remote internship program. *",
+   "label": "fact",
+   "fact_key": "hours_per_week",
+   "note": "accepting a 40 h/week remote program states availability"
+  },
+  {
+   "id": "live-030",
+   "source": "live",
+   "text": "Acme participates in E-Verify and will submit your information to the government for confirmation of your work authorization only after a conditional offer of employment has been made, unless doing so is required by federal law or as a condition of Acme' receipt of federal funds. After a condition offer of employment has been made, you will be required to present a document with your photo ID in connection when completing the I-9 form. If the government’s system does not immediately verify your work authorization, you will be provided with instructions and an opportunity to contact the government and resolve any issues. Acme may rescind any offer of employment if Acme does not receive confirmation of your work authorization through the E-Verify system. By submitting an application, I acknowledge that I have read and understand the E-verify notice.*",
+   "label": "routine"
+  },
+  {
+   "id": "live-031",
+   "source": "live",
+   "text": "Confirm understanding that this is an in-office role based in NYC with flexibility to work remote on occasion. *",
+   "label": "fact",
+   "fact_key": "located_or_relocate",
+   "note": "accepting an in-office NYC role states where the applicant can work"
+  },
+  {
+   "id": "live-032",
+   "source": "live",
+   "text": "I certify that I have read, fully understand and accept all items of the foregoing statement.*",
+   "label": "routine"
+  },
+  {
+   "id": "live-033",
+   "source": "live",
+   "text": "Acme is committed to providing access, equal opportunity, and reasonable accommodation for individuals with disabilities as defined by the Americans with Disabilities Act (ADA). To request reasonable accommodation to participate in the job application or interview process, contact our team at careers@acme.example. Please select \"Yes\" in the dropdown to confirm that you have read this statement. *",
+   "label": "routine"
+  },
+  {
+   "id": "live-034",
+   "source": "live",
+   "text": "By submitting, you declare that you have read, understood, and accepted the terms in this policy*",
+   "label": "routine"
+  },
+  {
+   "id": "live-035",
+   "source": "live",
+   "text": "Will you be returning to an undergraduate or graduate program after the internship if selected?*",
+   "label": "fact",
+   "fact_key": "returning_to_school"
+  },
+  {
+   "id": "live-036",
+   "source": "live",
+   "text": "Acknowledge/Confirm",
+   "label": "routine",
+   "note": "caption only"
+  },
+  {
+   "id": "live-037",
+   "source": "live",
+   "text": "I willingly accept the Terms and Conditions for submitting an application with Acme.*",
+   "label": "routine"
+  },
+  {
+   "id": "live-038",
+   "source": "live",
+   "text": "GPA (Undergraduate)*",
+   "label": "fact",
+   "fact_key": "gpa"
+  },
+  {
+   "id": "live-039",
+   "source": "live",
+   "text": "I confirm the data above is correct (incl all passports held) and accept the T&C's for submission*",
+   "label": "routine"
+  },
+  {
+   "id": "live-040",
+   "source": "live",
+   "text": "I acknowledge and understand that Acme is a tobacco-free employer and that I...",
+   "label": "routine",
+   "note": "truncated; a workplace-policy acknowledgement (tobacco-free employer)"
+  },
+  {
+   "id": "live-041",
+   "source": "live",
+   "text": "Consent to the privacy notice",
+   "label": "routine"
+  },
+  {
+   "id": "live-042",
+   "source": "live",
+   "text": "I willingly accept the Terms and Conditions for submitting an application with Acme.*",
+   "label": "routine"
+  },
+  {
+   "id": "live-043",
+   "source": "live",
+   "text": "What university did you graduate from?",
+   "label": "fact",
+   "fact_key": "school"
+  },
+  {
+   "id": "live-044",
+   "source": "live",
+   "text": "Check Yes or No to indicate your agreement to receive text message updates from Acme regarding your job application. Frequency may vary. Message and data rates may apply. Reply STOP to opt out of future messaging.View our privacy policy here: Privacy Policy",
+   "label": "optional",
+   "note": "SMS opt-in; the current detector says routine"
+  },
+  {
+   "id": "live-045",
+   "source": "live",
+   "text": "Are you currently a junior/third-year student expecting to graduate in Fall/Winter 2027 or Spring 2028?",
+   "label": "fact",
+   "fact_key": "graduation_month"
+  },
+  {
+   "id": "live-046",
+   "source": "live",
+   "text": "Applicant Privacy Acknowledgement *",
+   "label": "routine"
+  },
+  {
+   "id": "live-047",
+   "source": "live",
+   "text": "Would you like to receive communications via SMS and/or WhatsApp to the number provided [above or during the application process] about your application process? Message & data rates may apply and message frequency may vary. If you select no, we will only communicate with you via email and/or telephone calls. If you select yes and change your mind, you can always reply STOP to opt out.*",
+   "label": "optional"
+  },
+  {
+   "id": "live-048",
+   "source": "live",
+   "text": "Please select and confirm your anticipated graduation date (Please note you must be currently enrolled in a program) *",
+   "label": "fact",
+   "fact_key": "graduation_month"
+  },
+  {
+   "id": "live-049",
+   "source": "live",
+   "text": "I acknowledge that I have read and understand the Acme Candidate Privacy Notice.*:Acme Candidate Privacy Notice",
+   "label": "routine"
+  },
+  {
+   "id": "live-050",
+   "source": "live",
+   "text": "I confirm all answers provided by me within this application are true and correct.",
+   "label": "routine"
+  },
+  {
+   "id": "live-051",
+   "source": "live",
+   "text": "Confirmation of Information Provided",
+   "label": "routine"
+  },
+  {
+   "id": "live-052",
+   "source": "live",
+   "text": "Yes, Acme can contact me about future job opportunities for up to 4 yearsPrivacy policy",
+   "label": "optional",
+   "note": "talent pool (future job opportunities); the current detector says routine"
+  },
+  {
+   "id": "live-053",
+   "source": "live",
+   "text": "I certify that my answers on this application are true and complete to the best of my knowledge. I also certify that the information on the resume and other documents I have submitted is true and accurate. If the application process leads to employment, I understand that providing false or misleading information on application documents or in an interview may result in my release.",
+   "label": "routine"
+  },
+  {
+   "id": "live-054",
+   "source": "live",
+   "text": "I Consent*",
+   "label": "routine"
+  },
+  {
+   "id": "live-055",
+   "source": "live",
+   "text": "Yes, I Consent to the transfer and processing described above and in the Candidate Privacy Statement*",
+   "label": "routine"
+  },
+  {
+   "id": "live-056",
+   "source": "live",
+   "text": "Please confirm you are a part of the Scholars Program at Acme University.*",
+   "label": "fact",
+   "fact_key": "applicant",
+   "note": "membership in a specific program: only the applicant knows"
+  },
+  {
+   "id": "live-057",
+   "source": "live",
+   "text": "Please confirm when you will complete your university studies.*",
+   "label": "fact",
+   "fact_key": "graduation_month"
+  },
+  {
+   "id": "live-058",
+   "source": "live",
+   "text": "I acknowledge Acme’s Recruitment Privacy Statement and VIBE Philosophy.*",
+   "label": "routine"
+  },
+  {
+   "id": "live-059",
+   "source": "live",
+   "text": "Please tell us about your degree. What degree are you pursuing or have you graduated with?",
+   "label": "fact",
+   "fact_key": "degree_level"
+  },
+  {
+   "id": "live-060",
+   "source": "live",
+   "text": "Please confirm the source of your application to Acme.",
+   "label": "not_a_notice",
+   "note": "asks for the application source"
+  },
+  {
+   "id": "live-061",
+   "source": "live",
+   "text": "What is your anticipated graduation month/year?*",
+   "label": "fact",
+   "fact_key": "graduation_month"
+  },
+  {
+   "id": "live-062",
+   "source": "live",
+   "text": "I willingly accept the Terms and Conditions for submitting an application with Acme.*",
+   "label": "routine"
+  },
+  {
+   "id": "live-063",
+   "source": "live",
+   "text": "I accept the Terms and Conditions for submitting an application with Acme.*",
+   "label": "routine"
+  },
+  {
+   "id": "live-064",
+   "source": "live",
+   "text": "Check this box to confirm the statement above.*",
+   "label": "routine",
+   "note": "caption only"
+  },
+  {
+   "id": "live-065",
+   "source": "live",
+   "text": "I agree to and accept the terms in ALL documents of my own free will*",
+   "label": "routine"
+  },
+  {
+   "id": "live-066",
+   "source": "live",
+   "text": "Are you graduating in December 2027 or May/June 2028?*",
+   "label": "fact",
+   "fact_key": "graduation_month"
+  },
+  {
+   "id": "live-067",
+   "source": "live",
+   "text": "I acknowledge that the information provided is accurate.*",
+   "label": "routine"
+  },
+  {
+   "id": "live-068",
+   "source": "live",
+   "text": "By checking this box, you will declare that you read and understand Acme privacy policy*",
+   "label": "routine"
+  },
+  {
+   "id": "live-069",
+   "source": "live",
+   "text": "Yes, I agree*",
+   "label": "routine"
+  },
+  {
+   "id": "live-070",
+   "source": "live",
+   "text": "If you are currently enrolled in a university or program, when do you expect to graduate or complete your program? (Select the closest date.)*",
+   "label": "fact",
+   "fact_key": "graduation_month"
+  },
+  {
+   "id": "live-071",
+   "source": "live",
+   "text": "If selected for a full-time opportunity post graduation, when would you be available to start? (Year-XXXX)*",
+   "label": "fact",
+   "fact_key": "earliest_start"
+  },
+  {
+   "id": "live-072",
+   "source": "live",
+   "text": "What is your expected graduation date?*",
+   "label": "fact",
+   "fact_key": "graduation_month"
+  },
+  {
+   "id": "live-073",
+   "source": "live",
+   "text": "I consent to the above terms and conditions.*",
+   "label": "routine"
+  },
+  {
+   "id": "live-074",
+   "source": "live",
+   "text": "Privacy *",
+   "label": "routine"
+  },
+  {
+   "id": "live-075",
+   "source": "live",
+   "text": "Certifications",
+   "label": "not_a_notice",
+   "note": "ambiguous: a 'Certifications' heading can also ask for professional certifications"
+  },
+  {
+   "id": "live-076",
+   "source": "live",
+   "text": "What is your expected graduation month?",
+   "label": "fact",
+   "fact_key": "graduation_month"
+  },
+  {
+   "id": "live-077",
+   "source": "live",
+   "text": "*I declare that all statements and answers in this application are true and complete an...",
+   "label": "routine"
+  },
+  {
+   "id": "live-078",
+   "source": "live",
+   "text": "When did you graduate from High School?*",
+   "label": "fact",
+   "fact_key": "high_school_graduation_year"
+  },
+  {
+   "id": "live-079",
+   "source": "live",
+   "text": "When is your anticipated graduation date - please select a Graduation Date range:*",
+   "label": "fact",
+   "fact_key": "graduation_month"
+  },
+  {
+   "id": "live-080",
+   "source": "live",
+   "text": "Privacy Statement*",
+   "label": "routine"
+  },
+  {
+   "id": "live-081",
+   "source": "live",
+   "text": "Please list any professional certifications or completed coursework relevant to this role. (Ex: Certified Public Account Exam, Intermediate Accounting course, Systems Programming course, etc.)*",
+   "label": "fact",
+   "fact_key": "resume",
+   "note": "asks for certifications/coursework"
+  },
+  {
+   "id": "live-082",
+   "source": "live",
+   "text": "Do you agree to be a part of the talent community for future career opportunities at Acme? Your information will be retained for up to 2 years.",
+   "label": "optional"
+  },
+  {
+   "id": "live-083",
+   "source": "live",
+   "text": "By checking this box, I agree to allow Acme to store and process my data for the purpose of considering my eligibility regarding my current application for employment.*",
+   "label": "routine"
+  },
+  {
+   "id": "live-084",
+   "source": "live",
+   "text": "Please select your expected graduation month of your recent studies, or if you have alr...",
+   "label": "fact",
+   "fact_key": "graduation_month"
+  },
+  {
+   "id": "live-085",
+   "source": "live",
+   "text": "Please select your expected graduation year of your current studies, or if you have alr...",
+   "label": "fact",
+   "fact_key": "graduation_month"
+  },
+  {
+   "id": "live-086",
+   "source": "live",
+   "text": "I agree that Acme may reach out to me via SMS regarding my application and candida...",
+   "label": "optional"
+  },
+  {
+   "id": "live-087",
+   "source": "live",
+   "text": "By selecting the checkbox, you agree to our Terms and Conditions and Applicant Privacy Policy.*",
+   "label": "routine"
+  },
+  {
+   "id": "live-088",
+   "source": "live",
+   "text": "By checking this box, I agree to allow Acme to store and process my data for the purpose of considering my eligibility regarding my current application for employment.*",
+   "label": "routine"
+  },
+  {
+   "id": "live-089",
+   "source": "live",
+   "text": "By checking this box, I consent to Acme collecting, storing, and processing my responses to the demographic data surveys above.*",
+   "label": "routine"
+  },
+  {
+   "id": "live-090",
+   "source": "live",
+   "text": "Yes, I have read and consent to the terms and conditions outlined above.*",
+   "label": "routine"
+  },
+  {
+   "id": "live-091",
+   "source": "live",
+   "text": "I Agree to the Terms and Conditions*",
+   "label": "routine"
+  },
+  {
+   "id": "live-092",
+   "source": "live",
+   "text": "Select all - by selecting all, you acknowledge the checkboxes below",
+   "label": "routine",
+   "note": "caption only: 'select all' of boxes not shown here"
+  },
+  {
+   "id": "live-093",
+   "source": "live",
+   "text": "I consent to the collection, use, and disclosure of my sensitive personal data, includi...",
+   "label": "routine"
+  },
+  {
+   "id": "live-094",
+   "source": "live",
+   "text": "I agree that everything submitted is truthful and accurate.",
+   "label": "routine"
+  },
+  {
+   "id": "syn-000",
+   "source": "synthetic",
+   "category": "mixed",
+   "text": "I acknowledge the privacy notice and agree to receive marketing emails from Acme.",
+   "label": "optional"
+  },
+  {
+   "id": "syn-001",
+   "source": "synthetic",
+   "category": "mixed",
+   "text": "I have read the privacy policy and I confirm that I am legally authorized to work in the United States.",
+   "label": "fact",
+   "fact_key": "authorized_to_work"
+  },
+  {
+   "id": "syn-002",
+   "source": "synthetic",
+   "category": "mixed",
+   "text": "I certify that the information provided is accurate and that I will not require visa sponsorship now or in the future.",
+   "label": "fact",
+   "fact_key": "requires_sponsorship_future"
+  },
+  {
+   "id": "syn-003",
+   "source": "synthetic",
+   "category": "mixed",
+   "text": "I agree to the terms and conditions and would like to join the Acme talent community.",
+   "label": "optional"
+  },
+  {
+   "id": "syn-004",
+   "source": "synthetic",
+   "category": "mixed",
+   "text": "By checking this box, I consent to a background check and confirm that I am at least 18 years of age.",
+   "label": "fact",
+   "fact_key": "over_18"
+  },
+  {
+   "id": "syn-005",
+   "source": "synthetic",
+   "category": "mixed",
+   "text": "I acknowledge the E-Verify notice and confirm that I am not subject to any non-compete agreement.",
+   "label": "fact",
+   "fact_key": "noncompete"
+  },
+  {
+   "id": "syn-006",
+   "source": "synthetic",
+   "category": "mixed",
+   "text": "I certify that the information in this application is true and complete. I further certify that I am not currently bound by any agreement that would restrict my employment with Acme.",
+   "label": "fact",
+   "fact_key": "noncompete"
+  },
+  {
+   "id": "syn-007",
+   "source": "synthetic",
+   "category": "mixed",
+   "text": "I consent to the processing of my personal data and to receiving job alerts that match my profile.",
+   "label": "optional"
+  },
+  {
+   "id": "syn-008",
+   "source": "synthetic",
+   "category": "mixed",
+   "text": "I accept the Applicant Privacy Notice and opt in to WhatsApp messages about my application.",
+   "label": "optional"
+  },
+  {
+   "id": "syn-009",
+   "source": "synthetic",
+   "category": "mixed",
+   "text": "I understand the at-will employment policy, and I confirm I hold a valid driver's license.",
+   "label": "fact",
+   "fact_key": "drivers_license"
+  },
+  {
+   "id": "syn-010",
+   "source": "synthetic",
+   "category": "mixed",
+   "text": "I have read the notice above. I am a U.S. citizen or permanent resident.",
+   "label": "fact",
+   "fact_key": "us_person_status"
+  },
+  {
+   "id": "syn-011",
+   "source": "synthetic",
+   "category": "mixed",
+   "text": "I authorize Acme to verify my education and confirm that I will graduate by June 2027.",
+   "label": "fact",
+   "fact_key": "degree_by"
+  },
+  {
+   "id": "syn-012",
+   "source": "synthetic",
+   "category": "negation",
+   "text": "I do not wish to receive SMS updates about my application.",
+   "label": "optional",
+   "note": "worded as an opt-out: ticking it declines"
+  },
+  {
+   "id": "syn-013",
+   "source": "synthetic",
+   "category": "negation",
+   "text": "I am not authorized to work in the United States.",
+   "label": "fact",
+   "fact_key": "authorized_to_work"
+  },
+  {
+   "id": "syn-014",
+   "source": "synthetic",
+   "category": "negation",
+   "text": "I do not require sponsorship now or in the future.",
+   "label": "fact",
+   "fact_key": "requires_sponsorship_future"
+  },
+  {
+   "id": "syn-015",
+   "source": "synthetic",
+   "category": "negation",
+   "text": "I have never been convicted of a felony.",
+   "label": "fact",
+   "fact_key": "applicant"
+  },
+  {
+   "id": "syn-016",
+   "source": "synthetic",
+   "category": "negation",
+   "text": "I don't have any relatives currently working at Acme.",
+   "label": "fact",
+   "fact_key": "relatives_at_company"
+  },
+  {
+   "id": "syn-017",
+   "source": "synthetic",
+   "category": "negation",
+   "text": "I understand that this internship does not include relocation assistance.",
+   "label": "routine",
+   "note": "a term of the role; it claims nothing about the applicant"
+  },
+  {
+   "id": "syn-018",
+   "source": "synthetic",
+   "category": "negation",
+   "text": "I do not have a non-solicitation agreement with a current or former employer.",
+   "label": "fact",
+   "fact_key": "noncompete"
+  },
+  {
+   "id": "syn-019",
+   "source": "synthetic",
+   "category": "negation",
+   "text": "I confirm that I am not a current or former government employee.",
+   "label": "fact",
+   "fact_key": "government_employee"
+  },
+  {
+   "id": "syn-020",
+   "source": "synthetic",
+   "category": "requirements",
+   "text": "I meet all of the minimum qualifications listed above.",
+   "label": "fact",
+   "fact_key": "minimum_qualifications"
+  },
+  {
+   "id": "syn-021",
+   "source": "synthetic",
+   "category": "requirements",
+   "text": "The requirements above apply to me.",
+   "label": "fact",
+   "fact_key": "minimum_qualifications"
+  },
+  {
+   "id": "syn-022",
+   "source": "synthetic",
+   "category": "requirements",
+   "text": "I acknowledge that I meet the basic qualifications for this position.",
+   "label": "fact",
+   "fact_key": "minimum_qualifications"
+  },
+  {
+   "id": "syn-023",
+   "source": "synthetic",
+   "category": "requirements",
+   "text": "I confirm I possess the professional certifications required for this role.",
+   "label": "fact",
+   "fact_key": "applicant"
+  },
+  {
+   "id": "syn-024",
+   "source": "synthetic",
+   "category": "requirements",
+   "text": "I confirm that I hold an active Secret security clearance.",
+   "label": "fact",
+   "fact_key": "security_clearance"
+  },
+  {
+   "id": "syn-025",
+   "source": "synthetic",
+   "category": "requirements",
+   "text": "I attest that I will have completed my bachelor's degree before the start date.",
+   "label": "fact",
+   "fact_key": "degree_by"
+  },
+  {
+   "id": "syn-026",
+   "source": "synthetic",
+   "category": "requirements",
+   "text": "I confirm that I am currently enrolled in an accredited degree program.",
+   "label": "fact",
+   "fact_key": "currently_enrolled"
+  },
+  {
+   "id": "syn-027",
+   "source": "synthetic",
+   "category": "requirements",
+   "text": "I confirm that I am available to work 40 hours per week this summer.",
+   "label": "fact",
+   "fact_key": "hours_per_week"
+  },
+  {
+   "id": "syn-028",
+   "source": "synthetic",
+   "category": "requirements",
+   "text": "I confirm I can work on-site in Austin, TX five days a week.",
+   "label": "fact",
+   "fact_key": "located_or_relocate"
+  },
+  {
+   "id": "syn-029",
+   "source": "synthetic",
+   "category": "requirements",
+   "text": "I understand that this role requires me to be legally authorized to work in the U.S. without sponsorship.",
+   "label": "fact",
+   "fact_key": "requires_sponsorship_future",
+   "note": "worded as a requirement, but agreeing claims the applicant meets it"
+  },
+  {
+   "id": "syn-030",
+   "source": "synthetic",
+   "category": "requirements",
+   "text": "I acknowledge that I am fluent in Spanish, as required for this role.",
+   "label": "fact",
+   "fact_key": "languages"
+  },
+  {
+   "id": "syn-031",
+   "source": "synthetic",
+   "category": "requirements",
+   "text": "By checking this box I confirm that I am willing to relocate to Seattle.",
+   "label": "fact",
+   "fact_key": "willing_to_relocate"
+  },
+  {
+   "id": "syn-032",
+   "source": "synthetic",
+   "category": "routine_unusual",
+   "text": "I understand that this position requires a pre-employment drug screen.",
+   "label": "routine"
+  },
+  {
+   "id": "syn-033",
+   "source": "synthetic",
+   "category": "routine_unusual",
+   "text": "I authorize Acme to verify my employment history and education.",
+   "label": "routine"
+  },
+  {
+   "id": "syn-034",
+   "source": "synthetic",
+   "category": "routine_unusual",
+   "text": "I understand that employment with Acme is at-will.",
+   "label": "routine"
+  },
+  {
+   "id": "syn-035",
+   "source": "synthetic",
+   "category": "routine_unusual",
+   "text": "By typing my name below, I am electronically signing this application.",
+   "label": "routine"
+  },
+  {
+   "id": "syn-036",
+   "source": "synthetic",
+   "category": "routine_unusual",
+   "text": "I agree to resolve any disputes through binding individual arbitration.",
+   "label": "routine"
+  },
+  {
+   "id": "syn-037",
+   "source": "synthetic",
+   "category": "routine_unusual",
+   "text": "I acknowledge receipt of the Pay Transparency Nondiscrimination Provision.",
+   "label": "routine"
+  },
+  {
+   "id": "syn-038",
+   "source": "synthetic",
+   "category": "routine_unusual",
+   "text": "I have read and understand the Know Your Rights: Workplace Discrimination is Illegal poster.",
+   "label": "routine"
+  },
+  {
+   "id": "syn-039",
+   "source": "synthetic",
+   "category": "routine_unusual",
+   "text": "I understand that any offer is contingent on satisfactory reference checks.",
+   "label": "routine"
+  },
+  {
+   "id": "syn-040",
+   "source": "synthetic",
+   "category": "routine_unusual",
+   "text": "I consent to the processing of my personal data for this application, including its transfer outside the EEA.",
+   "label": "routine"
+  },
+  {
+   "id": "syn-041",
+   "source": "synthetic",
+   "category": "routine_unusual",
+   "text": "I acknowledge that I have reviewed the job description.",
+   "label": "routine"
+  },
+  {
+   "id": "syn-042",
+   "source": "synthetic",
+   "category": "routine_unusual",
+   "text": "I understand that providing false information may result in rejection of my application or termination.",
+   "label": "routine"
+  },
+  {
+   "id": "syn-043",
+   "source": "synthetic",
+   "category": "routine_unusual",
+   "text": "I consent to receive communications about this application by email.",
+   "label": "routine",
+   "note": "the application's own channel, not an opt-in; worded like one"
+  },
+  {
+   "id": "syn-044",
+   "source": "synthetic",
+   "category": "routine_unusual",
+   "text": "I consent to my video interview being recorded and reviewed by the hiring team.",
+   "label": "routine"
+  },
+  {
+   "id": "syn-045",
+   "source": "synthetic",
+   "category": "routine_unusual",
+   "text": "I acknowledge that Acme may use automated tools to help review applications.",
+   "label": "routine"
+  },
+  {
+   "id": "syn-046",
+   "source": "synthetic",
+   "category": "routine_unusual",
+   "text": "I understand that Acme will never ask for payment during the hiring process.",
+   "label": "routine"
+  },
+  {
+   "id": "syn-047",
+   "source": "synthetic",
+   "category": "routine_unusual",
+   "text": "Are you comfortable with a background check?",
+   "label": "routine",
+   "note": "a question, but answering Yes agrees to a process"
+  },
+  {
+   "id": "syn-048",
+   "source": "synthetic",
+   "category": "optin_as_ack",
+   "text": "I acknowledge that Acme may send me job alerts by email.",
+   "label": "optional"
+  },
+  {
+   "id": "syn-049",
+   "source": "synthetic",
+   "category": "optin_as_ack",
+   "text": "I understand that by providing my phone number I agree to receive recruiting text messages.",
+   "label": "optional"
+  },
+  {
+   "id": "syn-050",
+   "source": "synthetic",
+   "category": "optin_as_ack",
+   "text": "I confirm that Acme may keep my information to consider me for future roles.",
+   "label": "optional"
+  },
+  {
+   "id": "syn-051",
+   "source": "synthetic",
+   "category": "optin_as_ack",
+   "text": "Acknowledgement: I would like to receive news and event invitations from Acme.",
+   "label": "optional"
+  },
+  {
+   "id": "syn-052",
+   "source": "synthetic",
+   "category": "optin_as_ack",
+   "text": "I agree that my profile may be shared with Acme's affiliates for other openings.",
+   "label": "optional"
+  },
+  {
+   "id": "syn-053",
+   "source": "synthetic",
+   "category": "optin_as_ack",
+   "text": "By checking this box, I consent to Acme's marketing partners contacting me.",
+   "label": "optional"
+  },
+  {
+   "id": "syn-054",
+   "source": "synthetic",
+   "category": "optin_as_ack",
+   "text": "Keep me informed about upcoming hiring events.",
+   "label": "optional"
+  },
+  {
+   "id": "syn-055",
+   "source": "synthetic",
+   "category": "optin_as_ack",
+   "text": "Sign me up for the Acme careers newsletter.",
+   "label": "optional"
+  },
+  {
+   "id": "syn-056",
+   "source": "synthetic",
+   "category": "optin_as_ack",
+   "text": "I certify that I want to receive weekly updates about new openings.",
+   "label": "optional"
+  },
+  {
+   "id": "syn-057",
+   "source": "synthetic",
+   "category": "optin_as_ack",
+   "text": "I'd like to be considered for other positions at Acme.",
+   "label": "fact",
+   "fact_key": "consider_other_positions",
+   "note": "an explicit preference, never a safe default"
+  },
+  {
+   "id": "syn-058",
+   "source": "synthetic",
+   "category": "not_a_notice",
+   "text": "Please confirm your phone number.",
+   "label": "not_a_notice"
+  },
+  {
+   "id": "syn-059",
+   "source": "synthetic",
+   "category": "not_a_notice",
+   "text": "Confirm password",
+   "label": "not_a_notice"
+  },
+  {
+   "id": "syn-060",
+   "source": "synthetic",
+   "category": "not_a_notice",
+   "text": "Do you have experience with privacy engineering?",
+   "label": "fact",
+   "fact_key": "resume"
+  },
+  {
+   "id": "syn-061",
+   "source": "synthetic",
+   "category": "not_a_notice",
+   "text": "Describe a time you had to certify a release for production.",
+   "label": "not_a_notice"
+  },
+  {
+   "id": "syn-062",
+   "source": "synthetic",
+   "category": "not_a_notice",
+   "text": "What does data privacy mean to you?",
+   "label": "not_a_notice"
+  },
+  {
+   "id": "syn-063",
+   "source": "synthetic",
+   "category": "not_a_notice",
+   "text": "How did you hear about this position?",
+   "label": "not_a_notice"
+  },
+  {
+   "id": "syn-064",
+   "source": "synthetic",
+   "category": "not_a_notice",
+   "text": "List any certifications you hold.",
+   "label": "fact",
+   "fact_key": "resume"
+  }
+ ]
+}
