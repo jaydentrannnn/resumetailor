@@ -180,17 +180,11 @@ def fill_env(tmp_path, monkeypatch):
     return closed
 
 
-def _run(monkeypatch, leftovers, *, previous_tab="", fill_mode="initial"):
-    app = store_models.Application(
-        source="simplify", source_job_id="src-1", company="Acme", role="Intern",
-        posting_url=JOB, final_url=JOB, ats="other", status="ready", job_id="job-1",
-        fill={"browser_target_id": previous_tab} if previous_tab else None,
-    )
-    store.upsert(app)
-    filler_result = {"filled": [], "leftovers": leftovers, "long_text": [], "file_inputs": [],
-                     "required_empty": [], "frames_skipped": 0}
+def _page(url, leftovers=()):
+    filler_result = {"filled": [], "leftovers": list(leftovers), "long_text": [],
+                     "file_inputs": [], "required_empty": [], "frames_skipped": 0}
     page = MagicMock()
-    page.url = JOB
+    page.url = url
     page.frames = [page]
     page.evaluate.side_effect = [{"questions": []}, filler_result, []] + [[]] * 20
     none = MagicMock()
@@ -198,6 +192,17 @@ def _run(monkeypatch, leftovers, *, previous_tab="", fill_mode="initial"):
     none.first = none
     page.locator.return_value = none
     page.get_by_role.return_value = none
+    return page
+
+
+def _run(monkeypatch, leftovers, *, previous_tab="", fill_mode="initial", posting=JOB):
+    app = store_models.Application(
+        source="simplify", source_job_id="src-1", company="Acme", role="Intern",
+        posting_url=posting, final_url=posting, ats="other", status="ready", job_id="job-1",
+        fill={"browser_target_id": previous_tab} if previous_tab else None,
+    )
+    store.upsert(app)
+    page = _page(posting, leftovers)
 
     @contextmanager
     def _fake_browser():
@@ -207,7 +212,8 @@ def _run(monkeypatch, leftovers, *, previous_tab="", fill_mode="initial"):
         yield connected
 
     monkeypatch.setattr(browser, "cdp_browser", _fake_browser)
-    return fill.fill_application("src-1", fill_mode=fill_mode)
+    fill.fill_application("src-1", fill_mode=fill_mode)
+    return page
 
 
 def _guard(merged, required_empty=(), is_workday=False):
@@ -250,6 +256,33 @@ def test_a_fresh_fill_closes_the_applications_previous_tab(fill_env, monkeypatch
 def test_a_first_fill_has_no_tab_to_close(fill_env, monkeypatch):
     _run(monkeypatch, [{"label": "Save job", "reason": "Unrecognized field"}])
     assert fill_env == []
+
+
+GREENHOUSE_JOB = "https://boards.greenhouse.io/acme/jobs/111"
+
+
+@pytest.mark.parametrize(
+    ("retained_url", "continued"),
+    [
+        (GREENHOUSE_JOB + "#app", True),  # still this application
+        ("https://boards.greenhouse.io/acme/jobs/222", False),  # another of Acme's jobs
+        ("https://mail.google.com/mail/u/0/#inbox", False),  # left the site altogether
+        ("https://boards.greenhouse.io/acme", True),  # names no job, stays on the site
+    ],
+)
+def test_continue_checks_the_kept_tab_still_shows_this_application(
+    fill_env, monkeypatch, retained_url, continued
+):
+    retained = _page(retained_url)
+    monkeypatch.setattr(browser, "find_target", lambda _context, _target: retained)
+    fresh = _run(monkeypatch, [], previous_tab="old-tab", fill_mode="continue",
+                 posting=GREENHOUSE_JOB)
+    assert fill_env == []  # the applicant's tab is never closed
+    assert retained.goto.called is False
+    assert fresh.goto.called is not continued
+    if not continued:
+        assert fresh.goto.call_args.args[0] == GREENHOUSE_JOB
+        assert store.get("src-1").fill.browser_target_id == "new-tab"
 
 
 # -- the captured pages in a real browser (opt-in) -----------------------------------------

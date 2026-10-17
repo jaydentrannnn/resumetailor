@@ -9,7 +9,9 @@ from __future__ import annotations
 import hashlib
 import json
 import re
+from collections.abc import Iterable
 from pathlib import Path
+from typing import Literal
 from urllib.parse import parse_qs, urlencode, urlparse, urlunparse
 
 import httpx
@@ -54,6 +56,7 @@ _HANDSHAKE = re.compile(r"/(?:stu/)?jobs/(?P<id>\d+)", re.I)
 #: word segment (no ``_id`` suffix) falls through to `_WORKDAY_FALLBACK`.
 _WORKDAY_TAIL_ID = re.compile(r"_(?P<id>[^_/]*\d[^_/]*)$")
 _WORKDAY_FALLBACK = re.compile(r"_?(?:R|JR)\d{4,}", re.I)
+_WORKDAY_APPLY = re.compile(r"/apply(?:/[^/]*)?/?$", re.I)
 
 _CORP_SUFFIX = re.compile(
     r"\b(inc|llc|corp|corporation|ltd|co)\.?$", re.I
@@ -237,6 +240,44 @@ def canonical_key(final_url: str) -> str:
 
     digest = hashlib.sha1(path.encode("utf-8")).hexdigest()[:12]
     return f"other:{host}:{digest}"
+
+
+def _requisition(url: str) -> tuple[str, str]:
+    """(ATS, id) of the requisition a page URL shows; ("other", digest) when it names none.
+
+    A Workday application page appends ``/apply/<step>`` to the posting URL, which hides
+    the id ``canonical_key`` reads from the last segment (``_R123-2`` keyed as ``_R123``).
+    """
+    parsed = urlparse(url)
+    if "myworkdayjobs.com" in (parsed.hostname or "").lower():
+        url = urlunparse(parsed._replace(path=_WORKDAY_APPLY.sub("", parsed.path)))
+    ats, _, rest = canonical_key(url).partition(":")
+    return ats, rest.rpartition(":")[2].lstrip("_").casefold()
+
+
+def _site(url: str) -> str:
+    """A URL's host without its subdomains: careers.acme.com and jobs.acme.com match."""
+    return ".".join((urlparse(url).hostname or "").lower().split(".")[-2:])
+
+
+def retained_tab(
+    page_url: str, known_urls: Iterable[str]
+) -> Literal["same", "different", "unknown"]:
+    """Whether a tab kept from an earlier fill still shows the application at ``known_urls``.
+
+    ``different`` when the tab names another requisition on an ATS the application's
+    URLs use, or names none and has left all of their sites; ``unknown`` otherwise
+    (Workday's sign-in pages, an ATS the company's own careers site handed over to).
+    """
+    known = [url for url in known_urls if url]
+    ats, job = _requisition(page_url)
+    if ats != "other":
+        requisitions = {_requisition(url) for url in known}
+        if (ats, job) in requisitions:
+            return "same"
+        return "different" if any(seen == ats for seen, _ in requisitions) else "unknown"
+    site = _site(page_url)
+    return "unknown" if site and site in {_site(url) for url in known} else "different"
 
 
 def normalize_company(text: str) -> str:

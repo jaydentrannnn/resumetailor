@@ -8,6 +8,7 @@ from typing import Any
 
 from resume_tailor.apply.answers import questions
 from resume_tailor.apply.ats import workday_auth, workday_flow, workday_page
+from resume_tailor.apply.discovery import identity
 from resume_tailor.apply.driver import browser
 from resume_tailor.apply.forms import form_guards
 from resume_tailor.apply.funnel.store_models import FillResult
@@ -20,6 +21,10 @@ _log = logging.getLogger(__name__)
 CLOSED_TAB_REOPENED = (
     "Review tab was closed; reopening the posting (Workday restores the saved draft)"
 )
+#: Progress line when the review tab now shows another page; that tab is left open.
+OTHER_PAGE_REOPENED = (
+    "Review tab shows another page now; leaving it open and opening the posting in a new tab"
+)
 
 
 class _FillEntry(fill_state._FillState):
@@ -27,6 +32,7 @@ class _FillEntry(fill_state._FillState):
 
     def _open_form(self) -> FillResult | None:
         context = self.context
+        keep_tab = False
         if self.fill_mode == "continue":
             self.page = browser.find_target(context, self.target_id)
             if self.page is None:
@@ -34,6 +40,12 @@ class _FillEntry(fill_state._FillState):
                 # saved draft once the applicant is signed in again.
                 self.progress(CLOSED_TAB_REOPENED)
                 self.fill_mode = "reopen"
+            elif identity.retained_tab(str(self.page.url), (
+                self.previous_fill.browser_url, self.app.final_url, self.app.posting_url,
+            )) == "different":
+                # The applicant took the tab to another page; it is theirs now and stays.
+                self.progress(OTHER_PAGE_REOPENED)
+                self.fill_mode, keep_tab = "reopen", True
         if self.fill_mode == "continue":
             self.progress("continuing the existing application tab")
             if self.is_workday:
@@ -41,7 +53,7 @@ class _FillEntry(fill_state._FillState):
                 workday_page.close_stray_popups(self.page)
         else:
             # A fresh fill replaces this application's earlier tab rather than adding one.
-            if self.fill_mode != "continue" and self.previous_fill.browser_target_id:
+            if self.previous_fill.browser_target_id and not keep_tab:
                 browser.close_target(self.previous_fill.browser_target_id)
             self.page = context.new_page()
             self.target_id = browser.target_id(context, self.page)

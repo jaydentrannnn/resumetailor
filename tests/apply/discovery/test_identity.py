@@ -239,3 +239,29 @@ def test_platform_pages_without_a_job_id_fall_back_to_the_path_digest():
 def test_ats_kinds_agree():
     """`fetch_jd.detect_ats` may only return kinds the store accepts."""
     assert get_args(fetch_jd.AtsName) == get_args(store_models.AtsKind)
+
+
+WORKDAY_POSTING = (
+    "https://acme.wd5.myworkdayjobs.com/en-US/careers/job/Austin-TX/Analyst_JR104025-3"
+)
+
+
+@pytest.mark.parametrize(
+    ("page_url", "known", "expected"),
+    [
+        # Workday's apply steps hide the id behind /apply/<step>; the -3 variant still matches.
+        (WORKDAY_POSTING + "/apply/applyManually", [WORKDAY_POSTING], "same"),
+        (WORKDAY_POSTING + "/apply", [WORKDAY_POSTING], "same"),
+        (WORKDAY_POSTING.replace("JR104025-3", "JR104025-1") + "/apply", [WORKDAY_POSTING],
+         "different"),
+        ("https://acme.wd5.myworkdayjobs.com/en-US/careers/login", [WORKDAY_POSTING], "unknown"),
+        # A company careers page that handed over to its ATS: no key of that ATS to compare.
+        ("https://careers-acme.icims.com/jobs/45689/analyst/job", ["https://jobs.acme.com/x"],
+         "unknown"),
+        ("https://jobs.acme.com/other-page", ["https://careers.acme.com/job/1"], "unknown"),
+        ("https://mail.google.com/mail/u/0/", ["https://careers.acme.com/job/1"], "different"),
+        ("about:blank", ["https://careers.acme.com/job/1"], "different"),
+    ],
+)
+def test_retained_tab_tells_this_application_from_another_page(page_url, known, expected):
+    assert identity.retained_tab(page_url, ["", *known]) == expected
