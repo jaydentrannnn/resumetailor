@@ -168,6 +168,37 @@ def test_a_fact_answers_a_question_only_as_worded(label, key, value, expected):
     assert _supported(action, _field(label), profile=profile, packet=packet) is expected
 
 
+OFFICES = ["San Francisco", "New York", "Austin", "Other"]
+VETERAN = ["I am a protected veteran", "I am not a protected veteran", "I decline to self-identify"]
+
+
+@pytest.mark.parametrize(("label", "options", "key", "value", "expected"), [
+    # A note beside the instruction does not change which option is right...
+    ("Choose your preferred office location. Placement is not guaranteed.", OFFICES,
+     "location_preference", "San Francisco", True),
+    ("If you have a preferred office location, please select below. Please note that this "
+     "is not a guarantee of placement should a position be offered.*", OFFICES,
+     "location_preference", "San Francisco", True),
+    ("Select your preferred location. If you do not see your city, select Other.", OFFICES,
+     "location_preference", "San Francisco", True),
+    ('Please select your veteran status. Choose "I am not a protected veteran" if none of '
+     "the categories apply.", VETERAN, "veteran_status", "I am not a protected veteran", True),
+    # ...a negation in it does, and so does a second requirement.
+    ("Choose the office locations where you cannot work.", OFFICES, "location_preference",
+     "San Francisco", False),
+    ("Which of these office locations would you be unwilling to relocate to?", OFFICES,
+     "location_preference", "San Francisco", False),
+    ("Select your preferred location. Do not select a location you cannot commute to.",
+     OFFICES, "location_preference", "San Francisco", False),
+    ("Which office location do you prefer, and do you have reliable transportation to it?",
+     OFFICES, "location_preference", "San Francisco", False),
+])
+def test_a_pick_stands_for_what_the_question_says_to_pick(label, options, key, value, expected):
+    action = _action(value, "packet", key, verb="select_combobox")
+    field = _field(label, options, kind="combobox")
+    assert _supported(action, field, packet={key: value}) is expected
+
+
 def test_the_applicants_own_saved_answer_needs_no_rewording():
     label = "Have you never been employed by Acme?"
     profile = {"custom_answers": {label: "Yes"}}

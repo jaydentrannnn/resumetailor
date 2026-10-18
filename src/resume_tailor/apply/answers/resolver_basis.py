@@ -94,7 +94,11 @@ _SKILL_ASK = re.compile(
 #: A question one fact cannot answer as worded: negated ("Are you not authorized...?",
 #: "Have you never...?"), or with a second question or requirement joined on ("... and
 #: will you...?", "a driver's license and a car?").
-_NEGATED = re.compile(r"\b(?:not|never|neither|nor|no\s+longer|lack\w*|without)\b|n't\b", re.I)
+_NEGATED = re.compile(
+    r"\b(?:not|cannot|never|neither|nor|no\s+longer|lack\w*|without|unable|unwilling"
+    r"|exclud\w*)\b"
+    r"|n't\b", re.I,
+)
 _NOT_NEGATION = re.compile(
     r"\bwith\s+or\s+without\b|\bif\s+(?:not|no)\b|\b(?:whether\s+)?or\s+not\b"
     r"|\bnot\s+(?:sure|only|required|mandatory|applicable)\b", re.I,
@@ -103,11 +107,38 @@ _SECOND_ASK = re.compile(
     r"\band\s+(?:(?:are|do|does|will|would|have|has|can|could|did|is|were)\s+you"
     r"|an?|own|reliable|access\s+to)\b", re.I,
 )
+#: A multiple-choice answer stands for the sentences that say what to pick: a question,
+#: or one that selects ("Select...", "Which..."). A note beside them ("Placement is not
+#: guaranteed.") leaves the right option where it is; "...where you cannot work" moves it.
+_SENTENCE = re.compile(r"(?:(?<=[a-z0-9)]{2}[.!])|(?<=\?))\*?\s+(?=[A-Z\"'(])")
+_PICK = re.compile(
+    r"\?|\b(?:select|choose|pick|indicate|exclude)\b"
+    r"|^(?:please\s+)?(?:check|tick|mark|list|rank|identify|specify|which|what|where)\b", re.I,
+)
+#: "If you do not see your country, select Other": the negation names a fallback option.
+_IF_NOT = re.compile(r"\bif\b[^,.?]*?(?:\bnot\b|n't\b)[^,.?]*,", re.I)
+
+
+def _to_pick(question: questions.Question) -> str:
+    """The sentences of a multiple-choice ``question`` that say what to pick (all of them
+    when none does), without its negated fallbacks or the options' own words ("I am not
+    a protected veteran")."""
+    sentences = [part for part in _SENTENCE.split(" ".join(question.text.split())) if part]
+    text = " ".join([part for part in sentences if _PICK.search(part)] or sentences)
+    text = _IF_NOT.sub(" ", text).casefold()
+    for option in sorted(question.options, key=len, reverse=True):
+        if option.strip():
+            words = re.escape(" ".join(option.casefold().split()))
+            text = re.sub(rf"(?<!\w){words}(?!\w)", " ", text)
+    return text
 
 
 def _as_worded(question: questions.Question) -> bool:
-    """Whether a fact's answer can stand for ``question`` as worded (see `_NEGATED`)."""
-    text = _NOT_NEGATION.sub(" ", question.text)
+    """Whether a fact's answer can stand for ``question`` as worded (see `_NEGATED`): all
+    of a yes/no question, which the answer affirms or denies whole; only what a
+    multiple-choice question says to pick (`_to_pick`)."""
+    yes_no = questions.yes_no_options(question.options)
+    text = _NOT_NEGATION.sub(" ", question.text if yes_no else _to_pick(question))
     return not _NEGATED.search(text) and not _SECOND_ASK.search(text)
 
 
@@ -301,7 +332,7 @@ def supported(
             return False
         if custom:  # the applicant's own answer to this very question
             return _says(action, question, "", value)
-        if questions.yes_no_options(question.options) and not _as_worded(question):
+        if not _as_worded(question):
             return False
         if key == "race" and re.search(r"hispanic|latin[oax]", action.value, re.I):
             # "Asian (Not Hispanic or Latino)" says two things; both must hold.
