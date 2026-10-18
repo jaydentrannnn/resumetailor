@@ -1985,3 +1985,31 @@ is a bug against an existing rule, not new policy.
   group; that label is for fields, attachments render in `AttachmentResults`.
 - Per-run auto-submit cap counts `submit_unconfirmed` too, and a fill that raised after storing
   its pre-dispatch `submit_unconfirmed` record; `operation.submitted` stays confirmed only.
+
+## 2026-10-17 — Notice detector, model tie-breaker, resolver basis (Phase B of the autofill review)
+
+- `form_facts.acknowledgement(text, help_text)` reads every statement: "optional" (any opt-in,
+  including ones worded as acknowledgements and opt-outs), "fact" (a claim or question about the
+  applicant), "routine" (every statement in the applicant's voice is process language; a caption
+  with none must name a document or process), else "unclear". Callers agree only on "routine".
+  Help text is read apart from the caption, and its questions are not put to the applicant.
+- Unclear notices go to one batched, cached model call (`answer.classify_notices`, prompt v3) only
+  when routine acknowledgements are set to auto-accept; "process" -> routine, anything else or a
+  failed/misaligned reply -> never agreed. A field's caption ("Confirm your password", "Applicant
+  Signature") is never sent (`needs_reading`): v2 of the tie-breaker read such captions as notices
+  and agreed to them (dev 0 -> 8 unsupported agreements, held-out 2 -> 7).
+- Claim statements on a checkbox or choice are answered as worded (`questions._as_stated`): one
+  negation flips the profile's answer, a qualifier or double negation leaves it for the applicant.
+- Resolver actions cite `basis_kind`/`basis_key`; `resolver_basis.supported` checks the field has a
+  value, the question is about it (the decision layer does not key it elsewhere; label patterns),
+  and the option says it (GPA ranges, fluent languages, Hispanic origin named in a race option).
+  Picks are saved only once on the page; the question stays in flight for other tabs until then.
+- Gate (`scripts/evals/notice_eval.py`, wording only / with the tie-breaker): dev 288 cases 0
+  unsupported agreements, 1 handoff / 0, 1; held-out 80 cases 2 unsupported (1 opt-in, 1
+  not-a-notice), 6 handoffs / 2, 4; the old detector 30 unsupported, 4 handoffs. The held-out set
+  was consulted three times as per-category aggregates while widening the detector (its texts and
+  ids never read), so its numbers are optimistic. Bar was 0 unsupported, handoffs <= old + 2.
+- Resolver replay (`scripts/evals/resolver_replay.py`, 54 distinct stored AI choice questions):
+  11 applied, 36 rejected by the check, 7 "unknown"; all shown applied answers matched the profile.
+  Most rejections were unsupported guesses (a previous application answered from "relatives at the
+  company", on-site work from relocation, a basis of "unknown"); they become review lines.
