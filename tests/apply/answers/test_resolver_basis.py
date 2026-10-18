@@ -136,10 +136,43 @@ def test_a_saved_answer_supports_only_its_own_question():
     ("Do you have experience with Rust?", "Rust", "Yes", False),  # not on the resume
     ("Do you have 3+ years of Python experience?", "Python", "Yes", False),  # how long
     ("Are you an expert in Python?", "Python", "Yes", False),  # how well
+    ("Have you used Python?*", "Python", "Yes", True),
+    ("Experience with Python", "Python", "Yes", True),
+    # Only a plain ask about that one skill: not negated, not with another, not a setting.
+    ("Have you never used Python?", "Python", "Yes", False),
+    ("Do you lack Python experience?", "Python", "Yes", False),
+    ("Have you used both Python and Rust?", "Python", "Yes", False),
+    ("Have you used Python or Rust?", "Python", "Yes", False),
+    ("Do you have experience with Python in a production environment?", "Python", "Yes", False),
 ])
 def test_the_resume_supports_only_a_skill_it_lists(label, key, value, expected):
     action = _action(value, "resume", key)
     assert _supported(action, _field(label), skills=["Python", "SQL"]) is expected
+
+
+@pytest.mark.parametrize(("label", "key", "value", "expected"), [
+    ("Are you legally authorized to work in the US?", "authorized_to_work", "Yes", True),
+    # "Not" turns the fact's answer around; the check cannot tell which way round it is.
+    ("Are you not legally authorized to work in the US?", "authorized_to_work", "Yes", False),
+    ("Are you legally authorized to work in the US? If not, please explain.",
+     "authorized_to_work", "Yes", True),
+    # One fact for two asks.
+    ("Do you have a valid driver's license and a car?", "drivers_license", "Yes", False),
+    ("Are you authorized to work in the US and do you live in Texas?", "authorized_to_work",
+     "Yes", False),
+])
+def test_a_fact_answers_a_question_only_as_worded(label, key, value, expected):
+    profile = {"authorized_to_work": True}
+    action = _action(value, "profile", key)
+    packet = {"drivers_license": "Yes"}
+    assert _supported(action, _field(label), profile=profile, packet=packet) is expected
+
+
+def test_the_applicants_own_saved_answer_needs_no_rewording():
+    label = "Have you never been employed by Acme?"
+    profile = {"custom_answers": {label: "Yes"}}
+    action = _action("Yes", "profile", f"custom_answers.{label}")
+    assert _supported(action, _field(label), profile=profile)
 
 
 def test_only_listed_skills_are_ticked():

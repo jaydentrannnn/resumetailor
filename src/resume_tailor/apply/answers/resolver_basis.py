@@ -82,6 +82,33 @@ _HOW_HEARD = re.compile(_LABELS["how_heard"], re.I)
 _DEGREE_OF_SKILL = re.compile(
     r"\d|\byears?\b|proficien|expert|advanced|fluen|certif|licen|degree", re.I,
 )
+#: The one question a listed skill answers: a plain ask about that skill alone ("Do you
+#: have experience with {skill}?"), never with another skill, a setting or a negation.
+_SKILL_ASK = re.compile(
+    r"^(?:do\s+you\s+have\s+(?:any\s+)?(?:hands[- ]on\s+)?(?:experience|familiarity|knowledge"
+    r"|exposure)(?:\s+(?:working|programming|coding|developing))?\s+(?:with|in|using|of)"
+    r"|have\s+you\s+(?:ever\s+)?(?:used|worked\s+(?:with|in)|programmed\s+in|coded\s+in)"
+    r"|are\s+you\s+familiar\s+with|do\s+you\s+(?:know|use)"
+    r"|(?:any\s+)?(?:experience|familiarity)\s+(?:with|in|using))\s+\{skill\}$"
+)
+#: A question one fact cannot answer as worded: negated ("Are you not authorized...?",
+#: "Have you never...?"), or with a second question or requirement joined on ("... and
+#: will you...?", "a driver's license and a car?").
+_NEGATED = re.compile(r"\b(?:not|never|neither|nor|no\s+longer|lack\w*|without)\b|n't\b", re.I)
+_NOT_NEGATION = re.compile(
+    r"\bwith\s+or\s+without\b|\bif\s+(?:not|no)\b|\b(?:whether\s+)?or\s+not\b"
+    r"|\bnot\s+(?:sure|only|required|mandatory|applicable)\b", re.I,
+)
+_SECOND_ASK = re.compile(
+    r"\band\s+(?:(?:are|do|does|will|would|have|has|can|could|did|is|were)\s+you"
+    r"|an?|own|reliable|access\s+to)\b", re.I,
+)
+
+
+def _as_worded(question: questions.Question) -> bool:
+    """Whether a fact's answer can stand for ``question`` as worded (see `_NEGATED`)."""
+    text = _NOT_NEGATION.sub(" ", question.text)
+    return not _NEGATED.search(text) and not _SECOND_ASK.search(text)
 
 
 def _value(value: Any) -> str:
@@ -218,15 +245,17 @@ def _from_resume(
     """A skill the resume lists, asked about by name: "Yes" to "experience with X?", or
     only listed skills ticked in a list of skills. Never how much or how long."""
     label = f"{question.text} {question.help_text}"
-    if _DEGREE_OF_SKILL.search(label):
+    if _DEGREE_OF_SKILL.search(label) or not _as_worded(question):
         return False
     if action.action == "check_options":
         picked = [item.strip() for item in action.value.split(" | ")]
         return all(item and field_matcher.same_skill_in(skills, item) for item in picked)
     term = action.basis_key.strip()
-    named = bool(term) and re.search(rf"(?<![\w+#.]){re.escape(term)}(?![\w+#])", label, re.I)
+    asked = re.sub(rf"(?<![\w+#.]){re.escape(term)}(?![\w+#])", "{skill}",
+                   " ".join(question.text.casefold().split()), count=1, flags=re.I) if term else ""
+    asked = re.sub(r"\s*(?:\(required\)|[?*:.\s])*$", "", asked)
     affirmative = field_matcher.affirmative_option(list(question.options))
-    return bool(named) and field_matcher.same_skill_in(skills, term) and (
+    return bool(_SKILL_ASK.match(asked)) and field_matcher.same_skill_in(skills, term) and (
         affirmative is not None
         and field_matcher.normalize(affirmative) == field_matcher.normalize(action.value)
     )
@@ -270,8 +299,10 @@ def supported(
         key, value, custom = _fact(action, question, profile=profile, packet_fields=packet_fields)
         if not value:
             return False
-        if custom:
+        if custom:  # the applicant's own answer to this very question
             return _says(action, question, "", value)
+        if questions.yes_no_options(question.options) and not _as_worded(question):
+            return False
         if key == "race" and re.search(r"hispanic|latin[oax]", action.value, re.I):
             # "Asian (Not Hispanic or Latino)" says two things; both must hold.
             said = "No" if re.search(r"\bnot\b|\bnon\b", action.value, re.I) else "Yes"
