@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+import asyncio
+
 import httpx
 import pytest
 
@@ -61,3 +63,40 @@ def test_a_used_up_heavy_quota_pins_light_before_any_call():
     assert messages == [
         "Heavy model is at its quota limit; answering with Light (gemini-3.5-flash-lite)"
     ]
+
+
+def _ask_failing_on_heavy(seen: list[str]):
+    def ask() -> str:
+        model = config.model_for("answer")
+        seen.append(model)
+        if model == "gemini-3.5-flash":
+            raise llm.LLMError("HTTP 429", status=429)
+        return model
+
+    return ask
+
+
+def test_once_heavy_is_down_later_calls_in_the_same_block_use_light():
+    """Fill pins once around all its written answers: the second question must not go
+    back to Heavy and fail again."""
+    seen: list[str] = []
+    ask = _ask_failing_on_heavy(seen)
+    with model_fallback.pin(_route([])):
+        assert model_fallback.call(ask) == "gemini-3.5-flash-lite"
+        assert model_fallback.call(ask) == "gemini-3.5-flash-lite"
+    assert seen == ["gemini-3.5-flash", "gemini-3.5-flash-lite", "gemini-3.5-flash-lite"]
+
+
+def test_the_async_call_also_stays_on_light():
+    seen: list[str] = []
+    ask = _ask_failing_on_heavy(seen)
+
+    async def answer() -> str:
+        return ask()
+
+    async def both() -> list[str]:
+        return [await model_fallback.acall(answer), await model_fallback.acall(answer)]
+
+    with model_fallback.pin(_route([])):
+        assert asyncio.run(both()) == ["gemini-3.5-flash-lite"] * 2
+    assert seen == ["gemini-3.5-flash", "gemini-3.5-flash-lite", "gemini-3.5-flash-lite"]

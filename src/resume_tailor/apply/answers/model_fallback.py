@@ -89,8 +89,19 @@ def pin(state: Fallback) -> Iterator[None]:
         _ACTIVE.reset(token)
 
 
+def _light_now() -> Fallback | None:
+    """The routing to answer under Light now: Heavy went down inside the block that
+    pinned it, so the block's own pin still names Heavy."""
+    state = _ACTIVE.get()
+    return state if state is not None and state.heavy_down and state.light else None
+
+
 def call[T](fn: Callable[[], T]) -> T:
-    """Run ``fn``; when Heavy is at its limit, run it once more under Light."""
+    """Run ``fn``; when Heavy is at its limit, run it once more under Light, and every
+    later call of the fill under Light straight away."""
+    if (down := _light_now()) is not None:
+        with config.pinned(down.light, effort=down.effort):  # type: ignore[arg-type]
+            return fn()
     try:
         return fn()
     except Exception as exc:
@@ -106,6 +117,9 @@ def call[T](fn: Callable[[], T]) -> T:
 
 async def acall[T](fn: Callable[[], Awaitable[T]]) -> T:
     """`call` for a coroutine-returning ``fn`` (the verified engine)."""
+    if (down := _light_now()) is not None:
+        with config.pinned(down.light, effort=down.effort):  # type: ignore[arg-type]
+            return await fn()
     try:
         return await fn()
     except Exception as exc:
