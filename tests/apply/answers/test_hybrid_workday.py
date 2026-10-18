@@ -11,6 +11,7 @@ from resume_tailor import config
 from resume_tailor.apply.answers import (
     hybrid_resolver,
     page_blockers,
+    resolver_basis,
     resolver_types,
     widget_actions,
 )
@@ -231,6 +232,9 @@ def resolver_page(monkeypatch):
     )
     monkeypatch.setattr(widget_actions, "_menu_choices", lambda _page, trigger: [])
     monkeypatch.setattr(widget_actions, "_is_upload_widget", lambda _locator: False)
+    # These tests drive the resolver's rounds; the basis an answer cites is checked in
+    # test_resolver_basis.py.
+    monkeypatch.setattr(resolver_basis, "supported", lambda *_args, **_kwargs: True)
 
     def execute(_page, action):
         state.unresolved = [f for f in state.unresolved if f["selector"] != action.selector]

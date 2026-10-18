@@ -1,0 +1,190 @@
+"""The resolver applies a model answer only when the basis it cites supports it."""
+
+from __future__ import annotations
+
+from types import SimpleNamespace
+from unittest.mock import MagicMock
+
+import pytest
+
+from resume_tailor.apply.answers import (
+    hybrid_resolver,
+    page_blockers,
+    resolver_basis,
+    resolver_types,
+    widget_actions,
+)
+from resume_tailor.apply.answers.profile import ApplicantProfile
+from resume_tailor.apply.funnel.packet_models import Packet
+
+YES_NO = ["Yes", "No"]
+
+
+def _field(label: str, options=YES_NO, kind: str = "radiogroup") -> dict:
+    return {"type": kind, "selector": "#q", "label": label, "options": list(options)}
+
+
+def _action(value: str, kind: str, key: str = "", verb: str = "choose_radio"):
+    return resolver_types.FieldAction(label="q", selector="#q", action=verb, value=value,
+                                      basis_kind=kind, basis_key=key)
+
+
+def _supported(action, field, *, profile=None, packet=None, skills=()):
+    return resolver_basis.supported(action, field, profile=profile or {},
+                                    packet_fields=packet or {}, skills=skills)
+
+
+SPONSOR = "Will you require visa sponsorship to work in the U.S.?"
+
+
+@pytest.mark.parametrize(("label", "action", "packet", "expected"), [
+    (SPONSOR, _action("No", "packet", "requires_sponsorship"), {"requires_sponsorship": "No"}, True),
+    # The profile's own name for it reads the same packet answer.
+    (SPONSOR, _action("No", "profile", "requires_sponsorship_now"), {"requires_sponsorship": "No"}, True),
+    # The option must say what the field says.
+    (SPONSOR, _action("Yes", "packet", "requires_sponsorship"), {"requires_sponsorship": "No"}, False),
+    # A field with no value supports nothing.
+    (SPONSOR, _action("No", "packet", "requires_sponsorship"), {}, False),
+    # A driver's license says nothing about a nursing license.
+    ("Do you hold an active RN nursing license?", _action("Yes", "packet", "drivers_license"),
+     {"drivers_license": "Yes"}, False),
+    # "Now" does not answer "now or in the future".
+    ("Will you now or in the future require sponsorship?",
+     _action("No", "packet", "requires_sponsorship"), {"requires_sponsorship": "No"}, False),
+    ("Gender", _action("I decline to self-identify", "profile", "eeo.gender"),
+     {"gender": "decline"}, True),
+    ("Do you have outside employment?", _action("No", "unknown"), {}, False),
+])
+def test_a_field_supports_only_its_own_question(label, action, packet, expected):
+    options = ["Male", "Female", "I decline to self-identify"] if label == "Gender" else YES_NO
+    assert _supported(action, _field(label, options), packet=packet) is expected
+
+
+def test_a_saved_answer_supports_only_its_own_question():
+    profile = {"custom_answers": {"Do you have outside employment?": "No"}}
+    action = _action("No", "profile", "custom_answers.Do you have outside employment?")
+    assert _supported(action, _field("Do you have outside employment?"), profile=profile)
+    assert not _supported(action, _field("Do you serve on a board?"), profile=profile)
+
+
+@pytest.mark.parametrize(("label", "key", "value", "expected"), [
+    ("Do you have experience with Python?", "Python", "Yes", True),
+    ("Do you have experience with Python?", "Python", "No", False),
+    ("Do you have experience with Java?", "Python", "Yes", False),  # not the skill asked
+    ("Do you have experience with Rust?", "Rust", "Yes", False),  # not on the resume
+    ("Do you have 3+ years of Python experience?", "Python", "Yes", False),  # how long
+    ("Are you an expert in Python?", "Python", "Yes", False),  # how well
+])
+def test_the_resume_supports_only_a_skill_it_lists(label, key, value, expected):
+    action = _action(value, "resume", key)
+    assert _supported(action, _field(label), skills=["Python", "SQL"]) is expected
+
+
+def test_only_listed_skills_are_ticked():
+    field = _field("Which of these do you use?", ["Python", "Java", "Go"], kind="checkboxgroup")
+    listed = _action("Python | Go", "resume", "Python", verb="check_options")
+    unlisted = _action("Python | Java", "resume", "Python", verb="check_options")
+    assert _supported(listed, field, skills=["Python", "Go"])
+    assert not _supported(unlisted, field, skills=["Python", "Go"])
+
+
+@pytest.mark.parametrize(("label", "options", "expected"), [
+    ("How did you hear about us?", ["LinkedIn", "Job Board", "Referral"], True),
+    ("Were you referred by a current employee?", YES_NO, False),
+    ("How did you hear about this role? Were you referred?", YES_NO, False),
+    ("Would you like to be considered for other positions?", YES_NO, False),
+])
+def test_no_effect_is_only_a_source_question(label, options, expected):
+    action = _action(options[0], "no_effect")
+    assert _supported(action, _field(label, options)) is expected
+
+
+# -- in the resolver --------------------------------------------------------------------
+
+
+class _FakeClient:
+    timeout = 60.0
+
+    def __init__(self, replies: list, calls: list) -> None:
+        def parse(**kwargs):
+            calls.append(kwargs)
+            return SimpleNamespace(parsed_output=replies.pop(0))
+
+        self.messages = SimpleNamespace(parse=parse)
+
+
+@pytest.fixture
+def page(monkeypatch):
+    """A page of scripted blockers; records executed actions and saved choices."""
+    state = SimpleNamespace(unresolved=[], replies=[], calls=[], executed=[], saved=[],
+                            sticks=True, in_flight_seen=[])
+    client = _FakeClient(state.replies, state.calls)
+    monkeypatch.setattr(hybrid_resolver.llm, "client_for", lambda _purpose: client)
+    monkeypatch.setattr(page_blockers, "extract_page_blockers", lambda _page: {
+        "errors": [], "unresolved": [dict(f) for f in state.unresolved],
+        "advance_disabled": False,
+    })
+
+    def execute(_page, action):
+        state.executed.append(action.selector)
+        state.in_flight_seen.append(bool(hybrid_resolver._IN_FLIGHT))  # noqa: SLF001
+        if state.sticks:
+            state.unresolved = [f for f in state.unresolved if f["selector"] != action.selector]
+        return state.sticks
+
+    monkeypatch.setattr(widget_actions, "execute_action", execute)
+    monkeypatch.setattr(hybrid_resolver, "_write_choices", state.saved.append)
+    state.page = MagicMock()
+    return state
+
+
+def _resolve(state, fields: dict, skills=()):
+    return hybrid_resolver.resolve_step_blockers(
+        state.page, Packet.model_construct(fields=fields, master_skills=list(skills)),
+        ApplicantProfile(), ledger=resolver_types.StepLedger(), max_retries=1,
+        on_progress=state.messages.append,
+    )
+
+
+def _reply(*actions):
+    return resolver_types.StepResolution(actions=list(actions))
+
+
+def _pick(selector: str, value: str, kind: str, key: str = ""):
+    return resolver_types.FieldAction(label=selector, selector=selector, action="choose_radio",
+                                      value=value, basis_kind=kind, basis_key=key)
+
+
+def test_an_unsupported_answer_is_left_for_the_applicant(page):
+    page.unresolved = [{**_field(SPONSOR), "selector": "#sponsor"},
+                       {**_field("Do you serve on a board?"), "selector": "#board"}]
+    page.replies.append(_reply(_pick("#sponsor", "No", "packet", "requires_sponsorship"),
+                               _pick("#board", "No", "profile", "relatives_at_company")))
+    page.messages = []
+    _resolve(page, {"requires_sponsorship": "No"})
+    assert page.executed == ["#sponsor"]
+    assert any("leaving them for you: Do you serve on a board?" in m for m in page.messages)
+    assert len(page.saved) == 1 and len(page.saved[0]) == 1  # only the supported pick
+    # The model saw the resume's skills it may cite.
+    assert "<resume_skills>" in page.calls[0]["messages"][0]["content"]
+
+
+def test_a_pick_is_saved_only_once_it_is_on_the_page(page):
+    page.unresolved = [{**_field(SPONSOR), "selector": "#sponsor"}]
+    page.replies.append(_reply(_pick("#sponsor", "No", "packet", "requires_sponsorship")))
+    page.messages = []
+    page.sticks = False
+    _resolve(page, {"requires_sponsorship": "No"})
+    assert page.executed == ["#sponsor", "#sponsor"]  # tried twice, never stuck
+    assert page.saved == []
+    assert hybrid_resolver._IN_FLIGHT == {}  # noqa: SLF001 - released all the same
+
+
+def test_other_tabs_wait_until_the_pick_is_saved(page):
+    page.unresolved = [{**_field(SPONSOR), "selector": "#sponsor"}]
+    page.replies.append(_reply(_pick("#sponsor", "No", "packet", "requires_sponsorship")))
+    page.messages = []
+    _resolve(page, {"requires_sponsorship": "No"})
+    assert page.in_flight_seen == [True]  # still in flight while it was applied
+    assert len(page.saved) == 1
+    assert hybrid_resolver._IN_FLIGHT == {}  # noqa: SLF001

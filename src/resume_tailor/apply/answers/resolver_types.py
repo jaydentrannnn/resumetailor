@@ -20,6 +20,17 @@ class FieldAction(BaseModel):
         "option texts to tick joined by ' | '",
     )
     rationale: str = Field(default="", description="Why this choice matches the candidate")
+    #: Checked in code before the action runs (`resolver_basis.supported`).
+    basis_kind: Literal["profile", "packet", "resume", "no_effect", "unknown"] = Field(
+        default="unknown",
+        description="What decides the value: 'profile' or 'packet' (basis_key is the "
+        "field), 'resume' (basis_key is the skill or term), 'no_effect' (only a "
+        "how-did-you-hear question), else 'unknown'",
+    )
+    basis_key: str = Field(
+        default="", description="The candidate_profile or packet_fields key, or the resume "
+        "term, that decides the value",
+    )
 
 class StepResolution(BaseModel):
     """List of field actions to resolve the current page or step."""

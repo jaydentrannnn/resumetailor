@@ -33,6 +33,7 @@ from . import (
     form_facts,
     page_blockers,
     questions,
+    resolver_basis,
     resolver_types,
     widget_actions,
 )
@@ -54,6 +55,13 @@ Rules:
 profile does not answer a control, still return an action for it with value "unknown"; \
 never leave a control out.
 - A value must be one of that control's listed options, copied exactly (or "unknown").
+- Name what decides every value: basis_kind "profile" or "packet" with basis_key set to \
+the exact key in candidate_profile or packet_fields whose value it follows; "resume" with \
+basis_key set to the skill, named in the question, that resume_skills lists; \
+or "no_effect" only for a 'How did you hear about us?' or source question. A field about \
+something else (a driver's license for a nursing license) decides nothing. When nothing \
+decides a control, its value is "unknown". "Consider me for other positions" is answered \
+only from its own profile key.
 """
 
 #: A decision the model returns when the profile does not answer a control.
@@ -123,7 +131,7 @@ _MAX_REVEAL_ROUNDS = 2
 
 
 #: Bump when `_SYSTEM_PROMPT` or the payload changes: cached choices are keyed on it.
-_RESOLVER_PROMPT_VERSION = "resolver-v2"
+_RESOLVER_PROMPT_VERSION = "resolver-v3"
 #: Model calls one control may be sent in before it is left for the applicant. The
 #: prompt asks for a decision per control; a control the model still leaves out is sent
 #: once more, alone.
@@ -293,6 +301,10 @@ class _StepResolver:
         self.reveal_rounds = 0
         # Set after an answer reveals follow-up questions: the next round covers only those.
         self.revealed: set[str] | None = None
+        # This round's questions other tabs wait on, and the model's picks to save once
+        # they are on the page (selector -> (choice key, entry)).
+        self.in_flight: dict[str, threading.Event] = {}
+        self.unsaved: dict[str, tuple[str, dict[str, Any]]] = {}
 
     def log(self, msg: str) -> None:
         if self.on_progress:
@@ -365,15 +377,21 @@ class _StepResolver:
             f"attempt {self.attempt}: found {len(unresolved)} unresolved controls, "
             f"{len(errors)} errors"
         )
-        answered = self._answer(unresolved, errors)
-        if answered is None:
-            return False
-        actions, responded, observed = answered
-        if not actions:
-            if not responded:
-                self.log("LLM returned no actions")
-            return None
-        executed = self._execute(actions)
+        # The questions asked here stay in flight until their answers are on the page and
+        # saved, so another tab waiting on one reads it (or asks itself) only then.
+        try:
+            answered = self._answer(unresolved, errors)
+            if answered is None:
+                return False
+            actions, responded, observed = answered
+            if not actions:
+                if not responded:
+                    self.log("LLM returned no actions")
+                return None
+            executed = self._execute(actions)
+            self._remember_applied()
+        finally:
+            self._release()
         return self._after_actions(executed, present, observed)
 
     def _still_open(
@@ -629,58 +647,85 @@ class _StepResolver:
         observed: dict[str, dict[str, Any]],
         safe_profile: dict[str, Any],
     ) -> tuple[list[resolver_types.FieldAction], set[str]] | None:
-        """Put `to_ask` to the model while marking those questions in flight; (usable
-        actions, selectors it answered), or None when the call failed."""
+        """Put `to_ask` to the model, marking those questions in flight until `_release`;
+        (usable actions whose cited basis holds, selectors it answered), or None when the
+        call failed."""
         mine: dict[str, threading.Event] = {}
         with _CHOICES_LOCK:
             for field in to_ask:
                 key = keys[str(field.get("selector"))]
                 if key not in _IN_FLIGHT:
                     mine[key] = _IN_FLIGHT[key] = threading.Event()
-        model_actions: list[resolver_types.FieldAction] = []
-        responded: set[str] = set()
-        try:
-            if to_ask:
-                resolution = self._call_model(to_ask, errors, safe_profile)
-                if resolution is None:
-                    return None
-                asked_now = {str(field.get("selector")) for field in to_ask}
-                responded = {
-                    action.selector for action in resolution.actions
-                    if action.selector in asked_now
-                }
-                unknown = sorted(
-                    str(observed[action.selector].get("label") or action.selector)[:40]
-                    for action in resolution.actions
-                    if action.selector in asked_now
-                    and widget_actions._norm(action.value) == _UNKNOWN
-                )
-                if unknown:
-                    self.log(
-                        f"the profile does not answer {len(unknown)} question(s): "
-                        f"{', '.join(unknown)}"
-                    )
-                model_actions = [
-                    action for action in resolution.actions
-                    if action.selector in asked_now
-                    and _usable(action, observed.get(action.selector))
-                ]
-                _write_choices({
-                    keys[action.selector]: {
-                        "action": action.action, "value": action.value,
-                        "label": str(observed[action.selector].get("label") or "")[:200],
-                        "options": list(observed[action.selector].get("options") or []),
-                        "digest": answer_book.ai_digest(_profile_digest(safe_profile)),
-                    }
-                    for action in model_actions
-                    if action.action in {"select_combobox", "choose_radio", "check_options"}
-                })
-        finally:
-            with _CHOICES_LOCK:
-                for key, event in mine.items():
-                    _IN_FLIGHT.pop(key, None)
-                    event.set()
+        self.in_flight.update(mine)
+        if not to_ask:
+            return [], set()
+        resolution = self._call_model(to_ask, errors, safe_profile)
+        if resolution is None:
+            return None
+        asked_now = {str(field.get("selector")) for field in to_ask}
+        responded = {
+            action.selector for action in resolution.actions if action.selector in asked_now
+        }
+        unknown = sorted(
+            str(observed[action.selector].get("label") or action.selector)[:40]
+            for action in resolution.actions
+            if action.selector in asked_now and widget_actions._norm(action.value) == _UNKNOWN
+        )
+        if unknown:
+            self.log(
+                f"the profile does not answer {len(unknown)} question(s): {', '.join(unknown)}"
+            )
+        usable = [
+            action for action in resolution.actions
+            if action.selector in asked_now and _usable(action, observed.get(action.selector))
+        ]
+        model_actions = [
+            action for action in usable if resolver_basis.supported(
+                action, observed[action.selector], profile=safe_profile,
+                packet_fields=self.packet.fields, skills=self.packet.master_skills,
+            )
+        ]
+        unsupported = sorted(
+            str(observed[action.selector].get("label") or action.selector)[:40]
+            for action in usable if action not in model_actions
+        )
+        if unsupported:
+            self.log(
+                f"nothing in your profile or resume supports the answer to "
+                f"{len(unsupported)} question(s); leaving them for you: {', '.join(unsupported)}"
+            )
+        # Remembered once it is on the page (`_remember_applied`), never before.
+        digest = answer_book.ai_digest(_profile_digest(safe_profile))
+        self.unsaved.update({
+            action.selector: (keys[action.selector], {
+                "action": action.action, "value": action.value,
+                "label": str(observed[action.selector].get("label") or "")[:200],
+                "options": list(observed[action.selector].get("options") or []),
+                "digest": digest,
+            })
+            for action in model_actions
+            if action.action in {"select_combobox", "choose_radio", "check_options"}
+        })
         return model_actions, responded
+
+    def _remember_applied(self) -> None:
+        """Save the model's picks that are now on the page (`ledger.done`)."""
+        applied = {
+            key: entry for selector, (key, entry) in self.unsaved.items()
+            if selector in self.ledger.done
+        }
+        self.unsaved.clear()
+        if applied:
+            _write_choices(applied)
+
+    def _release(self) -> None:
+        """Let other tabs waiting on these questions read the cache (`_recall`)."""
+        with _CHOICES_LOCK:
+            for key, event in self.in_flight.items():
+                _IN_FLIGHT.pop(key, None)
+                event.set()
+        self.in_flight.clear()
+        self.unsaved.clear()
 
     def _call_model(
         self, to_ask: list[dict[str, Any]], errors: list[Any], safe_profile: dict[str, Any]
@@ -690,6 +735,7 @@ class _StepResolver:
             f"<validation_errors>\n{json.dumps(errors, indent=2)}\n</validation_errors>",
             f"<candidate_profile>\n{json.dumps(safe_profile, indent=2)}\n</candidate_profile>",
             f"<packet_fields>\n{json.dumps(self.packet.fields, indent=2)}\n</packet_fields>",
+            f"<resume_skills>\n{json.dumps(self.packet.master_skills)}\n</resume_skills>",
         ]
 
         def ask() -> Any:
