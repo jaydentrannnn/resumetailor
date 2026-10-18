@@ -2042,3 +2042,19 @@ is a bug against an existing rule, not new policy.
   rejected. Only the checked box is read or revalidated: a change event on an unchecked radio can
   select it (Vue's v-model listens to change). A dropdown's review line uses its label, never the
   aria-label, which carries the chosen value.
+
+### 2026-10-17 — Multiple-choice fact answers read what the question says to pick
+
+A second outside review pointed out that what decides is what a negation modifies, not how
+many options there are. The earlier repair skipped multiple-choice questions, so a profile
+answer to "Choose the office locations where you cannot work" took the preferred office.
+`resolver_basis._to_pick` now keeps only the sentences that say what to pick (a "?", a
+select/choose/pick/indicate/exclude verb, or one that starts with which/what/where/check/list).
+If none does, it keeps the whole label. It also drops negated "If ... not ...," fallbacks and
+the options' own words. `_as_worded` checks negation and `_SECOND_ASK` against that text. Yes/No
+questions still read the whole label, since the answer affirms or denies all of it. The help
+text is not read, the same as for Yes/No: Self-ID help often says "you may choose not to
+answer". `_NEGATED` gains cannot (it never matched `\bnot\b`), unable, unwilling and exclud….
+Over the stored labels (read only), it refuses 1 of 16 multiple-choice questions, an AI-review
+opt-out that no profile fact answers, and 0 of 36 Yes/No. The harmless shapes are kept as
+regression tests.
