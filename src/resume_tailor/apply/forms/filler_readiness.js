@@ -103,9 +103,11 @@
     }
   }
 
-  /** The form holds a value here and refuses it; an empty field is `isEmpty`'s case. */
+  /** The form holds a value here and refuses it; an empty field is `isEmpty`'s case. A
+   * choice counts on its checked box only: an unchecked radio beside the chosen one holds
+   * no value, and revalidating it could choose it. */
   function isRejected(el, type) {
-    if (type === "checkbox" || type === "radio" || isEmpty(el)) return false;
+    if (type === "checkbox" || type === "radio" ? !el.checked : isEmpty(el)) return false;
     if (el.getAttribute("aria-invalid") === "true") return true;
     return !!el.validity && !el.validity.valid && !el.validity.valueMissing;
   }
@@ -126,7 +128,8 @@
     const lever = leverQuestion(el);
     if (isRejected(el, type)) {
       if (args?.revalidate) revalidate(el);
-      invalid.push(lever?.text.trim() || labelFor(el) || el.id || el.getAttribute("name") || `Unlabeled field ${index + 1}`);
+      const own = type === "radio" ? groupLabel(el) : labelFor(el);
+      invalid.push(lever?.text.trim() || own || el.id || el.getAttribute("name") || `Unlabeled field ${index + 1}`);
       continue;
     }
     const required = el.required || el.getAttribute("aria-required") === "true" || lever?.required === true;
@@ -145,10 +148,22 @@
 
   // Workday single-select dropdowns are buttons, not form controls.
   for (const button of document.querySelectorAll("button[aria-haspopup='listbox']")) {
-    if (!isVisible(button) || !button.closest("[data-automation-id^='formField-']")) continue;
+    const field = isVisible(button) && button.closest("[data-automation-id^='formField-']");
+    if (!field) continue;
+    const label = button.id && document.querySelector(`label[for="${CSS.escape(button.id)}"]`);
+    const blank = /^\s*(select one|select|choose one)?\s*$/i.test(button.innerText || "");
+    if (!blank && button.getAttribute("aria-invalid") === "true") {
+      if (args?.revalidate) {
+        button.focus({ preventScroll: true });
+        button.blur();
+      }
+      // Never the button's aria-label here: it holds the chosen value.
+      const caption = (label && label.innerText) || field.querySelector("label")?.innerText || button.id;
+      invalid.push((caption || "Unlabeled dropdown").replace(/\*\s*$/, "").trim());
+      continue;
+    }
     if (!/\bRequired\b/.test(button.getAttribute("aria-label") || "")) continue;
-    if (/^\s*(select one|select|choose one)?\s*$/i.test(button.innerText || "")) {
-      const label = button.id && document.querySelector(`label[for="${CSS.escape(button.id)}"]`);
+    if (blank) {
       empty.push(((label && label.innerText) || button.getAttribute("aria-label") || button.id).replace(/\*\s*$/, "").trim());
     }
   }

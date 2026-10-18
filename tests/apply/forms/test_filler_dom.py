@@ -489,3 +489,40 @@ def test_readiness_revalidates_a_stale_rejection(page):
     assert page.evaluate(_READINESS, {})["invalid"] == ["Phone"]
     page.evaluate(_READINESS, {"revalidate": True})
     assert page.evaluate(_READINESS, {})["invalid"] == []
+
+
+_REJECTED_CHOICES = """
+<fieldset><legend>Are you 18 or older?</legend>
+  <input type="radio" name="age" id="age-yes" value="yes" aria-invalid="true"><label for="age-yes">Yes</label>
+  <input type="radio" name="age" id="age-no" value="no" aria-invalid="true"><label for="age-no">No</label>
+</fieldset>
+<input type="checkbox" id="terms" aria-invalid="true"><label for="terms">I agree to the terms</label>
+<div data-automation-id="formField-country">
+  <label for="country">Country*</label>
+  <button id="country" aria-haspopup="listbox" aria-invalid="true"
+          aria-label="Country Canada Required">Canada</button>
+</div>
+<div data-automation-id="formField-state">
+  <label for="state">State*</label>
+  <button id="state" aria-haspopup="listbox" aria-label="State Select One Required">Select One</button>
+</div>
+"""
+
+
+def test_readiness_reports_rejected_choices_and_workday_dropdowns(page):
+    page.set_content(_REJECTED_CHOICES)
+    # Nothing chosen yet: a marked choice is the empty-field check's business.
+    first = page.evaluate(_READINESS, {})
+    assert first["invalid"] == ["Country"] and first["required_empty"] == ["State"]
+    page.locator("#age-yes").check()
+    page.locator("#terms").check()
+    assert page.evaluate(_READINESS, {})["invalid"] == [
+        "Are you 18 or older?", "I agree to the terms", "Country",
+    ]
+
+
+def test_revalidating_a_rejected_choice_never_changes_it(page):
+    page.set_content(_REJECTED_CHOICES)
+    page.locator("#age-yes").check()
+    page.evaluate(_READINESS, {"revalidate": True})
+    assert page.locator("#age-yes").is_checked() and not page.locator("#age-no").is_checked()
