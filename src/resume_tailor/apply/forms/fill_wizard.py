@@ -171,7 +171,7 @@ class _FillWizard(fill_answers._FillAnswers, fill_ats_steps._FillAtsSteps):
             try:
                 partial = fill_widgets._fill_frame(
                     frame, self.filler_js, self.fields, self.hints, self.facts,
-                    self.classify_unkeyed,
+                    self.classify_unkeyed, self.classify_notices,
                 )
             except Exception as exc:  # noqa: BLE001 - cross-origin frames fail evaluate
                 self.merged["frames_skipped"] = int(self.merged["frames_skipped"]) + 1
@@ -191,7 +191,8 @@ class _FillWizard(fill_answers._FillAnswers, fill_ats_steps._FillAtsSteps):
         self.page.wait_for_timeout(600)
         with contextlib.suppress(Exception):
             again = fill_widgets._fill_frame(
-                frame, self.filler_js, self.fields, self.hints, self.facts, self.classify_unkeyed
+                frame, self.filler_js, self.fields, self.hints, self.facts,
+                self.classify_unkeyed, self.classify_notices,
             )
             if isinstance(again, dict):
                 first = [item for item in partial.get("filled") or [] if isinstance(item, dict)]

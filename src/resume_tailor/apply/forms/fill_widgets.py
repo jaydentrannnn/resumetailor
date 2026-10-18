@@ -82,10 +82,12 @@ def _fill_declared_combobox(target: Any, item: dict[str, Any], fields: dict[str,
 def _fill_frame(
     frame: Any, filler_js: str, fields: dict[str, str], hints: dict[str, str], facts: questions.Facts,
     classifier: questions.Classifier | None = None,
+    notices: questions.NoticeClassifier | None = None,
 ) -> Any:
     """Fill one frame: ``filler.js`` reads its questions, `questions` decides each one's
-    key and answer (``classifier`` names what a choice question no rule covers asks),
-    and the filler sets them (a failed read fills without a plan)."""
+    key and answer (``classifier`` names what a choice question no rule covers asks,
+    ``notices`` reads the notices its wording leaves unclear), and the filler sets them
+    (a failed read fills without a plan)."""
     args = {
         "fields": fields, "hints": hints, "synonyms": fill_page._synonym_payload(),
         "eeo": field_matcher.eeo_patterns(fields),
@@ -96,6 +98,7 @@ def _fill_frame(
         scanned = frame.evaluate(filler_js, {**args, "scan": True})
         plan = questions.plan_for(
             (scanned or {}).get("questions") or [], facts, classifier=classifier,
+            notices=notices,
         )
     return frame.evaluate(filler_js, {**args, "plan": plan})
 

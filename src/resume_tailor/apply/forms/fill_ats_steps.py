@@ -263,6 +263,7 @@ class _FillAtsSteps(fill_state._FillState):
         merged = self.merged
         consent_filled, consent_review = form_routes.accept_workday_sync(
             self.page, allow_routine=self.profile.auto_accept_routine_acknowledgements,
+            notices=self.classify_notices,
         )
         merged["filled"].extend({**item, "frame_index": 0} for item in consent_filled)
         accepted_labels = {item["label"] for item in consent_filled}

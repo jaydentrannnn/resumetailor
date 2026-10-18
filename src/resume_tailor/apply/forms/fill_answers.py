@@ -446,7 +446,7 @@ class _FillAnswers(fill_state._FillState):
             with contextlib.suppress(Exception):
                 revealed = fill_widgets._fill_frame(
                     frame, self.filler_js, self.fields, self.hints, self.facts,
-                    self.classify_unkeyed,
+                    self.classify_unkeyed, self.classify_notices,
                 )
                 merged["filled"].extend(
                     {**item, "frame_index": frame_index} for item in revealed.get("filled") or []

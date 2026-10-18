@@ -266,6 +266,37 @@ def test_classifier_outage_keys_nothing(answer_calls):
     assert classify_questions(asked) == [None]
 
 
+_ROLE_TERM = ("I acknowledge that this role is on-site in Chicago.", "")
+_UNUSUAL = ("I understand that this internship does not include housing.", "Housing details")
+
+
+def test_notice_reader_reads_each_notice_once_and_caches_it(answer_calls):
+    from resume_tailor.apply.answers.answer import NoticeReadLLM, classify_notices
+    from resume_tailor.apply.answers.form_facts import notice_key
+
+    calls = answer_calls(NoticeReadLLM(readings=["claim", "process"]))
+    expected = {notice_key(*_ROLE_TERM): "fact", notice_key(*_UNUSUAL): "routine"}
+    assert classify_notices([_ROLE_TERM, _UNUSUAL]) == expected
+    content = calls[0]["messages"][0]["content"]
+    assert "1. I acknowledge that this role is on-site in Chicago." in content
+    assert "[details: Housing details]" in content
+    assert classify_notices([_ROLE_TERM, _UNUSUAL]) == expected
+    assert len(calls) == 1
+
+
+@pytest.mark.parametrize("readings", [None, ["process"]])
+def test_a_failed_or_misaligned_notice_reading_is_never_agreed_to(answer_calls, readings):
+    from resume_tailor.apply.answers.answer import NoticeReadLLM, classify_notices
+    from resume_tailor.apply.answers.form_facts import notice_key
+
+    if readings is not None:  # None: no reply queued, so the fake raises like an outage
+        answer_calls(NoticeReadLLM(readings=readings))
+    assert classify_notices([_ROLE_TERM, _UNUSUAL]) == {
+        notice_key(*_ROLE_TERM): "fact", notice_key(*_UNUSUAL): "fact",
+    }
+    assert not list(config.CACHE_DIR.glob("*.notice-kind.json"))
+
+
 _KUBERNETES = "I built Kubernetes clusters for production workloads."
 
 

@@ -4,7 +4,8 @@ Profile ``custom_answers`` short-circuit without a model round-trip; otherwise o
 ``answer``-purpose call runs with a locked-core prompt, then ``coverletter.check_claims``
 verifies the draft. Fabricating answers are retried once, then discarded rather than
 returned unguarded. :func:`classify_questions` (the decision layer's fallback) names the
-fact a choice question asks for; it never answers one.
+fact a choice question asks for; it never answers one. :func:`classify_notices` reads a
+notice the wording leaves unclear as a process to accept or a claim about the applicant.
 """
 
 from __future__ import annotations
@@ -21,7 +22,7 @@ from pathlib import Path
 from pydantic import BaseModel, Field
 
 from resume_tailor import config
-from resume_tailor.apply.answers import answer_book, questions
+from resume_tailor.apply.answers import answer_book, form_facts, questions
 from resume_tailor.apply.answers.profile import ApplicantProfile
 from resume_tailor.content.data import MasterResume
 from resume_tailor.infra import llm
@@ -566,11 +567,7 @@ def classify_questions(asked: list[questions.Question]) -> list[str | None]:
         for number, index in enumerate(pending, start=1)
     )
     try:
-        client = llm.client_for("answer")
-        if hasattr(client, "timeout"):
-            client.timeout = min(float(client.timeout), _CLASSIFY_TIMEOUT)
-        elif hasattr(client, "with_options"):
-            client = client.with_options(timeout=_CLASSIFY_TIMEOUT)
+        client = _classify_client()
         response = client.messages.parse(
             model=config.model_for("answer"),
             max_tokens=config.max_tokens_for("answer"),
@@ -599,6 +596,99 @@ def classify_questions(asked: list[questions.Question]) -> list[str | None]:
                     asked[index].text, asked[index].options, key, questions.MODEL_KEYS[key]
                 )
     return keys
+
+
+def _classify_client():
+    """The ``answer`` client, its timeout capped at `_CLASSIFY_TIMEOUT`."""
+    client = llm.client_for("answer")
+    if hasattr(client, "timeout"):
+        client.timeout = min(float(client.timeout), _CLASSIFY_TIMEOUT)
+    elif hasattr(client, "with_options"):
+        client = client.with_options(timeout=_CLASSIFY_TIMEOUT)
+    return client
+
+
+#: Bumped when ``_NOTICE_SYSTEM`` or the request shape changes; part of each cache key.
+_NOTICE_PROMPT_VERSION = 2
+#: Characters of a notice's help text sent with it: enough for the statement it captions.
+_NOTICE_HELP_CHARS = 1200
+
+_NOTICE_SYSTEM = """\
+You read checkbox statements from job applications. For each numbered statement, reply
+"process" when ticking it only accepts a notice, policy, document, check or process
+(privacy or data processing, terms, background or reference checks, drug screening,
+at-will employment, arbitration, an electronic signature, the accuracy of the
+application) and states nothing about the applicant. Reply "claim" when ticking it
+states or confirms anything about the applicant: their work authorization, citizenship,
+age, education, enrollment, licenses, skills, experience, availability, hours,
+schedule, start date, location, willingness to relocate or travel, or that they meet a
+requirement of the role. Acknowledging a term of the role itself (its hours, schedule,
+duration, start date, location, or on-site, hybrid or remote arrangement) is a claim:
+it tells the employer the applicant can work on those terms. When unsure, reply
+"claim". Reply with one word per statement, in order, and never answer a statement.
+"""
+
+
+class NoticeReadLLM(BaseModel):
+    """Schema-validated model output: "process" or "claim" per statement, in order."""
+
+    readings: list[str] = Field(default_factory=list)
+
+
+def _notice_cache_path(key: str) -> Path:
+    payload = "\n".join([str(_NOTICE_PROMPT_VERSION), config.fingerprint("answer"), key])
+    digest = hashlib.sha256(payload.encode("utf-8")).hexdigest()[:12]
+    return config.CACHE_DIR / f"{digest}.notice-kind.json"
+
+
+def classify_notices(notices: list[tuple[str, str]]) -> dict[str, str]:
+    """The model's reading of each notice the wording leaves unclear, as `form_facts`
+    kinds by `form_facts.notice_key`: "routine" (ticking it only accepts a process) or
+    "fact" (it states something about the applicant, answered only from the profile).
+
+    ``notices`` are (caption, help text) pairs. One ``answer``-purpose call for those not
+    cached; the model sees the statement text only and returns one word per statement.
+    A failed or misaligned call reads every pending notice as "fact": never agreed to.
+    """
+    verdicts: dict[str, str] = {}
+    pending: dict[str, tuple[str, str]] = {}
+    for text, help_text in notices:
+        key = form_facts.notice_key(text, help_text)
+        path = _notice_cache_path(key)
+        if path.is_file():
+            cached = json.loads(path.read_text(encoding="utf-8")).get("kind")
+            verdicts[key] = "routine" if cached == "routine" else "fact"
+        else:
+            pending.setdefault(key, (text, help_text))
+    if not pending:
+        return verdicts
+    numbered = "\n".join(
+        f"{number}. {' '.join(text.split())}"
+        + (f" [details: {' '.join(help_text.split())[:_NOTICE_HELP_CHARS]}]" if help_text.strip()
+           else "")
+        for number, (text, help_text) in enumerate(pending.values(), start=1)
+    )
+    readings: list[str] = []
+    try:
+        response = _classify_client().messages.parse(
+            model=config.model_for("answer"),
+            max_tokens=config.max_tokens_for("answer"),
+            output_config={"effort": config.effort_for("answer")},
+            system=_NOTICE_SYSTEM,
+            messages=[{"role": "user", "content": f"<statements>\n{numbered}\n</statements>"}],
+            output_format=NoticeReadLLM,
+        )
+        readings = [reading.strip().casefold() for reading in response.parsed_output.readings]
+    except Exception:  # noqa: BLE001 - an outage leaves the notices for the applicant
+        readings = []
+    if len(readings) != len(pending):
+        return {**verdicts, **dict.fromkeys(pending, "fact")}
+    for key, reading in zip(pending, readings, strict=True):
+        verdicts[key] = "routine" if reading == "process" else "fact"
+        _notice_cache_path(key).write_text(
+            json.dumps({"kind": verdicts[key]}) + "\n", encoding="utf-8"
+        )
+    return verdicts
 
 
 def _learned(question: questions.Question) -> str | None:

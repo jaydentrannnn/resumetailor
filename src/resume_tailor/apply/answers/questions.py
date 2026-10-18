@@ -498,8 +498,55 @@ def _date_part(value: str, part: str) -> str:
     return value
 
 
+#: One plain negation flips what a statement claims ("I am not authorized to work...");
+#: a qualifier makes its meaning turn on more than the fact ("authorized to work without
+#: sponsorship"), so such a statement is left for the applicant.
+_NEGATION = re.compile(r"\b(?:not|never|no|neither|nor|cannot)\b|n't\b")
+_QUALIFIED = re.compile(r"\b(?:without|unless|except|other than|only if|regardless)\b")
+
+
+def _states_claim(question: Question) -> bool:
+    """A statement about the applicant ("I confirm that I am...", "I am not authorized
+    to work..."), as opposed to a question put to them ("Are you authorized to work?")."""
+    if question.kind not in {"checkbox", "choice"} or form_facts.asks(question.text):
+        return False
+    return (form_facts.semantic_key(question.text, question.help_text)
+            == form_facts.ACKNOWLEDGEMENT or form_facts.first_person_claim(question.text))
+
+
+def _as_stated(text: str, found: list[str]) -> list[str]:
+    """The profile's Yes/No for a fact, as the answer to a statement of it: "Yes" only
+    when the statement says what the profile says; [] when that is not certain."""
+    low = text.casefold()
+    if not found or found[0] not in {"Yes", "No"} or _QUALIFIED.search(low):
+        return []
+    flips = len(_NEGATION.findall(low))
+    if flips > 1:
+        return []
+    return ["Yes" if (found[0] == "Yes") != bool(flips) else "No"]
+
+
 def answers(match: Match | None, question: Question, facts: Facts) -> list[str]:
-    """Answers to try for ``question``, most specific first; [] when no fact answers it."""
+    """Answers to try for ``question``, most specific first; [] when no fact answers it.
+
+    A statement about the applicant is answered as stated (`_as_stated`), so "I am not
+    authorized to work..." is never agreed to from an authorized applicant's profile.
+    """
+    found = _answers(match, question, facts)
+    if match is not None and _as_worded(match.key, question):
+        return _as_stated(question.text, found)
+    return found
+
+
+#: Explicit preferences: asked as requests ("Would you like..."), answered as given.
+_PREFERENCE_KEYS = frozenset({"consider_other_positions", "advertising_consent"})
+
+
+def _as_worded(key: str, question: Question) -> bool:
+    return key in YES_NO_KEYS - _PREFERENCE_KEYS and _states_claim(question)
+
+
+def _answers(match: Match | None, question: Question, facts: Facts) -> list[str]:
     if match is None:
         return []
     if match.key == "advertising_consent":
@@ -680,10 +727,13 @@ MODEL_KEYS: dict[str, str] = {
 
 #: Asks which of ``MODEL_KEYS`` each question asks for (None: none of them).
 Classifier = Callable[[list[Question]], list[str | None]]
+#: (caption, help text) pairs -> `form_facts` kind ("routine" / "fact") by notice key.
+NoticeClassifier = Callable[[list[tuple[str, str]]], dict[str, str]]
 
 
 def plan_for(
     items: Iterable[dict], facts: Facts, *, classifier: Classifier | None = None,
+    notices: NoticeClassifier | None = None,
 ) -> dict[str, dict[str, str | list[str] | None]]:
     """What ``filler.js`` should do with each scanned question, by its question id.
 
@@ -691,8 +741,27 @@ def plan_for(
     reported); ``value``, when set, is the exact option to pick or the text to type — the
     filler's own value and formatting are used otherwise. A key the DOM itself states (an
     ATS hint, an education-date input's name) is kept; label wording is decided here,
-    and choice questions no rule covers go to ``classifier`` in one batch.
+    and choice questions no rule covers go to ``classifier`` in one batch. When the
+    applicant agrees to required notices, those the wording leaves unclear go to
+    ``notices`` in one batch (`answer.classify_notices`).
     """
+    items = list(items)
+    verdicts: dict[str, str] = {}
+    if notices is not None and facts.fields.get("auto_accept_routine_acknowledgements") == "Yes":
+        pending = [
+            pair for pair in (
+                (str(item.get("label") or ""), str(item.get("help") or item.get("help_text") or ""))
+                for item in items
+            ) if form_facts.acknowledgement(*pair) == "unclear"
+        ]
+        verdicts = notices(pending) if pending else {}
+    with form_facts.notice_verdicts(verdicts):
+        return _plan(items, facts, classifier)
+
+
+def _plan(
+    items: list[dict], facts: Facts, classifier: Classifier | None,
+) -> dict[str, dict[str, str | list[str] | None]]:
     asked: list[tuple[str, dict, Question, Match | None]] = []
     for item in items:
         qid = str(item.get("qid") or item.get("selector") or "")
@@ -753,6 +822,9 @@ def _step(
     if match is None:
         return {"key": None, "value": ""}
     found = answers(match, question, facts)
+    if question.kind == "checkbox" and _as_worded(match.key, question):
+        # Ticked only when true as worded, never by the filler's own reading of the fact.
+        return {"key": match.key, "value": "Yes" if found == ["Yes"] else None}
     value = ""
     if match.key in _DATE_KEYS and question.part == "day":
         if found and question.options:

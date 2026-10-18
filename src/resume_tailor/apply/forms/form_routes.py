@@ -2,10 +2,12 @@
 
 from __future__ import annotations
 
+import asyncio
 import contextlib
 import json
 import re
 import time
+from collections.abc import Callable
 from typing import Any
 
 from resume_tailor.apply.answers import form_facts
@@ -124,31 +126,55 @@ _EXCLUDE = re.compile(
 _NOTICE_WORDS = re.compile(r"acknowledge|confirm|read|understand|authori[sz]e|declar", re.I)
 
 
+#: (caption, help text) pairs -> `form_facts` kind by notice key (`answer.classify_notices`).
+NoticeClassifier = Callable[[list[tuple[str, str]]], dict[str, str]]
+
+
+def _notice(row: dict[str, Any]) -> tuple[str, str] | None:
+    """A required box's (caption, help text) when it reads as a notice, else None."""
+    label = str(row.get("label") or "").strip()
+    if not row.get("required") or not label or _EXCLUDE.search(label):
+        return None
+    if not (_CONSENT.search(label) or _NOTICE_WORDS.search(label)):
+        return None
+    # `CONSENT_JS` context is the caption, then its description and help text.
+    context = str(row.get("context") or "").strip()
+    return label, context[len(label):] if context.startswith(label) else context
+
+
+def unclear_notices(rows: list[dict[str, Any]]) -> list[tuple[str, str]]:
+    """The required notices among ``rows`` whose wording leaves them unclear."""
+    pairs = (_notice(row) for row in rows)
+    return [pair for pair in pairs if pair and form_facts.acknowledgement(*pair) == "unclear"]
+
+
 def consent_candidates(
     rows: list[dict[str, Any]], *, allow_routine: bool = False,
+    verdicts: dict[str, str] | None = None,
 ) -> tuple[list[dict[str, Any]], list[str]]:
     """Required consent boxes to tick, and the labels left for the applicant.
 
     Every required notice is agreed to when ``allow_routine`` (the applicant's "Agree to
     required notices and consents"): privacy, background checks, screening, accuracy,
     terms, arbitration, signatures. Only a box `form_facts.acknowledgement` reads as
-    routine is ticked; one that states a fact about the applicant ("I confirm I am
-    authorized to work..."), opts in, or reads as neither is left for them.
+    routine is ticked (an unclear one by the model's reading in ``verdicts``); one that
+    states a fact about the applicant ("I confirm I am authorized to work..."), opts in,
+    or reads as neither is left for them.
     """
     accepted = []
     unresolved = []
-    for row in rows:
-        label = str(row.get("label") or "").strip()
-        if not row.get("required") or _EXCLUDE.search(label):
-            continue
-        if not label:
-            unresolved.append(row)
-            continue
-        if _CONSENT.search(label) or _NOTICE_WORDS.search(label):
-            # `CONSENT_JS` context is the caption, then its description and help text.
-            context = str(row.get("context") or "").strip()
-            context = context[len(label):] if context.startswith(label) else context
-            routine = form_facts.acknowledgement(label, context) == "routine"
+    with form_facts.notice_verdicts(verdicts or {}):
+        for row in rows:
+            label = str(row.get("label") or "").strip()
+            if not row.get("required") or _EXCLUDE.search(label):
+                continue
+            if not label:
+                unresolved.append(row)
+                continue
+            notice = _notice(row)
+            if notice is None:
+                continue
+            routine = form_facts.acknowledgement(*notice) == "routine"
             target = accepted if allow_routine and routine and row.get("enabled") \
                 and row.get("visible") else unresolved
             target.append(row)
@@ -156,9 +182,13 @@ def consent_candidates(
 
 
 def accept_workday_sync(
-    page: Any, *, allow_routine: bool = False,
+    page: Any, *, allow_routine: bool = False, notices: NoticeClassifier | None = None,
 ) -> tuple[list[dict[str, str]], list[str]]:
-    rows, unresolved = consent_candidates(page.evaluate(CONSENT_JS), allow_routine=allow_routine)
+    scanned = page.evaluate(CONSENT_JS)
+    pending = unclear_notices(scanned) if allow_routine and notices else []
+    rows, unresolved = consent_candidates(
+        scanned, allow_routine=allow_routine, verdicts=notices(pending) if pending else None,
+    )
     completed = []
     for row in rows:
         box = page.locator('input[type="checkbox"]').nth(row["index"])
@@ -182,11 +212,13 @@ def accept_workday_sync(
 
 
 async def accept_workday_async(
-    page: Any, *, allow_routine: bool = False,
+    page: Any, *, allow_routine: bool = False, notices: NoticeClassifier | None = None,
 ) -> tuple[list[dict[str, str]], list[str]]:
-    rows, unresolved = consent_candidates(
-        await page.evaluate(CONSENT_JS), allow_routine=allow_routine,
-    )
+    scanned = await page.evaluate(CONSENT_JS)
+    pending = unclear_notices(scanned) if allow_routine and notices else []
+    # The model call blocks: run it off the event loop.
+    verdicts = await asyncio.to_thread(notices, pending) if notices and pending else None
+    rows, unresolved = consent_candidates(scanned, allow_routine=allow_routine, verdicts=verdicts)
     completed = []
     for row in rows:
         box = page.locator('input[type="checkbox"]').nth(row["index"])

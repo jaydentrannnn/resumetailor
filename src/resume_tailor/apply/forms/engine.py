@@ -199,6 +199,11 @@ async def fill_application(
         heavy=settings.model_spec, light=settings.fallback_model_spec,
         effort=settings.answer_effort, progress=on_progress,
     )
+
+    def read_notices(notices: list[tuple[str, str]]) -> dict[str, str]:
+        with model_fallback.pin(model_route):
+            return answer.classify_notices(notices)
+
     last_checkpoint = 0.0
     outcomes: dict[str, FieldOutcome] = {}
     attachment_outcomes: dict[str, dict] = {}
@@ -622,6 +627,7 @@ async def fill_application(
                     if isinstance(adapter, adapters.WorkdayAdapter):
                         accepted, unresolved = await form_routes.accept_workday_async(
                             page, allow_routine=applicant.auto_accept_routine_acknowledgements,
+                            notices=read_notices,
                         )
                         for item in accepted:
                             matched = [field for field in settled.fields if field.control_kind == "checkbox" and

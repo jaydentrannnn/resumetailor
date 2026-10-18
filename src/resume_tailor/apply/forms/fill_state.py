@@ -297,6 +297,10 @@ class _FillState:
         with self.answer_pin():
             return answer.classify_questions(asked)
 
+    def classify_notices(self, notices: list[tuple[str, str]]) -> dict[str, str]:
+        with self.answer_pin():
+            return answer.classify_notices(notices)
+
     @property
     def resume_path(self) -> Any:
         return self.pkt.artifacts.get("resume_pdf") or self.pkt.artifacts.get("resume_docx")

@@ -2,8 +2,10 @@
 
 from __future__ import annotations
 
+import contextlib
 import re
-from collections.abc import Iterable
+from collections.abc import Iterable, Iterator
+from contextvars import ContextVar
 
 HIGH_SCHOOL = "high_school_graduation_year"
 SKILLS = "programming_languages"
@@ -205,6 +207,18 @@ def _claims(statement: str, question: bool) -> bool:
     return bool(_STATE_CLAIM.search(statement))
 
 
+def asks(text: str) -> bool:
+    """Whether ``text`` puts a question to the applicant anywhere."""
+    return any(question for _part, question in _statements(text.casefold()))
+
+
+def first_person_claim(text: str) -> bool:
+    """Whether ``text`` states something about the applicant in their own words ("I am
+    not authorized to work...", "I do not require sponsorship"), not as a question."""
+    return any(not question and _STATE_CLAIM.search(part)
+               for part, question in _statements(text.casefold()))
+
+
 def _process(statement: str) -> bool:
     bare = not re.sub(r"[\W\d_]+", " ", _ASSENT_WORDS.sub(" ", statement)).strip()
     return bare or bool(_PROCESS.search(statement))
@@ -241,6 +255,25 @@ def typed_consent(text: str, help_text: str = "") -> str:
     return ""
 
 
+#: The model's reading of "unclear" notices ("routine" or "fact"), by `notice_key`, for
+#: the questions being planned (`notice_verdicts`).
+_VERDICTS: ContextVar[dict[str, str] | None] = ContextVar("notice_verdicts", default=None)
+
+
+def notice_key(text: str, help_text: str = "") -> str:
+    return " ".join(f"{text} {help_text}".split()).casefold()
+
+
+@contextlib.contextmanager
+def notice_verdicts(verdicts: dict[str, str]) -> Iterator[None]:
+    """Read each "unclear" notice ``verdicts`` names as its verdict while active."""
+    token = _VERDICTS.set(verdicts)
+    try:
+        yield
+    finally:
+        _VERDICTS.reset(token)
+
+
 def acknowledgement(text: str, help_text: str = "") -> str:
     """What kind of notice ``text`` (with the ``help_text`` beside it) is, using the whole
     question, not a box's caption.
@@ -249,8 +282,16 @@ def acknowledgement(text: str, help_text: str = "") -> str:
     asserts or asks something about the applicant), "routine" (every statement the
     applicant makes is process language: a notice, policy, check or declaration of
     accuracy to agree to), "unclear" (a notice that is neither, which is never agreed
-    to on its wording), else "" (not a notice).
+    to on its wording, unless the model's reading under `notice_verdicts` settles it),
+    else "" (not a notice).
     """
+    kind = _wording(text, help_text)
+    if kind == "unclear":
+        return (_VERDICTS.get() or {}).get(notice_key(text, help_text), kind)
+    return kind
+
+
+def _wording(text: str, help_text: str) -> str:
     low = f"{text} {help_text}".casefold()
     caption = _statements(text.casefold())
     statements = caption + _statements(help_text.casefold(), asks=False)

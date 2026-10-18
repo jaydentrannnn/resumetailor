@@ -7,7 +7,7 @@ from pathlib import Path
 
 import pytest
 
-from resume_tailor.apply.answers import form_facts
+from resume_tailor.apply.answers import form_facts, questions
 from resume_tailor.apply.forms import field_catalog, form_routes
 from resume_tailor.apply.forms.field_types import FieldObservation
 
@@ -71,6 +71,36 @@ def test_a_question_in_help_text_is_not_put_to_the_applicant():
     ) == "routine"
 
 
+UNCLEAR = "I understand that this internship does not include relocation assistance."
+
+
+@pytest.mark.parametrize(("verdict", "value"), [("routine", "Yes"), ("fact", None)])
+def test_the_plan_reads_an_unclear_notice_by_the_models_verdict(verdict, value):
+    asked: list = []
+
+    def notices(pending):
+        asked.extend(pending)
+        return {form_facts.notice_key(*pair): verdict for pair in pending}
+
+    facts = questions.facts_for({"auto_accept_routine_acknowledgements": "Yes"})
+    items = [{"qid": "box", "label": UNCLEAR, "kind": "checkbox"},
+             {"qid": "other", "label": "I agree to the Privacy Policy", "kind": "checkbox"}]
+    plan = questions.plan_for(items, facts, notices=notices)
+    assert asked == [(UNCLEAR, "")]  # only the unclear one is read
+    assert plan["box"]["value"] == value and plan["other"]["value"] == "Yes"
+    # The verdict holds only for that plan.
+    assert form_facts.acknowledgement(UNCLEAR) == "unclear"
+
+
+def test_no_notice_is_read_when_the_applicant_does_not_agree_to_notices():
+    def notices(_pending):
+        raise AssertionError("no model call")
+
+    plan = questions.plan_for([{"qid": "box", "label": UNCLEAR, "kind": "checkbox"}],
+                              questions.facts_for({}), notices=notices)
+    assert plan["box"]["value"] is None
+
+
 def _row(label, context=""):
     return {"label": label, "context": f"{label} {context}".strip(), "required": True,
             "enabled": True, "visible": True}
@@ -86,6 +116,18 @@ def test_consent_routes_tick_only_routine_notices(label):
     assert accepted == [] and left == [label]
     leftover = {"type": "checkbox", "required": True, "selector": "#box", "label": label}
     assert not form_routes.is_required_consent(leftover)
+
+
+def test_the_consent_route_ticks_an_unclear_notice_only_on_a_routine_verdict():
+    rows = [_row(UNCLEAR)]
+    assert form_routes.unclear_notices(rows) == [(UNCLEAR, "")]
+    key = form_facts.notice_key(UNCLEAR)
+    accepted, _left = form_routes.consent_candidates(rows, allow_routine=True,
+                                                    verdicts={key: "routine"})
+    assert len(accepted) == 1
+    accepted, left = form_routes.consent_candidates(rows, allow_routine=True,
+                                                   verdicts={key: "fact"})
+    assert accepted == [] and left == [UNCLEAR]
 
 
 def test_the_consent_route_reads_the_description_apart_from_the_caption():
