@@ -92,6 +92,15 @@ def test_the_plan_reads_an_unclear_notice_by_the_models_verdict(verdict, value):
     assert form_facts.acknowledgement(UNCLEAR) == "unclear"
 
 
+@pytest.mark.parametrize("text", ["Confirm your password*", "Applicant Signature*",
+                                  "Re-enter your email address to confirm"])
+def test_a_fields_caption_is_never_put_to_the_model(text):
+    assert form_facts.acknowledgement(text) == "unclear"
+    assert not form_facts.needs_reading(text)
+    with form_facts.notice_verdicts({form_facts.notice_key(text): "routine"}):
+        assert form_facts.acknowledgement(text) == "unclear"
+
+
 def test_no_notice_is_read_when_the_applicant_does_not_agree_to_notices():
     def notices(_pending):
         raise AssertionError("no model call")

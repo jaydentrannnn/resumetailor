@@ -145,7 +145,7 @@ def _notice(row: dict[str, Any]) -> tuple[str, str] | None:
 def unclear_notices(rows: list[dict[str, Any]]) -> list[tuple[str, str]]:
     """The required notices among ``rows`` whose wording leaves them unclear."""
     pairs = (_notice(row) for row in rows)
-    return [pair for pair in pairs if pair and form_facts.acknowledgement(*pair) == "unclear"]
+    return [pair for pair in pairs if pair and form_facts.needs_reading(*pair)]
 
 
 def consent_candidates(

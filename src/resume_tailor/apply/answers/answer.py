@@ -609,7 +609,7 @@ def _classify_client():
 
 
 #: Bumped when ``_NOTICE_SYSTEM`` or the request shape changes; part of each cache key.
-_NOTICE_PROMPT_VERSION = 2
+_NOTICE_PROMPT_VERSION = 3
 #: Characters of a notice's help text sent with it: enough for the statement it captions.
 _NOTICE_HELP_CHARS = 1200
 
@@ -624,8 +624,12 @@ age, education, enrollment, licenses, skills, experience, availability, hours,
 schedule, start date, location, willingness to relocate or travel, or that they meet a
 requirement of the role. Acknowledging a term of the role itself (its hours, schedule,
 duration, start date, location, or on-site, hybrid or remote arrangement) is a claim:
-it tells the employer the applicant can work on those terms. When unsure, reply
-"claim". Reply with one word per statement, in order, and never answer a statement.
+it tells the employer the applicant can work on those terms. Reply "claim" as well for
+anything that is not a statement to accept: a field's label (an email, password, code,
+name or signature to type, a file to upload, something to list or describe), and for
+any opt-in (texts, marketing, alerts, surveys, being contacted about or kept on file for
+other roles). When unsure, reply "claim". Reply with one word per statement, in order,
+and never answer a statement.
 """
 
 

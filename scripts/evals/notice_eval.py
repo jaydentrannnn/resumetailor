@@ -42,13 +42,18 @@ def predict(cases: list[dict], *, tie_breaker: bool = False) -> dict[str, dict]:
     from resume_tailor.apply.forms import form_routes
 
     facts = questions.facts_for({"auto_accept_routine_acknowledgements": "Yes"})
+    # A baseline tree predates the tie-breaker: it is called the way that tree allows.
+    readable = hasattr(form_facts, "notice_key")
     verdicts: dict[str, str] = {}
-    if tie_breaker:
+    if tie_breaker and readable:
         from resume_tailor.apply.answers import answer
 
-        unclear = [(c["text"], "") for c in cases
-                   if form_facts.acknowledgement(c["text"]) == "unclear"]
+        reads = getattr(form_facts, "needs_reading",
+                        lambda text: form_facts.acknowledgement(text) == "unclear")
+        unclear = [(c["text"], "") for c in cases if reads(c["text"])]
         verdicts = answer.classify_notices(unclear) if unclear else {}
+    plan_extra = {"notices": lambda _pending: verdicts} if readable else {}
+    route_extra = {"verdicts": verdicts} if readable else {}
     out = {}
     for case in cases:
         text = case["text"]
@@ -56,11 +61,11 @@ def predict(cases: list[dict], *, tie_breaker: bool = False) -> dict[str, dict]:
             {"qid": "box", "label": text, "kind": "checkbox"},
             {"qid": "choice", "label": text, "kind": "choice", "options": ["Yes", "No"]},
         ]
-        plan = questions.plan_for(items, facts, notices=lambda _pending: verdicts)
+        plan = questions.plan_for(items, facts, **plan_extra)
         row = {"label": text, "context": text, "required": True, "enabled": True,
                "visible": True}
         accepted, _left = form_routes.consent_candidates([row], allow_routine=True,
-                                                         verdicts=verdicts)
+                                                         **route_extra)
         leftover = {"type": "checkbox", "required": True, "selector": "#box", "label": text}
         paths = {
             "checkbox": plan["box"].get("value") == "Yes",
@@ -71,7 +76,7 @@ def predict(cases: list[dict], *, tie_breaker: bool = False) -> dict[str, dict]:
         match = questions.classify(questions.Question(text, kind="choice", options=("Yes", "No")))
         out[case["id"]] = {
             "kind": form_facts.acknowledgement(text),
-            "verdict": verdicts.get(form_facts.notice_key(text), ""),
+            "verdict": verdicts.get(form_facts.notice_key(text), "") if readable else "",
             "agreed": any(paths.values()),
             "paths": [name for name, agreed in paths.items() if agreed],
             "declined": plan["box"].get("value") == "No",

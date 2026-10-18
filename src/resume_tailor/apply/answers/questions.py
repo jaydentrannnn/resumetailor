@@ -752,7 +752,7 @@ def plan_for(
             pair for pair in (
                 (str(item.get("label") or ""), str(item.get("help") or item.get("help_text") or ""))
                 for item in items
-            ) if form_facts.acknowledgement(*pair) == "unclear"
+            ) if form_facts.needs_reading(*pair)
         ]
         verdicts = notices(pending) if pending else {}
     with form_facts.notice_verdicts(verdicts):

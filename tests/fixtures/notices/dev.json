@@ -1109,6 +1109,918 @@
    "text": "List any certifications you hold.",
    "label": "fact",
    "fact_key": "resume"
+  },
+  {
+   "id": "syn-065",
+   "source": "synthetic",
+   "category": "optin_disguised",
+   "text": "I acknowledge that Acme may contact me by phone, including automated calls, about other positions.",
+   "label": "optional"
+  },
+  {
+   "id": "syn-066",
+   "source": "synthetic",
+   "category": "optin_disguised",
+   "text": "I confirm I would like Acme to keep my resume on file for 12 months.",
+   "label": "optional"
+  },
+  {
+   "id": "syn-067",
+   "source": "synthetic",
+   "category": "optin_disguised",
+   "text": "By checking this box, I consent to being contacted by Acme recruiters about roles that match my profile.",
+   "label": "optional"
+  },
+  {
+   "id": "syn-068",
+   "source": "synthetic",
+   "category": "optin_disguised",
+   "text": "I understand Acme will add my details to its candidate database so recruiters can reach out about suitable vacancies.",
+   "label": "optional"
+  },
+  {
+   "id": "syn-069",
+   "source": "synthetic",
+   "category": "optin_disguised",
+   "text": "Yes, I certify that Acme may send me career tips and stories from our teams.",
+   "label": "optional"
+  },
+  {
+   "id": "syn-070",
+   "source": "synthetic",
+   "category": "optin_disguised",
+   "text": "I acknowledge and agree that Acme may use my email address to keep me informed about career events.",
+   "label": "optional"
+  },
+  {
+   "id": "syn-071",
+   "source": "synthetic",
+   "category": "optin_disguised",
+   "text": "I have read the Privacy Notice. I also agree that Acme may notify me when jobs matching my interests are posted.",
+   "label": "optional"
+  },
+  {
+   "id": "syn-072",
+   "source": "synthetic",
+   "category": "optin_disguised",
+   "text": "Acme processes your data to assess this application. By ticking this box you also agree that we may retain it after the process ends to contact you about suitable roles.",
+   "label": "optional"
+  },
+  {
+   "id": "syn-073",
+   "source": "synthetic",
+   "category": "optin_disguised",
+   "text": "I confirm that Acme may pass my application to its partner companies for their open roles.",
+   "label": "optional"
+  },
+  {
+   "id": "syn-074",
+   "source": "synthetic",
+   "category": "optin_disguised",
+   "text": "Stay connected: I acknowledge that Acme may email me about upcoming recruiting events.",
+   "label": "optional"
+  },
+  {
+   "id": "syn-075",
+   "source": "synthetic",
+   "category": "plain_optin",
+   "text": "Keep me informed about career opportunities at Acme.",
+   "label": "optional"
+  },
+  {
+   "id": "syn-076",
+   "source": "synthetic",
+   "category": "plain_optin",
+   "text": "Join our Talent Network*",
+   "label": "optional"
+  },
+  {
+   "id": "syn-077",
+   "source": "synthetic",
+   "category": "plain_optin",
+   "text": "Would you like to receive career updates from Acme by email?",
+   "label": "optional"
+  },
+  {
+   "id": "syn-078",
+   "source": "synthetic",
+   "category": "plain_optin",
+   "text": "Notify me about similar jobs",
+   "label": "optional"
+  },
+  {
+   "id": "syn-079",
+   "source": "synthetic",
+   "category": "plain_optin",
+   "text": "Opt in to receive mobile alerts about your application status and new jobs.",
+   "label": "optional"
+  },
+  {
+   "id": "syn-080",
+   "source": "synthetic",
+   "category": "plain_optin",
+   "text": "Yes, please keep my profile active for future recruitment campaigns.",
+   "label": "optional"
+  },
+  {
+   "id": "syn-081",
+   "source": "synthetic",
+   "category": "negation",
+   "text": "I do not wish to receive marketing communications from Acme.",
+   "label": "optional"
+  },
+  {
+   "id": "syn-082",
+   "source": "synthetic",
+   "category": "negation",
+   "text": "Please do not contact me about other openings.",
+   "label": "optional"
+  },
+  {
+   "id": "syn-083",
+   "source": "synthetic",
+   "category": "negation",
+   "text": "Unsubscribe me from Acme job alerts",
+   "label": "optional"
+  },
+  {
+   "id": "syn-084",
+   "source": "synthetic",
+   "category": "negation",
+   "text": "I'd prefer not to be added to the Acme talent community.",
+   "label": "optional"
+  },
+  {
+   "id": "syn-085",
+   "source": "synthetic",
+   "category": "not_a_notice",
+   "text": "Confirm your password*",
+   "label": "not_a_notice"
+  },
+  {
+   "id": "syn-086",
+   "source": "synthetic",
+   "category": "not_a_notice",
+   "text": "Re-enter your email address to confirm",
+   "label": "not_a_notice"
+  },
+  {
+   "id": "syn-087",
+   "source": "synthetic",
+   "category": "not_a_notice",
+   "text": "What privacy-enhancing technologies have you worked with?",
+   "label": "not_a_notice"
+  },
+  {
+   "id": "syn-088",
+   "source": "synthetic",
+   "category": "not_a_notice",
+   "text": "Please describe how you ensured data privacy in a past project.",
+   "label": "not_a_notice"
+  },
+  {
+   "id": "syn-089",
+   "source": "synthetic",
+   "category": "not_a_notice",
+   "text": "Upload your signed offer acknowledgement form, if any",
+   "label": "not_a_notice"
+  },
+  {
+   "id": "syn-090",
+   "source": "synthetic",
+   "category": "not_a_notice",
+   "text": "Name of the certifying body",
+   "label": "not_a_notice"
+  },
+  {
+   "id": "syn-091",
+   "source": "synthetic",
+   "category": "not_a_notice",
+   "text": "Explain a situation where you had to get consent from stakeholders.",
+   "label": "not_a_notice"
+  },
+  {
+   "id": "syn-092",
+   "source": "synthetic",
+   "category": "not_a_notice",
+   "text": "Which terms and conditions would you negotiate in a vendor contract?",
+   "label": "not_a_notice"
+  },
+  {
+   "id": "syn-093",
+   "source": "synthetic",
+   "category": "not_a_notice",
+   "text": "Background: tell us about yourself",
+   "label": "not_a_notice"
+  },
+  {
+   "id": "syn-094",
+   "source": "synthetic",
+   "category": "not_a_notice",
+   "text": "Certificate number",
+   "label": "not_a_notice"
+  },
+  {
+   "id": "syn-095",
+   "source": "synthetic",
+   "category": "not_a_notice",
+   "text": "Privacy rights experience (in years)",
+   "label": "not_a_notice"
+  },
+  {
+   "id": "syn-096",
+   "source": "synthetic",
+   "category": "plain_routine",
+   "text": "I have read and understand the Candidate Privacy Notice.*",
+   "label": "routine"
+  },
+  {
+   "id": "syn-097",
+   "source": "synthetic",
+   "category": "plain_routine",
+   "text": "Acme is an equal opportunity employer. All qualified applicants will receive consideration without regard to race, color, religion, sex, national origin, disability or protected veteran status. By checking this box I acknowledge that I have read this statement.",
+   "label": "routine"
+  },
+  {
+   "id": "syn-098",
+   "source": "synthetic",
+   "category": "plain_routine",
+   "text": "I certify that the answers I have given are true and that I have not knowingly withheld anything. I understand that false statements may lead to rejection or dismissal.",
+   "label": "routine"
+  },
+  {
+   "id": "syn-099",
+   "source": "synthetic",
+   "category": "plain_routine",
+   "text": "I understand that any offer of employment is contingent on satisfactory references and a background check.",
+   "label": "routine"
+  },
+  {
+   "id": "syn-100",
+   "source": "synthetic",
+   "category": "plain_routine",
+   "text": "I acknowledge that I am applying for a position with Acme and that my employment, if offered, would be at will.",
+   "label": "routine"
+  },
+  {
+   "id": "syn-101",
+   "source": "synthetic",
+   "category": "plain_routine",
+   "text": "I hereby declare that the information provided is correct to the best of my knowledge and belief.",
+   "label": "routine"
+  },
+  {
+   "id": "syn-102",
+   "source": "synthetic",
+   "category": "plain_routine",
+   "text": "Acme will use the information you submit to evaluate your candidacy and may transfer it to its offices in other countries. By submitting this form, you consent to such processing and transfer. I acknowledge*",
+   "label": "routine"
+  },
+  {
+   "id": "syn-103",
+   "source": "synthetic",
+   "category": "plain_routine",
+   "text": "Yes, I agree to the Acme Terms of Use.",
+   "label": "routine"
+  },
+  {
+   "id": "syn-104",
+   "source": "synthetic",
+   "category": "unusual_routine",
+   "text": "I understand that Acme uses AI-assisted tools to help screen applications and that a person makes every final decision.",
+   "label": "routine"
+  },
+  {
+   "id": "syn-105",
+   "source": "synthetic",
+   "category": "unusual_routine",
+   "text": "I acknowledge the Pay Transparency Nondiscrimination Provision.",
+   "label": "routine"
+  },
+  {
+   "id": "syn-106",
+   "source": "synthetic",
+   "category": "unusual_routine",
+   "text": "I understand that I may request a reasonable accommodation at any stage of the hiring process.",
+   "label": "routine"
+  },
+  {
+   "id": "syn-107",
+   "source": "synthetic",
+   "category": "unusual_routine",
+   "text": "I have been informed that Acme participates in E-Verify.",
+   "label": "routine"
+  },
+  {
+   "id": "syn-108",
+   "source": "synthetic",
+   "category": "unusual_routine",
+   "text": "I understand that Acme will never ask for payment or bank details during recruiting.",
+   "label": "routine"
+  },
+  {
+   "id": "syn-109",
+   "source": "synthetic",
+   "category": "unusual_routine",
+   "text": "I acknowledge receipt of the California Applicant Privacy Notice.",
+   "label": "routine"
+  },
+  {
+   "id": "syn-110",
+   "source": "synthetic",
+   "category": "unusual_routine",
+   "text": "I understand that submitting this application does not guarantee an interview.",
+   "label": "routine"
+  },
+  {
+   "id": "syn-111",
+   "source": "synthetic",
+   "category": "unusual_routine",
+   "text": "By continuing I accept the use of cookies on the careers site.",
+   "label": "routine"
+  },
+  {
+   "id": "syn-112",
+   "source": "synthetic",
+   "category": "unusual_routine",
+   "text": "I understand that this application will remain active for 90 days.",
+   "label": "routine"
+  },
+  {
+   "id": "syn-113",
+   "source": "synthetic",
+   "category": "unusual_routine",
+   "text": "I agree to keep all interview materials confidential.",
+   "label": "routine"
+  },
+  {
+   "id": "syn-114",
+   "source": "synthetic",
+   "category": "unusual_routine",
+   "text": "I understand that a credit check may be part of the screening for this role.",
+   "label": "routine"
+  },
+  {
+   "id": "syn-115",
+   "source": "synthetic",
+   "category": "unusual_routine",
+   "text": "Fair Chance Notice: I have read the information about Acme's fair chance hiring practices.",
+   "label": "routine"
+  },
+  {
+   "id": "syn-116",
+   "source": "synthetic",
+   "category": "not_a_notice",
+   "text": "Have you ever designed a consent management platform?",
+   "label": "not_a_notice"
+  },
+  {
+   "id": "syn-117",
+   "source": "synthetic",
+   "category": "not_a_notice",
+   "text": "Confirm Email Address*",
+   "label": "not_a_notice"
+  },
+  {
+   "id": "syn-118",
+   "source": "synthetic",
+   "category": "not_a_notice",
+   "text": "Professional certification(s)",
+   "label": "not_a_notice"
+  },
+  {
+   "id": "syn-119",
+   "source": "synthetic",
+   "category": "not_a_notice",
+   "text": "Background",
+   "label": "not_a_notice"
+  },
+  {
+   "id": "syn-120",
+   "source": "synthetic",
+   "category": "not_a_notice",
+   "text": "Certified Public Accountant (CPA)",
+   "label": "not_a_notice"
+  },
+  {
+   "id": "syn-121",
+   "source": "synthetic",
+   "category": "not_a_notice",
+   "text": "How did you hear about the terms of this program?",
+   "label": "not_a_notice"
+  },
+  {
+   "id": "syn-122",
+   "source": "synthetic",
+   "category": "not_a_notice",
+   "text": "Please explain any gaps in your employment background.",
+   "label": "not_a_notice"
+  },
+  {
+   "id": "syn-123",
+   "source": "synthetic",
+   "category": "not_a_notice",
+   "text": "Which privacy regulations (GDPR, CCPA, HIPAA) are you familiar with?",
+   "label": "not_a_notice"
+  },
+  {
+   "id": "syn-124",
+   "source": "synthetic",
+   "category": "not_a_notice",
+   "text": "Attestation details (optional)",
+   "label": "not_a_notice"
+  },
+  {
+   "id": "syn-125",
+   "source": "synthetic",
+   "category": "not_a_notice",
+   "text": "Confirmation code from your assessment invite",
+   "label": "not_a_notice"
+  },
+  {
+   "id": "syn-126",
+   "source": "synthetic",
+   "category": "not_a_notice",
+   "text": "Signature of reference",
+   "label": "not_a_notice"
+  },
+  {
+   "id": "syn-127",
+   "source": "synthetic",
+   "category": "not_a_notice",
+   "text": "I have read about Acme in:",
+   "label": "not_a_notice"
+  },
+  {
+   "id": "syn-128",
+   "source": "synthetic",
+   "category": "not_a_notice",
+   "text": "Terms of availability (e.g., summer only)",
+   "label": "not_a_notice"
+  },
+  {
+   "id": "syn-129",
+   "source": "synthetic",
+   "category": "mixed",
+   "text": "I consent to the processing of my data and confirm that I am legally authorized to work in Canada.",
+   "label": "fact",
+   "fact_key": "authorized_to_work"
+  },
+  {
+   "id": "syn-130",
+   "source": "synthetic",
+   "category": "mixed",
+   "text": "I agree to the Privacy Policy and would like to hear about future openings.",
+   "label": "optional"
+  },
+  {
+   "id": "syn-131",
+   "source": "synthetic",
+   "category": "mixed",
+   "text": "I have read the terms above. I am 18 years of age or older.",
+   "label": "fact",
+   "fact_key": "over_18"
+  },
+  {
+   "id": "syn-132",
+   "source": "synthetic",
+   "category": "mixed",
+   "text": "I accept the terms of use. Acme may also email me about career events.",
+   "label": "optional"
+  },
+  {
+   "id": "syn-133",
+   "source": "synthetic",
+   "category": "mixed",
+   "text": "By checking this box I acknowledge the background check policy and confirm that I have no pending criminal charges.",
+   "label": "fact",
+   "fact_key": "applicant"
+  },
+  {
+   "id": "syn-134",
+   "source": "synthetic",
+   "category": "mixed",
+   "text": "I agree to the at-will statement and confirm I can start on June 1.",
+   "label": "fact",
+   "fact_key": "earliest_start"
+  },
+  {
+   "id": "syn-135",
+   "source": "synthetic",
+   "category": "requirements",
+   "text": "This position requires lifting up to 50 lbs. I confirm I can meet this requirement.",
+   "label": "fact",
+   "fact_key": "applicant"
+  },
+  {
+   "id": "syn-136",
+   "source": "synthetic",
+   "category": "requirements",
+   "text": "I acknowledge that this role requires overnight travel up to 30% of the time.",
+   "label": "fact",
+   "fact_key": "applicant"
+  },
+  {
+   "id": "syn-137",
+   "source": "synthetic",
+   "category": "requirements",
+   "text": "The requirements listed above apply to me.*",
+   "label": "fact",
+   "fact_key": "applicant"
+  },
+  {
+   "id": "syn-138",
+   "source": "synthetic",
+   "category": "requirements",
+   "text": "I understand that candidates must pass a coding assessment and I agree that I meet the listed qualifications.",
+   "label": "fact",
+   "fact_key": "applicant"
+  },
+  {
+   "id": "syn-139",
+   "source": "synthetic",
+   "category": "requirements",
+   "text": "I acknowledge that the shift for this role is 6pm to 2am, Monday to Friday.",
+   "label": "fact",
+   "fact_key": "applicant"
+  },
+  {
+   "id": "syn-140",
+   "source": "synthetic",
+   "category": "requirements",
+   "text": "I understand this is a 12-week, paid internship that runs from June to August.",
+   "label": "fact",
+   "fact_key": "applicant"
+  },
+  {
+   "id": "syn-141",
+   "source": "synthetic",
+   "category": "requirements",
+   "text": "Acknowledge: Applicants must reside within 50 miles of our Denver office.",
+   "label": "fact",
+   "fact_key": "applicant"
+  },
+  {
+   "id": "syn-142",
+   "source": "synthetic",
+   "category": "negation",
+   "text": "I am not currently bound by any agreement that would prevent me from working for Acme.",
+   "label": "fact",
+   "fact_key": "applicant"
+  },
+  {
+   "id": "syn-143",
+   "source": "synthetic",
+   "category": "negation",
+   "text": "I certify that no member of my immediate family works for Acme.",
+   "label": "fact",
+   "fact_key": "relatives_at_company"
+  },
+  {
+   "id": "syn-144",
+   "source": "synthetic",
+   "category": "negation",
+   "text": "I have never been dismissed from a job.",
+   "label": "fact",
+   "fact_key": "applicant"
+  },
+  {
+   "id": "syn-145",
+   "source": "synthetic",
+   "category": "negation",
+   "text": "I will not need Acme to sponsor a work visa now or in the future.",
+   "label": "fact",
+   "fact_key": "requires_sponsorship_future"
+  },
+  {
+   "id": "syn-146",
+   "source": "synthetic",
+   "category": "negation",
+   "text": "I confirm I have not previously applied to Acme in the last 6 months.",
+   "label": "fact",
+   "fact_key": "applicant"
+  },
+  {
+   "id": "syn-147",
+   "source": "synthetic",
+   "category": "plain_routine",
+   "text": "I understand that my application may be reviewed by members of the hiring team in other countries.",
+   "label": "routine"
+  },
+  {
+   "id": "syn-148",
+   "source": "synthetic",
+   "category": "plain_routine",
+   "text": "I agree to Acme's Mutual Arbitration Agreement.*",
+   "label": "routine"
+  },
+  {
+   "id": "syn-149",
+   "source": "synthetic",
+   "category": "plain_routine",
+   "text": "I acknowledge that I have reviewed the Acme Code of Conduct.",
+   "label": "routine"
+  },
+  {
+   "id": "syn-150",
+   "source": "synthetic",
+   "category": "unusual_routine",
+   "text": "I understand that Acme may verify my identity and right-to-work documents if I am offered a job.",
+   "label": "routine"
+  },
+  {
+   "id": "syn-151",
+   "source": "synthetic",
+   "category": "unusual_routine",
+   "text": "I acknowledge that I have been given the opportunity to ask questions about this notice.",
+   "label": "routine"
+  },
+  {
+   "id": "syn-152",
+   "source": "synthetic",
+   "category": "unusual_routine",
+   "text": "I understand that I can update or withdraw my application at any time.",
+   "label": "routine"
+  },
+  {
+   "id": "syn-153",
+   "source": "synthetic",
+   "category": "unusual_routine",
+   "text": "I consent to Acme contacting my references once I reach the final interview stage.",
+   "label": "routine"
+  },
+  {
+   "id": "syn-154",
+   "source": "synthetic",
+   "category": "unusual_routine",
+   "text": "I acknowledge the Acme Applicant Notice regarding the use of artificial intelligence in hiring.",
+   "label": "routine"
+  },
+  {
+   "id": "syn-155",
+   "source": "synthetic",
+   "category": "not_a_notice",
+   "text": "Applicant Signature*",
+   "label": "not_a_notice"
+  },
+  {
+   "id": "syn-156",
+   "source": "synthetic",
+   "category": "not_a_notice",
+   "text": "Electronic Signature",
+   "label": "not_a_notice"
+  },
+  {
+   "id": "syn-157",
+   "source": "synthetic",
+   "category": "not_a_notice",
+   "text": "Educational background",
+   "label": "not_a_notice"
+  },
+  {
+   "id": "syn-158",
+   "source": "synthetic",
+   "category": "not_a_notice",
+   "text": "Drug of choice for pain management research (pharmacology roles only)",
+   "label": "not_a_notice"
+  },
+  {
+   "id": "syn-159",
+   "source": "synthetic",
+   "category": "not_a_notice",
+   "text": "Background check provider used by your last employer",
+   "label": "not_a_notice"
+  },
+  {
+   "id": "syn-160",
+   "source": "synthetic",
+   "category": "not_a_notice",
+   "text": "Signed and dated by",
+   "label": "not_a_notice"
+  },
+  {
+   "id": "syn-161",
+   "source": "synthetic",
+   "category": "not_a_notice",
+   "text": "Drug screening experience (clinical lab technicians)",
+   "label": "not_a_notice"
+  },
+  {
+   "id": "syn-162",
+   "source": "synthetic",
+   "category": "not_a_notice",
+   "text": "E-Verify employer ID of your current employer",
+   "label": "not_a_notice"
+  },
+  {
+   "id": "syn-163",
+   "source": "synthetic",
+   "category": "optin_disguised",
+   "text": "I acknowledge that Acme may share my information with third-party recruitment agencies for other roles.",
+   "label": "optional"
+  },
+  {
+   "id": "syn-164",
+   "source": "synthetic",
+   "category": "optin_disguised",
+   "text": "I agree that Acme may invite me to take part in surveys about my candidate experience.",
+   "label": "optional"
+  },
+  {
+   "id": "syn-165",
+   "source": "synthetic",
+   "category": "optin_disguised",
+   "text": "Yes, I want to hear from Acme about life at Acme and new teams.",
+   "label": "optional"
+  },
+  {
+   "id": "syn-166",
+   "source": "synthetic",
+   "category": "plain_optin",
+   "text": "Stay in touch with Acme Careers",
+   "label": "optional"
+  },
+  {
+   "id": "syn-167",
+   "source": "synthetic",
+   "category": "plain_optin",
+   "text": "I would like to be contacted for user research studies.",
+   "label": "optional"
+  },
+  {
+   "id": "syn-168",
+   "source": "synthetic",
+   "category": "plain_optin",
+   "text": "Join the Acme Alumni & Friends network",
+   "label": "optional"
+  },
+  {
+   "id": "syn-169",
+   "source": "synthetic",
+   "category": "plain_routine",
+   "text": "Background Check Authorization*",
+   "label": "routine"
+  },
+  {
+   "id": "syn-170",
+   "source": "synthetic",
+   "category": "plain_routine",
+   "text": "Arbitration Agreement",
+   "label": "routine"
+  },
+  {
+   "id": "syn-171",
+   "source": "synthetic",
+   "category": "plain_routine",
+   "text": "E-Verify Participation Notice",
+   "label": "routine"
+  },
+  {
+   "id": "syn-172",
+   "source": "synthetic",
+   "category": "plain_routine",
+   "text": "Electronic Signature Consent*",
+   "label": "routine"
+  },
+  {
+   "id": "syn-173",
+   "source": "synthetic",
+   "category": "plain_routine",
+   "text": "Acme participates in E-Verify. I acknowledge",
+   "label": "routine"
+  },
+  {
+   "id": "syn-174",
+   "source": "synthetic",
+   "category": "unusual_routine",
+   "text": "Drug-Free Workplace Policy acknowledgement",
+   "label": "routine"
+  },
+  {
+   "id": "syn-175",
+   "source": "synthetic",
+   "category": "unusual_routine",
+   "text": "Applicant Certification and Signature",
+   "label": "routine"
+  },
+  {
+   "id": "syn-176",
+   "source": "synthetic",
+   "category": "optin_disguised",
+   "text": "I consent to Acme using my information to tell me about Acme products and services.",
+   "label": "optional"
+  },
+  {
+   "id": "syn-177",
+   "source": "synthetic",
+   "category": "optin_disguised",
+   "text": "I authorize Acme to share my data with its group companies for their recruitment.",
+   "label": "optional"
+  },
+  {
+   "id": "syn-178",
+   "source": "synthetic",
+   "category": "optin_disguised",
+   "text": "I acknowledge that Acme may reach me with autodialed or prerecorded calls.",
+   "label": "optional"
+  },
+  {
+   "id": "syn-179",
+   "source": "synthetic",
+   "category": "optin_disguised",
+   "text": "I understand that my profile will be visible to other employers using the Acme Jobs platform.",
+   "label": "optional"
+  },
+  {
+   "id": "syn-180",
+   "source": "synthetic",
+   "category": "optin_disguised",
+   "text": "I confirm Acme may add me to its Early Careers mailing list.",
+   "label": "optional"
+  },
+  {
+   "id": "syn-181",
+   "source": "synthetic",
+   "category": "plain_optin",
+   "text": "Allow push notifications about new postings",
+   "label": "optional"
+  },
+  {
+   "id": "syn-182",
+   "source": "synthetic",
+   "category": "optin_disguised",
+   "text": "As a staffing firm, Acme places candidates with its clients. I agree that Acme may submit my profile to clients for recruitment into other roles.",
+   "label": "optional"
+  },
+  {
+   "id": "syn-183",
+   "source": "synthetic",
+   "category": "not_a_notice",
+   "text": "Read the job description and summarize it in your own words.",
+   "label": "not_a_notice"
+  },
+  {
+   "id": "syn-184",
+   "source": "synthetic",
+   "category": "not_a_notice",
+   "text": "Terms of employment preferred (full-time or part-time)",
+   "label": "not_a_notice"
+  },
+  {
+   "id": "syn-185",
+   "source": "synthetic",
+   "category": "not_a_notice",
+   "text": "Write a short statement on why accuracy matters in auditing.",
+   "label": "not_a_notice"
+  },
+  {
+   "id": "syn-186",
+   "source": "synthetic",
+   "category": "not_a_notice",
+   "text": "Rate your understanding of data privacy regulations (1-5).",
+   "label": "not_a_notice"
+  },
+  {
+   "id": "syn-187",
+   "source": "synthetic",
+   "category": "not_a_notice",
+   "text": "Do you agree with this statement: I work best under pressure?",
+   "label": "not_a_notice"
+  },
+  {
+   "id": "syn-188",
+   "source": "synthetic",
+   "category": "not_a_notice",
+   "text": "Policy area of interest (e.g., health policy, tax policy)",
+   "label": "not_a_notice"
+  },
+  {
+   "id": "syn-189",
+   "source": "synthetic",
+   "category": "not_a_notice",
+   "text": "Terms you would like us to know about your notice period",
+   "label": "not_a_notice"
+  },
+  {
+   "id": "syn-190",
+   "source": "synthetic",
+   "category": "plain_routine",
+   "text": "I understand that Acme will contact me by email about the status of this application.",
+   "label": "routine"
+  },
+  {
+   "id": "syn-191",
+   "source": "synthetic",
+   "category": "plain_routine",
+   "text": "Accommodation Request Notice: I understand how to request an accommodation.",
+   "label": "routine"
+  },
+  {
+   "id": "syn-192",
+   "source": "synthetic",
+   "category": "unusual_routine",
+   "text": "I acknowledge that Acme may use an automated system to schedule my interviews.",
+   "label": "routine"
   }
  ]
 }
