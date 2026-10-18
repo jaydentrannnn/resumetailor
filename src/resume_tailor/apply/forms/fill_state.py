@@ -59,6 +59,8 @@ class _FillState:
         "Workday kept showing 'Something went wrong' after refreshing. Close other tabs "
         "open on this application, refresh this tab, then Continue fill."
     )
+    #: The final submit was sent (or may have been): the employer may have it.
+    submit_dispatched = False
 
     # Per-run state the step layers set after `__init__` (mostly in `_start_fill` and
     # `_start_step`). Declared here, annotation only, so every layer type-checks.
@@ -159,8 +161,6 @@ class _FillState:
         self.page: Any = None
         self.context: Any = None
         self.target_id = self.previous_fill.browser_target_id
-        #: The final submit was sent (or may have been): the employer may have it.
-        self.submit_dispatched = False
         #: Refreshes of Workday's "Something went wrong" page this fill may still spend.
         self.site_error_left = 2 * workday_page.SITE_ERROR_RELOADS
 
