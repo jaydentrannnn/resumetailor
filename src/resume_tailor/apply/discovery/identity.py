@@ -242,17 +242,24 @@ def canonical_key(final_url: str) -> str:
     return f"other:{host}:{digest}"
 
 
-def _requisition(url: str) -> tuple[str, str]:
-    """(ATS, id) of the requisition a page URL shows; ("other", digest) when it names none.
+def _requisition(url: str) -> tuple[str, str, str]:
+    """(ATS, owner, id) of the requisition a page URL shows; ("other", host, digest) when
+    it names none. The owner is the employer's tenant or board ("R123" at two Workday
+    tenants is two jobs); "" where a company page embeds the ATS (Greenhouse's
+    ``gh_jid``) and the board read from its path is only a guess.
 
     A Workday application page appends ``/apply/<step>`` to the posting URL, which hides
     the id ``canonical_key`` reads from the last segment (``_R123-2`` keyed as ``_R123``).
     """
     parsed = urlparse(url)
-    if "myworkdayjobs.com" in (parsed.hostname or "").lower():
+    host = (parsed.hostname or "").lower()
+    if "myworkdayjobs.com" in host:
         url = urlunparse(parsed._replace(path=_WORKDAY_APPLY.sub("", parsed.path)))
     ats, _, rest = canonical_key(url).partition(":")
-    return ats, rest.rpartition(":")[2].lstrip("_").casefold()
+    owner, _, job = rest.rpartition(":")
+    if ats == "greenhouse" and "greenhouse.io" not in host:
+        owner = ""
+    return ats, owner.casefold(), job.lstrip("_").casefold()
 
 
 def _site(url: str) -> str:
@@ -270,12 +277,13 @@ def retained_tab(
     (Workday's sign-in pages, an ATS the company's own careers site handed over to).
     """
     known = [url for url in known_urls if url]
-    ats, job = _requisition(page_url)
+    ats, owner, job = _requisition(page_url)
     if ats != "other":
         requisitions = {_requisition(url) for url in known}
-        if (ats, job) in requisitions:
+        if any((seen, seen_job) == (ats, job) and (seen_owner == owner or "" in {seen_owner, owner})
+               for seen, seen_owner, seen_job in requisitions):
             return "same"
-        return "different" if any(seen == ats for seen, _ in requisitions) else "unknown"
+        return "different" if any(seen == ats for seen, _, _ in requisitions) else "unknown"
     site = _site(page_url)
     return "unknown" if site and site in {_site(url) for url in known} else "different"
 

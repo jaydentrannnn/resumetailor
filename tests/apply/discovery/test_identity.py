@@ -255,6 +255,14 @@ WORKDAY_POSTING = (
         (WORKDAY_POSTING.replace("JR104025-3", "JR104025-1") + "/apply", [WORKDAY_POSTING],
          "different"),
         ("https://acme.wd5.myworkdayjobs.com/en-US/careers/login", [WORKDAY_POSTING], "unknown"),
+        # Workday ids are per employer: the same id at another tenant is another job.
+        (WORKDAY_POSTING.replace("acme.wd5", "globex.wd1") + "/apply", [WORKDAY_POSTING],
+         "different"),
+        # A company page embedding Greenhouse names the job, not its board.
+        ("https://job-boards.greenhouse.io/acme/jobs/4012345",
+         ["https://careers.acme.com/open-roles?gh_jid=4012345"], "same"),
+        ("https://job-boards.greenhouse.io/acme/jobs/4012399",
+         ["https://careers.acme.com/open-roles?gh_jid=4012345"], "different"),
         # A company careers page that handed over to its ATS: no key of that ATS to compare.
         ("https://careers-acme.icims.com/jobs/45689/analyst/job", ["https://jobs.acme.com/x"],
          "unknown"),
