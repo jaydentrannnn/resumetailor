@@ -170,6 +170,7 @@ class _FillAnswers(fill_state._FillState):
                 self.uploads.append({
                     **record, "filename": staged_name, "verified": False,
                     "error": upload_replace.NOT_REPLACED_NOTE, "frame_index": frame_index,
+                    **upload_replace.still_ours(self.previous_fill.uploads, purpose, staged_name),
                 })
                 return False
         if replacing:
@@ -192,6 +193,10 @@ class _FillAnswers(fill_state._FillState):
             "error": "" if uploaded else upload_error, "frame_index": frame_index,
             "uploaded_by_app": uploaded, "artifact_sha256": sha,
             **({"reason": upload_replace.REPLACED_NOTE} if uploaded and replacing else {}),
+            # The outdated file may still be attached.
+            **({} if uploaded or not replacing else upload_replace.still_ours(
+                self.previous_fill.uploads, purpose, existing_filename or staged_name,
+            )),
         })
         if not uploaded:
             return False

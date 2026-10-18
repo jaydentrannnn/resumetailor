@@ -37,15 +37,34 @@ def attached_by_app(
     """Whose file ``shown`` is: the app's and up to date, the app's but outdated, or not
     the app's (no record of uploading it, which includes records from before the app
     kept one)."""
-    prior = next((
-        item for item in prior_uploads
-        if item.get("purpose") == purpose and item.get("uploaded_by_app")
-        and item.get("filename") == shown
-    ), None)
+    prior = _ours(prior_uploads, purpose, shown)
     if prior is None:
         return "theirs"
     recorded = str(prior.get("artifact_sha256") or "")
     return "stale" if current_sha and recorded and recorded != current_sha else "current"
+
+
+def _ours(
+    prior_uploads: Iterable[dict[str, Any]], purpose: str, shown: str
+) -> dict[str, Any] | None:
+    return next((
+        item for item in prior_uploads
+        if item.get("purpose") == purpose and item.get("uploaded_by_app")
+        and item.get("filename") == shown
+    ), None)
+
+
+def still_ours(
+    prior_uploads: Iterable[dict[str, Any]], purpose: str, shown: str
+) -> dict[str, Any]:
+    """The upload record fields that keep ``shown`` known as the app's outdated upload
+    after a replacement failed, so the next Continue tries again rather than keeping it
+    as the applicant's file; {} when the app did not upload it."""
+    prior = _ours(prior_uploads, purpose, shown)
+    if prior is None:
+        return {}
+    return {"filename": shown, "uploaded_by_app": True,
+            "artifact_sha256": str(prior.get("artifact_sha256") or "")}
 
 
 #: Marks the one remove control in the upload component listing ``name``: from the

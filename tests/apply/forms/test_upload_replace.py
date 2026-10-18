@@ -54,7 +54,8 @@ class _Target:
         return SimpleNamespace(count=lambda: int(bool(self.listed) and name in self.listed))
 
 
-def _run(tmp_path, monkeypatch, *, prior=(), input_holds="", listed="", removed=True):
+def _run(tmp_path, monkeypatch, *, prior=(), input_holds="", listed="", removed=True,
+         sticks=True):
     resume = tmp_path / "resume.pdf"
     resume.write_bytes(b"%PDF-1.4 current")
     run = fill_answers._FillAnswers.__new__(fill_answers._FillAnswers)
@@ -72,7 +73,7 @@ def _run(tmp_path, monkeypatch, *, prior=(), input_holds="", listed="", removed=
     sent: list[str] = []
     monkeypatch.setattr(fill_outcomes, "_attached_filename", lambda _t, _sel: input_holds)
     monkeypatch.setattr(fill_widgets, "_set_and_verify_file",
-                        lambda _t, _sel, path: sent.append(Path(path).name) or True)
+                        lambda _t, _sel, path: sent.append(Path(path).name) or sticks)
     removals: list[str] = []
     monkeypatch.setattr(upload_replace, "remove_listed",
                         lambda _t, name: removals.append(name) or removed)
@@ -103,6 +104,22 @@ def test_an_outdated_upload_that_cannot_be_removed_is_not_uploaded_twice(tmp_pat
     assert sent == []
     (record,) = run.uploads
     assert not record["verified"] and record["error"] == upload_replace.NOT_REPLACED_NOTE
+
+
+@pytest.mark.parametrize("why", ["not removed", "input refused the new file"])
+def test_a_failed_replacement_keeps_the_old_file_known_as_the_apps(tmp_path, monkeypatch, why):
+    """The next Continue tries again instead of keeping the outdated file as the
+    applicant's own."""
+    run, _sent, _removals, sha = _run(
+        tmp_path, monkeypatch, prior=[OURS],
+        listed=STAGED if why == "not removed" else "",
+        input_holds=STAGED if why != "not removed" else "",
+        removed=False, sticks=False,
+    )
+    (record,) = run.uploads
+    assert not record["verified"]
+    assert record["filename"] == STAGED and record["artifact_sha256"] == OLD_SHA
+    assert upload_replace.attached_by_app(run.uploads, "resume", STAGED, sha) == "stale"
 
 
 def test_the_apps_current_upload_is_kept(tmp_path, monkeypatch):
