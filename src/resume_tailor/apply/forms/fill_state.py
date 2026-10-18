@@ -159,6 +159,8 @@ class _FillState:
         self.page: Any = None
         self.context: Any = None
         self.target_id = self.previous_fill.browser_target_id
+        #: The final submit was sent (or may have been): the employer may have it.
+        self.submit_dispatched = False
         #: Refreshes of Workday's "Something went wrong" page this fill may still spend.
         self.site_error_left = 2 * workday_page.SITE_ERROR_RELOADS
 

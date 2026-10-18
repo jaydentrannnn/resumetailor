@@ -328,7 +328,7 @@ class _FillFinish(fill_state._FillState):
                 "fields": list(merged.get("filled") or []),
                 "uploads": self.uploads,
             }, required=True)
-            dispatched = True
+            dispatched = self.submit_dispatched = True
             clicks.submit_click(submit_btn, decision=action, timeout=10_000)
             page.wait_for_load_state("networkidle", timeout=30_000)
             self.submit_action = "auto_submit"

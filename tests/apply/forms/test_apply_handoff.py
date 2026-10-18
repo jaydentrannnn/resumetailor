@@ -3,6 +3,8 @@
 from __future__ import annotations
 
 import time
+from contextlib import contextmanager
+from datetime import UTC, datetime, timedelta
 from unittest.mock import MagicMock
 
 import pytest
@@ -10,7 +12,8 @@ import pytest
 from resume_tailor import config
 from resume_tailor.apply.answers.profile import ApplicantProfile
 from resume_tailor.apply.ats import workday_auth
-from resume_tailor.apply.driver import browser
+from resume_tailor.apply.driver import browser, watchdog
+from resume_tailor.apply.forms import fill, submit_guard
 from resume_tailor.apply.funnel import operations, preparation, store, store_models
 from resume_tailor.web.schemas import ApplyOperationRequest, ApplySettings
 
@@ -356,3 +359,43 @@ def test_find_age_window_is_bounded(days):
             model_provider="ollama",
             model_name="test",
         )
+
+
+@pytest.mark.parametrize("sent", [True, False])
+def test_a_fill_that_fails_after_sending_the_submit_stays_unconfirmed(tmp_path, monkeypatch,
+                                                                      sent):
+    """Failing after the click must keep the attempt in the caps and duplicate checks; failing
+    before it is an ordinary failed fill."""
+    monkeypatch.setattr(config, "APPLICATIONS_PATH", tmp_path / "applications.json")
+    monkeypatch.setattr(config, "APPLICATIONS_OUTPUT_DIR", tmp_path / "output")
+    app = store_models.Application(source="test", source_job_id="app-1", company="Acme",
+                                   role="Intern", status="filling", job_id="job-1")
+    store.upsert(app)
+    run = object.__new__(fill._FillRun)
+    run.app, run.previous_fill, run.target_id, run.page = app, store_models.FillResult(), "t-1", None
+    run.source_job_id, run.submit_dispatched, run.on_progress = "app-1", False, None
+    run.deadline = time.monotonic() + 600
+
+    def submit_then_fail(self, _browser):
+        self.app.fill = store_models.FillResult(status="submit_unconfirmed",
+                                                submit_action="auto_submit")
+        self.submit_dispatched = sent
+        raise OSError("could not write fill.json")
+
+    @contextmanager
+    def connected():
+        yield MagicMock()
+
+    monkeypatch.setattr(fill._FillRun, "_run_connected", submit_then_fail)
+    monkeypatch.setattr(browser, "cdp_browser", connected)
+    monkeypatch.setattr(watchdog, "driver_pid", lambda _browser: None)
+    result = run.run()
+    stored = store.get("app-1")
+    assert stored is not None and result.error == "could not write fill.json"
+    if sent:
+        assert result.status == stored.status == "submit_unconfirmed"
+        assert stored.status in submit_guard.APPLIED_STATUSES  # never submitted again
+        since = datetime.now(UTC) - timedelta(hours=1)
+        assert len(list(submit_guard.auto_submits([stored], since=since))) == 1  # daily cap
+    else:
+        assert result.status == stored.status == "fill_failed"

@@ -19,7 +19,7 @@ from resume_tailor.apply.funnel.store_models import FillResult
 from resume_tailor.infra import model_queue
 from resume_tailor.web.schemas import ApplySettings, JobSettings
 
-from . import fill_entry, fill_finish, fill_widgets, fill_wizard
+from . import fill_entry, fill_finish, fill_widgets, fill_wizard, submit_guard
 
 
 @model_queue.observe_progress
@@ -106,6 +106,8 @@ class _FillRun(fill_entry._FillEntry, fill_wizard._FillWizard, fill_finish._Fill
                     return self._run_connected(pw_browser)
         except Exception as exc:  # noqa: BLE001
             error = stall.message() if stall.fired else str(exc)
+            if self.submit_dispatched:
+                return self._failed_after_submit(error)
             result = self.previous_fill.model_copy(update={
                 "error": error, "status": "fill_failed", "browser_target_id": self.target_id,
                 "browser_url": (
@@ -118,6 +120,22 @@ class _FillRun(fill_entry._FillEntry, fill_wizard._FillWizard, fill_finish._Fill
             self.app.error = error
             store.upsert(self.app)
             return result
+
+    def _failed_after_submit(self, error: str) -> FillResult:
+        """The fill failed after sending the final submit. The employer may have the
+        application, so it stays unconfirmed: the caps and duplicate checks count it, and
+        no retry submits it again (a failed fill would free both)."""
+        sent = FillResult.model_validate(self.app.fill) if self.app.fill else self.previous_fill
+        result = sent.model_copy(update={
+            "error": error, "status": "submit_unconfirmed", "submit_action": "auto_submit",
+            "browser_target_id": self.target_id,
+            "handoff_reason": "Submission sent; the fill failed before confirming it",
+        })
+        store.set_status(self.app, "submit_unconfirmed", note=submit_guard.AUTO_NOTE)
+        self.app.fill = result
+        self.app.error = error
+        store.upsert(self.app)
+        return result
 
     def _run_connected(self, pw_browser: object) -> FillResult:
         self.context = (
