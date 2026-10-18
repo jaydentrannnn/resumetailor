@@ -99,6 +99,17 @@ def test_learned_types_skip_the_model_and_never_cover_eligibility():
     assert answer_book.learned_type("Will you relocate to Austin?", options) is None
 
 
+def test_a_reworded_classifier_prompt_learns_types_afresh(monkeypatch):
+    from resume_tailor.apply.answers import answer
+
+    answer_book.learn_type("Will you relocate?", ["Yes", "No"], "willing_to_relocate", "x")
+    monkeypatch.setattr(answer, "_CLASSIFY_PROMPT_VERSION", answer._CLASSIFY_PROMPT_VERSION + 1)
+    assert answer_book.learned_type("Will you relocate?", ["Yes", "No"]) is None
+    [row] = answer_memory.list_answers()  # still listed, and forgettable
+    answer_memory.delete(row.id)
+    assert answer_memory.list_answers() == []
+
+
 def test_classify_questions_reads_learned_types_without_a_model(monkeypatch):
     from resume_tailor.apply.answers import answer, questions
 

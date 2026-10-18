@@ -194,6 +194,15 @@ def stale_ai_ids(conn: sqlite3.Connection) -> set[int]:
 # -- learned question types ---------------------------------------------------------------
 
 
+def _type_digest(options: Iterable[str]) -> str:
+    """A type row's key: its options and the classifier prompt that learned it, so a
+    reworded prompt learns afresh. Older rows stay listed (and forgettable), never read."""
+    from resume_tailor.apply.answers import answer  # noqa: PLC0415
+
+    payload = f"{answer._CLASSIFY_PROMPT_VERSION}\n{options_digest(options)}"  # noqa: SLF001
+    return hashlib.sha256(payload.encode("utf-8")).hexdigest()[:16]
+
+
 def learned_type(text: str, options: Iterable[str]) -> str | None:
     """The type learned for this question and options, or None."""
     norm = answer_memory.normalize_label(text)
@@ -202,7 +211,7 @@ def learned_type(text: str, options: Iterable[str]) -> str | None:
     row = answer_memory._conn().execute(
         "SELECT id, canonical_key FROM answer_memory WHERE kind = 'type' AND label_norm = ? "
         "AND options_digest = ?",
-        (norm, options_digest(options)),
+        (norm, _type_digest(options)),
     ).fetchone()
     if row is None or row[1] not in LEARNABLE_TYPES:
         return None
@@ -225,7 +234,7 @@ def learn_type(text: str, options: Iterable[str], key: str, meaning: str) -> boo
             "INSERT OR REPLACE INTO answer_memory(kind, label_norm, ats, options_digest, label, "
             "answer, canonical_key, options, source, created_at, updated_at) "
             "VALUES ('type', ?, '', ?, ?, ?, ?, ?, 'ai', ?, ?)",
-            (norm, options_digest(options), text.strip()[:500], meaning, key,
+            (norm, _type_digest(options), text.strip()[:500], meaning, key,
              json.dumps(options[:50]), now, now),
         )
     return True
