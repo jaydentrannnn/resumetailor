@@ -2013,3 +2013,32 @@ is a bug against an existing rule, not new policy.
   11 applied, 36 rejected by the check, 7 "unknown"; all shown applied answers matched the profile.
   Most rejections were unsupported guesses (a previous application answered from "relatives at the
   company", on-site work from relocation, a basis of "unknown"); they become review lines.
+
+## 2026-10-17 — Follow-up repairs from an outside review of Phases A and B
+
+- Notices: a later clause with no subject of its own continues the applicant's statement and is
+  read as "I ..." ("I agree to the terms and possess a passport" is a claim). The clause split also
+  breaks before claim verbs (hold, possess, meet, reside, speak, require, plan...). Dev 295 cases 0
+  unsupported / 1 handoff; held-out unchanged at 2 / 6, 2 / 4 with the tie-breaker (a fourth
+  aggregate-only consult).
+- Resolver basis: a resume skill answers only a plain ask about that one skill (`_SKILL_ASK`:
+  "Do you have experience with X?"), never negated, joined with another skill or qualified by a
+  setting. A profile/packet fact answers a Yes/No question only when it is not negated and joins no
+  second question or "and a/an ..." requirement (`_as_worded`); "if not", "with or without" and
+  "or not" are not negations. Multi-option questions are exempt: negation there sits in context
+  ("this is not a guarantee of placement"), and both stored labels it hit were of that kind. 0 of
+  the 54 stored choice questions are refused by the new rules. A general and/or rule was rejected:
+  16 of 35 stored Yes/No labels contain and/or, almost all alternatives or context.
+- `model_fallback.call/acall`: once Heavy is down, later calls in the same pinned block go to Light
+  straight away (Fill pins once around all of a step's written answers).
+- A fill that raises after the submit click keeps `submit_unconfirmed` (noted `auto_submit`, so the
+  caps count it); before the click it is still `fill_failed` (`_FillState.submit_dispatched`).
+- Retained-tab identity compares the employer's tenant/board too (Workday ids repeat across
+  tenants); embedded Greenhouse (`gh_jid` off greenhouse.io) has no reliable board and matches on
+  id. No verdict changes on the 281 recorded end-of-fill URLs.
+- A failed upload replacement keeps the old file's ownership and digest (`upload_replace.still_ours`),
+  so the next Continue retries instead of keeping it as the applicant's.
+- Readiness reads a checked checkbox/radio and a filled Workday dropdown marked aria-invalid as
+  rejected. Only the checked box is read or revalidated: a change event on an unchecked radio can
+  select it (Vue's v-model listens to change). A dropdown's review line uses its label, never the
+  aria-label, which carries the chosen value.
