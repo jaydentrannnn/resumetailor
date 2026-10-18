@@ -60,6 +60,68 @@ def test_a_field_supports_only_its_own_question(label, action, packet, expected)
     assert _supported(action, _field(label, options), packet=packet) is expected
 
 
+@pytest.mark.parametrize(("option", "expected"), [
+    ("3.75 - 4.0", True), ("3.5+", True), ("Above 3.5", True), ("3.0 - 3.49", False),
+    ("Below 3.0", False),
+])
+def test_a_gpa_falls_in_the_range_an_option_names(option, expected):
+    field = _field("What is your overall GPA?", ["Below 3.0", "3.0 - 3.49", option])
+    action = _action(option, "packet", "gpa")
+    assert _supported(action, field, packet={"gpa": "3.8"}) is expected
+
+
+def test_only_a_fluent_language_answers_a_fluency_question():
+    profile = {"languages": [{"language": "Spanish", "fluent": True},
+                             {"language": "French", "fluent": False},
+                             {"language": "Tagalog", "levels": {"Overall": "Native"}}]}
+    field = _field("In which language(s) are you fluent other than English?",
+                   ["Spanish", "French", "German", "Tagalog"], kind="combobox")
+    assert _supported(_action("Spanish", "profile", "languages"), field, profile=profile)
+    assert _supported(_action("Tagalog", "profile", "languages"), field, profile=profile)
+    assert not _supported(_action("French", "profile", "languages"), field, profile=profile)
+    assert not _supported(_action("Spanish", "profile", "languages"),
+                          _field("Writing*", ["Spanish", "French"]), profile=profile)
+
+
+@pytest.mark.parametrize(("label", "expected"), [
+    ("All offers are contingent on a background check. Do you acknowledge?", True),
+    ("I acknowledge that this role is on-site in Chicago.", False),
+])
+def test_the_standing_agreement_covers_only_routine_notices(label, expected):
+    action = _action("Yes", "profile", "auto_accept_routine_acknowledgements")
+    profile = {"auto_accept_routine_acknowledgements": True}
+    assert _supported(action, _field(label), profile=profile) is expected
+    assert not _supported(action, _field(label), profile={})
+
+
+@pytest.mark.parametrize(("hispanic", "expected"), [("No", True), ("", False), ("Yes", False)])
+def test_a_race_option_naming_hispanic_origin_needs_that_field_too(hispanic, expected):
+    option = "Asian (Not Hispanic or Latino)"
+    field = _field("Ethnicity", ["White (Not Hispanic or Latino)", option, "Hispanic or Latino"])
+    packet = {"race": "Asian", "hispanic_latino": hispanic}
+    assert _supported(_action(option, "packet", "race"), field, packet=packet) is expected
+
+
+def test_a_related_field_still_has_to_say_the_option():
+    field = _field("U.S. WORK AUTHORIZATION*")
+    assert _supported(_action("Yes", "profile", "authorized_to_work"), field,
+                      profile={"authorized_to_work": True})
+    assert not _supported(_action("No", "profile", "authorized_to_work"), field,
+                          profile={"authorized_to_work": True})
+
+
+def test_the_year_in_school_is_the_class_year_not_the_school():
+    from resume_tailor.apply.answers import questions
+
+    for text in ("What year are you currently in school?*", "Current year in college"):
+        match = questions.classify(questions.Question(text, kind="choice",
+                                                      options=("Junior", "Senior")))
+        assert match is not None and match.key == "class_year"
+    match = questions.classify(questions.Question("What year did you start in college?",
+                                                  kind="text"))
+    assert match is None or match.key != "class_year"
+
+
 def test_a_saved_answer_supports_only_its_own_question():
     profile = {"custom_answers": {"Do you have outside employment?": "No"}}
     action = _action("No", "profile", "custom_answers.Do you have outside employment?")

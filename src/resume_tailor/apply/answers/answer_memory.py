@@ -45,7 +45,8 @@ _log = logging.getLogger(__name__)
 
 #: Labels whose answers must never be remembered or recalled.
 _NEVER = re.compile(
-    r"gender|\bsex\b|pronoun|transgender|sexual orientation|lgbt|race\b|racial|ethnic|"
+    r"gender|\bsex\b|pronoun|transgender|sexual orientation|lgbt|race\b|racial|\bethn|"
+    r"identify as|how do you identify|self[- ]identif|"
     r"hispanic|latin[oax]|veteran|disabilit|"
     r"password|passcode|verification|one.time|\botp\b|security code|\bpin\b|"
     r"social security|\bssn\b|\bsin\b|date of birth|birth ?date|passport|"

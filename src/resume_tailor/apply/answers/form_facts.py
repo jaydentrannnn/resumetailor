@@ -217,7 +217,7 @@ _DOCUMENT = re.compile(
 #: The words of a bare acceptance ("I acknowledge", "Yes, I have read and agree", "Type
 #: 'I agree' to continue"): a statement made of these alone accepts what it captions.
 _ASSENT_WORDS = re.compile(
-    r"\b(?:i|we|you|hereby|have|has|fully|carefully|willingly|voluntarily|yes|ok(?:ay)?|and|or"
+    r"\b(?:i|we|you|do|hereby|have|has|fully|carefully|willingly|voluntarily|yes|ok(?:ay)?|and|or"
     r"|to|the|that|this|these|all|it|of|a|an|my|will|shall|please|by|submit(?:ting)?"
     r"|application|form|checking|selecting|ticking|clicking|check"
     r"|select|tick|click|box|checkbox|type|enter|write|continue|proceed|here|below|above"
@@ -408,7 +408,10 @@ def semantic_key(text: str, help_text: str = "") -> str:
         return HIGH_SCHOOL
     if re.search(r"\bprogramming languages?\b", low):
         return SKILLS
-    if re.search(r"\b(?:current )?grade level\b", low):
+    if re.search(r"\b(?:current )?grade level\b", low) or (
+        re.search(r"\byear\b.{0,25}\bin\s+(?:school|college|university)\b", low)
+        and not re.search(r"\bstart|\bbegin|\benter|graduat", low)
+    ):
         return "class_year"
     # "Are you related to a current Workday employee?" too; ties to a customer, supplier,
     # competitor or official are a conflict of interest instead (`ats_hints`).

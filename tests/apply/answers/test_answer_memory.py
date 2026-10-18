@@ -79,6 +79,9 @@ def test_company_specific_answer_is_flagged_not_reused_for_another_company():
         ("Account", {"input_type": "password"}),
         ("Social Security Number", {}),
         ("Date of birth", {}),
+        ("I identify as", {}),
+        ("Ethncity?*", {}),  # misspelt on a live form
+        ("Voluntary self-identification", {}),
     ],
 )
 def test_sensitive_answers_are_never_stored(label, kwargs):
