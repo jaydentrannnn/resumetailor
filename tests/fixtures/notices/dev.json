@@ -2021,6 +2021,60 @@
    "category": "unusual_routine",
    "text": "I acknowledge that Acme may use an automated system to schedule my interviews.",
    "label": "routine"
+  },
+  {
+   "id": "syn-193",
+   "source": "synthetic",
+   "category": "mixed",
+   "text": "I agree to the terms and possess a current passport.",
+   "label": "fact",
+   "fact_key": "applicant"
+  },
+  {
+   "id": "syn-194",
+   "source": "synthetic",
+   "category": "mixed",
+   "text": "I have read the privacy policy and hold a valid work permit for Canada.",
+   "label": "fact",
+   "fact_key": "work_authorization"
+  },
+  {
+   "id": "syn-195",
+   "source": "synthetic",
+   "category": "mixed",
+   "text": "I acknowledge the travel policy and am willing to travel up to 50% of the time.",
+   "label": "fact",
+   "fact_key": "applicant"
+  },
+  {
+   "id": "syn-196",
+   "source": "synthetic",
+   "category": "mixed",
+   "text": "Please confirm you have read the job description and meet the minimum qualifications.",
+   "label": "fact",
+   "fact_key": "minimum_qualifications"
+  },
+  {
+   "id": "syn-197",
+   "source": "synthetic",
+   "category": "mixed",
+   "text": "I accept the terms and conditions and also reside within 50 miles of the office.",
+   "label": "fact",
+   "fact_key": "applicant"
+  },
+  {
+   "id": "syn-198",
+   "source": "synthetic",
+   "category": "plain_routine",
+   "text": "I have read and understand the code of conduct and will comply with it.",
+   "label": "routine"
+  },
+  {
+   "id": "syn-199",
+   "source": "synthetic",
+   "category": "plain_routine",
+   "text": "By checking this box I acknowledge that I have read and understand the contents of this disclosure.",
+   "label": "routine"
   }
  ]
 }

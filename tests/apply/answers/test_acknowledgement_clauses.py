@@ -46,6 +46,10 @@ def test_dev_corpus(case):
     # One statement about the applicant decides, wherever it sits.
     ("I have read the privacy notice and I confirm that I am a current student.", "", "fact"),
     ("I confirm I have never worked for Acme before.", "", "fact"),
+    # A later clause shares the first one's subject: "... and possess" is "I possess".
+    ("I agree to the terms and possess a current passport", "", "fact"),
+    ("Please confirm you have read the policy and hold a valid license.", "", "fact"),
+    ("I have read and understand the code of conduct and will comply with it.", "", "routine"),
     # A requirement or term of the role: never agreed to on its wording.
     ("I agree", "Candidates must be authorized to work in the U.S. without sponsorship.",
      "unclear"),

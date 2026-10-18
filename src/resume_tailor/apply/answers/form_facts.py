@@ -112,8 +112,12 @@ _CLAUSE_BREAK = re.compile(
     r",?\s+(?:and|but|as\s+well\s+as|&)\s+"
     r"(?=(?:that|i|to|also|further|hereby|would|will|am|opt|confirm|certify|agree|acknowledge"
     r"|consent|understand|authori[sz]e|accept|attest|declare|receive|join|have|do|did|are|is"
-    r"|can|were)\b)"
+    r"|can|were|hold|possess|meet|satisfy|qualify|reside|live|speak|own|require|need|plan"
+    r"|intend|expect|currently|was|could|graduat\w*)\b)"
 )
+#: A later clause with no subject of its own continues the applicant's statement ("I
+#: agree to the terms and possess a passport" says "I possess a passport").
+_OWN_SUBJECT = re.compile(r"^(?:that|to|i|you|we|they|it|this|the|my|our|your)\b")
 #: A statement the applicant makes: first person, an instruction to them, "you agree...".
 _APPLICANT_VOICE = re.compile(
     r"(?<![\w-])(?:i|i'm|i've|me|my|mine|myself)(?![\w-])"  # not the "I-9" form
@@ -153,7 +157,7 @@ _STATE_CLAIM = re.compile(
     r"|need|work)\b"
     r"|\bi\s+can\b(?!\s+(?:withdraw|revoke|opt|unsubscribe|request|change|update|access|ask)\b)"
     r"|\b(?:i|you)\s+will\b(?!\s+(?:be\s+)?(?:asked|required|subject|expected|redirected)\s+to\b"
-    r"|\s+receive\b)"
+    r"|\s+receive\b|\s+(?:comply|abide|adhere|cooperate|notify|inform)\b)"
     r"|\bapply\s+to\s+me\b|\bme\s+to\s+(?:be|have|hold|work|relocate)\b"
     r"|consider(?:ed)?\s+(?:me\s+)?for\s+(?:other|additional|similar)\b"
 )
@@ -180,7 +184,7 @@ _ASSENT_QUESTION = re.compile(
 _PROCESS = re.compile(
     r"\bterms\b|\bconditions\b|\bt\s*&\s*c|polic(?:y|ies)|\bnotice|privacy|statements?\b|disclosures?"
     r"|agreements?\b|provisions?\b|poster|handbook|code\s+of\s+conduct|consent\s+form"
-    r"|authori[sz]ation\s+form|the\s+(?:above|following|preceding)\b"
+    r"|authori[sz]ation\s+form|the\s+(?:above|following|preceding)\b|the\s+contents?\b"
     r"|(?:checkbox(?:es)?|boxes|items)\s+(?:above|below)|job\s+description"
     r"|(?:this|the|my)\s+application\b|information\b|\bdata\b|responses|truthful|accura(?:te|cy)"
     r"|\btrue\b|\bcomplete\b|\bcorrect\b|arbitration|disputes?\b|at[- ]will|e-?verify|background"
@@ -222,7 +226,8 @@ _ASSENT_WORDS = re.compile(
     r"|application|form|checking|selecting|ticking|clicking|check"
     r"|select|tick|click|box|checkbox|type|enter|write|continue|proceed|here|below|above"
     r"|following|acknowledg\w*|confirm\w*|agree\w*|accept\w*|consent\w*|understand|understood"
-    r"|read|review(?:ed)?|certif(?:y|ied)|attest\w*|declar\w*|authori[sz]\w*|sign(?:ed)?)\b"
+    r"|read|review(?:ed)?|certif(?:y|ied)|attest\w*|declar\w*|authori[sz]\w*|sign(?:ed)?"
+    r"|comply|abide|adhere|with)\b"
 )
 #: Subjects that bear on the applicant's eligibility, availability or background: a
 #: notice that mentions one is never routine on its wording alone.
@@ -254,9 +259,14 @@ def _statements(low: str, *, asks: bool = True) -> list[tuple[str, bool]]:
     out = []
     for sentence in filter(None, map(_strip, _SENTENCE_BREAK.split(low))):
         asked = asks and bool(_QUESTION.search(sentence))
-        clauses = filter(None, map(_strip, _CLAUSE_BREAK.split(sentence)))
-        out.extend((clause, asked and (index == 0 or bool(_QUESTION_START.search(clause))))
-                   for index, clause in enumerate(clauses))
+        clauses = list(filter(None, map(_strip, _CLAUSE_BREAK.split(sentence))))
+        voiced = bool(clauses) and bool(_APPLICANT_VOICE.search(clauses[0]))
+        for index, clause in enumerate(clauses):
+            question = asked and (index == 0 or bool(_QUESTION_START.search(clause)))
+            if index and voiced and not question and not _OWN_SUBJECT.search(clause):
+                verb = re.sub(r"^(?:also|further)\s+", "", clause)
+                clause = "i " + re.sub(r"^are\b", "am", re.sub(r"^were\b", "was", verb))
+            out.append((clause, question))
     return out
 
 
