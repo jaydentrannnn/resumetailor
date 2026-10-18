@@ -273,3 +273,17 @@ WORKDAY_POSTING = (
 )
 def test_retained_tab_tells_this_application_from_another_page(page_url, known, expected):
     assert identity.retained_tab(page_url, ["", *known]) == expected
+
+
+@pytest.mark.parametrize(("posting", "landed", "lost"), [
+    ("https://careers.acme.com/job/12345/engineer", "https://careers.acme.com/", True),
+    ("https://careers.acme.com/job/12345/engineer", "https://careers.acme.com/en-us/careers/search", True),
+    ("https://www.acme.com/careers/job?id=98765", "https://www.acme.com/careers", True),
+    # Still on a job, another site, or a posting that never named one.
+    ("https://careers.acme.com/job/12345/engineer", "https://careers.acme.com/job/12345/apply", False),
+    ("https://careers.acme.com/job/12345", "https://acme.wd5.myworkdayjobs.com/", False),
+    ("https://careers.acme.com/engineering", "https://careers.acme.com/", False),
+    ("https://careers.acme.com/job/12345", "https://careers.acme.com/apply/form", False),
+])
+def test_lost_posting(posting, landed, lost):
+    assert identity.lost_posting(posting, landed) is lost

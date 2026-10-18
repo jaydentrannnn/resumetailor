@@ -149,13 +149,15 @@ class _FillState:
             (app.ats or pkt.ats or "").lower() == "smartrecruiters"
             or "smartrecruiters.com" in url
         )
-        # Other multi-step platforms (iCIMS, Taleo, SuccessFactors, Oracle): each step's
-        # screen is named first, so a sign-in, an emailed code or the review page is handed
-        # over.
+        # Every step's screen is named first, so a sign-in, an emailed code or the review
+        # page is handed over: by the platform's adapter (iCIMS, Taleo, SuccessFactors,
+        # Oracle), else by `wizards.GenericScreens` (clear sign-in/code/closed screens only).
         wizard_ats = app.ats or pkt.ats or ""
         if wizard_ats in {"", "other", "unknown"}:
             wizard_ats = fetch_jd.detect_ats(url)
-        self.wizard = None if self.is_workday else wizards.for_ats(wizard_ats)
+        self.wizard = None if self.is_workday else wizards.for_fill(wizard_ats)
+        #: The platform the landed page shows (`ats_fingerprint`), for diagnostics.
+        self.landed_platform = ""
         self.ats_name = (app.ats or pkt.ats or "").lower()
         self.out_dir = config.APPLICATIONS_OUTPUT_DIR / source_job_id
         self.page: Any = None

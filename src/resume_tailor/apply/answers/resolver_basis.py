@@ -45,6 +45,7 @@ _LABELS = {
     "veteran_status": r"veteran|military|armed forces|protected",
     "disability_status": r"disab",
     "gender": r"gender|\bsex\b|identify as",
+    "sexual_orientation": r"sexual|orientation",
     "race": r"\brace\b|ethn",
     "hispanic_latino": r"hispanic|latin",
     "languages": r"language|speak|fluen",
@@ -76,6 +77,7 @@ _PACKET_FIELD = {
     "eeo.hispanic_latino": "hispanic_latino",
     "eeo.veteran": "veteran_status",
     "eeo.disability": "disability_status",
+    "eeo.sexual_orientation": "sexual_orientation",
 }
 _HOW_HEARD = re.compile(_LABELS["how_heard"], re.I)
 #: A skill question the resume's skill list cannot settle: how much, how long, how well.

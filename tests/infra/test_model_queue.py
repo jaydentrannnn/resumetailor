@@ -189,3 +189,22 @@ def test_anthropic_async_transport_admits_physical_attempt(monkeypatch):
 
     asyncio.run(scenario())
     assert q.status()["endpoints"][0]["active"] == 0
+
+
+def test_count_requests_counts_admitted_requests_in_its_own_context_only():
+    q = model_queue.queue
+    endpoint = "https://count.example.com/v1"
+    with model_queue.count_requests() as counted:
+        with q.slot(endpoint):
+            pass
+
+        async def two():
+            async with q.async_slot(endpoint):
+                pass
+            async with q.async_slot(endpoint):
+                pass
+
+        asyncio.run(two())
+    with q.slot(endpoint):  # outside the block: not this fill's request
+        pass
+    assert counted == [3]

@@ -365,6 +365,9 @@ RACE_DETAILS: dict[str, list[str]] = {
     "Two or More Races": [],
 }
 DISABILITY = ["Yes", "No"]
+SEXUAL_ORIENTATIONS = [
+    "Heterosexual", "Gay", "Lesbian", "Bisexual", "Asexual", "Pansexual", "Queer",
+]
 
 _BY_NAME = {country["name"].casefold(): country for country in COUNTRIES}
 for _country in COUNTRIES:
@@ -434,6 +437,7 @@ def options() -> dict[str, Any]:
         "races": RACES,
         "race_details": RACE_DETAILS,
         "disability": DISABILITY,
+        "sexual_orientations": SEXUAL_ORIENTATIONS,
         "education_levels": list(education.LEVELS),
         "education_level_aliases": dict(education.LEVEL_BY_ALIAS),
         "degree_types": list(fields_of_study.DEGREE_TYPES),

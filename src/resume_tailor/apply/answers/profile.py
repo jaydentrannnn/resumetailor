@@ -83,6 +83,7 @@ class EEOAnswers(BaseModel):
     #: conversion and clears this once they have.
     veteran_legacy: str = ""
     disability: str = "decline"
+    sexual_orientation: str = "decline"
 
     @model_validator(mode="before")
     @classmethod

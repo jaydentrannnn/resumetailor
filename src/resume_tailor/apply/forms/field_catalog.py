@@ -27,6 +27,8 @@ def classify(field: FieldObservation) -> tuple[Classification, str]:
     if education.not_education(field.label):
         return "manual_review", "not_an_education_question"
     semantic = form_facts.semantic_key(field.label, field.help_text)
+    if semantic == form_facts.BOT_CHECK:
+        return "manual_review", "bot_check"
     if semantic:
         kind = (form_facts.acknowledgement(field.label, field.help_text)
                 if semantic == form_facts.ACKNOWLEDGEMENT else "")
@@ -40,6 +42,8 @@ def classify(field: FieldObservation) -> tuple[Classification, str]:
         return "known", "veteran_status"
     if re.search(r"\bdisabilit", label):
         return "known", "disability_status"
+    if re.search(r"\bsexual\s+orientation\b", label):
+        return "known", "sexual_orientation"
     if re.search(r"\bgender\b|\bsex\b", label):
         return "known", "gender"
     if re.search(r"\b(salary|pay expectation|desired pay|pay rate|wages?)\b", label) or (

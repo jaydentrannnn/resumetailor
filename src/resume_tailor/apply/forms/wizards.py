@@ -21,6 +21,7 @@ from dataclasses import dataclass
 from typing import Any, Literal
 
 from resume_tailor.apply.ats import workday_page
+from resume_tailor.apply.driver import clicks
 from resume_tailor.apply.forms import form_guards
 
 WizardState = Literal[
@@ -37,6 +38,21 @@ WizardState = Literal[
     "unknown",
 ]
 
+#: A verification-code control among the visible ``inputs``: a one-time-code box, a
+#: code-named box, or four or more one-character boxes ("Digit 1 of 6"), counted once.
+#: Shared by both snapshots, so a platform adapter sees the same code screens.
+_CODE_INPUTS_JS = r"""
+  const named = e => `${e.name || ''} ${e.id || ''} ${e.getAttribute('aria-label') || ''}`;
+  const CODE = /verification.?code|one.?time|passcode|security.?code|\b(?:otp|pin)\b|digit \d+ of/i;
+  const single = inputs.filter(e => e.tagName === 'INPUT' && e.maxLength === 1);
+  const boxes = single.length >= 4 ? single : [];
+  const oneTime = e => e.getAttribute('autocomplete') === 'one-time-code' || CODE.test(named(e));
+  const codeInputs = new Set([...boxes, ...inputs.filter(oneTime)]);
+"""
+#: A sign-in or code screen holds little else (email, "remember me", a resend link).
+_SIGN_IN_OTHER_FIELDS = 4
+_CODE_OTHER_FIELDS = 3
+
 #: One evaluate call returns everything the shared ``classify`` reads.
 SNAPSHOT_JS = r"""() => {
   const vis = e => !!(e && (e.offsetWidth || e.offsetHeight || e.getClientRects().length));
@@ -45,6 +61,7 @@ SNAPSHOT_JS = r"""() => {
     .filter(Boolean);
   const inputs = [...document.querySelectorAll('input, select, textarea')].filter(vis);
   const kind = e => (e.getAttribute('type') || e.tagName).toLowerCase();
+  /*CODE_INPUTS*/
   const current = document.querySelector(
     "[aria-current='step'], .progress-bar .active, .wizard-steps .active, "
     + "[class*='step' i][class*='active' i], [class*='step' i][class*='current' i]");
@@ -59,10 +76,12 @@ SNAPSHOT_JS = r"""() => {
       .includes(kind(e))).length,
     otp_input: inputs.some(e => e.getAttribute('autocomplete') === 'one-time-code'
       || /verification.?code|one.?time|passcode|\botp\b/i.test(`${e.name || ''} ${e.id || ''}`)),
+    code_control: codeInputs.size > 0,
+    code_inputs: codeInputs.size,
     active_step: current ? (current.innerText || '').trim().slice(0, 80) : '',
     text: (document.body ? document.body.innerText : '').slice(0, 20000),
   };
-}"""
+}""".replace("/*CODE_INPUTS*/", _CODE_INPUTS_JS)
 
 _CODE_SENT = re.compile(
     r"enter (?:the|your) (?:\d-digit )?(?:verification|security|one-time|access) (?:code|pin)"
@@ -80,6 +99,9 @@ _ALREADY_APPLIED = re.compile(
 _CREATE_ACCOUNT = re.compile(
     r"create (?:an |your )?account|new (?:user|candidate)|register|sign up|confirm password", re.I
 )
+#: A sign-in page's own control ("Sign in", "Log in"); a create-account link beside it
+#: does not make it a create-account page.
+_SIGN_IN_WORDS = re.compile(r"^\s*(?:sign|log)\s*in\b", re.I | re.M)
 #: A whole step name or heading that means the final review page.
 _REVIEW = re.compile(
     r"^(?:review(?:\s+(?:and|&)\s+(?:submit|apply))?|review\s+(?:your\s+)?application"
@@ -110,12 +132,16 @@ _HCAPTCHA = ".h-captcha, iframe[src*='hcaptcha']"
 #: At most this many inputs beside an Apply control is still the posting page.
 _POSTING_CHROME_FIELDS = 2
 #: Click the first visible control whose text or title is an Apply button's.
-_ENTER_JS = r"""(pattern) => {
+_ENTER_JS = r"""([pattern, socialPattern]) => {
   const rule = new RegExp(pattern, 'i');
+  const social = new RegExp(socialPattern, 'i');
   const vis = e => !!(e.offsetWidth || e.offsetHeight || e.getClientRects().length);
+  const texts = e => [e.innerText, e.value, e.getAttribute('title'), e.getAttribute('aria-label')]
+    .filter(Boolean).map(t => t.trim());
   const control = [...document.querySelectorAll("a, button, input[type='submit'], [role='button']")]
     .filter(vis)
-    .find(e => [e.innerText, e.value, e.getAttribute('title')].some(t => t && rule.test(t.trim())));
+    .filter(e => !texts(e).some(t => social.test(t.replace(/\s+/g, ' '))))
+    .find(e => texts(e).some(t => rule.test(t)));
   if (!control) return false;
   control.click();
   return true;
@@ -163,7 +189,10 @@ class WizardAdapter:
         passwords = int(snap.get("password_inputs") or 0)
         step = str(snap.get("active_step") or "")
 
+        code_inputs = int(snap.get("code_inputs") or 0)
         if snap.get("otp_input") or (_CODE_SENT.search(head) and passwords == 0):
+            return "otp"
+        if snap.get("code_control") and fields - code_inputs <= _CODE_OTHER_FIELDS:
             return "otp"
         if workday_page.VERIFY_EMAIL.search(head) and fields <= 1:
             return "verify_email"
@@ -191,7 +220,9 @@ class WizardAdapter:
         """Click the posting's own apply control (iCIMS "Apply for this job online");
         False when it has none."""
         try:
-            return bool(self.form_scope(page).evaluate(_ENTER_JS, _APPLY_BUTTON.pattern))
+            return bool(self.form_scope(page).evaluate(
+                _ENTER_JS, [_APPLY_BUTTON.pattern, clicks.SOCIAL_APPLY.pattern]
+            ))
         except Exception:  # noqa: BLE001 - a navigating page cannot be clicked yet
             return False
 
@@ -238,6 +269,74 @@ class WizardAdapter:
         if state == "unavailable":
             return Stop("fill_failed", "The posting is closed or no longer available")
         return None
+
+
+#: `SNAPSHOT_JS` for `GenericScreens`: fields are counted through open shadow roots, and a
+#: verification-code control (one-time-code autocomplete, a code-named box, or four or
+#: more adjacent one-character boxes) is counted once, apart from the other fields.
+GENERIC_SNAPSHOT_JS = r"""() => {
+  const vis = e => !!(e && (e.offsetWidth || e.offsetHeight || e.getClientRects().length));
+  const all = [];
+  const walk = root => { for (const el of root.querySelectorAll('input, select, textarea, *')) {
+    if (el.matches('input, select, textarea')) all.push(el);
+    if (el.shadowRoot) walk(el.shadowRoot);
+  } };
+  walk(document);
+  const kind = e => (e.getAttribute('type') || e.tagName).toLowerCase();
+  const inputs = all.filter(vis).filter(e => !['hidden', 'submit', 'button', 'image', 'reset']
+    .includes(kind(e)));
+  /*CODE_INPUTS*/
+  const texts = sel => [...document.querySelectorAll(sel)].filter(vis)
+    .map(e => (e.innerText || e.value || e.getAttribute('aria-label') || '').trim())
+    .filter(Boolean);
+  return {
+    url: location.href,
+    headings: texts('h1, h2, h3, legend').slice(0, 12),
+    buttons: texts("button, input[type='submit'], a[role='button']").slice(0, 40),
+    password_inputs: inputs.filter(e => kind(e) === 'password').length,
+    fields: inputs.length,
+    code_control: codeInputs.size > 0,
+    code_inputs: codeInputs.size,
+    text: (document.body ? document.body.innerText : '').slice(0, 20000),
+  };
+}""".replace("/*CODE_INPUTS*/", _CODE_INPUTS_JS)
+
+
+class GenericScreens(WizardAdapter):
+    """A site with no adapter of its own: only the screens the applicant must handle,
+    each on clear evidence, and never "posting", "review" or "confirmation" (a single-page
+    form with a "Summary" heading is still a form)."""
+
+    platform = "generic"
+    label = "the site"
+    snapshot_js = GENERIC_SNAPSHOT_JS
+
+    def classify(self, snap: dict[str, Any]) -> WizardState:
+        text = str(snap.get("text") or "")
+        fields = int(snap.get("fields") or 0)
+        passwords = int(snap.get("password_inputs") or 0)
+        if _ALREADY_APPLIED.search(text[:3000]):
+            return "already_applied"
+        if passwords and fields - passwords <= _SIGN_IN_OTHER_FIELDS:
+            headings = [str(h) for h in snap.get("headings") or []]
+            controls = "\n".join([*headings, *(str(b) for b in snap.get("buttons") or [])])
+            if passwords >= 2 or (
+                _CREATE_ACCOUNT.search(" ".join(headings)) and not _SIGN_IN_WORDS.search(controls)
+            ):
+                return "create_account"
+            return "sign_in"
+        code_inputs = int(snap.get("code_inputs") or 0)
+        if snap.get("code_control") and fields - code_inputs <= _CODE_OTHER_FIELDS:
+            return "otp"
+        if fields == 0 and form_guards.closed_posting(text):
+            return "unavailable"
+        return "apply_form" if fields else "unknown"
+
+    def is_final_step(self, snap: dict[str, Any]) -> bool:
+        return False
+
+    def enter(self, page: Any) -> bool:
+        return False
 
 
 class WorkdayWizard(WizardAdapter):
@@ -356,3 +455,8 @@ def for_ats(ats: str) -> WizardAdapter | None:
     """The wizard adapter for ``ats``, or None for a single-page form."""
     cls = _BY_ATS.get((ats or "").lower())
     return cls() if cls else None
+
+
+def for_fill(ats: str) -> WizardAdapter:
+    """The screen check a fill uses: the platform's adapter, else `GenericScreens`."""
+    return for_ats(ats) or GenericScreens()

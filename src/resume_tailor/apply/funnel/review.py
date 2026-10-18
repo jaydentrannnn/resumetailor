@@ -77,6 +77,10 @@ async def _record(app: store_models.Application, page: Any) -> store_models.Fill
     with contextlib.suppress(Exception):  # the book is a bonus, never a failed refresh
         answer_harvest.from_review(app, result, observed.fields)
         await answer_harvest.install(page)
+    with contextlib.suppress(Exception):
+        result.diagnostics = {
+            **result.diagnostics, "corrections": answer_harvest.corrections(result, observed.fields),
+        }
     current_step_id = await adapters.for_url(str(page.url)).step_id(page, observed.fields)
     prior_step_id = result.current_step_id
     completed_steps = [

@@ -106,6 +106,7 @@ PROFILE_FIELDS: dict[str, ProfileFieldInfo] = {
     ),
     "veteran_status": ProfileFieldInfo(label="Veteran", section=_VOLUNTARY, common=True),
     "disability_status": ProfileFieldInfo(label="Disability", section=_VOLUNTARY, common=True),
+    "sexual_orientation": ProfileFieldInfo(label="Sexual orientation", section=_VOLUNTARY),
     "over_18": ProfileFieldInfo(label="Over 18", section=_VOLUNTARY, common=True),
     "languages": ProfileFieldInfo(label="Languages", section="Languages"),
     "how_heard": ProfileFieldInfo(label="How heard", section=_SAVED, common=True),

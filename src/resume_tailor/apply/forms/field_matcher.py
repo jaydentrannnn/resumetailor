@@ -275,7 +275,10 @@ def _match_level(available: list[ObservedOption], target: str) -> OptionMatch:
 
 #: Self-identification keys whose options word the answer at length ("No, I do not have
 #: a disability and have not had one in the past" for "No").
-EEO_KEYS = frozenset({"gender", "race", "race_detail", "hispanic_latino", "veteran_status", "disability_status"})
+EEO_KEYS = frozenset({
+    "gender", "race", "race_detail", "hispanic_latino", "veteran_status", "disability_status",
+    "sexual_orientation",
+})
 #: Declining to self-identify, as forms word it (patterns run on ``normalize``d text).
 _DECLINE = (r"\bdecline\b|\b(?:do not|don t) (?:want|wish) to\b|\bprefer not\b|\bchoose not\b"
             r"|\bnot (?:to )?(?:disclose|answer|self identify)\b")
@@ -294,6 +297,11 @@ _EEO_RULES: dict[str, dict[str, str]] = {
         "male": r"^(?:male|man)\b",
         "female": r"^(?:female|woman)\b",
         "non binary": r"\bnon ?binary\b|\bgender (?:non ?conforming|variant)\b",
+    },
+    "sexual_orientation": {
+        "heterosexual": r"\bheterosexual\b|\bstraight\b",
+        "gay": r"\bgay\b",
+        "lesbian": r"\blesbian\b",
     },
 }
 
@@ -385,7 +393,7 @@ def eeo_tiers(key: str, answer: str) -> list[str]:
     choice = "yes" if wanted in _YES else "no" if wanted in _NO else wanted
     if choice in rules:
         return [rules[choice]]
-    if key in {"gender", "race", "race_detail"} and choice not in {"yes", "no"}:
+    if key in {"gender", "race", "race_detail", "sexual_orientation"} and choice not in {"yes", "no"}:
         return [rf"^{re.escape(wanted)}\b"]
     return []
 

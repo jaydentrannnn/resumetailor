@@ -66,8 +66,8 @@ def find_and_click_apply(page: Any, ats: str, context: Any = None) -> Any:
     # 1. ATS-specific hints
     for click_sel in ats_hints.ATS_PRE_FILL_CLICKS.get(ats.lower(), []):
         try:
-            loc = current_page.locator(click_sel).first
-            if _is_locator_present_and_visible(loc):
+            loc = _entry_control(current_page.locator(click_sel))
+            if loc is not None:
                 current_page = _click_and_track_popup(
                     current_page, context, lambda loc=loc: clicks.safe_click(loc, purpose="enter", timeout=4000)
                 )
@@ -84,8 +84,10 @@ def find_and_click_apply(page: Any, ats: str, context: Any = None) -> Any:
         if entered and ats.lower() in _HINT_ENTERS_FORM:
             break
         try:
-            loc = current_page.get_by_role(role, name=ats_hints.APPLY_ENTRY_PATTERN).first
-            if _is_locator_present_and_visible(loc):
+            loc = _entry_control(
+                current_page.get_by_role(role, name=ats_hints.APPLY_ENTRY_PATTERN)
+            )
+            if loc is not None:
                 current_page = _enter(current_page, context, loc)
                 current_page.wait_for_timeout(1000)
                 break
@@ -152,9 +154,24 @@ def _enter(page: Any, context: Any, loc: Any) -> Any:
 def _apply_menu_item(page: Any) -> Any | None:
     """The visible "Apply" item of a menu the entry click just opened, else None."""
     with contextlib.suppress(Exception):
-        item = page.get_by_role("menuitem", name=ats_hints.APPLY_ENTRY_PATTERN).first
-        if _is_locator_present_and_visible(item):
-            return item
+        return _entry_control(page.get_by_role("menuitem", name=ats_hints.APPLY_ENTRY_PATTERN))
+    return None
+
+
+#: Entry candidates looked at per selector: the first few visible matches.
+_ENTRY_CANDIDATES = 8
+
+
+def _entry_control(matches: Any) -> Any | None:
+    """The first visible match that is not a social-account route ("Apply with LinkedIn"
+    sits before plain "Apply" on Breezy, and ``text=Apply`` matches both)."""
+    try:
+        candidates = [matches.nth(index) for index in range(min(matches.count(), _ENTRY_CANDIDATES))]
+    except Exception:  # noqa: BLE001 - a locator stand-in with only ``first``
+        candidates = [matches.first]
+    for loc in candidates:
+        if _is_locator_present_and_visible(loc) and not clicks.is_social_control(loc):
+            return loc
     return None
 
 
@@ -286,10 +303,7 @@ def _find_submit_button(page: Any, hints: dict[str, str]) -> Any | None:
         except Exception:  # noqa: BLE001
             pass
     try:
-        btn = page.get_by_role(
-            "button",
-            name=re.compile(r"^\s*(submit|submit\s+application)\s*$", re.IGNORECASE),
-        ).first
+        btn = page.get_by_role("button", name=clicks.FINAL_SUBMIT_NAME).first
         if _is_locator_present_and_visible(btn):
             return btn
     except Exception:  # noqa: BLE001

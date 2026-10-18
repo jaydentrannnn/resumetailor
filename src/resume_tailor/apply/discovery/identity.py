@@ -288,6 +288,28 @@ def retained_tab(
     return "unknown" if site and site in {_site(url) for url in known} else "different"
 
 
+#: A careers site's front door: its home page or job search, which names no one job.
+_CAREERS_ROOT = re.compile(
+    r"^/?(?:[a-z]{2}(?:[-_][a-z]{2})?/)?(?:(?:careers?|jobs?|job-search|search|opportunities|"
+    r"openings|join-us|work-with-us)(?:/(?:search|results|home|index(?:\.html?)?))?/?)?$",
+    re.I,
+)
+_JOB_ID = re.compile(r"\d{4,}|[0-9a-f]{8}-[0-9a-f]{4}", re.I)
+
+
+def lost_posting(posting_url: str, landed_url: str) -> bool:
+    """Whether a link to one job now lands on its careers site's home or job search: the
+    posting is gone (ITW's links redirect to the careers home page, 2026-10)."""
+    if not posting_url or not landed_url or _site(posting_url) != _site(landed_url):
+        return False
+    posting, landed = urlparse(posting_url), urlparse(landed_url)
+    names_a_job = bool(_JOB_ID.search(posting.path + "?" + posting.query))
+    landed_is_root = bool(_CAREERS_ROOT.match(landed.path or "/")) and not _JOB_ID.search(
+        landed.path + "?" + landed.query
+    )
+    return names_a_job and landed_is_root
+
+
 def normalize_company(text: str) -> str:
     """Casefold, strip punctuation, and drop trailing corporate suffixes."""
     cleaned = _PUNCT.sub(" ", text.casefold())

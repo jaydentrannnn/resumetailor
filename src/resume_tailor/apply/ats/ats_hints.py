@@ -97,7 +97,8 @@ AUTHORIZED_TO_WORK = (
     r"^(?![\s\S]*(?:veteran|degree|enrol|vaccin|licen[sc]e|clearance))"
     r"[\s\S]*(?:(?:authori[sz]ed|permitted|eligible|allowed)\s*to\s*(?:legally\s*)?work"
     r"|right\s*to\s*work|(?:employment|work)\s*eligibility"
-    r"|(?:proof|evidence|documentation|documents?)\s*(?:of|for|showing|verifying)\s*"
+    r"|(?:proof|evidence|documentation|documents?)\s*(?:of|for|showing|verifying"
+    r"|(?:that\s*)?(?:proves?|proving|shows?|establish(?:es)?|verif(?:y|ies)))\s*"
     r"(?:your\s*)?(?:employment\s*|work\s*)?(?:eligibility|authori[sz]ation|right\s*to\s*work"
     r"|identity\s*and\s*(?:employment\s*)?eligibility))"
 )
@@ -166,7 +167,10 @@ SYNONYMS: list[tuple[str, str]] = [
     (r"graduation|expected graduation", "graduation_month"),
     # "If other, how did you hear about us? Please specify" is the free-text follow-up.
     (r"(?:hear|source|referr).{0,40}specify|specify.{0,40}(?:hear|source|referr)", "how_heard_detail"),
-    (r"how did you (?:hear|learn|find out) about|how did you hear", "how_heard"),
+    (r"how\s*(?:did|'d)\s*you\s*(?:first\s*)?(?:hear|learn|find\s*out)\b", "how_heard"),
+    # A box labelled only "Source" / "Referral source".
+    (r"^\W*(?:referral\s*|application\s*|candidate\s*)?source\W*$", "how_heard"),
+    (r"sexual\s*orientation", "sexual_orientation"),
     (r"gender", "gender"),
     (r"hispanic|latino", "hispanic_latino"),
     (r"race|ethnicity", "race"),
@@ -203,6 +207,13 @@ SYNONYMS: list[tuple[str, str]] = [
     # The "I have a preferred name" checkbox that reveals the preferred-name inputs.
     (r"(?:i )?have a preferred name|use (?:a )?preferred name", "has_preferred_name"),
     (r"preferred first name|preferred name", "preferred_name"),
+    # The applicant's own name as the resume spells it: not a reference's, a relative's, a
+    # signature, or the name written in another script ("in native language").
+    (
+        r"^(?![\s\S]*\b(?:referen|referr|relative|emergency|contact|supervisor|manager|spouse"
+        r"|parent|guardian|sign|native|characters|script|language))[\s\S]*\bfull\s*(?:legal\s*)?name\b",
+        "full_name",
+    ),
     (r"first name|given name", "first_name"),
     (r"middle name", "middle_name"),
     (r"last name|family name|surname", "last_name"),
@@ -211,12 +222,15 @@ SYNONYMS: list[tuple[str, str]] = [
     (r"(?:\bpersonal\b|\bnon[- ]school\b).{0,40}e-?mail", "email"),
     (r"(?:school|university|college|student|\.edu)[\w\s-]{0,20}e-?mail", "school_email"),
     (r"email", "email"),
-    (r"address line 1|street address", "address_line1"),
-    (r"address line 2|apt|suite", "address_line2"),
+    # "Address 1" / "Address Line1" / autocomplete "address-line1".
+    (r"address[\s_-]*(?:line[\s_-]*)?(?:1|one)\b|street address", "address_line1"),
+    # A box labelled only "Address" is the street line ("full address" is not one field).
+    (r"^\W*(?:home\s*|mailing\s*)?address\W*$", "address_line1"),
+    (r"address[\s_-]*(?:line[\s_-]*)?(?:2|two)\b|apt|suite", "address_line2"),
     # Whole words: "capacity" is not a city, "statement" is not a state.
     (r"\bcity\b", "city"),
     (r"\bstate\b|province", "state"),
-    (r"zip|postal", "postal_code"),
+    (r"zip|postal|post\s*code", "postal_code"),
     (r"countr(?:y|ies)\s*of\s*citizenship|^\W*citizenship\W*$|nationality", "citizenship"),
     (r"country", "country"),
     (r"website|url", "website"),

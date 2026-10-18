@@ -140,6 +140,27 @@ _OBSERVER: ContextVar[tuple[ProgressCallback | None, Callable[[], None] | None]]
 )
 
 
+#: Model requests admitted inside the current `count_requests` block (one fill's count).
+_REQUESTS: ContextVar[list[int] | None] = ContextVar("model_queue_requests", default=None)
+
+
+@contextmanager
+def count_requests() -> Iterator[list[int]]:
+    """Count the model requests admitted in this context; ``holder[0]`` is the total."""
+    holder = [0]
+    token = _REQUESTS.set(holder)
+    try:
+        yield holder
+    finally:
+        _REQUESTS.reset(token)
+
+
+def _count_request() -> None:
+    holder = _REQUESTS.get()
+    if holder is not None:
+        holder[0] += 1
+
+
 def settings_path():
     return config.DATA_ROOT / "model_queue.json"
 
@@ -375,6 +396,7 @@ class RequestQueue:
                         self._waiting(key)
                         announced = True
                     self._condition.wait(min(0.1, max(0, deadline - time.monotonic())))
+            _count_request()
             yield
         finally:
             self._cleanup(pool, ticket, admitted)
@@ -395,6 +417,7 @@ class RequestQueue:
                     self._waiting(key)
                     announced = True
                 await asyncio.sleep(min(0.05, max(0, deadline - time.monotonic())))
+            _count_request()
             yield
         finally:
             self._cleanup(pool, ticket, admitted)

@@ -23,6 +23,36 @@
     return root && typeof root.querySelectorAll === "function" ? root : document;
   }
 
+  const TRIGGERS = "[role='combobox'], [aria-haspopup='listbox'], input[id^='react-select-']";
+
+  /** A dropdown's validity stand-in (filler.js `twinOwner`): the dropdown it stands for. */
+  function twinOwner(el) {
+    if (el.tagName !== "INPUT" || el.getAttribute("aria-hidden") !== "true" || el.tabIndex !== -1) return null;
+    if (el.matches(TRIGGERS) || (el.id && rootOf(el).querySelector(`label[for="${CSS.escape(el.id)}"]`))) return null;
+    for (let node = el.parentElement, depth = 0; node && node !== document.body && depth < 4; node = node.parentElement, depth++) {
+      const triggers = Array.from(node.querySelectorAll(TRIGGERS)).filter((other) => other !== el && isVisible(other));
+      if (triggers.length) return triggers.length === 1 ? triggers[0] : null;
+    }
+    return null;
+  }
+
+  /** filler.js `honeypot`: a trap for bots, never filled, so never "required and empty". */
+  const TRAP_NAME = /honey\s*pot|beecatcher|bot[-_ ]?trap/i;
+  const TRAP_TEXT = /leave (?:this |it )?(?:field |box )?(?:blank|empty)|for robots|do not (?:fill|enter|type)|if you are (?:a )?human/i;
+  function hiddenFromPeople(el) {
+    const rect = el.getBoundingClientRect();
+    if (rect.width <= 2 || rect.height <= 2 || rect.right <= 0 || rect.bottom <= 0) return true;
+    for (let node = el; node && node.nodeType === 1; node = node.parentElement) {
+      if (getComputedStyle(node).opacity === "0" || node.getAttribute("aria-hidden") === "true") return true;
+    }
+    return false;
+  }
+  function honeypot(el) {
+    const ident = `${el.getAttribute("name") || ""} ${el.id || ""} ${el.getAttribute("class") || ""}`;
+    if (TRAP_NAME.test(ident)) return true;
+    return hiddenFromPeople(el) && TRAP_TEXT.test(`${labelFor(el)} ${el.getAttribute("placeholder") || ""}`);
+  }
+
   /** querySelectorAll that also searches open shadow roots, in document order. */
   function deepQueryAll(root, sel) {
     const out = [];
@@ -125,6 +155,14 @@
     if (skipTypes.has(type)) continue;
     // React Select's internal required/search inputs belong to the parent question.
     if (el.closest('.select__control, [class*="-control"]') && el.getAttribute('role') !== 'combobox') continue;
+    if (el.getAttribute("data-automation-id") === "beecatcher" || honeypot(el)) continue;
+    // The stand-in is reported as its dropdown, once, when only the stand-in says required.
+    const owner = twinOwner(el);
+    if (owner) {
+      const ownRequired = owner.required || owner.getAttribute("aria-required") === "true";
+      if (el.required && !ownRequired && isEmpty(owner)) empty.push(labelFor(owner) || `Unlabeled required field ${index + 1}`);
+      continue;
+    }
     const lever = leverQuestion(el);
     if (isRejected(el, type)) {
       if (args?.revalidate) revalidate(el);

@@ -13,6 +13,10 @@ from . import fill_buttons
 SIGNED_OUT_STATES = frozenset({"sign_in", "auth_chooser", "create_account"})
 
 #: The fill found only the page's own chrome (a language picker), never the form.
+#: The posting's link now opens its careers site's home page or job search.
+LOST_POSTING_MSG = (
+    "The posting link now opens the careers home page; the job may be closed"
+)
 NO_FORM_MSG = (
     "Couldn't reach the application form: open it in this tab (it may need a sign-in), "
     "then Continue fill"

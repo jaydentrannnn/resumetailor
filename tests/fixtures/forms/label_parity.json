@@ -1,0 +1,158 @@
+{
+ "ashby_quora.html": {
+  "#_systemfield_name": "Full Name",
+  "#_systemfield_email": "Email",
+  "#ac061e86-2644-429c-9f9f-58ecfe59b7e5": "Phone",
+  "input[name=\"communicationConsent\"]": "Check Yes or No to indicate your agreement to receive text message updates from Quora, Inc. regarding your job application. Frequency may vary. Message and data rates may apply. Reply STOP to opt out of future messaging.View our privacy policy here: Privacy Policy",
+  "div:nth-of-type(1) > div:nth-of-type(5) > div:nth-of-type(2) > input": "Location",
+  "div:nth-of-type(2) > div:nth-of-type(1) > div > input": "School",
+  "#\\38 11ee220-4dcc-4459-8395-e81897092c7b_2ea59dee-9288-462d-8d23-14d1ec333b73-labeled-radio-0": "Degree",
+  "#\\38 42bb240-06cd-4b26-8c17-aa094b1c9dab": "Discipline/Field of Study",
+  "div:nth-of-type(9) > div:nth-of-type(2) > div > input": "Graduation Date or Anticipated Graduation Date",
+  "#d1cca810-eaa2-4407-bb68-7a7bcaf926a4": "LinkedIn Profile",
+  "group:div:nth-of-type(3) > div:nth-of-type(2) > div:nth-of-type(2) > div > button:nth-of-type(1)": "I understand that all employees for this position will be expected to be available for meetings and impromptu communication during Quora's “coordination hours” (Mon-Fri, 9am-3pm Pacific Time).",
+  "#\\38 11ee220-4dcc-4459-8395-e81897092c7b_861cde0a-7b5e-4057-bd59-fe4c505e31cc-labeled-radio-0": "What is your preferred programming language for your interviews (you can change this later)?",
+  "#\\31 821fd3c-40e5-488b-afd7-a03c5454d198": "This role is about the infrastructure ML models run on — distributed systems, GPU serving, and developer tooling — working alongside the ML engineers who train the models, rather than training models yourself. Pick one project (coursework, internship, personal, or open source) and tell us in 200 words or less:  what you built, what you owned or decided, a tradeoff you wrestled with, and what you learned.",
+  "#\\38 11ee220-4dcc-4459-8395-e81897092c7b_41edd870-0735-4403-9f9a-1a039b9c47e9-labeled-radio-0": "In which of the following employment eligible countries (https://www.careers.quora.com/eligible-countries) are you seeking to work, if hired?",
+  "#d4ce710d-2919-4568-a6ee-ebb1d6c8921f": "If you selected \"Other\", please provide additional information.",
+  "group:div:nth-of-type(2) > div:nth-of-type(7) > div > button:nth-of-type(1)": "Are you legally authorized to work in that country?",
+  "group:div:nth-of-type(2) > div:nth-of-type(8) > div > button:nth-of-type(1)": "Will you now or in the future require sponsorship for employment visa status?",
+  "#\\33 d67b37c-e066-42b0-acf5-4a8a59e4ad63": "How did you find out about this opportunity?",
+  "#\\33 e0aa190-6321-4e91-a708-a52566d255fc": "Any additional information you'd like to share?",
+  "#\\38 11ee220-4dcc-4459-8395-e81897092c7b_e7b4579e-1421-4cc5-84b6-6c46a59d5384-labeled-radio-0": "How would you describe your gender identity?",
+  "group:#\\38 11ee220-4dcc-4459-8395-e81897092c7b_2862a013-b7b6-4702-8d4c-1b835ddfd66a-labeled-checkbox-0": "What race and/or ethnic identities do you identify with? (please select all that apply)",
+  "#\\38 11ee220-4dcc-4459-8395-e81897092c7b_4511c0ad-5a56-4cae-9394-66e9b9232dfd-labeled-radio-0": "US candidates only: Are you a veteran/have you served in the military?",
+  "#\\38 11ee220-4dcc-4459-8395-e81897092c7b_a3f83af9-2202-431d-8ec8-2aff0eae0303-labeled-radio-0": "US candidates only: Do you live with a disability (as outlined in the Americans with Disabilities Act)?"
+ },
+ "ashby_ramp.html": {
+  "#_systemfield_name": "Full Legal Name",
+  "#_systemfield_email": "Email",
+  "#\\37 ac0e3aa-fa6c-41a5-9d79-40df8c0f43b6": "Phone",
+  "input[name=\"communicationConsent\"]": "Check Yes or No to indicate your agreement to receive text message updates from Ramp Business Corporation regarding your job application. Frequency may vary. Message and data rates may apply. Reply STOP to opt out of future messaging.View our privacy policy here: Privacy Policy and our terms and conditions here: Terms and Conditions",
+  "#\\35 527d0c1-be5f-4fb8-a812-549566d72ac6": "LinkedIn Profile",
+  "div:nth-of-type(6) > div > div > div:nth-of-type(2) > div:nth-of-type(1) > div > input": "School",
+  "#_systemfield_education_history-degree": "Degree",
+  "#_systemfield_education_history-major": "Field of Study",
+  "div#_systemfield_education_history-startDate > div:nth-of-type(1) > select": "Start Date",
+  "div#_systemfield_education_history-startDate > div:nth-of-type(2) > select": "Start Date",
+  "div#_systemfield_education_history-endDate > div:nth-of-type(1) > select": "End Date",
+  "div#_systemfield_education_history-endDate > div:nth-of-type(2) > select": "End Date",
+  "#_systemfield_education_history-isCurrent": "Still Student?",
+  "group:div > div:nth-of-type(7) > div > button:nth-of-type(1)": "Are you currently located in, or willing to relocate to, the Greater New York City area and work from our NYC office for the duration of the internship?",
+  "group:div > div:nth-of-type(8) > div > button:nth-of-type(1)": "Requesting visa sponsorship?",
+  "group:div > div:nth-of-type(9) > div > button:nth-of-type(1)": "Do you have experience with Kotlin?",
+  "#\\39 10f5276-006a-4917-9ae6-8346db102160": "Please share some details about your proudest Android feature in 2 to 3 sentences. What made it challenging and what was the impact?",
+  "#\\31 9f18609-810c-47de-8cac-4273a9f61aeb": "Please provide a link to the App Store and/or personal portfolio showcasing your top 1-2 app(s)!"
+ },
+ "avature_login.html": {
+  "#u": "Username",
+  "#p": "Password"
+ },
+ "breezy_social_apply.html": {
+  "#name": "Full Name"
+ },
+ "capgemini_apply_dropdown.html": {
+  "input[name=\"q\"]": "Search by Keyword",
+  "input[name=\"locationsearch\"]": "Search by Location"
+ },
+ "completed_education.html": {
+  "#completed": "Highest education completed",
+  "#mixed": "Please select your highest level of education obtained or, if a current student, select the degree you are pursuing",
+  "#row": "Degree",
+  "#helper": "Highest degree",
+  "#exclude": "Highest degree"
+ },
+ "doordash_pg_controls.html": {
+  "#country": "Country",
+  "#phone-number": "Phone number",
+  "#candidate-location": "Location (City)*",
+  "group:#source-linkedin": "What source(s) of information influenced your decision to apply for a P&G position?"
+ },
+ "eightfold_code_text.html": {
+  "#f": "First name",
+  "#l": "Last name",
+  "#e": "Email",
+  "#ph": "Phone",
+  "#c": "Country",
+  "input[name=\"auth\"]": "Are you legally authorized to work in the United States?"
+ },
+ "generic_code_boxes.html": {
+  "code:html > body > div > input:nth-of-type(1)": "Verification code"
+ },
+ "greenhouse.html": {
+  "#first_name": "First Name",
+  "#last_name": "Last Name",
+  "#email": "Email",
+  "#phone": "Phone",
+  "#cover_letter": "Why do you want to work here?"
+ },
+ "greenhouse_application_gaps.html": {
+  "#country": "Country",
+  "#phone": "Phone",
+  "#high-school": "When did you graduate from High School?*",
+  "#java": "Please indicate which of the following programming languages you are proficient in (select all that apply):",
+  "#grade": "What is your current grade level?",
+  "#relatives": "Do you have any relatives by blood or marriage working for Example, LLC or serving on the management committee of Example, LLC? If yes, list relative(s) name and relationship.*",
+  "#read-notice": "To request reasonable accommodation, contact our team. Please select \"Yes\" in the dropdown to confirm that you have read this statement.",
+  "#privacy": "Acknowledge/Confirm"
+ },
+ "greenhouse_gcm.html": {
+  "#first_name": "First Name*",
+  "#last_name": "Last Name*",
+  "#email": "Email*",
+  "#country": "Country*",
+  "#iti-0__search-input": "",
+  "#phone": "Phone*",
+  "#school--0": "School",
+  "#degree--0": "Degree",
+  "#discipline--0": "Discipline",
+  "#start-month--0": "Start date month",
+  "#start-year--0": "Start date year",
+  "#end-month--0": "End date month",
+  "#end-year--0": "End date year",
+  "#question_32889612003": "If Other for Education, please list the school name",
+  "#question_32889613003": "LinkedIn Profile",
+  "#question_32889614003": "Website",
+  "#question_32889615003": "Are you at least 18 years old? *",
+  "#question_32889616003": "Are you legally authorized to work for any employer in the country or location where this role is based, without restriction?*",
+  "#question_32889617003": "Do you currently require employer-sponsored work authorization (e.g., employer visa sponsorship) to work in the country or location where this role is based?*",
+  "#question_32889618003": "If currently authorized to work legally in the country or location to which you are applying, will you in the future require employer-sponsored work authorization (e.g., employer visa sponsorship) to continue working in the country or location where this role is based?*",
+  "#question_32889619003": "Please provide detailed information concerning your compensation expectations, including base salary, bonus and other compensation components:*",
+  "#question_32889620003": "Do you have any relatives that are currently employed by GCM Grosvenor? *",
+  "#question_32889621003": "If you do have relatives employed by GCM Grosvenor, please list name(s) and relationship(s).",
+  "#question_32889622003": "Are you currently or do you expect to be engaged in any other outside business activities or employment once employed by GCM Grosvenor? *",
+  "#question_32889623003": "If yes, please provide details:",
+  "#question_32889624003": "Are you involved in any active or potential relationships with Grosvenor?*",
+  "#question_32889625003": "To your knowledge are you currently subject to any non-compete or non-solicitation restrictions? *",
+  "#\\34 000649003": "Gender*",
+  "#\\34 000651003": "Are you of Hispanic, Latinx or Spanish origin?*",
+  "#\\34 000652003": "Please indicate your Ethnicity/Race*",
+  "#\\34 000653003": "Veteran Status*",
+  "#\\34 000654003": "Disability status*"
+ },
+ "jobvite_send_application.html": {
+  "#first": "First Name",
+  "#email": "Email"
+ },
+ "label_sources.html": {
+  "#answers_0_true": "Are you within a commutable distance or willing to relocate?",
+  "#answers_1_true": "Do you have a valid driver's license?",
+  "#adult_yes": "Are you over 18?",
+  "group:#referred_1": "Were you referred by a current employee?",
+  "#consent_terms": "I agree to the terms of use",
+  "#consent_sms": "I consent to text messages",
+  "#field-24": "Pronouns",
+  "#field-38": "",
+  "#location-input": "Current location ✱",
+  "#us-state": "State",
+  "#gender": "Gender*",
+  "#source": "How did you hear about us?",
+  "#visible_blank": "Leave this field blank if you have none"
+ },
+ "qualtrics_apply_chatbot.html": {},
+ "workday_graduation_date.html": {
+  "#primaryQuestionnaire--e2195e91707810003428d6cc5ab70000-dateSectionMonth-input": "Month",
+  "#primaryQuestionnaire--e2195e91707810003428d6cc5ab70000-dateSectionDay-input": "Day",
+  "#primaryQuestionnaire--e2195e91707810003428d6cc5ab70000-dateSectionYear-input": "Year"
+ }
+}

@@ -10,11 +10,12 @@ import re
 import time
 from dataclasses import dataclass
 from html.parser import HTMLParser
-from typing import Literal
+from typing import Literal, get_args
 from urllib.parse import urlparse
 
 import httpx
 
+from resume_tailor.apply.ats import ats_fingerprint
 from resume_tailor.apply.driver.browser import cdp_browser
 from resume_tailor.apply.forms import form_guards
 
@@ -144,8 +145,8 @@ def extract_fragment_text(html: str) -> str:
 
 
 def detect_ats(final_url: str, html: str = "") -> AtsName:
-    """Infer the ATS from the final URL hostname (HTML is unused, reserved)."""
-    del html  # reserved for future fingerprinting
+    """Infer the ATS from the final URL's host, else from what `ats_fingerprint` reads in
+    the URL's path and, when given, the page's HTML (an Oracle site on a company domain)."""
     host = urlparse(final_url).hostname or ""
     host = host.lower()
     path = urlparse(final_url).path.lower()
@@ -178,6 +179,11 @@ def detect_ats(final_url: str, html: str = "") -> AtsName:
         return "indeed"
     if host.endswith("joinhandshake.com"):
         return "handshake"
+    found = ats_fingerprint.from_signals(
+        final_url, ats_fingerprint.signals_from_html(html) if html else None
+    )
+    if found in get_args(AtsName):
+        return found  # type: ignore[return-value]
     if host and ("jobs." in host or "/careers" in path or "/job" in path):
         return "other"
     return "unknown"

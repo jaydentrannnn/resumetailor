@@ -29,7 +29,7 @@ from dataclasses import dataclass, field
 from datetime import date
 from typing import TYPE_CHECKING, Literal
 
-from resume_tailor.apply.answers import education, experience, form_facts, salary
+from resume_tailor.apply.answers import education, experience, form_facts, question_options, salary
 from resume_tailor.apply.ats import ats_hints
 from resume_tailor.apply.forms import field_matcher
 
@@ -315,11 +315,37 @@ _LOCATION = re.compile(
 )
 
 
+#: "What year are you in?" / "Class standing": the class standing, when the options are
+#: standings; "Class year" / "Class of" with year options is the graduation year.
+_YEAR_IN_SCHOOL = re.compile(
+    r"\bclass\s*(?:year|level|standing)\b|\bwhat year\b.{0,30}\b(?:in|of)\b"
+    r"|\byear\b.{0,25}\b(?:in|of)\s+(?:school|college|university|study|your (?:program|degree|studies))\b"
+)
+_CLASS_OF = re.compile(r"^\W*class\s*(?:year|of)\b")
+_GPA = re.compile(r"\bgpa\b|\bgrade\s*point\s*average\b")
+
+
+def _option_shaped_key(low: str, question: Question) -> str | None:
+    """A question whose options say which fact it asks for (`question_options`)."""
+    if question.kind not in {"choice", "multi"} or not question.options:
+        return None
+    options = question.options
+    if _GPA.search(low) and question_options.gpa_options(options):
+        return "gpa"
+    if _YEAR_IN_SCHOOL.search(low) and question_options.standing_options(options):
+        return "class_year"
+    if _CLASS_OF.search(low) and question_options.year_options(options):
+        return "graduation_month"
+    return None
+
+
 def classify(question: Question) -> Match | None:
     """The fact ``question`` asks for, or None when no rule covers it."""
     text = _clean(question.text)
     if not text:
         return None
+    if form_facts.bot_check(text, question.help_text):
+        return Match(form_facts.BOT_CHECK)
     low = text.casefold()
     application_key = _application_key(text)
     if application_key and _compatible(application_key, question):
@@ -348,6 +374,9 @@ def classify(question: Question) -> Match | None:
         return None
     if _LOCATION.search(low.rstrip("?*: ")) and question.kind in {"text", "typeahead"}:
         return Match("location")
+    option_key = _option_shaped_key(low, question)
+    if option_key:
+        return Match(option_key)
     for pattern, key in _DERIVED:
         if re.search(pattern, low) and _compatible(key, question):
             return Match(key, _param(key, text))
@@ -596,9 +625,18 @@ def _answers(match: Match | None, question: Question, facts: Facts) -> list[str]
     derived = _derived(match, facts)
     if derived or match.key in {key for _pattern, key in _DERIVED}:
         return derived
+    if match.key == "gpa" and question_options.gpa_options(question.options):
+        gpa = re.search(r"\d+(?:\.\d+)?", facts.fields.get("gpa", ""))
+        chosen = question_options.gpa_option(question.options, float(gpa.group(0))) if gpa else None
+        return [chosen] if chosen else []
     if match.key in {"graduation_month", "education_start_month", "earliest_start"}:
         full_key = {"graduation_month": "graduation_date", "education_start_month": "education_start_date"}.get(match.key, match.key)
         value = facts.fields.get(full_key) or facts.fields.get(match.key, "")
+        if match.key in _DATE_KEYS and question_options.term_options(question.options):
+            dated = re.search(r"(\d{4})-(\d{1,2})", value or "")
+            chosen = dated and question_options.term_option(
+                question.options, int(dated.group(1)), int(dated.group(2)))
+            return [chosen] if chosen else []
         part = question.part or _part_from_text(question.text)
         answer = _date_part(value, part) if value else ""
         return [answer] if answer else []
@@ -723,6 +761,7 @@ MODEL_KEYS: dict[str, str] = {
     "hispanic_latino": "whether they are Hispanic or Latino",
     "veteran_status": "their veteran status",
     "disability_status": "their disability status",
+    "sexual_orientation": "their sexual orientation",
 }
 
 #: Asks which of ``MODEL_KEYS`` each question asks for (None: none of them).

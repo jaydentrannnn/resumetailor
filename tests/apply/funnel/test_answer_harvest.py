@@ -119,3 +119,47 @@ def test_listener_records_typed_text_radios_and_selects(page):
     assert typed == {
         "Which team interests you?": "Payments", "Willing to travel?": "No", "Office": "Remote",
     }
+
+
+def test_corrections_name_the_answers_the_applicant_changed_never_their_values():
+    fill = store_models.FillResult(filled=[
+        {"key": "phone", "label": "Phone", "value": "(916) 555-0147"},
+        {"key": "earliest_start", "label": "Start date", "value": "06/15/2027"},
+        {"key": "city", "label": "City", "value": "Sacramento"},
+        {"key": "school", "label": "School", "value": "State University"},
+        {"key": "existing", "label": "Country", "value": "United States", "preserved": True},
+        {"key": "gpa", "label": "GPA", "value": "3.7"},
+    ])
+    fields = [
+        _field("Phone", "916-555-0147"),  # reformatted, same number
+        _field("Start date", "2027-06-15"),  # same date, other order
+        _field("City", "Davis"),  # changed
+        _field("School", "", kind="text"),  # blank: not counted
+        _field("Country", "Canada"),  # the applicant's own answer
+        _field("GPA", "3.9", kind="combobox", selection_state="typed"),  # not committed
+    ]
+    found = harvest.corrections(fill, fields)
+    assert found == [{"label": "City", "key": "city"}]
+    assert "Davis" not in str(found)
+
+
+def test_a_repeated_label_is_never_paired_with_another_rows_field():
+    fill = store_models.FillResult(filled=[
+        {"key": "employer", "label": "Employer", "value": "Acme"},
+        {"key": "employer", "label": "Employer", "value": "Globex"},
+    ])
+    fields = [_field("Employer", "Acme"), _field("Employer", "Globex")]
+    assert harvest.corrections(fill, fields) == []
+
+
+@pytest.mark.parametrize(("given", "shown", "same"), [
+    ("3.7", "7.3", False),
+    ("3.7", "3.70", True),
+    ("$90,000", "90000", True),
+    ("2026", "2027", False),
+    ("06/2027", "2027-06", True),
+    ("(916) 555-0147", "+1 916 555 0147", True),
+    ("Apt 12, 3 Main St", "Apt 3, 12 Main St", False),
+])
+def test_answers_compare_by_their_kind(given, shown, same):
+    assert harvest._same_answer(given, shown) is same

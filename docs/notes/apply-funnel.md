@@ -2058,3 +2058,61 @@ answer". `_NEGATED` gains cannot (it never matched `\bnot\b`), unable, unwilling
 Over the stored labels (read only), it refuses 1 of 16 multiple-choice questions, an AI-review
 opt-out that no profile fact answers, and 0 of 36 Yes/No. The harmless shapes are kept as
 regression tests.
+
+### 2026-10-18 — Autofill on more sites, Batch 1 (deterministic)
+
+Measured with `scripts/evals/fill_probe.py` (eval-only). A made-up applicant fills 25 of the
+owner's unsubmitted postings in a throwaway data dir behind a request guard: requests that
+carry the applicant's details, uploads and unreadable bodies are aborted; service workers and
+WebSockets are blocked; every request is audited. The runs are read-only (no typing) and live
+(`awaiting_review`, never submitted; Workday/iCIMS/Oracle are read-only only). The baseline is a
+frozen worktree of the pre-change commit, run twice for noise.
+- Social-apply routes ("Apply with LinkedIn", "Continue with Google") are refused by the click
+  guard for every purpose (`clicks.SocialApplyRefused`). The entry finders skip them and try
+  the next match (`fill_buttons._entry_control`, `wizards._ENTER_JS`).
+- `_find_submit_button` matches `clicks.FINAL_SUBMIT_NAME` (Jobvite's "Send Application"); each
+  such name also reads as a submit to the guard.
+- `wizards.GenericScreens` gives sites with no adapter the applicant's own screens on clear
+  evidence only: sign-in (a password box, ≤4 other fields), create account, a code control
+  (≤3 other fields; page text alone never counts: Eightfold's privacy text), closed (0
+  fields), already applied. It never reports posting, review or confirmation.
+- `ats_fingerprint` re-checks the platform after entry: its own host or path alone, or two
+  agreeing page signals. The stored `Application.ats` only moves from other/unknown to an
+  existing `AtsKind`; eightfold/avature/jibe live in `fill.json` diagnostics only, since a new
+  `AtsKind` would make older apps fail to read the row.
+- `identity.lost_posting`: a posting URL naming a job that lands on its careers root stops the
+  fill as closed.
+- `fill.json` gains `diagnostics` (additive: app version, posting/landed platform, end
+  category, elapsed, model calls via `model_queue.count_requests`) and `corrections`.
+  `corrections` are labels and keys only, for answers the applicant changed on the page.
+- Labels (`filler.js`): a fieldset legend is used only when the fieldset holds this question
+  alone (Pinpoint's "3.Questions" legend over every question). `labelOk` makes UI words,
+  ids, bare section headings and an option's own text give way to the next source (Rippling's
+  aria-label "Search"). Unrendered rows and dropdown placeholder lines are dropped (Lever's
+  "No location found", Paylocity's "Select a state"). JazzHR's self-named Yes/No checkboxes
+  under one label are one question; consent boxes are not grouped. `label_parity.json` holds
+  every form fixture's labels.
+- Noise: Greenhouse's `requiredInput` (aria-hidden, tabindex -1, beside one visible dropdown)
+  is that dropdown, and its required flag moves to it (12 blank required questions on one
+  form). Honeypots are never filled or reported; ≥4 one-character boxes are one
+  "Verification code". Readiness skips the stand-in the same way. The Ashby split checkbox
+  group was not reproduced in any capture, so it is unchanged.
+- Rules: GPA ranges, graduation terms ("Spring 2027"), class standing and "Class of" year
+  options pick the one option the fact fits, else none (`question_options`). A June graduation
+  fits Spring and Summer, so it is left. Also new: Address 1/Line1, Postcode, Full (legal) name
+  (never a reference's, a signature or a name in another script), bare Source, "How did you
+  first learn about", and I-9 "documentation that proves your eligibility". Mined from 1,321
+  stored leftovers (labels only).
+- `EEOAnswers.sexual_orientation`, default "decline" like the other self-ID answers, with a
+  Profile select. Bot checks ("If you are an AI, include ...") are never answered by rule or
+  model; they leave "This looks like a bot check; answer it yourself".
+
+### 2026-10-18 — Batch 1 follow-ups from an outside review
+
+- **Final button vs guard:** `clicks.SUBMIT_TEXT` now holds every `FINAL_SUBMIT_NAME` body (`_FINAL_NAME`), so a name the finder takes as the final button ("Complete my application", even with `.btn-next`) is always refused as an advance.
+- **Bot checks:** `filler.js` sends a written-answer box's help text and required flag with `long_text`; `_answer_one_long_text` checks for a bot check before the cover-letter route. The required flag also fixes protected long texts never reaching review (it was always missing).
+- **Code boxes on platform adapters:** `wizards._CODE_INPUTS_JS` is shared by both snapshots; the base `classify` reports "otp" for a code control with ≤ 3 other fields, so Oracle/iCIMS/Taleo/SuccessFactors see split code boxes too.
+- **Readiness honeypots:** `filler_readiness.js` skips the same honeypots as `filler.js` (`honeypot`).
+- **Corrections signal:** a label asked or filled more than once is never paired (the fill record and the page's fields share no identity); `_same_answer` compares numbers as amounts, digits as phones and number sets only for dates ("3.7" ≠ "7.3").
+- **GPA:** "At least / Minimum of" are inclusive lower bounds; "At most / Up to" inclusive upper bounds.
+- **Probe tools (eval only):** the live guard blocks writes carrying the made-up applicant's other answers, GraphQL mutations and save-shaped paths, allowing geocoding lookups; the audit re-checks every request apart from the decision and lists allowed writes. The sanitizer clears embedded `data-*` state, widget selections and known made-up values; `leaks` is a pattern check, not a proof. The read-only probe uses `for_fill`, presses Apply off Workday, and re-checks the landed platform, falling back to the frozen baseline's own decisions. Measurements before this change are not comparable with later ones.

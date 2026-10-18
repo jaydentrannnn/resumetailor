@@ -181,6 +181,8 @@ export type ApplicantProfile = {
     /** The older free-text answer this category was converted from; "" once confirmed. */
     veteran_legacy?: string;
     disability: string;
+    /** Absent on profiles saved before it existed (the backend reads it as "decline"). */
+    sexual_orientation?: string;
   };
   /** Spoken languages (`profile.LanguageEntry`); absent on profiles saved before it existed. */
   languages?: ApplicantLanguage[];
@@ -266,6 +268,7 @@ export type ProfileOptions = {
   races: string[];
   race_details: Record<string, string[]>;
   disability: string[];
+  sexual_orientations: string[];
 };
 
 export function fetchProfileOptions(): Promise<ProfileOptions> {

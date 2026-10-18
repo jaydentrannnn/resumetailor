@@ -8,6 +8,8 @@ Injects ``filler.js``, uploads resume PDF, drafts long-text leftovers through
 from __future__ import annotations
 
 import asyncio
+import contextlib
+import time
 from collections.abc import Callable
 from typing import Literal
 
@@ -19,7 +21,7 @@ from resume_tailor.apply.funnel.store_models import FillResult
 from resume_tailor.infra import model_queue
 from resume_tailor.web.schemas import ApplySettings, JobSettings
 
-from . import fill_entry, fill_finish, fill_widgets, fill_wizard, submit_guard
+from . import fill_diagnostics, fill_entry, fill_finish, fill_widgets, fill_wizard, submit_guard
 
 
 @model_queue.observe_progress
@@ -93,6 +95,30 @@ class _FillRun(fill_entry._FillEntry, fill_wizard._FillWizard, fill_finish._Fill
     """
 
     def run(self) -> FillResult:
+        started = time.monotonic()
+        with model_queue.count_requests() as requests:
+            result = self._run()
+        return self._record_diagnostics(result, time.monotonic() - started, requests[0])
+
+    def _record_diagnostics(self, result: FillResult, elapsed_s: float, calls: int) -> FillResult:
+        """Attach `fill_diagnostics` to the result every exit path returns, and save it
+        where that path saved the result. Never fails the fill."""
+        with contextlib.suppress(Exception):
+            page = getattr(self, "page", None)
+            result.diagnostics = {**result.diagnostics, **fill_diagnostics.build(
+                result, posting_url=getattr(self, "url", "") or "",
+                landed_url=str(page.url) if page is not None else "", elapsed_s=elapsed_s,
+                model_calls=calls, needs_review=getattr(self, "needs_review", None),
+                landed_platform=getattr(self, "landed_platform", ""),
+            )}
+            if self.app.fill is result:
+                store.upsert(self.app)
+            path = self.out_dir / "fill.json"
+            if path.is_file() and path.stat().st_mtime >= time.time() - elapsed_s - 1:
+                path.write_text(result.model_dump_json(indent=2), encoding="utf-8")
+        return result
+
+    def _run(self) -> FillResult:
         stall = watchdog.Stall()
         try:
             self.progress("connecting to browser")

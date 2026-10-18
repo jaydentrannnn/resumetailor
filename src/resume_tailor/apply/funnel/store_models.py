@@ -120,6 +120,10 @@ class FillResult(BaseModel):
     #: Questions recognised as a profile fact the profile leaves blank, one entry per
     #: key: {key, field_label, section, path, questions, answered}.
     missing_profile: list[dict[str, Any]] = Field(default_factory=list)
+    #: How this fill went, for telling an old failure from a current one (never values):
+    #: {app_version, platform: {posting, landed}, end_category, elapsed_s, model_calls,
+    #: corrections: [{label, key}]} (`forms.fill_diagnostics`, `answer_harvest`).
+    diagnostics: dict[str, Any] = Field(default_factory=dict)
 
 class SourceRef(BaseModel):
     """One discovery sighting of a posting (Simplify UUID, speedyapply hash, …)."""

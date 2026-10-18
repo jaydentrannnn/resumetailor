@@ -12,8 +12,12 @@ SKILLS = "programming_languages"
 ACKNOWLEDGEMENT = "routine_acknowledgement"
 TALENT_POOL = "talent_pool_consent"
 TYPED_CONSENT = "typed_consent"
+BOT_CHECK = "bot_check"
+#: The review line a bot check leaves: no rule or model ever answers one.
+BOT_CHECK_NOTE = "This looks like a bot check; answer it yourself"
 PROTECTED_KEYS = frozenset({
-    HIGH_SCHOOL, SKILLS, ACKNOWLEDGEMENT, TALENT_POOL, TYPED_CONSENT, "relatives_at_company",
+    HIGH_SCHOOL, SKILLS, ACKNOWLEDGEMENT, TALENT_POOL, TYPED_CONSENT, BOT_CHECK,
+    "relatives_at_company",
     "consider_other_positions", "minimum_qualifications", "advertising_consent",
     "experience_years", "recent_graduate_or_student",
 })
@@ -410,7 +414,27 @@ def _wording(text: str, help_text: str) -> str:
     return "routine"
 
 
+#: A question set to catch automated applications ("If you are an AI, include the word
+#: ..."). Answering it at all, by rule or model, is what it is there to detect.
+_BOT_CHECK = re.compile(
+    r"\bif\s+you\s*(?:'re|are)\s+(?:an?\s+)?(?:ai|a\.i\.|bot|robot|llm|chatbot|chat\s*gpt|gpt"
+    r"|(?:large\s+)?language\s+model|automated\s+(?:system|tool|agent|program|assistant))\b"
+    r"|\b(?:ai|llms?|chatbots?|chat\s*gpt|language\s+models?)"
+    r"(?:\s+(?:assistants?|tools?|models?|systems?|agents?))?\s+(?:should|must|please)\s+"
+    r"(?:include|mention|say|write|type|use|respond|answer|add|start)\b"
+    r"|\bignore\s+(?:all\s+|any\s+)?(?:previous|prior|above)\s+instructions\b"
+    r"|\bare\s+you\s+(?:a\s+)?(?:human|robot|bot)\b"
+)
+
+
+def bot_check(text: str, help_text: str = "") -> bool:
+    """A question or its help text testing whether a person or a program is applying."""
+    return bool(_BOT_CHECK.search(f"{text}\n{help_text}".casefold()))
+
+
 def semantic_key(text: str, help_text: str = "") -> str:
+    if bot_check(text, help_text):
+        return BOT_CHECK
     low = text.casefold()
     if re.search(r"\bhigh school\b|\bsecondary school\b", low) and re.search(
         r"graduat|complet|finish", low

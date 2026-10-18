@@ -154,6 +154,48 @@
   const CONTROLS = "input:not([type='hidden']), select, textarea";
   const textOf = (node) => (node?.innerText || node?.textContent || "").replace(/[⁠​]/g, "").replace(/\s+/g, " ").trim();
 
+  /**
+   * A widget's own words inside a label: a dropdown's placeholder ("Select a state",
+   * "— Make a Selection —"), a search box's "Loading" / "No location found" rows. A line
+   * of only those is dropped while the question's own line remains.
+   */
+  const WIDGET_LINE = /^(?:[—–-]+\s*)?(?:select|choose|please select|make a selection)\b.{0,40}$|^(?:loading|searching)\b.{0,20}$|^no (?:results?|options?|locations?|matches) found\b.*$/i;
+  function cleanLabel(text) {
+    const value = String(text || "");
+    const lines = value.split(/\n+/).map((line) => line.trim()).filter(Boolean);
+    const kept = lines.filter((line) => !WIDGET_LINE.test(line));
+    return kept.length && kept.length < lines.length ? kept.join("\n") : value;
+  }
+
+  /**
+   * Text that names no question, so the next label source is tried: a widget's UI words
+   * ("Search", "Select..."), an id ("CA_52432"), a bare section heading ("3. Questions"),
+   * or one option's own text read as its group's question ("Yes").
+   */
+  const UI_WORDS = /^(?:search|search\.\.\.|select|select\.\.\.|select one|select an option…?|choose|choose one|choose\.\.\.|type here|type to search|start typing\.*|textbox|combobox|loading\.*|enter|please select|make a selection)$/i;
+  const ID_SHAPED = /^[A-Za-z]{1,6}[_-]\d{3,}$|^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}|^[0-9a-f]{12,}$|^\d+ results? (?:found|available)|^no results? found/i;
+  const SECTION_ONLY = /^(?:\d+\s*[.):-]?\s*)?(?:(?:position|job|role)[- ]specific\s+|application\s+|additional\s+|screening\s+|custom\s+|general\s+)?questions?$/i;
+  function labelOk(text, el) {
+    const value = String(text || "").replace(/\s*[*✱:]\s*$/, "").trim();
+    if (!value || UI_WORDS.test(value) || ID_SHAPED.test(value) || SECTION_ONLY.test(value)) return false;
+    if ((el.type === "radio" || el.type === "checkbox") && /^(?:yes|no|true|false)$/i.test(value)) return false;
+    return !(isGroupMember(el) && questionOptions(el).some((option) => norm(optionText(option)) === norm(value)));
+  }
+
+  /** Words of a consent box ("I agree to the terms"), never one option of a Yes/No pair. */
+  const CONSENT_WORDS = /\b(?:agree|consent|acknowledge|accept|terms|privacy|certify)\b/i;
+
+  /** A label that names no visible control: a question's own label, not an option's. */
+  function questionLabelIn(node) {
+    const root = rootOf(node);
+    return Array.from(node.querySelectorAll("label")).some((label) => {
+      if (label.querySelector(CONTROLS)) return false;
+      const target = label.getAttribute("for");
+      const named = target ? root.getElementById?.(target) || document.getElementById(target) : null;
+      return !(named && named.matches?.(CONTROLS)) && Boolean(textOf(label));
+    });
+  }
+
   /** Toggle buttons answering one question (Ashby's Yes/No): el's own, or el's siblings. */
   function toggleButtons(el) {
     const parent = el.tagName === "BUTTON" ? el.parentElement : el.parentElement;
@@ -183,7 +225,26 @@
       const all = Array.from(box.querySelectorAll(CONTROLS));
       if (all.length > 1 && all.every((other) => other.type === el.type)) return all;
     }
+    // JazzHR: Yes/No checkboxes, each named after itself, under one question label.
+    if (el.type === "checkbox") {
+      for (let node = el.parentElement, depth = 0; node && node !== document.body && depth < 3; node = node.parentElement, depth++) {
+        const all = Array.from(node.querySelectorAll(CONTROLS));
+        if (all.some((other) => other.type !== "checkbox")) break;
+        if (all.length < 2) continue;
+        const answers = all.length <= 12 && all.every((other) => {
+          const text = optionText(other);
+          return text && text.length <= 40 && !CONSENT_WORDS.test(text);
+        });
+        return answers && questionLabelIn(node) ? all : [el];
+      }
+    }
     return [el];
+  }
+
+  /** Whether el's question owns every visible control in ``box`` (not a section's box). */
+  function holdsOnly(box, el) {
+    const members = questionMembers(el);
+    return Array.from(box.querySelectorAll(CONTROLS)).filter(isVisible).every((other) => members.includes(other));
   }
 
   /** The options (not the decoy) of el's question. */
@@ -246,54 +307,54 @@
     return "";
   }
 
+  /**
+   * A control's question text: explicit sources first (``<label for>``, ``aria-label``,
+   * ``aria-labelledby``), then the text nearest it. A source whose text names no question
+   * (`labelOk`) gives way to the next one.
+   */
   function labelFor(el) {
     const lever = leverQuestion(el);
     if (lever) return lever.text;
-    if (el.type === "checkbox" || el.type === "radio") {
-      const group = el.closest("fieldset[data-automation-id$='-CheckboxGroup'], [role='radiogroup']");
-      const field = group?.closest("[data-automation-id^='formField-']");
-      const heading = field?.querySelector("legend") || group?.querySelector("legend");
-      if (textOf(heading)) return textOf(heading);
-    }
-    // One option of a radio/checkbox question stands for the question.
-    if (isGroupMember(el)) {
-      const question = groupQuestion(el);
-      if (question) return question;
-    }
-    const id = el.id;
     const root = rootOf(el);
-    if (id) {
-      const label = root.querySelector(`label[for="${CSS.escape(id)}"]`);
-      if (label) return (label.innerText || label.textContent || "").trim();
-    }
-    const aria = el.getAttribute("aria-label");
-    if (aria) return aria.trim();
-    const labelledBy = el.getAttribute("aria-labelledby");
-    if (labelledBy) {
+    const sources = [
+      () => {
+        if (el.type !== "checkbox" && el.type !== "radio") return "";
+        const group = el.closest("fieldset[data-automation-id$='-CheckboxGroup'], [role='radiogroup']");
+        const field = group?.closest("[data-automation-id^='formField-']");
+        return textOf(field?.querySelector("legend") || group?.querySelector("legend"));
+      },
+      // One option of a radio/checkbox question stands for the question.
+      () => (isGroupMember(el) ? groupQuestion(el) : ""),
+      () => {
+        const label = el.id ? root.querySelector(`label[for="${CSS.escape(el.id)}"]`) : null;
+        return label ? (label.innerText || label.textContent || "").trim() : "";
+      },
+      () => (el.getAttribute("aria-label") || "").trim(),
       // A space-separated id list: the question plus, often, its hint or error text.
-      const text = labelledBy.split(/\s+/).map(ref => root.getElementById(ref))
-        .filter(Boolean).map(ref => (ref.innerText || ref.textContent || "").trim())
-        .filter(Boolean).join(" ");
-      if (text) return text;
+      () => (el.getAttribute("aria-labelledby") || "").split(/\s+/).filter(Boolean)
+        .map(ref => root.getElementById(ref)).filter(Boolean)
+        .map(ref => (ref.innerText || ref.textContent || "").trim()).filter(Boolean).join(" "),
+      // Workday: a questionnaire question lives in its form field's label/legend.
+      () => {
+        const title = el.closest("[data-automation-id^='formField-']")?.querySelector("label, legend");
+        return title ? (title.innerText || title.textContent || "").trim() : "";
+      },
+      () => wrapperLabel(el),
+      () => fieldLabel(el),
+      () => containerLabel(el),
+      () => {
+        const placeholder = (el.getAttribute("placeholder") || "").trim();
+        return GENERIC_PLACEHOLDER.test(placeholder) ? "" : placeholder;
+      },
+    ];
+    for (const source of sources) {
+      const text = cleanLabel(source());
+      if (labelOk(text, el)) return text;
     }
-    // Workday: a questionnaire question lives in its form field's label/legend.
-    const wdField = el.closest("[data-automation-id^='formField-']");
-    if (wdField) {
-      const title = wdField.querySelector("label, legend");
-      const text = title ? (title.innerText || title.textContent || "").trim() : "";
-      if (text) return text;
-    }
-    const wrapper = wrapperLabel(el);
-    if (wrapper) return wrapper;
-    const field = fieldLabel(el);
-    if (field) return field;
-    const container = containerLabel(el);
-    if (container) return container;
-    const placeholder = el.getAttribute("placeholder");
-    if (placeholder && !GENERIC_PLACEHOLDER.test(placeholder.trim())) return placeholder.trim();
-    const name = el.getAttribute("name");
-    if (name) return name.trim();
-    return "";
+    // A generated name ("KeChGroXOV3") says nothing about the question.
+    const name = (el.getAttribute("name") || "").trim();
+    const generated = ID_SHAPED.test(name) || (/\d/.test(name) && /(?:[A-Z][^A-Z]*){3}/.test(name) && !/[_\-.\[\]\s]/.test(name));
+    return generated ? "" : name;
   }
 
   /** Keys of short identity/address/education fields, never of a long question. */
@@ -320,7 +381,19 @@
     for (let depth = 0; node && node !== document.body && depth < 12; depth++, node = node.parentElement) {
       const controls = node.querySelectorAll("input:not([type='hidden']), select, textarea");
       if (Array.from(controls).some((other) => !sameControl(other))) break;
+      // A box holding the page title or its navigation is the page, not the question
+      // (a careers site's lone search box under "Ready for a career at ...?").
+      if (node.querySelector("h1, nav")) break;
+      const live = Array.from(node.querySelectorAll("*"));
       const clone = node.cloneNode(true);
+      // Text the page does not show (a hidden "No location found" row) is not the question.
+      const copies = Array.from(clone.querySelectorAll("*"));
+      live.forEach((other, index) => {
+        if (!other.getClientRects().length && getComputedStyle(other).display !== "contents") {
+          copies[index]?.setAttribute("data-unrendered", "");
+        }
+      });
+      clone.querySelectorAll("[data-unrendered]").forEach((n) => n.remove());
       // An option's own label (wrapping a group member, or `for` one) is not the question.
       const memberIds = new Set(Array.from(controls).map((c) => c.id).filter(Boolean));
       clone.querySelectorAll("label").forEach((n) => {
@@ -330,6 +403,7 @@
       // live regions ("0 results available") are not part of the question.
       clone.querySelectorAll(
         "input, select, textarea, option, [class*='-control'], [class*='-menu'], [aria-live], [role='alert'], " +
+        "[role='status'], [role='log'], [role='listbox'], [class*='loading' i], [class*='spinner' i], " +
         "[class*='error' i], [id*='error' i], [class*='a11yText' i]"
       ).forEach((n) => n.remove());
       const text = (clone.textContent || "").replace(/[⁠​]/g, "").replace(/\s+/g, " ").trim();
@@ -358,6 +432,63 @@
   }
 
   /** Normalise synonym entries to [pattern, key] pairs. */
+  const TRIGGERS = "[role='combobox'], [aria-haspopup='listbox'], input[id^='react-select-']";
+
+  /**
+   * The dropdown a validity stand-in belongs to: an input hidden from assistive tech and
+   * the tab order (``aria-hidden``, ``tabindex=-1``) beside one visible dropdown trigger in
+   * the same widget (Greenhouse's ``requiredInput``). Such an input is that dropdown, not
+   * a question of its own; a hidden native control that is a widget's only control is.
+   */
+  function twinOwner(el) {
+    if (el.tagName !== "INPUT" || el.getAttribute("aria-hidden") !== "true" || el.tabIndex !== -1) return null;
+    if (el.matches(TRIGGERS) || (el.id && rootOf(el).querySelector(`label[for="${CSS.escape(el.id)}"]`))) return null;
+    for (let node = el.parentElement, depth = 0; node && node !== document.body && depth < 4; node = node.parentElement, depth++) {
+      const triggers = Array.from(node.querySelectorAll(TRIGGERS)).filter((other) => other !== el && isVisible(other));
+      if (triggers.length) return triggers.length === 1 ? triggers[0] : null;
+    }
+    return null;
+  }
+
+  /** A dropdown is required when its validity stand-in is. */
+  function twinRequired(el) {
+    if (!el.matches(TRIGGERS)) return false;
+    for (let node = el.parentElement, depth = 0; node && node !== document.body && depth < 4; node = node.parentElement, depth++) {
+      const twins = Array.from(node.querySelectorAll("input[aria-hidden='true']")).filter((other) => twinOwner(other) === el);
+      if (twins.length) return twins.some((twin) => twin.required);
+    }
+    return false;
+  }
+
+  /** Hidden from people while still "visible" to scripts: off-screen, see-through, tiny. */
+  function hiddenFromPeople(el) {
+    const rect = el.getBoundingClientRect();
+    if (rect.width <= 2 || rect.height <= 2 || rect.right <= 0 || rect.bottom <= 0) return true;
+    for (let node = el; node && node.nodeType === 1; node = node.parentElement) {
+      if (getComputedStyle(node).opacity === "0" || node.getAttribute("aria-hidden") === "true") return true;
+    }
+    return false;
+  }
+
+  /** A trap for bots: never filled, never reported (Workday's ``beecatcher``). */
+  const TRAP_NAME = /honey\s*pot|beecatcher|bot[-_ ]?trap/i;
+  const TRAP_TEXT = /leave (?:this |it )?(?:field |box )?(?:blank|empty)|for robots|do not (?:fill|enter|type)|if you are (?:a )?human/i;
+  function honeypot(el) {
+    const ident = `${el.getAttribute("name") || ""} ${el.id || ""} ${el.getAttribute("class") || ""}`;
+    if (TRAP_NAME.test(ident)) return true;
+    return hiddenFromPeople(el) && TRAP_TEXT.test(`${labelFor(el)} ${el.getAttribute("placeholder") || ""}`);
+  }
+
+  /** One-character boxes that together take one code ("Digit 1 of 6"): one control. */
+  function codeBoxes(el) {
+    if (el.tagName !== "INPUT" || el.maxLength !== 1) return null;
+    for (let node = el.parentElement, depth = 0; node && node !== document.body && depth < 3; node = node.parentElement, depth++) {
+      const inputs = Array.from(node.querySelectorAll(CONTROLS)).filter(isVisible);
+      if (inputs.length >= 4 && inputs.every((other) => other.tagName === "INPUT" && other.maxLength === 1)) return inputs;
+    }
+    return null;
+  }
+
   function normaliseSynonyms(list) {
     const out = [];
     for (const item of list || []) {
@@ -854,8 +985,9 @@
     if (described && textOf(described)) return textOf(described);
     const lever = leverQuestion(el);
     if (lever) return lever.text;
+    // A legend shared by several questions is a section heading ("3. Questions").
     const fieldset = el.closest("fieldset");
-    const legend = fieldset?.querySelector("legend");
+    const legend = fieldset && holdsOnly(fieldset, el) ? fieldset.querySelector("legend") : null;
     if (legend) return (legend.innerText || legend.textContent || "").trim();
     const labelled = el.closest("[role='group'][aria-labelledby], [role='radiogroup'][aria-labelledby]")
       ?.getAttribute("aria-labelledby");
@@ -997,6 +1129,8 @@
     return norm(current) === norm(wanted);
   }
 
+  const CODE_LABEL = "Verification code";
+
   // Toggle-button groups (Ashby's Yes/No) are questions too; a group is visited once.
   const controls = deepQueryAll(document, "input, select, textarea, button[aria-pressed]").filter(isVisible);
   const questions_out = [];
@@ -1018,7 +1152,21 @@
     if (type === "file" || skipTypes.has(type)) continue;
     // Workday: a honeypot "for robots only" input, and the search box of a multiselect
     // prompt (typing there does not commit a choice; the fill runner owns those).
-    if (el.getAttribute("data-automation-id") === "beecatcher") continue;
+    if (el.getAttribute("data-automation-id") === "beecatcher" || honeypot(el)) continue;
+    // A dropdown's validity stand-in is reported with its dropdown (`twinRequired`).
+    if (twinOwner(el)) continue;
+    const code = codeBoxes(el);
+    if (code) {
+      if (el !== code[0]) continue;
+      const codeSel = selectorFor(el);
+      if (scan) {
+        questions_out.push({ ...describe(el, { qid: `code:${codeSel}`, members: [el], buttonGroup: false, label: CODE_LABEL, sel: codeSel, required: true }), kind: "text" });
+      } else {
+        leftovers.push({ key: null, label: CODE_LABEL, type: "code", options: [], required: true, selector: codeSel, reason: "A code the applicant enters" });
+        required_empty.push(CODE_LABEL);
+      }
+      continue;
+    }
     if (el.closest('.select__control, [class*="-control"]') && el.getAttribute('role') !== 'combobox' && !isReactSelect(el)) continue;
     // The options of an open prompt popup (Skills search results) are not questions.
     if (el.closest("[data-automation-id='promptOption'], [data-automation-id='promptLeafNode'], [data-automation-id='activeListContainer'], [role='listbox']")) continue;
@@ -1032,7 +1180,7 @@
     const label = labelFor(el);
     const sel = selectorFor(el);
     const required = el.required || el.getAttribute("aria-required") === "true" ||
-      Boolean(leverQuestion(el)?.required) || members.some((member) => member.required);
+      Boolean(leverQuestion(el)?.required) || members.some((member) => member.required) || twinRequired(el);
     const planned = plan && Object.prototype.hasOwnProperty.call(plan, qid) ? plan[qid] : null;
 
     if (scan) {
@@ -1223,6 +1371,8 @@
       if ((maxLen !== null && maxLen > 200) || (maxLen === null && rows >= 3)) {
         long_text.push({
           label,
+          help: helpFor(el),
+          required,
           selector: sel,
           maxlength: maxLen,
         });

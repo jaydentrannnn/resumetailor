@@ -13,6 +13,7 @@ from resume_tailor import config
 from resume_tailor.apply.answers import answer, hybrid_resolver
 from resume_tailor.apply.answers import profile as profile_mod
 from resume_tailor.apply.answers.profile import ApplicantProfile
+from resume_tailor.apply.ats import ats_fingerprint
 from resume_tailor.apply.driver import browser, clicks
 from resume_tailor.apply.forms import (
     fill,
@@ -27,6 +28,20 @@ from resume_tailor.apply.funnel import packet, store, store_models
 from resume_tailor.apply.funnel.packet_models import Packet
 from resume_tailor.content import data
 from resume_tailor.web.schemas import ApplySettings
+
+#: Page reads that answer every site the same way: the landed-platform check and the
+#: generic screen snapshot. A fake page answers them with nothing.
+_SITE_PROBES = (ats_fingerprint.SIGNALS_JS, wizards.GENERIC_SNAPSHOT_JS)
+
+
+def _evaluate_replies(*replies):
+    """A ``page.evaluate`` side effect giving ``replies`` in order to the fill's own scripts."""
+    queue = list(replies)
+
+    def evaluate(script, *_args, **_kwargs):
+        return {} if script in _SITE_PROBES else queue.pop(0)
+
+    return evaluate
 
 
 @pytest.fixture
@@ -617,7 +632,7 @@ def test_fill_application_awaiting_review(fill_paths, monkeypatch, model_unavail
     page = MagicMock()
     page.url = "https://example.com/apply"
     page.frames = [page]
-    page.evaluate.side_effect = [{"questions": []}, filler_result, ["Phone"]]
+    page.evaluate.side_effect = _evaluate_replies({"questions": []}, filler_result, ["Phone"])
 
     @contextmanager
     def _fake_browser():
@@ -690,7 +705,7 @@ def test_fill_application_answer_stage_pinned_to_apply_settings_model(fill_paths
     page = MagicMock()
     page.url = "https://example.com/apply"
     page.frames = [page]
-    page.evaluate.side_effect = [{"questions": []}, filler_result, []]
+    page.evaluate.side_effect = _evaluate_replies({"questions": []}, filler_result, [])
 
     @contextmanager
     def _fake_browser():
@@ -812,7 +827,7 @@ def test_fill_application_readiness_guard_fails_when_zero_controls(fill_paths, m
     page = MagicMock()
     page.url = "https://example.com/apply"
     page.frames = [page]
-    page.evaluate.side_effect = [{"questions": []}, filler_result, []]
+    page.evaluate.side_effect = _evaluate_replies({"questions": []}, filler_result, [])
 
     # Mock locators to return 0 counts so barriers and buttons aren't falsely detected
     mock_loc = MagicMock()

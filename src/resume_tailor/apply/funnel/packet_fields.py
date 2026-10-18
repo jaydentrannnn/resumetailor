@@ -249,6 +249,7 @@ def build_fields(profile: ApplicantProfile, resume: MasterResume) -> dict[str, s
     # A category ("not_veteran"), matched to each form's wording by `field_matcher.VETERAN_TIERS`.
     _maybe_set(fields, "veteran_status", profile.eeo.veteran or None)
     _maybe_set(fields, "disability_status", _eeo_value(profile.eeo.disability))
+    _maybe_set(fields, "sexual_orientation", _eeo_value(profile.eeo.sexual_orientation))
     _maybe_set(fields, "languages", languages_text(profile) or None)
     _maybe_set(fields, "current_company", current_company or None)
     _maybe_set(fields, "current_title", current_title or None)

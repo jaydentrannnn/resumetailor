@@ -1,0 +1,10 @@
+<!doctype html><meta charset="utf-8">
+<!-- Minimal, anonymized reconstruction of a Breezy HR apply page observed on 2026-10-18:
+     social-account routes sit above the form, so the first "apply" control is one of them. -->
+<div class="apply-header">
+  <a class="button linkedin" href="#" onclick="window.clicked='linkedin'; return false">Apply with LinkedIn</a>
+  <button class="button indeed" type="button" onclick="window.clicked='indeed'">Apply using Indeed</button>
+  <button class="button" type="button" title="Apply" onclick="window.clicked='google'">Continue with Google</button>
+  <a class="button" href="#" onclick="window.clicked='apply'; return false">Apply</a>
+</div>
+<form><label for="name">Full Name</label><input id="name" type="text"></form>

@@ -68,6 +68,16 @@ export function EeoFields({ eeo, onChange }: { eeo: Eeo; onChange: (next: Eeo) =
         />
       </div>
       <div className="text-sm">
+        {fieldLabel("sexual_orientation")}
+        <ChoiceOrOther
+          id="pf-eeo-sexual_orientation"
+          label="Sexual orientation"
+          value={eeo.sexual_orientation ?? "decline"}
+          options={options?.sexual_orientations ?? []}
+          onChange={(sexual_orientation) => onChange({ ...eeo, sexual_orientation })}
+        />
+      </div>
+      <div className="text-sm">
         <label className="block">
           {fieldLabel("veteran")}
           <select

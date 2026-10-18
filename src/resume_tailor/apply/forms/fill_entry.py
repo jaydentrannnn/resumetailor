@@ -7,13 +7,19 @@ import logging
 from typing import Any
 
 from resume_tailor.apply.answers import questions
-from resume_tailor.apply.ats import workday_auth, workday_flow, workday_page
+from resume_tailor.apply.ats import (
+    ats_fingerprint,
+    ats_hints,
+    workday_auth,
+    workday_flow,
+    workday_page,
+)
 from resume_tailor.apply.discovery import identity
 from resume_tailor.apply.driver import browser
-from resume_tailor.apply.forms import form_guards
+from resume_tailor.apply.forms import form_guards, wizards
 from resume_tailor.apply.funnel.store_models import FillResult
 
-from . import fill_buttons, fill_page, fill_state, fill_widgets
+from . import fill_buttons, fill_outcomes, fill_page, fill_state, fill_widgets
 
 _log = logging.getLogger(__name__)
 
@@ -64,6 +70,7 @@ class _FillEntry(fill_state._FillState):
             handoff = self._load_posting()
             if handoff is not None:
                 return handoff
+        self._recheck_platform()
         if self.is_workday:
             handoff = self._enter_workday()
             if handoff is not None:
@@ -89,6 +96,32 @@ class _FillEntry(fill_state._FillState):
             return self._handoff(f"{language}. Fill it in this tab.")
         return None
 
+    def _recheck_platform(self) -> None:
+        """Use the handling of the platform the entry landed on (a company careers page
+        that hands over to iCIMS or Workday, an Oracle site on a company domain).
+
+        The stored ATS only moves from "other"/"unknown" to a name older app versions can
+        read (`ats_fingerprint.stored_ats`)."""
+        platform = ats_fingerprint.page_platform(self.page)
+        if not platform:
+            return
+        self.landed_platform = platform
+        stored = ats_fingerprint.stored_ats(platform)
+        current = (self.ats_name or "").lower()
+        if stored in {None, "other", "unknown", current} or (stored == "workday" and self.is_workday):
+            return
+        self.progress(f"the application is on {platform}; using its handling")
+        if (self.app.ats or "") in {"", "other", "unknown"}:
+            self.app.ats = stored
+        self.ats_name = stored
+        self.is_smartrecruiters = stored == "smartrecruiters"
+        if stored == "workday":
+            self.is_workday, self.wizard = True, None
+        else:
+            self.wizard = wizards.for_fill(stored)
+        if not self.pkt.field_hints:
+            self.hints = ats_hints.hints_for(stored)
+
     def _load_posting(self) -> FillResult | None:
         page = self.page
         self.progress(f"opening posting: {self.url}")
@@ -109,6 +142,8 @@ class _FillEntry(fill_state._FillState):
         self.progress("posting loaded; waiting for form controls")
         with contextlib.suppress(Exception):
             page.wait_for_load_state("networkidle", timeout=self._ms_left(10_000))
+        if identity.lost_posting(self.url or "", str(page.url)):
+            return self._handoff(fill_outcomes.LOST_POSTING_MSG, status="fill_failed")
         self.progress("locating application form")
         if not self.is_workday:
             self.page = fill_buttons.find_and_click_apply(

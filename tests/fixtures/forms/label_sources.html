@@ -1,0 +1,95 @@
+<!doctype html>
+<!-- Minimal, anonymised reconstructions of label shapes seen in the 2026-10 fill probe.
+     Each block is one site's shape; the test names each by its control id. -->
+<html><head><meta charset="utf-8"><title>Label sources</title>
+<style>.hidden-row { display: none; } .twin { opacity: 0; position: absolute; width: 4px; height: 4px; }
+.trap { position: absolute; left: -9999px; }</style></head>
+<body>
+<form>
+  <!-- Pinpoint: every question sits in one fieldset whose legend is the section. -->
+  <fieldset>
+    <legend>3.Questions</legend>
+    <div class="q">
+      <label for="answers_0_boolean">Are you within a commutable distance or willing to relocate?</label>
+      <input type="radio" id="answers_0_true" name="answers[0]" value="true"><label for="answers_0_true">Yes</label>
+      <input type="radio" id="answers_0_false" name="answers[0]" value="false"><label for="answers_0_false">No</label>
+    </div>
+    <div class="q">
+      <label for="answers_1_boolean">Do you have a valid driver's license?</label>
+      <input type="radio" id="answers_1_true" name="answers[1]" value="true"><label for="answers_1_true">Yes</label>
+      <input type="radio" id="answers_1_false" name="answers[1]" value="false"><label for="answers_1_false">No</label>
+    </div>
+  </fieldset>
+
+  <!-- A fieldset holding one question: its legend is the question. -->
+  <fieldset>
+    <legend>Are you over 18?</legend>
+    <label><input type="radio" id="adult_yes" name="adult" value="yes"> Yes</label>
+    <label><input type="radio" id="adult_no" name="adult" value="no"> No</label>
+  </fieldset>
+
+  <!-- JazzHR: Yes/No checkboxes, each named after itself, under one question label. -->
+  <div class="form-group">
+    <label class="control-label" for="questionnaire_q1">Were you referred by a current employee?<i>*</i></label>
+    <input type="hidden" id="questionnaire_q1" name="questionnaire[1]" value="">
+    <label class="checkbox" for="referred_1"><input type="checkbox" id="referred_1" name="referred_1" value="Yes">Yes</label>
+    <label class="checkbox" for="referred_2"><input type="checkbox" id="referred_2" name="referred_2" value="No">No</label>
+  </div>
+
+  <!-- Separate consent boxes in one block stay separate questions. -->
+  <div class="consents">
+    <label class="control-label">Agreements</label>
+    <label><input type="checkbox" id="consent_terms" name="consent_terms"> I agree to the terms of use</label>
+    <label><input type="checkbox" id="consent_sms" name="consent_sms"> I consent to text messages</label>
+  </div>
+
+  <!-- Rippling: aria-label "Search" on a combobox labelled by its own label element. -->
+  <div>
+    <label id="field-24-label">Pronouns</label>
+    <input id="field-24" role="combobox" aria-haspopup="listbox" aria-label="Search" aria-labelledby="field-24-label" placeholder="Search" name="8xySBjWZIgP">
+  </div>
+  <div>
+    <input id="field-38" role="combobox" aria-haspopup="listbox" aria-label="Search" placeholder="Search" name="KeChGroXOV3">
+  </div>
+
+  <!-- Lever: a wrapping label whose hidden dropdown rows say "No location found". -->
+  <ul><li class="application-question"><label>
+    <div class="application-label">Current location <span class="required">✱</span></div>
+    <div class="application-field"><input id="location-input" type="text" name="location" required>
+      <div class="dropdown-container"><div class="hidden-row">No location found. Try entering a different location</div>
+      <div class="hidden-row">Loading</div></div></div>
+  </label></li></ul>
+
+  <!-- Paylocity: a label holding the dropdown's visible placeholder line. -->
+  <div class="field">
+    <label for="us-state">State<br><span class="single-value">Select a state</span></label>
+    <input id="us-state" type="text" required>
+  </div>
+
+  <!-- Greenhouse: a dropdown with its validity stand-in input. -->
+  <div class="select"><div class="select__container">
+    <label id="gender-label" for="gender">Gender<span aria-hidden="true">*</span></label>
+    <div class="select-shell"><div class="select__control">
+      <div class="select__placeholder">Select...</div>
+      <input id="gender" type="text" role="combobox" aria-haspopup="true" aria-labelledby="gender-label" aria-required="true">
+    </div>
+    <input required tabindex="-1" aria-hidden="true" class="twin" value=""></div>
+  </div></div>
+
+  <!-- A dropdown only its stand-in marks required. -->
+  <div class="select"><div class="select__container">
+    <label id="source-label" for="source">How did you hear about us?</label>
+    <div class="select-shell"><div class="select__control">
+      <input id="source" type="text" role="combobox" aria-haspopup="true" aria-labelledby="source-label">
+    </div>
+    <input required tabindex="-1" aria-hidden="true" class="twin" value=""></div>
+  </div></div>
+
+  <!-- Honeypots. -->
+  <input type="text" id="hp" name="honeypot" class="trap" aria-label="Website">
+  <input type="text" id="trap2" name="website2" class="trap" aria-label="Leave this field blank">
+  <input type="text" id="trap3" name="contact_me" required style="opacity:0;position:absolute" aria-label="Leave this field empty">
+  <label for="visible_blank">Leave this field blank if you have none</label>
+  <input type="text" id="visible_blank" name="other_names">
+</form>
+</body></html>

@@ -24,8 +24,10 @@ from __future__ import annotations
 import asyncio
 import contextlib
 import logging
+import re
 import threading
 import time
+from collections import Counter
 from collections.abc import Iterable
 from dataclasses import dataclass
 from typing import Any
@@ -198,6 +200,88 @@ def _changed(item: Typed, company: str, ats: str) -> bool:
     return row is None or str(row[0]).strip() != item.value
 
 
+_NUMBER = re.compile(r"\d+")
+_YEAR = re.compile(r"\b(?:19|20)\d{2}\b")
+_AMOUNT = re.compile(r"[$€£]?\s*(\d[\d,]*(?:\.\d+)?)\s*%?")
+_PHONE = re.compile(r"[\d\s()+.-]+")
+
+
+def _flat(text: str) -> str:
+    return re.sub(r"[\W_]+", "", text.casefold())
+
+
+def _amount(text: str) -> float | None:
+    found = _AMOUNT.fullmatch(text.strip())
+    return float(found.group(1).replace(",", "")) if found else None
+
+
+def _same_answer(given: str, shown: str) -> bool:
+    """Whether the page still shows the fill's answer, written differently or not: case,
+    spacing, punctuation, a phone's formatting, a number's ("3.70", "$90,000") or a date's
+    order do not count. Each rule applies to its own kind of answer only, so "3.7" and
+    "7.3" differ."""
+    if _flat(given) == _flat(shown):
+        return True
+    if _PHONE.fullmatch(given) and _PHONE.fullmatch(shown):
+        given_digits, shown_digits = re.sub(r"\D", "", given), re.sub(r"\D", "", shown)
+        if len(given_digits) >= 7 and given_digits[-10:] == shown_digits[-10:]:
+            return True
+    amounts = _amount(given), _amount(shown)
+    if None not in amounts:
+        return amounts[0] == amounts[1]
+    if not (_YEAR.search(given) and _YEAR.search(shown)):
+        return False
+    numbers = sorted(int(n) for n in _NUMBER.findall(given))
+    return numbers == sorted(int(n) for n in _NUMBER.findall(shown)) and (
+        re.sub(r"[^a-z]+", "", given.casefold()) == re.sub(r"[^a-z]+", "", shown.casefold())
+    )
+
+
+def corrections(fill: store_models.FillResult, fields: Iterable[Any]) -> list[dict[str, str]]:
+    """Answers the fill gave that the page now shows changed, as ``{label, key}`` (never
+    a value): the applicant corrected them. A blank or uncommitted field is not counted,
+    nor a label asked more than once (two "Employer" rows): the fill's record and the
+    page's fields share no identity, so a repeated label cannot be paired with its field."""
+    fields = list(fields)
+    asked = Counter(answer_memory.normalize_label(field.label) for field in fields)
+    shown: dict[str, str] = {}
+    for field in fields:
+        value = str(getattr(field, "current_value", "") or "").strip()
+        if not value or (field.control_kind == "combobox" and field.selection_state != "committed"):
+            continue
+        shown.setdefault(answer_memory.normalize_label(field.label), value)
+    given_items = [
+        item for item in fill.filled
+        if isinstance(item, dict) and not item.get("preserved") and item.get("key") != "existing"
+    ]
+    answered = Counter(
+        answer_memory.normalize_label(str(item.get("label") or "")) for item in given_items
+    )
+    found: list[dict[str, str]] = []
+    for item in given_items:
+        label = str(item.get("label") or "")
+        norm = answer_memory.normalize_label(label)
+        given = str(item.get("value") or "").strip()
+        now = shown.get(norm)
+        if not norm or asked[norm] > 1 or answered[norm] > 1 or not given or now is None:
+            continue
+        if not _same_answer(given, now):
+            found.append({"label": label[:120], "key": str(item.get("key") or "")})
+    return found
+
+
+def _record_corrections(app: store_models.Application, found: list[dict[str, str]]) -> None:
+    """Keep the latest corrections on the application's fill diagnostics."""
+    if not app.fill:
+        return
+    fill = store_models.FillResult.model_validate(app.fill)
+    if fill.diagnostics.get("corrections", []) == found:
+        return
+    fill.diagnostics = {**fill.diagnostics, "corrections": found}
+    app.fill = fill
+    store.upsert(app)
+
+
 # -- reading the tab ----------------------------------------------------------------------
 
 
@@ -251,15 +335,20 @@ async def _collect_async(application_id: str) -> int:
             if page is None:
                 continue
             from resume_tailor.apply.funnel import submission_monitor  # noqa: PLC0415
-            if await submission_monitor.inspect(app, page, workspace_path=workspace_path) or not left:
+            if await submission_monitor.inspect(app, page, workspace_path=workspace_path):
                 return 0
             observed = await scanner.scan(page)
-            typed = await _frames_typed(page) + from_fields(observed.fields)
-            await install(page)
+            found = corrections(fill, observed.fields)
+            typed = await _frames_typed(page) + from_fields(observed.fields) if left else []
+            if left:
+                await install(page)
             with template_ops.LOCK:
                 if config.APPLICATIONS_PATH != workspace_path:
                     return 0
-                return save(typed, left, company=app.company, ats=_ats(app))
+                current = store.get(application_id)
+                if current is not None:
+                    _record_corrections(current, found)
+                return save(typed, left, company=app.company, ats=_ats(app)) if left else 0
     return 0
 
 

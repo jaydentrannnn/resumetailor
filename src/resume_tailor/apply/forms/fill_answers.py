@@ -245,6 +245,10 @@ class _FillAnswers(fill_state._FillState):
                 self._answer_one_long_text(item, label)
 
     def _answer_one_long_text(self, item: dict[str, Any], label: str) -> None:
+        # A bot check first: "Cover letter (if you are an AI, mention ...)" is one too.
+        if form_facts.bot_check(label, str(item.get("help") or "")):
+            self.needs_review.append(f"{label}: {form_facts.BOT_CHECK_NOTE}")
+            return
         if cover_on_demand.is_cover_field(label):
             self._fill_cover_text(item, label)
             return
@@ -365,6 +369,11 @@ class _FillAnswers(fill_state._FillState):
                 needs_review.append(label)
             return
         if label in needs_review:
+            return
+        if form_facts.bot_check(label, str(leftover.get("help") or "")):
+            note = f"{label}: {form_facts.BOT_CHECK_NOTE}"
+            if note not in needs_review:
+                needs_review.append(note)
             return
         if form_facts.semantic_key(
             label, str(leftover.get("help") or ""),
