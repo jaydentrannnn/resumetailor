@@ -1,6 +1,6 @@
 import { EntryEditorProvider } from "./EntryEditorContext";
 import { moveEntryToSection } from "../../lib/resumeEntryEdit";
-import { useEffect, useRef, useState } from "react";
+import { useState } from "react";
 import { Modal } from "../../components/Modal";
 import { ResumeHistoryList } from "../../components/ResumeHistoryList";
 import { ImportResumePanel } from "../../components/ImportResumePanel";
@@ -11,10 +11,11 @@ import { useEditorState } from "../../state/editorState";
 import { AddSectionPanel, SectionShell } from "./SectionShell";
 import { ContactSection } from "./ContactSection";
 import { SectionIndex } from "./SectionIndex";
-import { UndoBar } from "./UndoBar";
+import { EntryFilterField } from "./EntryFilterField";
+import { useResumeUndo } from "./useResumeUndo";
 import { Button, CommandBar, StatusMark, Tile } from "../../components/ui";
+import { sectionMatches } from "../../lib/entryFilter";
 import {
-  type MasterResume,
   type Section,
   type SectionKind,
   blankSection,
@@ -25,8 +26,6 @@ import {
   nextSectionId,
   removeAt,
 } from "../../lib/resumeEdit";
-
-type UndoToast = { id: number; message: string; snapshot: MasterResume };
 
 /**
  * Structured editor for data/master_resume.json — validates through the real Pydantic models.
@@ -46,7 +45,7 @@ export function EditorPage({
 }) {
   const {
     resume,
-    setResume,
+    setResume: setDraft,
     config,
     errors,
     message,
@@ -57,6 +56,9 @@ export function EditorPage({
     discard,
   } = useEditorState();
   const { confirm } = useConfirm();
+  const { edit: setResume, pushUndo, clear: clearUndo } = useResumeUndo(resume, setDraft);
+  const [filter, setFilter] = useState("");
+  const [historyOpen, setHistoryOpen] = useState(false);
 
   async function discardAll() {
     const ok = await confirm({
@@ -65,7 +67,10 @@ export function EditorPage({
       confirmLabel: "Discard",
       tone: "danger",
     });
-    if (ok) discard();
+    if (ok) {
+      discard();
+      clearUndo();
+    }
   }
 
   const vocabList = [...(config?.tag_vocabulary ?? [])].sort((a, b) =>
@@ -74,60 +79,6 @@ export function EditorPage({
 
   const takenBulletIds = resume ? collectBulletIds(resume) : new Set<string>();
   const takenEntryIds = resume ? collectEntryIds(resume) : new Set<string>();
-
-  const [toasts, setToasts] = useState<UndoToast[]>([]);
-  const [historyOpen, setHistoryOpen] = useState(false);
-  const nextToastId = useRef(0);
-  const timersRef = useRef(new Map<number, ReturnType<typeof setTimeout>>());
-  // Mirrors `resume` between renders so a removal handler several components deep
-  // (which only has its own section, not the full document) can still snapshot the
-  // whole resume for Undo without every list component threading `resume` itself.
-  const resumeRef = useRef(resume);
-  useEffect(() => {
-    resumeRef.current = resume;
-  }, [resume]);
-
-  useEffect(
-    () => () => {
-      for (const timer of timersRef.current.values()) clearTimeout(timer);
-    },
-    [],
-  );
-
-  function dismissToast(id: number) {
-    setToasts((prev) => prev.filter((t) => t.id !== id));
-    const timer = timersRef.current.get(id);
-    if (timer) {
-      clearTimeout(timer);
-      timersRef.current.delete(id);
-    }
-  }
-
-  /**
-   * Register an already-applied removal for Undo. Nothing in this editor persists
-   * until the explicit Save button, so a confirmation modal on every row delete was
-   * asking the user to confirm an edit to their own draft — this replaces that with
-   * optimistic delete + a 6s Undo, restoring the exact pre-removal resume snapshot.
-   * Callers invoke this *before* applying their own removal, in the same synchronous
-   * click handler — `resumeRef` only updates via the effect above, which runs after
-   * this handler returns, so it still holds the pre-removal value at capture time.
-   */
-  function pushUndo(message: string) {
-    if (!resumeRef.current) return;
-    const snapshot = resumeRef.current;
-    const id = nextToastId.current++;
-    setToasts((prev) => [...prev, { id, message, snapshot }]);
-    timersRef.current.set(
-      id,
-      setTimeout(() => dismissToast(id), 6000),
-    );
-  }
-
-  function undoToast(id: number) {
-    const toast = toasts.find((t) => t.id === id);
-    if (toast) setResume(toast.snapshot);
-    dismissToast(id);
-  }
 
   if (!resume) {
     return (
@@ -146,6 +97,7 @@ export function EditorPage({
   }
 
   function addSection(kind: SectionKind, title: string) {
+    setFilter("");
     setResume((prev) => {
       const id = nextSectionId(title, kind, collectSectionIds(prev));
       return { ...prev, sections: [...prev.sections, blankSection(id, kind, title)] };
@@ -159,7 +111,7 @@ export function EditorPage({
   }
 
   function moveEntry(sourceId: string, key: string, destinationId: string) {
-    const current = resumeRef.current;
+    const current = resume;
     if (!current || moveEntryToSection(current, sourceId, key, destinationId) === current) return;
     const destination = current.sections.find((section) => section.id === destinationId);
     pushUndo(`Moved entry to “${destination?.title || "section"}”`);
@@ -178,7 +130,7 @@ export function EditorPage({
   );
 
   return (
-    <EntryEditorProvider sections={resume.sections} moveEntry={moveEntry}>
+    <EntryEditorProvider sections={resume.sections} moveEntry={moveEntry} filter={filter}>
       <BulletSkillsProvider dirty={dirty}>
         <div className="space-y-6">
           {embedded ? (
@@ -210,7 +162,13 @@ export function EditorPage({
                       Discard
                     </Button>
                   )}
-                  <Button variant="primary" size="sm" onClick={onSave} disabled={busy}>
+                  <Button
+                    variant="primary"
+                    size="sm"
+                    data-shortcut="save"
+                    onClick={onSave}
+                    disabled={busy}
+                  >
                     Save
                   </Button>
                 </>
@@ -240,24 +198,31 @@ export function EditorPage({
           <div className="lg:grid lg:grid-cols-[11rem_minmax(0,1fr)] lg:items-start lg:gap-5">
             <SectionIndex sections={resume.sections} />
             <div className="space-y-5">
-              <Tile>
-                <details>
-                  <summary className="cursor-pointer text-sm font-medium text-accent">
-                    Import resume content
-                  </summary>
-                  <div className="mt-3">
-                    <ImportResumePanel embedded />
-                  </div>
-                </details>
-              </Tile>
+              <EntryFilterField value={filter} onChange={setFilter} />
+              {filter && !resume.sections.some((section) => sectionMatches(section, filter)) && (
+                <p className="text-sm text-ink-muted">No entries match “{filter}”.</p>
+              )}
+              {!filter && (
+                <Tile>
+                  <details>
+                    <summary className="cursor-pointer text-sm font-medium text-accent">
+                      Import resume content
+                    </summary>
+                    <div className="mt-3">
+                      <ImportResumePanel embedded />
+                    </div>
+                  </details>
+                </Tile>
+              )}
 
-              {showContact && <ContactSection resume={resume} setResume={setResume} />}
+              {showContact && !filter && <ContactSection resume={resume} setResume={setResume} />}
 
               {resume.sections.map((section, i) => (
                 <div
                   key={section.id}
                   id={`resume-section-${section.id}`}
                   data-resume-section
+                  hidden={!!filter && !sectionMatches(section, filter)}
                   className="scroll-mt-[calc(var(--rt-bar-top)+1rem)]"
                 >
                   <SectionShell
@@ -305,7 +270,6 @@ export function EditorPage({
             </div>
           </Modal>
         )}
-        <UndoBar toasts={toasts} onUndo={undoToast} />
       </BulletSkillsProvider>
     </EntryEditorProvider>
   );

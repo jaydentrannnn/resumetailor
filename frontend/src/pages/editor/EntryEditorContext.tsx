@@ -10,6 +10,8 @@ type EntryEditorState = {
   moveEntry: (sourceId: string, key: string, destinationId: string) => void;
   dragging: DraggedEntry | null;
   setDragging: (entry: DraggedEntry | null) => void;
+  /** The page's entry filter (`lib/entryFilter.ts`); empty shows everything. */
+  filter: string;
 };
 const EntryEditorContext = createContext<EntryEditorState | null>(null);
 
@@ -17,10 +19,12 @@ const EntryEditorContext = createContext<EntryEditorState | null>(null);
 export function EntryEditorProvider({
   sections,
   moveEntry,
+  filter = "",
   children,
 }: {
   sections: Section[];
   moveEntry: EntryEditorState["moveEntry"];
+  filter?: string;
   children: ReactNode;
 }) {
   const [expanded, setExpandedState] = useState(new Set<string>());
@@ -52,7 +56,7 @@ export function EntryEditorProvider({
   }, [sections, reveal]);
   return (
     <EntryEditorContext.Provider
-      value={{ sections, expanded, setExpanded, moveEntry, dragging, setDragging }}
+      value={{ sections, expanded, setExpanded, moveEntry, dragging, setDragging, filter }}
     >
       {children}
     </EntryEditorContext.Provider>

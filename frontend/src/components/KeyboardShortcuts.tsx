@@ -2,19 +2,23 @@ import { useEffect, useState } from "react";
 import { useNavigate } from "react-router-dom";
 import { currentPrintTarget, printDocument } from "../lib/printTarget";
 import { SHORTCUTS, shortcutFor } from "../lib/shortcuts";
+import { useDesktop } from "../lib/useDesktop";
 import { railTarget } from "./shell/railItems";
 import { Kbd } from "./ui/Tile";
 import { Modal } from "./Modal";
 
 /**
  * Handles the global shortcuts. Pages opt in by marking elements:
- * `data-shortcut="primary"` (a button Ctrl/Cmd+Enter presses) and
- * `data-shortcut="search"` (an input "/" focuses). Viewers register what Ctrl+P
- * prints with `usePrintTarget`.
+ * `data-shortcut="primary"` (a button Ctrl/Cmd+Enter presses),
+ * `data-shortcut="save"` (a button Ctrl/Cmd+S presses) and
+ * `data-shortcut="search"` (an input "/" focuses, and Ctrl/Cmd+F in the desktop app;
+ * the browser keeps its own find). Viewers register what Ctrl+P prints with
+ * `usePrintTarget`.
  */
 export function KeyboardShortcuts() {
   const [helpOpen, setHelpOpen] = useState(false);
   const navigate = useNavigate();
+  const desktop = useDesktop();
   useEffect(() => {
     function onKey(e: KeyboardEvent) {
       const page = railTarget(e);
@@ -37,15 +41,28 @@ export function KeyboardShortcuts() {
         printDocument(url);
         return;
       }
-      const target = document.querySelector<HTMLElement>(`[data-shortcut="${action}"]`);
+      if (action === "find" && !desktop) return;
+      const marker = action === "find" ? "search" : action;
+      const target = document.querySelector<HTMLElement>(`[data-shortcut="${marker}"]`);
       if (!target) return;
       e.preventDefault();
-      if (action === "search") target.focus();
-      else if (!(target as HTMLButtonElement).disabled) target.click();
+      if (action === "save") {
+        // Fields that commit on blur must commit before Save reads the draft.
+        const active =
+          document.activeElement instanceof HTMLElement ? document.activeElement : null;
+        active?.blur();
+        window.setTimeout(() => {
+          if (!(target as HTMLButtonElement).disabled) target.click();
+          active?.focus();
+        }, 0);
+      } else if (target instanceof HTMLInputElement) {
+        target.focus();
+        if (action === "find") target.select();
+      } else if (!(target as HTMLButtonElement).disabled) target.click();
     }
     document.addEventListener("keydown", onKey);
     return () => document.removeEventListener("keydown", onKey);
-  }, [navigate]);
+  }, [navigate, desktop]);
   if (!helpOpen) return null;
   return (
     <Modal title="Keyboard shortcuts" onClose={() => setHelpOpen(false)}>

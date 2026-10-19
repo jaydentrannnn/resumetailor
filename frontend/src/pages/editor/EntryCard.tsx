@@ -1,4 +1,5 @@
 import { useId, type ReactNode } from "react";
+import { entryMatches } from "../../lib/entryFilter";
 import type { Section } from "../../lib/resumeEdit";
 import { resumeEntryKey } from "../../lib/resumeEntryEdit";
 import { EntryActions } from "./EntryActions";
@@ -19,7 +20,7 @@ export function EntryCard({
   onRemove: (index: number) => void;
   children: ReactNode;
 }) {
-  const { expanded, setExpanded, dragging } = useEntryEditor();
+  const { expanded, setExpanded, dragging, filter } = useEntryEditor();
   const key = resumeEntryKey(section.entries[index]);
   const open = expanded.has(key);
   const bodyId = useId();
@@ -41,6 +42,8 @@ export function EntryCard({
         : "degree" in entry
           ? entry.degree
           : "";
+  // An open entry stays while filtering, so a new blank one does not vanish.
+  if (!open && !entryMatches(section, entry, filter)) return null;
 
   return (
     <div

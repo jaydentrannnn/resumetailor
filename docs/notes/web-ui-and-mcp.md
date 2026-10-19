@@ -863,3 +863,23 @@ actions. Still one PDF frame at a time (Chromium's single PDF plugin on Windows)
 letter's text and Regenerate moved to Application content on Tailor; an application's
 Files tab still shows them under the viewer. The run history's row menu saves through
 the Save dialog in the desktop app.
+
+### Resume editor undo, Ctrl+S and find (2026-10-19)
+
+- The 6-second Undo toast and `UndoBar` are gone. `lib/undoStack.ts` keeps whole-resume
+  snapshots (50 steps) of structural edits only; typing stays the field's own undo, so
+  Ctrl+Z inside a field never reverts a removed entry. `useResumeUndo` records a change
+  when `structureKey` (section/entry/bullet identities in order) moves: labelled by the
+  caller's `pushUndo` before a removal, otherwise by `describeChange`. Edits that come
+  from outside the editor (import, history restore, Discard) clear the stack, since its
+  snapshots would resurrect a different resume. The stack is not cleared on save: undoing
+  after a save just makes the draft dirty again.
+- Undo is whole-snapshot, so undoing a removal also reverts text typed after it. Accepted:
+  the old toast had the same semantics, and per-field diffs were not worth the code.
+- Ctrl+S clicks `data-shortcut="save"` on the next tick after blurring the focused field;
+  `BufferedField` commits on blur, and clicking first saved the stale draft.
+- Ctrl+F is the app's only on desktop (the shell's lockdown blocks WebView2's find bar);
+  in the browser build it stays the browser's find. Both builds keep "/" for search.
+- The Resume entry filter matches every query word against an entry's text plus its
+  section title, ignoring ids and tags; an open entry always shows so a new blank one
+  does not vanish while filtering.

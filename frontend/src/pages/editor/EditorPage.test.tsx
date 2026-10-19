@@ -7,6 +7,8 @@ import { type MasterResume, stripRowKeys, withRowKeys } from "../../lib/resumeEd
 import { moveEntryToSection, resumeEntryKey } from "../../lib/resumeEntryEdit";
 import { EditorProvider } from "../../state/editorState";
 import { ConfirmProvider } from "../../state/confirmState";
+import { StatusMessage } from "../../components/shell/StatusBar";
+import { ToastProvider } from "../../components/ui/Toast";
 import { EditorPage } from "./EditorPage";
 
 vi.mock("../../api", () => ({
@@ -110,11 +112,14 @@ afterEach(cleanup);
 
 async function editor() {
   const view = render(
-    <ConfirmProvider>
-      <EditorProvider>
-        <EditorPage showContact={false} />
-      </EditorProvider>
-    </ConfirmProvider>,
+    <ToastProvider>
+      <ConfirmProvider>
+        <EditorProvider>
+          <EditorPage showContact={false} />
+        </EditorProvider>
+      </ConfirmProvider>
+      <StatusMessage />
+    </ToastProvider>,
   );
   await screen.findByRole("button", { name: "Expand State University" });
   return view;
@@ -368,4 +373,34 @@ it("shows the skills a bullet already shows and keeps Extra skills collapsed", a
   const extra = experience.getByText("Extra skills (1)").closest("details")!;
   expect(extra).not.toHaveAttribute("open");
   expect(experience.queryByText(/Suggest tags/)).not.toBeInTheDocument();
+});
+
+it("undoes and redoes a move with the keyboard outside text fields only", async () => {
+  await editor();
+  fireEvent.click(screen.getByRole("button", { name: "Expand Acme · Engineer" }));
+  fireEvent.change(screen.getByRole("combobox", { name: "Move Acme · Engineer to section" }), {
+    target: { value: "research" },
+  });
+  expect(screen.getByRole("status")).toHaveTextContent("Moved entry to “Research”");
+  const company = section("research").getByRole("textbox", { name: "Company" });
+  fireEvent.keyDown(company, { key: "z", ctrlKey: true });
+  expect(section("research").queryByRole("textbox", { name: "Company" })).toBeInTheDocument();
+  fireEvent.keyDown(document.body, { key: "z", ctrlKey: true });
+  expect(section("research").queryByRole("textbox", { name: "Company" })).not.toBeInTheDocument();
+  expect(screen.getByRole("status")).toHaveTextContent("Undid: Moved entry to “Research”");
+  fireEvent.keyDown(document.body, { key: "Z", ctrlKey: true, shiftKey: true });
+  expect(section("research").getByRole("textbox", { name: "Company" })).toHaveValue("Acme");
+});
+
+it("filters entries by their text and hides sections with no match", async () => {
+  await editor();
+  const filter = screen.getByRole("textbox", { name: "Filter resume entries" });
+  fireEvent.change(filter, { target: { value: "state university" } });
+  expect(screen.getByRole("button", { name: "Expand State University" })).toBeInTheDocument();
+  expect(document.getElementById("resume-section-experience")).not.toBeVisible();
+  fireEvent.change(filter, { target: { value: "no such words" } });
+  expect(screen.getByText("No entries match “no such words”.")).toBeInTheDocument();
+  fireEvent.keyDown(filter, { key: "Escape" });
+  expect(filter).toHaveValue("");
+  expect(document.getElementById("resume-section-experience")).toBeVisible();
 });

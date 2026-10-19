@@ -1,6 +1,6 @@
 // @vitest-environment jsdom
 import { describe, expect, it } from "vitest";
-import { shortcutFor } from "./shortcuts";
+import { shortcutFor, undoKeyFor } from "./shortcuts";
 
 const key = (k: string, extra: Partial<KeyboardEvent> = {}, target: EventTarget | null = null) =>
   ({ key: k, ctrlKey: false, metaKey: false, altKey: false, target, ...extra }) as KeyboardEvent;
@@ -25,5 +25,21 @@ describe("shortcutFor", () => {
     expect(shortcutFor(key("P", { metaKey: true }))).toBe("print");
     expect(shortcutFor(key("p", { ctrlKey: true, shiftKey: true }))).toBeNull();
     expect(shortcutFor(key("p"))).toBeNull();
+  });
+  it("maps Ctrl/Cmd+S and F to save and find, even while typing", () => {
+    const input = document.createElement("input");
+    expect(shortcutFor(key("s", { ctrlKey: true }, input))).toBe("save");
+    expect(shortcutFor(key("f", { metaKey: true }))).toBe("find");
+    expect(shortcutFor(key("s", { ctrlKey: true, altKey: true }))).toBeNull();
+  });
+});
+
+describe("undoKeyFor", () => {
+  it("undoes and redoes outside text fields only", () => {
+    expect(undoKeyFor(key("z", { ctrlKey: true }))).toBe("undo");
+    expect(undoKeyFor(key("Z", { ctrlKey: true, shiftKey: true }))).toBe("redo");
+    expect(undoKeyFor(key("y", { metaKey: true }))).toBe("redo");
+    expect(undoKeyFor(key("z"))).toBeNull();
+    expect(undoKeyFor(key("z", { ctrlKey: true }, document.createElement("textarea")))).toBeNull();
   });
 });

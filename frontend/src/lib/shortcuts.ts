@@ -1,6 +1,10 @@
 /** Global keyboard shortcuts: which action a keydown maps to, if any. */
-/** "pages" (Ctrl+1…5, Ctrl+,) is listed for the help dialog; `railTarget` handles it. */
-export type ShortcutAction = "primary" | "search" | "help" | "print" | "pages";
+/**
+ * "pages" (Ctrl+1…5, Ctrl+,) and "undo" are listed for the help dialog; `railTarget` and
+ * the Resume editor (`undoKeyFor`) handle them.
+ */
+export type ShortcutAction =
+  "primary" | "save" | "find" | "search" | "help" | "print" | "pages" | "undo";
 
 export const SHORTCUTS: { keys: string[]; action: ShortcutAction; description: string }[] = [
   { keys: ["Ctrl", "Enter"], action: "primary", description: "Tailor resume (on the Tailor page)" },
@@ -10,8 +14,12 @@ export const SHORTCUTS: { keys: string[]; action: ShortcutAction; description: s
     description: "Tailor, Apply, Resume, Template, Profile",
   },
   { keys: ["Ctrl", ","], action: "pages", description: "Settings" },
+  { keys: ["Ctrl", "S"], action: "save", description: "Save (Resume and Profile)" },
+  { keys: ["Ctrl", "Z"], action: "undo", description: "Undo a removed or moved item (Resume)" },
+  { keys: ["Ctrl", "Shift", "Z"], action: "undo", description: "Redo (Resume)" },
   { keys: ["Ctrl", "P"], action: "print", description: "Print the open resume or letter" },
-  { keys: ["/"], action: "search", description: "Search applications (on the Apply page)" },
+  { keys: ["Ctrl", "F"], action: "find", description: "Find on this page (desktop app)" },
+  { keys: ["/"], action: "search", description: "Search applications or resume entries" },
   { keys: ["?"], action: "help", description: "Show these shortcuts" },
 ];
 
@@ -23,21 +31,39 @@ function isTyping(target: EventTarget | null): boolean {
   );
 }
 
+type KeyInput = Pick<KeyboardEvent, "key" | "ctrlKey" | "metaKey" | "altKey" | "target"> &
+  Partial<Pick<KeyboardEvent, "shiftKey">>;
+
+/** Ctrl/Cmd plus `letter`, without Alt or Shift. */
+function command(e: KeyInput, letter: string): boolean {
+  return e.key.toLowerCase() === letter && (e.ctrlKey || e.metaKey) && !e.altKey && !e.shiftKey;
+}
+
 /**
  * Ctrl/Cmd+Enter works while typing (it submits the job description being typed);
  * "/" and "?" are ignored while typing so they can still be entered as text.
- * Ctrl/Cmd+P is "print" anywhere; the handler lets the browser have it when no
- * document is showing.
+ * Ctrl/Cmd+P, S and F work anywhere; the handler lets the browser have them when the
+ * page has nothing to print, save or find.
  */
-export function shortcutFor(
-  e: Pick<KeyboardEvent, "key" | "ctrlKey" | "metaKey" | "altKey" | "target"> &
-    Partial<Pick<KeyboardEvent, "shiftKey">>,
-): ShortcutAction | null {
+export function shortcutFor(e: KeyInput): ShortcutAction | null {
   if (e.key === "Enter" && (e.ctrlKey || e.metaKey) && !e.altKey) return "primary";
-  if (e.key.toLowerCase() === "p" && (e.ctrlKey || e.metaKey) && !e.altKey && !e.shiftKey)
-    return "print";
+  if (command(e, "p")) return "print";
+  if (command(e, "s")) return "save";
+  if (command(e, "f")) return "find";
   if (e.ctrlKey || e.metaKey || e.altKey || isTyping(e.target)) return null;
   if (e.key === "/") return "search";
   if (e.key === "?") return "help";
+  return null;
+}
+
+/**
+ * Ctrl/Cmd+Z undoes and Ctrl/Cmd+Shift+Z or Ctrl+Y redoes, outside text fields only:
+ * inside one, the field's own text undo applies.
+ */
+export function undoKeyFor(e: KeyInput): "undo" | "redo" | null {
+  if (!(e.ctrlKey || e.metaKey) || e.altKey || isTyping(e.target)) return null;
+  const key = e.key.toLowerCase();
+  if (key === "z") return e.shiftKey ? "redo" : "undo";
+  if (key === "y" && !e.shiftKey) return "redo";
   return null;
 }

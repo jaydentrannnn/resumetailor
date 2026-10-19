@@ -190,6 +190,7 @@ export function ProfilePage() {
         <Button
           variant="primary"
           className="order-3"
+          data-shortcut="save"
           loading={saving || applicant.saving}
           disabled={changeCount === 0 || editor.busy}
           onClick={() => void saveAll()}

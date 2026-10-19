@@ -29,6 +29,7 @@ export function DictionarySection() {
         onChange={(e) => setQuery(e.target.value)}
         placeholder="Search a skill, spelling or verb…"
         aria-label="Search the dictionary"
+        data-shortcut="search"
         className="field"
       />
       <Segmented
