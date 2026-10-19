@@ -37,16 +37,17 @@ def _option_match(options: list[str], target_value: str, *, key: str = "") -> st
     return options[int(result.option_id)] if result.status == "matched" else None
 
 #: The rows a menu renders its options as: ARIA options, React Select, Workday prompts,
-#: Oracle JET. A listbox with none of these lists its options as plain ``li``.
+#: Oracle JET, Oracle Recruiting's grid cells. A listbox with none of these lists its
+#: options as plain ``li``.
 _OPTION_ROWS = (
     "[role='option'], .select__option, [data-automation-id*='promptOption'], "
-    ".oj-listbox-result, oj-option"
+    ".oj-listbox-result, oj-option, .cx-select__list-item"
 )
 #: Open menus a trigger does not name: listboxes, React Select's menu (``select__menu``,
 #: or emotion's ``css-…-menu``) and JET's drop. Not any class with "-menu" in it.
 _MENUS = (
     "[role='listbox'], [class*='select__menu'], [class^='css-'][class*='-menu'], "
-    "[class*=' css-'][class*='-menu'], .oj-listbox-drop"
+    "[class*=' css-'][class*='-menu'], .oj-listbox-drop, .cx-select__list"
 )
 #: Rows a menu shows in place of options: never chosen, and a loading one is waited out.
 _LOADING_ROW = re.compile(r"^(?:loading|searching)\b", re.I)
@@ -177,6 +178,8 @@ def _select_combobox_option(
                 option_texts = [text for _row, text in rows]
                 if key == "phone_country_code":
                     chosen_text = _phone_option(option_texts, target_value, phone_region)
+                elif key == "postal_code":
+                    chosen_text = _postal_option(option_texts, target_value, location_context)
                 elif key in {"city", "location"}:
                     chosen_text = _location_option(option_texts, target_value, location_context)
                 else:
@@ -206,6 +209,9 @@ def _select_combobox_option(
         clicks.safe_click(match, purpose="select", timeout=3000)
         page.wait_for_timeout(150)
         selected = _committed_text(trigger)
+        # A postal lookup row ("95814, Sacramento, Sacramento, CA") leaves its code alone.
+        if key == "postal_code":
+            selected_option = selected_option.split(",")[0]
         # Some widgets (Workday listbox buttons) repaint their text a few hundred ms later.
         for _ in range(8):
             if key == "phone_country_code" or _norm(selected) == _norm(selected_option):
@@ -243,6 +249,28 @@ def _placeholder(value: str) -> bool:
         r"(?:(?:please )?(?:select|choose)(?: .*)?)?",
         _norm(value),
     ))
+
+
+def _postal_option(
+    options: list[str], target: str, context: dict[str, str] | None = None,
+) -> str | None:
+    """The postal-code lookup row for the profile's code: its first part is the code
+    ("95814, Sacramento, Sacramento, CA"); of several, the one naming the profile's city.
+    A ZIP+4 matches its five-digit rows."""
+    def code(text: str) -> str:
+        return re.sub(r"\s+", "", text.split(",")[0]).upper()
+
+    wanted = code(target)
+    rows = [option for option in options if code(option) == wanted]
+    if not rows and re.fullmatch(r"\d{5}-\d{4}", wanted):
+        rows = [option for option in options if code(option) == wanted[:5]]
+    if len(rows) > 1:
+        city = _norm((context or {}).get("city", ""))
+        rows = [
+            option for option in rows
+            if city and len(option.split(",")) > 1 and _norm(option.split(",")[1]) == city
+        ]
+    return rows[0] if len(rows) == 1 else None
 
 
 def _location_option(

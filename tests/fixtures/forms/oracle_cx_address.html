@@ -1,0 +1,119 @@
+<!doctype html>
+<!-- Oracle Recruiting Cloud "Candidate Experience" apply form, contact and address part
+     (2026-10, reconstructed and anonymised from three live captures; every value is made
+     up). Each dropdown is an input.cx-select-input (role=combobox, aria-haspopup=grid)
+     owning, through aria-controls, a div[role=grid].cx-select__list that renders only
+     while open: div[role=row] > div[role=gridcell].cx-select__list-item, the text in
+     span.cx-select__list-item--content. Clicking the input or its toggle button opens the
+     full list; typing filters it. Postal Code is a lookup whose rows read
+     "ZIP, City, County, ST"; picking one fills City, County and State, as the live form
+     does. Country starts on "United States". -->
+<html><head><meta charset="utf-8"><title>Personal Info - Software Engineer Intern</title>
+<style>
+  .cx-select-container { margin: 14px 0; position: relative; width: 320px; }
+  .cx-select__list { position: absolute; z-index: 5; background: #fff; border: 1px solid #ccc; max-height: 220px; overflow: auto; width: 320px; }
+  .cx-select__list-item { padding: 5px; cursor: pointer; }
+  input { width: 280px; }
+</style></head>
+<body>
+<form>
+  <div class="input-row"><label for="firstName-20">First Name</label><input id="firstName-20" name="firstName" aria-required="true"></div>
+  <div class="input-row"><label for="lastName-22">Last Name</label><input id="lastName-22" name="lastName" aria-required="true"></div>
+  <div class="cx-select-container" data-cx-field="country" data-options="United States|Canada|Mexico|United Kingdom">
+    <span id="inputFieldLabel-country-14" class="input-field__label"><label for="country-14">Country *</label></span>
+    <input id="country-14" name="country" type="text" role="combobox" class="cx-select-input"
+      aria-autocomplete="list" aria-haspopup="grid" aria-controls="country-14-listbox"
+      aria-expanded="false" aria-required="true" autocomplete="none" value="United States">
+    <button type="button" id="country-14-toggle-button" tabindex="-1" class="icon-dropdown-arrow"
+      aria-label="Open the drop-down list for Country." aria-controls="country-14-listbox"></button>
+  </div>
+  <div class="input-row"><label for="addressLine1-25">Address Line 1</label><input id="addressLine1-25" name="addressLine1" aria-required="true"></div>
+  <div class="cx-select-container" data-cx-field="city" data-options="Sacramento|West Sacramento|Elk Grove">
+    <span class="input-field__label"><label for="city-28">City *</label></span>
+    <input id="city-28" name="city" type="text" role="combobox" class="cx-select-input"
+      aria-autocomplete="list" aria-haspopup="grid" aria-controls="city-28-listbox"
+      aria-expanded="false" aria-required="true" autocomplete="none">
+  </div>
+  <div class="cx-select-container" data-cx-field="county" data-options="Sacramento|Yolo|Placer">
+    <span class="input-field__label"><label for="region1-30">County *</label></span>
+    <input id="region1-30" name="region1" type="text" role="combobox" class="cx-select-input"
+      aria-autocomplete="list" aria-haspopup="grid" aria-controls="region1-30-listbox"
+      aria-expanded="false" aria-required="true" autocomplete="none">
+  </div>
+  <div class="cx-select-container" data-cx-field="state" data-options="CA|NV|OR">
+    <span class="input-field__label"><label for="region2-31">State *</label></span>
+    <input id="region2-31" name="region2" type="text" role="combobox" class="cx-select-input"
+      aria-autocomplete="list" aria-haspopup="grid" aria-controls="region2-31-listbox"
+      aria-expanded="false" aria-required="true" autocomplete="none">
+  </div>
+  <div class="cx-select-container" data-cx-field="postal"
+    data-options="95814, Sacramento, Sacramento, CA|95815, Sacramento, Sacramento, CA|95816, Sacramento, Sacramento, CA|95691, West Sacramento, Yolo, CA">
+    <span class="input-field__label"><label for="postalCode-32">Postal Code *</label></span>
+    <input id="postalCode-32" name="postalCode" type="text" role="combobox" class="cx-select-input"
+      aria-autocomplete="list" aria-haspopup="grid" aria-controls="postalCode-32-listbox"
+      aria-expanded="false" aria-required="true" autocomplete="none">
+  </div>
+  <div class="cx-select-container" data-cx-field="gender" data-options="Female|Male|I do not wish to self-identify">
+    <span class="input-field__label"><label for="US-STANDARD-ORA_GENDER-STANDARD-11">Gender</label></span>
+    <input id="US-STANDARD-ORA_GENDER-STANDARD-11" type="text" role="combobox" class="cx-select-input"
+      aria-autocomplete="list" aria-haspopup="grid" aria-controls="US-STANDARD-ORA_GENDER-STANDARD-11-listbox"
+      aria-expanded="false" autocomplete="none">
+  </div>
+</form>
+<script>
+  const box = (input) => input.closest('.cx-select-container');
+  function close(input) {
+    document.getElementById(input.getAttribute('aria-controls'))?.remove();
+    input.setAttribute('aria-expanded', 'false');
+  }
+  function setField(name, text) {
+    const input = document.querySelector(`[data-cx-field="${name}"] input`);
+    input.value = text;
+    input.dispatchEvent(new Event('change', {bubbles: true}));
+  }
+  function choose(input, text) {
+    if (box(input).dataset.cxField === 'postal') {
+      const [zip, city, county, state] = text.split(/,\s*/);
+      input.value = zip;
+      setField('city', city); setField('county', county); setField('state', state);
+    } else {
+      input.value = text;
+    }
+    close(input);
+  }
+  function open(input) {
+    document.querySelectorAll('.cx-select-input[aria-expanded=true]').forEach(other => {
+      if (other !== input) close(other);
+    });
+    document.getElementById(input.getAttribute('aria-controls'))?.remove();
+    const grid = document.createElement('div');
+    grid.id = input.getAttribute('aria-controls');
+    grid.setAttribute('role', 'grid');
+    grid.className = 'cx-select__list';
+    const term = input.dataset.typed ? input.value.toLowerCase() : '';
+    box(input).dataset.options.split('|').forEach((text, index) => {
+      if (term && !text.toLowerCase().includes(term)) return;
+      const row = document.createElement('div');
+      row.setAttribute('role', 'row');
+      row.innerHTML = '<div tabindex="-1" role="gridcell" class="cx-select__list-item">'
+        + '<div class="cx-select__list-item-container"><span class="cx-select__list-item--content"></span></div></div>';
+      const cell = row.firstElementChild;
+      cell.id = grid.id.replace('-listbox', '-listitem-' + index);
+      cell.setAttribute('aria-selected', String(text === input.value));
+      cell.querySelector('span').textContent = text;
+      cell.addEventListener('mousedown', e => e.preventDefault());
+      cell.addEventListener('click', () => { delete input.dataset.typed; choose(input, text); });
+      grid.appendChild(row);
+    });
+    box(input).appendChild(grid);
+    input.setAttribute('aria-expanded', 'true');
+  }
+  document.querySelectorAll('.cx-select-input').forEach(input => {
+    input.addEventListener('click', () => open(input));
+    input.addEventListener('input', () => { input.dataset.typed = '1'; open(input); });
+    input.addEventListener('keydown', e => { if (e.key === 'Escape') close(input); });
+    const toggle = document.getElementById(input.id + '-toggle-button');
+    if (toggle) toggle.addEventListener('click', () => open(input));
+  });
+</script>
+</body></html>

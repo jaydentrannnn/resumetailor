@@ -161,6 +161,17 @@
   "#source": "How did you hear about us?",
   "#visible_blank": "Leave this field blank if you have none"
  },
+ "oracle_cx_address.html": {
+  "#firstName-20": "First Name",
+  "#lastName-22": "Last Name",
+  "#country-14": "Country *",
+  "#addressLine1-25": "Address Line 1",
+  "#city-28": "City *",
+  "#region1-30": "County *",
+  "#region2-31": "State *",
+  "#postalCode-32": "Postal Code *",
+  "#US-STANDARD-ORA_GENDER-STANDARD-11": "Gender"
+ },
  "paylocity_resume_parse.html": {
   "#useAttachedResumeToFillOutApplication": "Fill out application with my resume",
   "#info\\.firstName": "First Name (required)",

@@ -28,6 +28,14 @@ _log = logging.getLogger(__name__)
 
 #: Extra fill passes a step gets when its questions change after answers.
 _MAX_RESCANS = 2
+#: Answers others depend on go first: Country sets the address lists, and a postal-code
+#: lookup fills City, County and State (Oracle Recruiting, 2026-10).
+_FIRST_KEYS = ("country", "postal_code")
+
+
+def _dependency_order(item: Any) -> int:
+    key = item.get("key") if isinstance(item, dict) else None
+    return _FIRST_KEYS.index(key) if key in _FIRST_KEYS else len(_FIRST_KEYS)
 
 
 class _FillAnswers(fill_state._FillState):
@@ -370,7 +378,7 @@ class _FillAnswers(fill_state._FillState):
         self._fill_if_empty(item, fitted)
 
     def _resolve_leftovers(self) -> None:
-        for leftover in list(self.merged.get("leftovers") or []):
+        for leftover in sorted(list(self.merged.get("leftovers") or []), key=_dependency_order):
             if self._stop_if_out_of_time("Fill stopped before all choices were checked"):
                 break
             if isinstance(leftover, dict):
@@ -428,7 +436,7 @@ class _FillAnswers(fill_state._FillState):
             and self._accept_consent(leftover)
         ):
             return
-        if leftover.get("type") == "combobox" and leftover.get("key"):
+        if leftover.get("type") == "combobox":
             target = self.frames[int(leftover.get("frame_index") or 0)]
             kept = fill_widgets.kept_choice(target, leftover, self.fields)
             if kept:
@@ -437,14 +445,9 @@ class _FillAnswers(fill_state._FillState):
                     "selector": leftover["selector"],
                     "frame_index": leftover.get("frame_index", 0),
                 })
-                self.merged["leftovers"] = [
-                    item for item in self.merged["leftovers"] if item is not leftover
-                ]
-                self.merged["required_empty"] = [
-                    item for item in self.merged.get("required_empty") or []
-                    if item not in {label, leftover["selector"]}
-                ]
+                self._settled(leftover)
                 return
+        if leftover.get("type") == "combobox" and leftover.get("key"):
             selected = fill_widgets._fill_declared_combobox(target, leftover, self.fields)
             if selected:
                 self.merged["filled"].append({
@@ -452,6 +455,7 @@ class _FillAnswers(fill_state._FillState):
                     "selector": leftover["selector"],
                     "frame_index": leftover.get("frame_index", 0),
                 })
+                self._settled(leftover)
                 if leftover["key"] == "how_heard" and selected != self.fields.get("how_heard"):
                     self.other_chosen = True
                 return
@@ -485,6 +489,15 @@ class _FillAnswers(fill_state._FillState):
                 needs_review.append(label)
         elif leftover.get("required"):
             needs_review.append(label)
+
+    def _settled(self, leftover: dict[str, Any]) -> None:
+        """A leftover now answered on the page is no longer left or required-empty."""
+        merged = self.merged
+        merged["leftovers"] = [item for item in merged["leftovers"] if item is not leftover]
+        done = {str(leftover.get("label") or ""), str(leftover.get("selector") or "")}
+        merged["required_empty"] = [
+            item for item in merged.get("required_empty") or [] if item not in done
+        ]
 
     def _set_canned_answer(self, leftover: dict[str, Any], canned: str) -> None:
         target = self.frames[int(leftover.get("frame_index") or 0)]

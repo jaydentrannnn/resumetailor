@@ -78,20 +78,22 @@ def _fill_declared_combobox(target: Any, item: dict[str, Any], fields: dict[str,
     for value in dict.fromkeys([*planned, *field_matcher.choice_values(key, fields)]):
         if value and widget_actions._select_combobox_option(  # noqa: SLF001
             target, selector, value, key=key, phone_region=fields.get("phone_country_region", ""),
+            location_context=fields if key in {"city", "location", "postal_code"} else None,
         ):
             return value
     return None
 
 def kept_choice(target: Any, item: dict[str, Any], fields: dict[str, str]) -> str | None:
     """The option an input dropdown already shows when it is not the one the fill would
-    pick: an existing answer, kept as it is. ``filler.js`` cannot tell a committed choice
-    from typed search text in a box that takes typing; the menu's own options can."""
+    pick: an existing answer, or one another answer set (Oracle's County after the postal
+    code), kept as it is. ``filler.js`` cannot tell a committed choice from typed search
+    text in a box that takes typing; the menu's own options can."""
     key = str(item.get("key") or "")
-    if key in {"phone_country_code", "salary_expectation", ""}:
+    if key in {"phone_country_code", "salary_expectation"}:
         return None
     shown = widget_actions.committed_option(target, str(item.get("selector") or ""))
-    if not shown:
-        return None
+    if not shown or not key:  # no profile answer: whatever option it shows stays
+        return shown
     planned = [str(item["value"])] if item.get("value") else []
     wanted = [*planned, *field_matcher.choice_values(key, fields)]
     if any(value and widget_actions._option_match([shown], value, key=key) for value in wanted):  # noqa: SLF001

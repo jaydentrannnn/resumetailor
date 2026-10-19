@@ -2289,3 +2289,23 @@ current probe's counting, not the Batch 1 table's.
 - **Corrections signal**: punctuation may differ but never the numbers it separates
   ("$900.00" ≠ "$90,000"), and dates compare by their readings, so a swapped day and
   month in ISO form is a change.
+
+### 2026-10-18 — Oracle Recruiting dropdowns and the address chain (Batch 2, 2.6)
+
+- From three live Candidate Experience forms the applicant opened (captures kept in
+  `output/`; the fixture `oracle_cx_address.html` is rebuilt with made-up values). The
+  dropdowns are `input.cx-select-input` (role=combobox, `aria-haspopup=grid`), not JET
+  widgets: each owns a `div[role=grid].cx-select__list` that renders only while open,
+  its options `div[role=gridcell].cx-select__list-item`. `widget_actions` now reads that
+  menu and those rows.
+- Postal Code is a lookup whose rows read "ZIP, City, County, ST"; picking one fills City,
+  County and State. `_postal_option` picks the row whose first part is the profile's code
+  (a ZIP+4 matches its five digits; of several rows, the one naming the profile's city),
+  and the commit check reads the code alone back.
+- `_resolve_leftovers` takes Country and Postal Code first (`_dependency_order`), so City,
+  County and State are already set when their turn comes. A dropdown with no profile
+  answer that shows one of its options (County) is kept (`kept_choice`), and a settled
+  leftover leaves the required-empty list.
+- The packaged app (v1.16) stopped these fills at the email/code step: one reported the
+  six "digit N of six" code boxes as missing answers. Batch 1's split-code-box detection
+  on platform adapters covers that shape; not re-verified live.
