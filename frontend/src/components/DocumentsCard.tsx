@@ -12,7 +12,10 @@ import {
 } from "../api";
 import { CopyButton } from "./CopyButton";
 import { CoverLetterDetails, letterText } from "./CoverLetterPanel";
-import { JobFileActions, SaveFileButton } from "./FileActions";
+import type { Command } from "../lib/commands";
+import { saveLabel } from "../lib/fileActions";
+import { useCommands } from "../state/commandState";
+import { JobFileActions, SaveFileButton, useSaveOrDownload } from "./FileActions";
 import { DocumentViewer, type ViewerDoc } from "./viewer/DocumentViewer";
 
 type Props = {
@@ -111,6 +114,43 @@ export function DocumentsCard({
         </>
       ),
     });
+
+  const { desktop, save } = useSaveOrDownload();
+  useCommands((): Command[] => {
+    const file = (id: string, what: string, url: string, name: string): Command => ({
+      id,
+      title: saveLabel(what, desktop),
+      group: "Document",
+      keywords: "save download export",
+      run: () => save(url, name),
+    });
+    const commands = [
+      file("doc-resume-pdf", "resume PDF", downloadPdfUrl(jobId), "resume.pdf"),
+      file("doc-resume-docx", "resume Word file", downloadUrl(jobId), "resume.docx"),
+    ];
+    if (!coverLetter) return commands;
+    if (coverLetter.has_pdf)
+      commands.push(
+        file("doc-cover-pdf", "cover letter PDF", coverLetterPdfUrl(jobId), "cover_letter.pdf"),
+      );
+    if (coverLetter.has_docx)
+      commands.push(
+        file(
+          "doc-cover-docx",
+          "cover letter Word file",
+          coverLetterDocxUrl(jobId),
+          "cover_letter.docx",
+        ),
+      );
+    const show = (id: string, title: string): Command => ({
+      id: `doc-show-${id}`,
+      title,
+      group: "Document",
+      disabled: tab === id,
+      run: () => setTab(id),
+    });
+    return [show("resume", "Show the resume"), show("cover", "Show the cover letter"), ...commands];
+  });
 
   async function regenerate(instruction: string) {
     const updated = await regenerateCoverLetter(jobId, instruction);

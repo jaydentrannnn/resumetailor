@@ -3,6 +3,7 @@ import { useNavigate } from "react-router-dom";
 import { currentPrintTarget, printDocument } from "../lib/printTarget";
 import { SHORTCUTS, shortcutFor } from "../lib/shortcuts";
 import { useDesktop } from "../lib/useDesktop";
+import { useCommands } from "../state/commandState";
 import { railTarget } from "./shell/railItems";
 import { Kbd } from "./ui/Tile";
 import { Modal } from "./Modal";
@@ -19,6 +20,16 @@ export function KeyboardShortcuts() {
   const [helpOpen, setHelpOpen] = useState(false);
   const navigate = useNavigate();
   const desktop = useDesktop();
+  useCommands(() => [
+    {
+      id: "app-shortcuts",
+      title: "Keyboard shortcuts",
+      group: "App",
+      keywords: "help keys",
+      shortcut: ["?"],
+      run: () => setHelpOpen(true),
+    },
+  ]);
   useEffect(() => {
     function onKey(e: KeyboardEvent) {
       const page = railTarget(e);
@@ -28,7 +39,7 @@ export function KeyboardShortcuts() {
         return;
       }
       const action = shortcutFor(e);
-      if (!action) return;
+      if (!action || action === "commands") return; // CommandPalette's
       if (action === "help") {
         e.preventDefault();
         setHelpOpen(true);

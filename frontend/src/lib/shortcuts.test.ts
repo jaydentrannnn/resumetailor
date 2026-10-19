@@ -30,6 +30,7 @@ describe("shortcutFor", () => {
     const input = document.createElement("input");
     expect(shortcutFor(key("s", { ctrlKey: true }, input))).toBe("save");
     expect(shortcutFor(key("f", { metaKey: true }))).toBe("find");
+    expect(shortcutFor(key("k", { ctrlKey: true }, input))).toBe("commands");
     expect(shortcutFor(key("s", { ctrlKey: true, altKey: true }))).toBeNull();
   });
 });

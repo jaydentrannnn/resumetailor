@@ -133,6 +133,9 @@ statuses map through `lib/applicationStatus.ts` (`applicationStatusTone`).
   Files, Template). A `chrome` toolbar with document tabs, Fit width / Fit page and zoom
   (PDF URL fragments), Open in window and the document's Save / Show in folder / Open
   actions, over one embedded PDF on `sunken`; Ctrl+P prints the document shown.
+- **Command list** (`components/CommandPalette.tsx`, Ctrl+K): a `chrome` panel 12vh from
+  the top over a 30% black scrim; a borderless input on a hairline, then 40px rows (title,
+  muted group, `Kbd` keys), the highlighted row on `selected-row`. No icons, no headings.
 - **Tile:** grey surface, 1px `line` border, 4px corners, 20–24px padding. Optional
   eyebrow, `rt-tile-title` h2, `meta`, `actions`. Sub-sections use `TileSection` (one
   hairline).

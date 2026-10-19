@@ -32,6 +32,28 @@ export function useSaveFile(): (url: string, fallbackName: string) => Promise<vo
 }
 
 /**
+ * Save a file the way this host does (the native Save dialog in the desktop app, a
+ * download in the browser), for actions that are not a button, such as Ctrl+K.
+ */
+export function useSaveOrDownload(): {
+  desktop: boolean;
+  save: (url: string, fallbackName: string) => void;
+} {
+  const desktop = useDesktop();
+  const saveFile = useSaveFile();
+  return {
+    desktop,
+    save: (url, fallbackName) => {
+      if (desktop) return void saveFile(url, fallbackName);
+      const link = document.createElement("a");
+      link.href = url;
+      link.download = "";
+      link.click();
+    },
+  };
+}
+
+/**
  * Desktop: Save X… through the native Save dialog. Browser: a plain download link.
  */
 export function SaveFileButton({

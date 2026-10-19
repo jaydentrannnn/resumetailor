@@ -6,6 +6,7 @@ import { RunCostEstimate } from "../../components/RunCostEstimate";
 import { RunHistoryPanel } from "../../components/RunHistoryPanel";
 import { Tabs } from "../../components/Tabs";
 import { Button, CommandBar, EmptyState, Page } from "../../components/ui";
+import { useCommands } from "../../state/commandState";
 import { useRunState } from "../../state/runState";
 import { useWorkspaceState } from "../../state/workspaceState";
 import { JobInput } from "./JobInput";
@@ -16,11 +17,11 @@ import { RunSaveNotice } from "./RunSaveNotice";
 
 type Pane = "job" | ResultPane;
 
-const PANES: { id: Pane; label: string }[] = [
-  { id: "job", label: "Job" },
-  { id: "report", label: "Report" },
-  { id: "bullets", label: "Review bullets" },
-  { id: "content", label: "Application content" },
+const PANES: { id: Pane; label: string; command: string }[] = [
+  { id: "job", label: "Job", command: "Edit the job" },
+  { id: "report", label: "Report", command: "Show the report" },
+  { id: "bullets", label: "Review bullets", command: "Review bullets" },
+  { id: "content", label: "Application content", command: "Show application content" },
 ];
 
 // The viewer fills the window below the bars.
@@ -60,6 +61,32 @@ export function RunPage() {
   const ready = run.settingsLoaded && !switching;
   const entry = run.history?.find((item) => item.job_id === jobId);
   const showProgress = busy || status === "failed" || status === "cancelled";
+  const canTailor = !busy && Boolean(jdText.trim()) && ready;
+  useCommands(() => [
+    {
+      id: "tailor-run",
+      title: jobId ? "Tailor again" : "Tailor resume",
+      group: "Tailor",
+      keywords: "run start",
+      shortcut: ["Ctrl", "Enter"],
+      disabled: !canTailor,
+      run: () => void run.startJob(),
+    },
+    {
+      id: "tailor-history",
+      title: "Run history",
+      group: "Tailor",
+      keywords: "past runs",
+      run: () => setHistoryOpen(true),
+    },
+    ...PANES.map((item) => ({
+      id: `tailor-pane-${item.id}`,
+      title: item.command,
+      group: "Tailor",
+      disabled: !jobId || pane === item.id,
+      run: () => setPane(item.id),
+    })),
+  ]);
 
   return (
     <Page width="wide">
@@ -75,7 +102,7 @@ export function RunPage() {
               variant="primary"
               size="sm"
               data-shortcut="primary"
-              disabled={busy || !jdText.trim() || !ready}
+              disabled={!canTailor}
               onClick={() => void run.startJob()}
             >
               {busy

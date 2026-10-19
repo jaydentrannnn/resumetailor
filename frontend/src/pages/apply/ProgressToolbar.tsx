@@ -5,7 +5,9 @@ import {
   type SourcesStatus,
 } from "../../api";
 import { Button, buttonClass, Switch } from "../../components/ui";
-import { SaveFileButton } from "../../components/FileActions";
+import { SaveFileButton, useSaveOrDownload } from "../../components/FileActions";
+import { saveLabel } from "../../lib/fileActions";
+import { useCommands } from "../../state/commandState";
 import { canFillAfterReview } from "../../lib/applicationRows";
 import { canTailorFiles, fillBlockers, hasTailoredFiles } from "../../lib/applyPage";
 import { GLOSSARY } from "../../lib/glossary";
@@ -39,6 +41,24 @@ export function FindJobsTools({
   onFind: () => void;
 }) {
   const { limit, dryRun, ageDays } = options;
+  const { desktop, save } = useSaveOrDownload();
+  useCommands(() => [
+    {
+      id: "apply-find",
+      title: "Find jobs",
+      group: "Apply",
+      keywords: "search postings",
+      disabled: busy || active || !anySource,
+      run: onFind,
+    },
+    {
+      id: "apply-csv",
+      title: saveLabel("applications as CSV", desktop),
+      group: "Apply",
+      keywords: "export spreadsheet",
+      run: () => save(applicationsExportUrl(), "applications.csv"),
+    },
+  ]);
   return (
     <>
       <details className="relative">

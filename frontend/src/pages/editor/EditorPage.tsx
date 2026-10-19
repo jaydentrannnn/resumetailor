@@ -15,6 +15,7 @@ import { EntryFilterField } from "./EntryFilterField";
 import { useResumeUndo } from "./useResumeUndo";
 import { Button, CommandBar, StatusMark, Tile } from "../../components/ui";
 import { sectionMatches } from "../../lib/entryFilter";
+import { useCommands } from "../../state/commandState";
 import {
   type Section,
   type SectionKind,
@@ -59,6 +60,49 @@ export function EditorPage({
   const { edit: setResume, pushUndo, clear: clearUndo } = useResumeUndo(resume, setDraft);
   const [filter, setFilter] = useState("");
   const [historyOpen, setHistoryOpen] = useState(false);
+  useCommands(() =>
+    embedded || !resume
+      ? []
+      : [
+          {
+            id: "resume-save",
+            title: "Save resume",
+            group: "Resume",
+            shortcut: ["Ctrl", "S"],
+            disabled: busy,
+            run: () => void onSave(),
+          },
+          {
+            id: "resume-filter",
+            title: "Filter entries",
+            group: "Resume",
+            keywords: "find search",
+            run: () =>
+              document.querySelector<HTMLElement>('[aria-label="Filter resume entries"]')?.focus(),
+          },
+          {
+            id: "resume-validate",
+            title: "Validate resume",
+            group: "Resume",
+            disabled: busy,
+            run: () => void onValidate(),
+          },
+          {
+            id: "resume-history",
+            title: "Resume history",
+            group: "Resume",
+            keywords: "versions restore",
+            run: () => setHistoryOpen(true),
+          },
+          {
+            id: "resume-discard",
+            title: "Discard unsaved changes",
+            group: "Resume",
+            disabled: !dirty || busy,
+            run: () => void discardAll(),
+          },
+        ],
+  );
 
   async function discardAll() {
     const ok = await confirm({

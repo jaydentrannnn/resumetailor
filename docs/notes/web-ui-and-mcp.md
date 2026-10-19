@@ -883,3 +883,17 @@ the Save dialog in the desktop app.
 - The Resume entry filter matches every query word against an entry's text plus its
   section title, ignoring ids and tags; an open entry always shows so a new blank one
   does not vanish while filtering.
+
+### Ctrl+K command list (2026-10-19)
+
+- Components offer commands with `useCommands(build)`; the provider keeps the builder
+  in a ref and calls every builder only when the list opens. Registering never
+  re-renders, and the list shows each page's state at the moment Ctrl+K was pressed
+  (a disabled Save stays out). Commands are not a second implementation: each `run`
+  calls the same handler as the page's button.
+- Ctrl+K works while typing (it is a modifier chord, like Ctrl+Enter) and stays out of
+  first-run setup, like the rail. The list hands focus back to where it was before
+  running the command on the next tick, so a command can move focus itself (Filter
+  entries).
+- Groups rank the open page's actions first, then Go to, Appearance and App. "Reload
+  window" is in both builds: the desktop app has no other reload once F5 is locked.

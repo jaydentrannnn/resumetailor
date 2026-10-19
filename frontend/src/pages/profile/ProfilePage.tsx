@@ -15,6 +15,7 @@ import {
 } from "../../lib/profileForm";
 import { useToast } from "../../lib/toast";
 import { useConfirm } from "../../state/confirmState";
+import { useCommands } from "../../state/commandState";
 import { useEditorState } from "../../state/editorState";
 import { ApplicationTab } from "./ApplicationTab";
 import { PersonalTab } from "./PersonalTab";
@@ -58,6 +59,23 @@ export function ProfilePage() {
   const invalidCount = Object.keys(allErrors).length;
   const profileChanges = changedKeys(applicant.saved, draft).length;
   const changeCount = profileChanges + (editor.dirty ? 1 : 0);
+  useCommands(() => [
+    {
+      id: "profile-save",
+      title: "Save profile",
+      group: "Profile",
+      shortcut: ["Ctrl", "S"],
+      disabled: changeCount === 0 || editor.busy || saving,
+      run: () => void saveAll(),
+    },
+    {
+      id: "profile-discard",
+      title: "Discard profile changes",
+      group: "Profile",
+      disabled: changeCount === 0 || saving,
+      run: () => void discardAll(),
+    },
+  ]);
 
   const setGroupOpen = useCallback((id: string, isOpen: boolean) => {
     setOpen((current) => withGroupOpen(current, id, isOpen));

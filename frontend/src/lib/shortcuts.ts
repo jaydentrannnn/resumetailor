@@ -4,9 +4,10 @@
  * the Resume editor (`undoKeyFor`) handle them.
  */
 export type ShortcutAction =
-  "primary" | "save" | "find" | "search" | "help" | "print" | "pages" | "undo";
+  "commands" | "primary" | "save" | "find" | "search" | "help" | "print" | "pages" | "undo";
 
 export const SHORTCUTS: { keys: string[]; action: ShortcutAction; description: string }[] = [
+  { keys: ["Ctrl", "K"], action: "commands", description: "Find a page or an action" },
   { keys: ["Ctrl", "Enter"], action: "primary", description: "Tailor resume (on the Tailor page)" },
   {
     keys: ["Ctrl", "1…5"],
@@ -42,11 +43,12 @@ function command(e: KeyInput, letter: string): boolean {
 /**
  * Ctrl/Cmd+Enter works while typing (it submits the job description being typed);
  * "/" and "?" are ignored while typing so they can still be entered as text.
- * Ctrl/Cmd+P, S and F work anywhere; the handler lets the browser have them when the
+ * Ctrl/Cmd+K, P, S and F work anywhere; the handler lets the browser have them when the
  * page has nothing to print, save or find.
  */
 export function shortcutFor(e: KeyInput): ShortcutAction | null {
   if (e.key === "Enter" && (e.ctrlKey || e.metaKey) && !e.altKey) return "primary";
+  if (command(e, "k")) return "commands";
   if (command(e, "p")) return "print";
   if (command(e, "s")) return "save";
   if (command(e, "f")) return "find";
