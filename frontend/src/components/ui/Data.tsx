@@ -110,6 +110,7 @@ export function SelectionBar({
   onClear,
   clearLabel = "Clear selection",
   label = "Selection actions",
+  lead,
   children,
   className = "",
 }: {
@@ -119,6 +120,8 @@ export function SelectionBar({
   clearLabel?: string;
   /** The toolbar's aria-label. */
   label?: string;
+  /** Before the count: a Select all box for a list that has no header row. */
+  lead?: ReactNode;
   /** Bulk-action buttons. */
   children?: ReactNode;
   className?: string;
@@ -129,6 +132,7 @@ export function SelectionBar({
       aria-label={label}
       className={`flex flex-wrap items-center gap-2 rounded-sm border border-line bg-sunken px-3.5 py-1.5 text-[13px] ${className}`.trim()}
     >
+      {lead}
       <strong className="mr-auto font-semibold">
         <span className="font-mono tabular-nums">{count}</span> {noun}
       </strong>

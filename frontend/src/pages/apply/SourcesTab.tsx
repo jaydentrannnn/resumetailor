@@ -175,13 +175,36 @@ export function SourcesTab({
           />
         )}
 
-        {/* Always on screen (0 selected, actions off): selecting never shifts the rows. */}
+        {apply && onApplyChange && (
+          <GlobalFiltersTile
+            apply={apply}
+            onChange={onApplyChange}
+            editing={editingGlobal}
+            onEditingChange={setEditingGlobal}
+          />
+        )}
+
+        {/* Right above the lists it acts on, and always on screen (0 selected, actions off):
+            selecting never shifts the rows. */}
         <SelectionBar
           count={selectedIds.size}
           noun="selected"
           clearLabel="Clear"
           label="Selected sources"
           onClear={() => setSelected(new Set())}
+          lead={
+            sources.length > 0 && (
+              <input
+                type="checkbox"
+                aria-label="Select all sources"
+                className="h-4 w-4 accent-[var(--color-accent)]"
+                checked={selectedIds.size === sources.length}
+                onChange={(e) =>
+                  setSelected(e.target.checked ? new Set(sources.map((s) => s.id)) : new Set())
+                }
+              />
+            )
+          }
         >
           <Button
             size="sm"
@@ -208,15 +231,6 @@ export function SourcesTab({
             Remove
           </Button>
         </SelectionBar>
-
-        {apply && onApplyChange && (
-          <GlobalFiltersTile
-            apply={apply}
-            onChange={onApplyChange}
-            editing={editingGlobal}
-            onEditingChange={setEditingGlobal}
-          />
-        )}
 
         <SourceGroup
           id="lists"

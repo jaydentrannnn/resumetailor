@@ -171,7 +171,8 @@ export function SourceRow({
       </div>
 
       {update && (
-        <div className="mt-3 pl-7" data-row-select="off">
+        // Only the open diff is off limits: the Review update line still ticks the row.
+        <div className="mt-3 pl-7" data-row-select={reviewing ? "off" : undefined}>
           {reviewing ? (
             <UpdateDiff
               source={source}

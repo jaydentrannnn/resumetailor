@@ -40,8 +40,8 @@ export interface TableActions {
 }
 
 /**
- * One tab's application list: the filter row (group tabs, status filter, Columns,
- * Refresh, the tab's tools), then the tab panel: the selection bar while rows are
+ * One tab's application list: the filter row (group tabs, search, status filter,
+ * Columns, Refresh, the tab's tools), then the tab panel: the selection bar while rows are
  * checked and a paginated table whose primary row action names the next step. The page
  * keeps one instance mounted across tabs (only `scope`/`state` change), so the tablist in
  * `lead` stays in the DOM and keeps focus while the arrow keys switch tabs.
@@ -51,6 +51,7 @@ export function ApplicationsTable({
   state,
   actions,
   lead,
+  search,
   intro,
   tools,
   bulk,
@@ -63,6 +64,8 @@ export function ApplicationsTable({
   actions: TableActions;
   /** Left of the filter row: the group tabs. */
   lead?: ReactNode;
+  /** The page-wide search box, in the filter row after the tabs. */
+  search?: ReactNode;
   /** The top of the tab panel, above the table (the Needs you descriptions). */
   intro?: ReactNode;
   /** The tab's own tools in the filter row (Find jobs and its options). */
@@ -73,7 +76,7 @@ export function ApplicationsTable({
   note?: ReactNode;
   /** Shown when the list is empty and no filter is set. */
   empty: ReactNode;
-  /** Clears the page-wide search (the box lives in the tile header). */
+  /** Clears the page-wide search (the box sits in the filter row). */
   onClearSearch: () => void;
 }) {
   const navigate = useNavigate();
@@ -98,6 +101,7 @@ export function ApplicationsTable({
         extraColumns={extraColumns}
         onExtraColumns={setExtraColumns}
         lead={lead}
+        search={search}
         tools={tools}
       />
       {/* The filter row (with the tablist) stays outside the panel: a tablist must not

@@ -1,11 +1,13 @@
 import type { ApplySettings } from "../../api";
-import { Button, CommandBar } from "../../components/ui";
-import { nightlyRunLabel } from "../../lib/applyPage";
+import { Link } from "react-router-dom";
+import { Button, buttonClass, CommandBar } from "../../components/ui";
+import { nightlyRunLabel, SOURCES_PATH } from "../../lib/applyPage";
 import type { BrowserView } from "../../lib/browserState";
 import { ConnectionStatus } from "./BrowserConnection";
 
 /**
- * The Apply page title, with nightly-run state beside the settings action.
+ * The Apply page title, with Job sources and the nightly-run state beside the settings
+ * action.
  */
 export function ApplyHeader({
   apply,
@@ -22,6 +24,9 @@ export function ApplyHeader({
       actions={
         <>
           <ConnectionStatus view={browser} />
+          <Link className={buttonClass("plain", "sm")} to={SOURCES_PATH}>
+            Job sources
+          </Link>
           <Button
             variant="plain"
             size="sm"

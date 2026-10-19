@@ -1,15 +1,14 @@
 import { useEffect, useRef, type ReactNode } from "react";
-import { Link } from "react-router-dom";
-import { buttonClass, EmptyState, Tabs, Tile, TileLayout } from "../../components/ui";
-import { SOURCES_PATH, type ApplyTab } from "../../lib/applyPage";
+import { EmptyState, Tabs } from "../../components/ui";
+import type { ApplyTab } from "../../lib/applyPage";
 import { NeedsDescriptionGroup } from "../CapturedStubs";
 import { ApplicationsTable, type TableActions } from "./ApplicationsTable";
 import { ProgressEmpty } from "./ProgressEmpty";
 import type { ApplicationTableState } from "./useApplicationTable";
 
 /**
- * The Applications tile: the page-wide search, the Needs you / In progress / Done tabs
- * with their counts, and the selected tab's table with its own tools and bulk actions.
+ * The applications list: the Needs you / In progress / Done tabs with their counts, the
+ * page-wide search beside them, and the selected tab's table with its own tools and bulk actions.
  */
 export function ApplicationsPanel({
   tab,
@@ -115,60 +114,46 @@ export function ApplicationsPanel({
     ),
   };
 
-  // A list, not an object: rows on the page, not in a box.
+  const searchBox = (
+    <div className="relative">
+      <input
+        className="field rt-control py-0 pr-8"
+        aria-label="Search applications"
+        data-shortcut="search"
+        placeholder="Search every tab by company, role, or location"
+        value={q}
+        onChange={(e) => onQuery(e.target.value)}
+      />
+      {q && (
+        <button
+          type="button"
+          aria-label="Clear search"
+          className="absolute right-1 top-1/2 -translate-y-1/2 px-1.5 text-ink-muted hover:text-ink"
+          onClick={() => onQuery("")}
+        >
+          ×
+        </button>
+      )}
+    </div>
+  );
+
+  // A list, not an object: rows on the page, not in a box. The tab counts are the total.
   return (
-    <TileLayout.Provider value="flat">
-      <Tile
-        title={
-          <>
-            Applications
-            <span className="ml-2 font-mono text-xs font-normal text-ink-muted">
-              {counts.needs + counts.progress + doneCount}
-            </span>
-          </>
-        }
-        actions={
-          <>
-            <div className="relative w-full sm:w-64">
-              <input
-                className="field rt-control py-0 pr-8"
-                aria-label="Search applications"
-                data-shortcut="search"
-                placeholder="Search every tab by company, role, or location"
-                value={q}
-                onChange={(e) => onQuery(e.target.value)}
-              />
-              {q && (
-                <button
-                  type="button"
-                  aria-label="Clear search"
-                  className="absolute right-1 top-1/2 -translate-y-1/2 px-1.5 text-ink-muted hover:text-ink"
-                  onClick={() => onQuery("")}
-                >
-                  ×
-                </button>
-              )}
-            </div>
-            <Link className={buttonClass("ghost", "sm", "rt-control")} to={SOURCES_PATH}>
-              Job sources →
-            </Link>
-          </>
-        }
-      >
-        {/* One table for every tab, so switching tabs keeps the tablist (and its focus). */}
-        <ApplicationsTable
-          scope={scopes[tab]}
-          state={tables[tab]}
-          actions={actions}
-          lead={tabs}
-          intro={tab === "needs" && <NeedsDescriptionGroup />}
-          bulk={tab === "needs" ? reviewBulk : tab === "progress" ? progress.bulk : undefined}
-          tools={tab === "progress" ? progress.tools : undefined}
-          note={tab === "progress" ? progress.note : undefined}
-          empty={empties[tab]}
-          onClearSearch={() => onQuery("")}
-        />
-      </Tile>
-    </TileLayout.Provider>
+    <section aria-label="Applications">
+      {/* One table for every tab, so switching tabs keeps the tablist (and its focus). */}
+      <ApplicationsTable
+        scope={scopes[tab]}
+        state={tables[tab]}
+        actions={actions}
+        lead={tabs}
+        search={searchBox}
+        intro={tab === "needs" && <NeedsDescriptionGroup />}
+        bulk={tab === "needs" ? reviewBulk : tab === "progress" ? progress.bulk : undefined}
+        tools={tab === "progress" ? progress.tools : undefined}
+        note={tab === "progress" ? progress.note : undefined}
+        empty={empties[tab]}
+        onClearSearch={() => onQuery("")}
+      />
+    </section>
   );
 }

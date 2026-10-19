@@ -33,8 +33,9 @@ function optionalColumns(scope: Scope): string[] {
 }
 
 /**
- * The filter row above a table: the group tabs on the left; the status filter, the
- * Columns picker, Refresh and the tab's own tools on the right.
+ * The filter row above a table, one line: the group tabs, the page-wide search filling
+ * the space between, then the status filter, the Columns picker, Refresh and the tab's
+ * own tools.
  */
 export function TableFilters({
   scope,
@@ -42,6 +43,7 @@ export function TableFilters({
   extraColumns,
   onExtraColumns,
   lead,
+  search,
   tools,
 }: {
   scope: Scope;
@@ -50,16 +52,16 @@ export function TableFilters({
   onExtraColumns: (next: string[]) => void;
   /** Left side of the row (the Needs you / In progress / Done tabs). */
   lead?: ReactNode;
+  /** The search box, stretched to fill the row. */
+  search?: ReactNode;
   /** The tab's own tools after Refresh (Find jobs and its options). */
   tools?: ReactNode;
 }) {
   const archived = scope === "archive";
   return (
-    <div
-      id={`${scope}-toolbar`}
-      className="flex flex-wrap items-center justify-between gap-x-4 gap-y-2.5"
-    >
+    <div id={`${scope}-toolbar`} className="flex flex-wrap items-center gap-x-3 gap-y-2.5">
       {lead}
+      {search && <div className="min-w-56 flex-1">{search}</div>}
       <div className="flex flex-wrap items-center gap-2">
         <select
           aria-label="Filter by status"
