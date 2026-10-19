@@ -915,3 +915,25 @@ the Save dialog in the desktop app.
   document right for the same reason.
 - `docs/design/reference.html` (v6) redraws the shell: rail, command bars instead of
   page heads with intro copy, status bar, the two-pane Tailor and the Ctrl+K list.
+
+### Layout feedback pass (2026-10-19)
+
+- The main area lost its `max-w-[1920px]`: past 1920px everything sat left with a blank
+  right side. Setup pages still centre their own column.
+- The document column is sized to one Letter page at the window's height
+  (`--rt-viewer-h`, `--rt-doc-w` = height × 0.773 + chrome, capped at 62%); the controls
+  get the rest, so widening the window widens them, not the PDF. Zoom and Fit width /
+  Fit page were dropped: nobody changes them, and the page always fits now.
+- Tailor resume moved under the posting (the user pasted on the left, then had to reach
+  right). History left its drawer for a full-width second view; opening a run returns.
+- Template went back to document left, tools right (user preference), so it is the one
+  exception to controls-left. Its Resume | Cover letter switch is in the command bar.
+- Profile: tabs across the top, groups ruled apart (`TileLayout` "ruled"), two-column
+  fields; the user found the flat rows hard to scan and wanted some of the old look back.
+  The setup wizard reuses "ruled", so `ModelsCard` is no longer boxed there.
+- Settings and the wizard copy the mockup: a full-height section/step column, label-left
+  rows (`ROW_LABEL_COLUMN`) instead of right-aligned controls.
+- Apply: search, tabs and filters on one toolbar row. Job sources: the selection bar sits
+  under the filters with Select all in it.
+- Found on the way: `applicantProfileState.refreshSummaries` was a new function every
+  render, so `ExperienceFields` refetched about 16 times a second since bec21b9.
