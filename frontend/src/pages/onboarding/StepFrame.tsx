@@ -1,5 +1,5 @@
 import { useEffect, useState, type MutableRefObject, type ReactNode } from "react";
-import { Button, Tile } from "../../components/ui";
+import { Button, TileLayout } from "../../components/ui";
 import { useConfirm } from "../../state/confirmState";
 
 /** What the wizard hands every step: where Back/Skip/Next go, and the save hook. */
@@ -11,13 +11,17 @@ export type StepNav = {
   saving: boolean;
   /** Filled with the step's save so the stepper can save before jumping. */
   saveRef: MutableRefObject<() => Promise<boolean>>;
+  /** Where this step sits ("Step 2 of 7"), shown over its title. */
+  position?: string;
 };
 
 const saved = () => Promise.resolve(true);
 
 /**
- * One wizard step: title, body and the footer every step shares. Back, Skip and Next
- * all save the page first and stay put when the save fails. Next needs the step
+ * One wizard step: where it sits, its title and intro, the body in a readable column,
+ * and the footer bar every step shares (it stays in view at the bottom of the window).
+ * Groups inside a step are ruled apart, as on Profile. Back, Skip and Next all save the
+ * page first and stay put when the save fails. Next needs the step
  * complete; Skip is for an incomplete step (greyed once complete) and warns first.
  */
 export function StepFrame({
@@ -69,20 +73,23 @@ export function StepFrame({
   }
 
   return (
-    <Tile aria-labelledby="step-title" className="space-y-4">
-      <div>
-        <h2 id="step-title" className="rt-tile-title">
-          {title}
-        </h2>
-        <p className="mt-1 text-sm text-ink-muted">{intro}</p>
+    <section aria-labelledby="step-title" className="flex min-h-full flex-col">
+      <div className="max-w-3xl flex-1 space-y-5">
+        <div>
+          {nav.position && <p className="text-xs text-ink-muted">{nav.position}</p>}
+          <h2 id="step-title" className="mt-1 font-display text-2xl font-medium text-ink">
+            {title}
+          </h2>
+          <p className="mt-2 max-w-xl text-sm text-ink-2">{intro}</p>
+        </div>
+        <TileLayout.Provider value="ruled">{children}</TileLayout.Provider>
+        {error && (
+          <p role="alert" className="text-sm text-danger">
+            {error}
+          </p>
+        )}
       </div>
-      {children}
-      {error && (
-        <p role="alert" className="text-sm text-danger">
-          {error}
-        </p>
-      )}
-      <div className="flex flex-wrap items-center gap-3 border-t border-line pt-4">
+      <div className="sticky bottom-(--rt-bar-bottom) mt-8 flex max-w-3xl flex-wrap items-center gap-3 border-t border-line bg-paper py-3">
         <Button
           variant="ghost"
           onClick={() => nav.onBack && void move(nav.onBack)}
@@ -112,6 +119,6 @@ export function StepFrame({
           {nextLabel}
         </Button>
       </div>
-    </Tile>
+    </section>
   );
 }

@@ -1,7 +1,8 @@
 import { useEffect, useRef, useState } from "react";
 import { useNavigate } from "react-router-dom";
 import { getOnboarding, putOnboarding, type OnboardingState } from "../../api";
-import { Button, CommandBar, Page, Stepper } from "../../components/ui";
+import { CommandBar, Page, Stepper } from "../../components/ui";
+import { WIDE, useMediaQuery } from "../../lib/useMediaQuery";
 import { describe } from "../../lib/errors";
 import { ONBOARDING_STEPS, stepIndex, type OnboardingStep } from "../../lib/onboarding";
 import { useToast } from "../../lib/toast";
@@ -30,6 +31,7 @@ export function OnboardingPage() {
   const [state, setState] = useState<OnboardingState | null>(null);
   const [saving, setSaving] = useState(false);
   const saveRef = useRef<() => Promise<boolean>>(() => Promise.resolve(true));
+  const wide = useMediaQuery(WIDE);
 
   useEffect(() => {
     getOnboarding()
@@ -77,6 +79,7 @@ export function OnboardingPage() {
     onSkip: () => void update({ step: following, skipped_steps: [...without, step] }),
     saving,
     saveRef,
+    position: step === "done" ? undefined : `Step ${current + 1} of ${ONBOARDING_STEPS.length - 1}`,
   };
 
   async function jump(index: number) {
@@ -95,54 +98,61 @@ export function OnboardingPage() {
   }
 
   return (
-    <Page>
-      <CommandBar
-        title="Welcome to ResumeTailor"
-        actions={
-          !state.completed && (
-            <Button variant="ghost" size="sm" onClick={() => void skipAll()} disabled={saving}>
+    <Page width="wide" className="-mb-12 -mt-5">
+      <CommandBar title="Set up ResumeTailor" />
+      <div className="grid min-w-0 lg:grid-cols-[16rem_minmax(0,1fr)]">
+        <nav
+          aria-label="Setup"
+          className="-mx-4 flex flex-col gap-4 border-b border-line bg-panel px-4 py-5 sm:-mx-6 sm:px-6 lg:mx-0 lg:-ml-6 lg:min-h-[calc(100vh-var(--rt-bar-top)-var(--rt-bar-bottom))] lg:border-b-0 lg:border-r"
+        >
+          <Stepper
+            steps={ONBOARDING_STEPS.filter((s) => s.id !== "done")}
+            current={current}
+            label="Setup steps"
+            orientation={wide ? "vertical" : "horizontal"}
+            onSelect={state.completed ? undefined : (index) => void jump(index)}
+          />
+          {!state.completed && (
+            <button
+              type="button"
+              className="rt-link mt-auto self-start text-xs"
+              onClick={() => void skipAll()}
+              disabled={saving}
+            >
               Skip setup for now
-            </Button>
-          )
-        }
-      />
-      <p className="text-[15px] text-ink-muted">
-        Set up once and you&apos;re ready to tailor and apply. Everything can be changed later.
-      </p>
-      <Stepper
-        steps={ONBOARDING_STEPS.filter((s) => s.id !== "done")}
-        current={current}
-        label="Setup steps"
-        stretch
-        onSelect={state.completed ? undefined : (index) => void jump(index)}
-      />
-      {step === "field" && (
-        <FieldStep nav={nav} saveField={async (field) => !!(await update({ field }))} />
-      )}
-      {step === "tools" && <ToolsStep nav={nav} />}
-      {step === "resume" && (
-        <ResumeStep
-          nav={nav}
-          fromScratch={state.resume_from_scratch}
-          onScratch={() =>
-            void update({ resume_from_scratch: true, step: following, skipped_steps: without })
-          }
-        />
-      )}
-      {step === "personal" && <PersonalStep nav={nav} />}
-      {step === "content" && <ContentStep nav={nav} />}
-      {step === "application" && (
-        <ApplicationStep nav={nav} onEditResume={() => void goTo("content")} />
-      )}
-      {step === "review" && (
-        <SummaryStep
-          nav={nav}
-          skipped={skippedSteps}
-          fromScratch={state.resume_from_scratch}
-          onEdit={(target) => void goTo(target)}
-        />
-      )}
-      {step === "done" && <DoneStep onFinish={() => navigate("/")} saving={saving} />}
+            </button>
+          )}
+        </nav>
+        <div className="min-w-0 pt-6 lg:pl-10 lg:pt-8">
+          {step === "field" && (
+            <FieldStep nav={nav} saveField={async (field) => !!(await update({ field }))} />
+          )}
+          {step === "tools" && <ToolsStep nav={nav} />}
+          {step === "resume" && (
+            <ResumeStep
+              nav={nav}
+              fromScratch={state.resume_from_scratch}
+              onScratch={() =>
+                void update({ resume_from_scratch: true, step: following, skipped_steps: without })
+              }
+            />
+          )}
+          {step === "personal" && <PersonalStep nav={nav} />}
+          {step === "content" && <ContentStep nav={nav} />}
+          {step === "application" && (
+            <ApplicationStep nav={nav} onEditResume={() => void goTo("content")} />
+          )}
+          {step === "review" && (
+            <SummaryStep
+              nav={nav}
+              skipped={skippedSteps}
+              fromScratch={state.resume_from_scratch}
+              onEdit={(target) => void goTo(target)}
+            />
+          )}
+          {step === "done" && <DoneStep onFinish={() => navigate("/")} saving={saving} />}
+        </div>
+      </div>
     </Page>
   );
 }

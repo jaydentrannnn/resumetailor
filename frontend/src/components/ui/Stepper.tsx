@@ -97,7 +97,9 @@ export function Stepper({
                 {content}
               </button>
             ) : (
-              <span className={`flex items-center gap-2 px-1 ${lined ? "flex-1" : ""}`}>
+              <span
+                className={`flex items-center gap-2 px-1 ${lined ? "flex-1" : ""} ${vertical ? "min-h-9" : ""}`}
+              >
                 {content}
               </span>
             )}
