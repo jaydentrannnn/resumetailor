@@ -72,6 +72,8 @@ type RunStateValue = {
   busy: boolean;
   queuePosition: number | null;
   history: RunHistoryEntry[];
+  /** The first history fetch has finished (or failed): an empty list now means none. */
+  historyLoaded: boolean;
   startJob: () => Promise<void>;
   cancelRun: () => Promise<void>;
   cancelling: boolean;
@@ -114,6 +116,7 @@ export function RunProvider({ children }: { children: ReactNode }) {
   const [queuePosition, setQueuePosition] = useState<number | null>(null);
   const [cancelling, setCancelling] = useState(false);
   const [history, setHistory] = useState<RunHistoryEntry[]>([]);
+  const [historyLoaded, setHistoryLoaded] = useState(false);
   // Lives here (not RunPage) so remounting on Tailor ↔ Master tab switches
   // does not reset and re-trigger the post-success PDF download.
   const autoDownloadedFor = useRef<string | null>(null);
@@ -141,6 +144,8 @@ export function RunProvider({ children }: { children: ReactNode }) {
       setHistory(await fetchRunHistory());
     } catch {
       /* history is advisory — a failed fetch must not block the Tailor tab */
+    } finally {
+      setHistoryLoaded(true);
     }
   }, []);
 
@@ -596,6 +601,7 @@ export function RunProvider({ children }: { children: ReactNode }) {
       busy,
       queuePosition,
       history,
+      historyLoaded,
       startJob,
       cancelRun,
       cancelling,
@@ -629,6 +635,7 @@ export function RunProvider({ children }: { children: ReactNode }) {
       busy,
       queuePosition,
       history,
+      historyLoaded,
       startJob,
       cancelRun,
       cancelling,

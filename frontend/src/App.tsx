@@ -149,7 +149,7 @@ function Shell() {
               </>
             )}
             <TextContextMenu />
-            <main className="w-full max-w-[1920px] flex-1 px-4 pb-12 pt-5 sm:px-6">
+            <main className="w-full flex-1 px-4 pb-12 pt-5 sm:px-6">
               <Suspense fallback={<PageLoading />}>
                 <Routes>
                   <Route path="/" element={<RunPage />} />

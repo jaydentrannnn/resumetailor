@@ -1,6 +1,6 @@
 // @vitest-environment jsdom
 import { afterEach, describe, expect, it, vi } from "vitest";
-import { cleanup, fireEvent, render, screen } from "@testing-library/react";
+import { cleanup, fireEvent, render, screen, within } from "@testing-library/react";
 import { MemoryRouter } from "react-router-dom";
 
 vi.mock("../../state/runState", async (importOriginal) => {
@@ -33,6 +33,7 @@ vi.mock("../../state/runState", async (importOriginal) => {
       cancelRun: async () => {},
       cancelling: false,
       history: [],
+      historyLoaded: true,
     }),
   };
 });
@@ -66,13 +67,17 @@ describe("RunPage", () => {
     expect(screen.getByText("documents panel")).toBeTruthy();
   });
 
-  it("puts Tailor resume and History in the command bar", () => {
+  it("puts Tailor again under the posting and History in the command bar", () => {
     render(
       <MemoryRouter>
         <RunPage />
       </MemoryRouter>,
     );
-    expect(screen.getByRole("button", { name: "Tailor resume" })).toBeTruthy();
-    expect(screen.getByRole("button", { name: "History" })).toBeTruthy();
+    const pane = screen.getByRole("region", { name: "Job and results" });
+    expect(within(pane).getByRole("button", { name: "Tailor again" })).toBeTruthy();
+    fireEvent.click(screen.getByRole("tab", { name: "History" }));
+    expect(screen.queryByRole("region", { name: "Job and results" })).toBeNull();
+    fireEvent.click(screen.getByRole("tab", { name: "Tailor" }));
+    expect(screen.getByRole("region", { name: "Job and results" })).toBeTruthy();
   });
 });

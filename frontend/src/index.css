@@ -141,10 +141,16 @@
 }
 
 /* App shell bars: the command bar above the work area and the status bar below it.
-   Sticky page parts offset by these so they never slide under a bar. */
+   Sticky page parts offset by these so they never slide under a bar.
+   A document pane beside a page's controls is as tall as the window allows
+   (--rt-viewer-h) and as wide as one Letter page at that height (--rt-doc-w, plus the
+   PDF viewer's scrollbar and margin): a taller window grows the document, a wider one
+   grows the controls. */
 :root {
   --rt-bar-top: 3rem;
   --rt-bar-bottom: 1.75rem;
+  --rt-viewer-h: max(28rem, calc(100vh - var(--rt-bar-top) - var(--rt-bar-bottom) - 5.5rem));
+  --rt-doc-w: calc(var(--rt-viewer-h) * 0.773 + 2.5rem);
 }
 
 /* Type roles. Titles and big figures are Fraunces; everything else is Geist. */

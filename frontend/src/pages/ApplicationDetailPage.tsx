@@ -5,7 +5,7 @@ import { isTabClosed } from "../lib/applicationRows";
 import { useOpenTabs } from "../lib/useOpenTabs";
 import { DocumentsCard } from "../components/DocumentsCard";
 import { WIDE, useMediaQuery } from "../lib/useMediaQuery";
-import { VIEWER_HEIGHT } from "../lib/viewer";
+import { BESIDE_DOCUMENT, VIEWER_HEIGHT } from "../lib/viewer";
 import { useWorkspaceState } from "../state/workspaceState";
 import { AnswersPanel } from "./apply/detail/AnswersPanel";
 import { DetailHeader } from "./apply/detail/DetailHeader";
@@ -77,7 +77,7 @@ export function ApplicationDetailPage() {
         </p>
       )}
       <div
-        className={`grid items-start gap-5 ${beside ? "grid-cols-[minmax(24rem,1fr)_minmax(0,1.15fr)]" : ""}`}
+        className={`grid items-start gap-5 ${beside ? BESIDE_DOCUMENT : ""}`}
       >
         <div className="min-w-0 space-y-4">
           <Tabs

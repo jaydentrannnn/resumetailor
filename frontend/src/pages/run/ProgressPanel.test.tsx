@@ -29,6 +29,7 @@ const base = {
   cancelRun: async () => {},
   cancelling: false,
   history: [],
+  historyLoaded: true,
 };
 
 describe("ProgressPanel", () => {

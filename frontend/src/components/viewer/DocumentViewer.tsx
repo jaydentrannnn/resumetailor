@@ -1,6 +1,6 @@
-import { type ReactNode, useEffect, useState } from "react";
+import { type ReactNode, useState } from "react";
 import { usePrintTarget } from "../../lib/printTarget";
-import { stepZoom, type ViewerFit, viewerSrc } from "../../lib/viewer";
+import { viewerSrc } from "../../lib/viewer";
 import { OpenDocumentLink } from "../FileActions";
 import { SEGMENT_BASE, SEGMENT_OFF, SEGMENT_ON, SEGMENT_TRACK } from "../ui/Segmented";
 
@@ -16,10 +16,10 @@ export type ViewerDoc = {
 
 /**
  * The one PDF viewer (Tailor, an application, Template): a toolbar with the document
- * tabs, Fit width / Fit page and zoom, Open in window and the document's own actions,
- * over a single embedded PDF. Ctrl+P prints the document shown. Only one PDF frame
- * mounts at a time: Chromium on Windows shares one PDF plugin, and two embeds often
- * leave one blank.
+ * tabs, Open in window and the document's own actions, over a single embedded PDF
+ * framed to the page width (the panes beside it are sized so a page fits). Ctrl+P
+ * prints the document shown. Only one PDF frame mounts at a time: Chromium on Windows
+ * shares one PDF plugin, and two embeds often leave one blank.
  */
 export function DocumentViewer({
   docs,
@@ -41,9 +41,7 @@ export function DocumentViewer({
 }) {
   const [own, setOwn] = useState(docs[0]?.id ?? "");
   const shown = docs.find((doc) => doc.id === (active ?? own)) ?? docs[0];
-  const [fit, setFit] = useState<ViewerFit>("width");
   usePrintTarget(shown?.src ?? null);
-  useEffect(() => setFit("width"), [shown?.src]);
   const choose = (id: string) => (onActive ? onActive(id) : setOwn(id));
   if (!shown) return null;
 
@@ -69,7 +67,6 @@ export function DocumentViewer({
             ))}
           </div>
         )}
-        {shown.src && <FitControls fit={fit} onFit={setFit} />}
         <div className="flex-1" />
         {shown.src && <OpenDocumentLink href={shown.src} className="rt-link text-xs" />}
         {shown.actions}
@@ -77,9 +74,9 @@ export function DocumentViewer({
       <div className="bg-sunken">
         {shown.src ? (
           <iframe
-            key={`${shown.src}|${fit}|${frameKey}`}
+            key={`${shown.src}|${frameKey}`}
             title={`${shown.label} preview`}
-            src={viewerSrc(shown.src, fit)}
+            src={viewerSrc(shown.src)}
             className={`block w-full bg-doc-preview ${className}`}
           >
             <p className="p-4 text-sm text-ink-muted">
@@ -91,57 +88,5 @@ export function DocumentViewer({
         )}
       </div>
     </section>
-  );
-}
-
-function FitControls({ fit, onFit }: { fit: ViewerFit; onFit: (fit: ViewerFit) => void }) {
-  return (
-    <>
-      <div role="group" aria-label="Fit" className={SEGMENT_TRACK}>
-        {(["width", "page"] as const).map((mode) => (
-          <button
-            key={mode}
-            type="button"
-            aria-pressed={fit === mode}
-            onClick={() => onFit(mode)}
-            className={`${SEGMENT_BASE} ${fit === mode ? SEGMENT_ON : SEGMENT_OFF}`}
-          >
-            {mode === "width" ? "Fit width" : "Fit page"}
-          </button>
-        ))}
-      </div>
-      <div className="flex items-center gap-0.5">
-        <ZoomButton label="Zoom out" onClick={() => onFit(stepZoom(fit, -1))}>
-          −
-        </ZoomButton>
-        <span className="min-w-10 text-center font-mono tabular-nums text-ink-2">
-          {typeof fit === "number" ? `${fit}%` : "Fit"}
-        </span>
-        <ZoomButton label="Zoom in" onClick={() => onFit(stepZoom(fit, 1))}>
-          +
-        </ZoomButton>
-      </div>
-    </>
-  );
-}
-
-function ZoomButton({
-  label,
-  onClick,
-  children,
-}: {
-  label: string;
-  onClick: () => void;
-  children: string;
-}) {
-  return (
-    <button
-      type="button"
-      aria-label={label}
-      onClick={onClick}
-      className="rt-row-action size-7 rounded-sm text-[15px] text-ink hover:bg-sunken"
-    >
-      {children}
-    </button>
   );
 }

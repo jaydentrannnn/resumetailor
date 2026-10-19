@@ -20,10 +20,11 @@ function isDeletable(run: RunHistoryEntry): boolean {
  * Recent tailoring runs for the active profile — survives reload via disk-backed
  * `run.json`. The same table as the Apply page: search and status filter, sortable
  * headers, a bulk bar for selected rows, and a row menu. "Open" loads the run into the
- * results without re-downloading; two selected runs can be compared bullet by bullet.
+ * results without re-downloading (then `onOpened`); two selected runs can be compared
+ * bullet by bullet.
  * A run's files save through the Save dialog in the desktop app, else download.
  */
-export function RunHistoryPanel() {
+export function RunHistoryPanel({ onOpened }: { onOpened?: () => void }) {
   const { history, jobId, loadRun, busy, deleteHistoryRuns, refreshHistory } = useRunState();
   const { confirm } = useConfirm();
   const [selected, setSelected] = useState<Set<string>>(() => new Set());
@@ -70,9 +71,7 @@ export function RunHistoryPanel() {
   );
 
   function openRun(run: RunHistoryEntry) {
-    void loadRun(run.job_id).then(() =>
-      document.getElementById("tailored-results")?.scrollIntoView(),
-    );
+    void loadRun(run.job_id).then(() => onOpened?.());
   }
 
   function openCompare() {
@@ -265,7 +264,6 @@ export function RunHistoryPanel() {
         </>
       }
       aria-label="Recent runs"
-      description="Survives a page reload. Opening a past run shows its report and preview without downloading again."
     >
       <div className="space-y-3">
         <div className="flex flex-wrap gap-2">

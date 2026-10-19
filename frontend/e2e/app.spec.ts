@@ -25,10 +25,9 @@ test("tailor a resume, edit a bullet and re-render without AI", async ({ page })
   const viewer = page.getByRole("region", { name: "Documents" });
   await expect(viewer.getByRole("button", { name: "Download PDF" })).toHaveCount(0);
   await expect(viewer.getByRole("link", { name: "Download PDF" })).toBeVisible();
-  await expect(viewer.getByRole("button", { name: "Fit page" })).toBeVisible();
 
-  // Recent runs: the Apply page's table in the History drawer, with a row menu.
-  await page.getByRole("button", { name: "History" }).click();
+  // Recent runs: the Apply page's table in Tailor's History view, with a row menu.
+  await page.getByRole("tab", { name: "History" }).click();
   await expect(page.getByRole("heading", { name: "Recent runs" })).toBeVisible();
   await expect(page.getByRole("columnheader", { name: /Skill match/ })).toBeVisible();
   const actions = page.getByRole("button", { name: /^Actions for / }).first();
