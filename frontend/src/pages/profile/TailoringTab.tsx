@@ -10,7 +10,7 @@ import { TargetFieldSection } from "./TargetFieldSection";
  */
 export function TailoringTab() {
   return (
-    <div className="space-y-4">
+    <div className="space-y-6">
       <TargetFieldSection />
       <Card
         title="Skill vocabulary"

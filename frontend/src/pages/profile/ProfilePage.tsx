@@ -230,57 +230,45 @@ export function ProfilePage() {
           </>
         }
       />
-      <div className="grid min-w-0 gap-6 lg:grid-cols-[180px_minmax(0,1fr)] lg:gap-8">
-        <nav
-          aria-label="Profile sections"
-          className="-mb-px flex gap-4 overflow-x-auto border-b border-line lg:flex-col lg:gap-0.5 lg:self-start lg:border-0"
-        >
-          {TABS.map(([id, label]) => (
-            <Link
-              key={id}
-              to={`/profile/${id}`}
-              aria-current={tab === id ? "page" : undefined}
-              className={`${underlineTabClass(tab === id)} lg:hidden`}
-            >
-              {label}
-            </Link>
-          ))}
-          {TABS.map(([id, label]) => (
-            <Link
-              key={`side-${id}`}
-              to={`/profile/${id}`}
-              aria-current={tab === id ? "page" : undefined}
-              className={`hidden rounded-sm px-3 py-2 text-[13px] font-medium lg:block ${tab === id ? "bg-panel text-ink shadow-[inset_2px_0_0_var(--color-accent)]" : "text-ink-muted hover:bg-sunken hover:text-ink"}`}
-            >
-              {label}
-            </Link>
-          ))}
-        </nav>
-        <div className="min-w-0 space-y-10">
-          {problems.length > 0 && (
-            <div role="region" aria-label="Save problems" className="flex flex-wrap gap-3">
-              {problems}
-            </div>
+      <nav
+        aria-label="Profile sections"
+        className="flex gap-1 overflow-x-auto border-b border-line"
+      >
+        {TABS.map(([id, label]) => (
+          <Link
+            key={id}
+            to={`/profile/${id}`}
+            aria-current={tab === id ? "page" : undefined}
+            className={underlineTabClass(tab === id)}
+          >
+            {label}
+          </Link>
+        ))}
+      </nav>
+      <div className="min-w-0 space-y-8 pt-2">
+        {problems.length > 0 && (
+          <div role="region" aria-label="Save problems" className="flex flex-wrap gap-3">
+            {problems}
+          </div>
+        )}
+        <TileLayout.Provider value="ruled">
+          {tab === "tailoring" && <TailoringTab />}
+          {!ctx && (tab === "personal" || tab === "application") && (
+            <p className="text-sm text-ink-muted">{applicant.error ?? "Loading your profile…"}</p>
           )}
-          <TileLayout.Provider value="flat">
-            {tab === "tailoring" && <TailoringTab />}
-            {!ctx && (tab === "personal" || tab === "application") && (
-              <p className="text-sm text-ink-muted">{applicant.error ?? "Loading your profile…"}</p>
-            )}
-            {ctx && tab === "personal" && (
-              <PersonalTab ctx={ctx} resume={editor.resume} setResume={editor.setResume} />
-            )}
-            {ctx && tab === "application" && (
-              <ApplicationTab
-                ctx={ctx}
-                open={open}
-                onToggle={setGroupOpen}
-                onOpenGroup={openGroup}
-                education={educationSection?.kind === "education" ? educationSection.entries : []}
-              />
-            )}
-          </TileLayout.Provider>
-        </div>
+          {ctx && tab === "personal" && (
+            <PersonalTab ctx={ctx} resume={editor.resume} setResume={editor.setResume} />
+          )}
+          {ctx && tab === "application" && (
+            <ApplicationTab
+              ctx={ctx}
+              open={open}
+              onToggle={setGroupOpen}
+              onOpenGroup={openGroup}
+              education={educationSection?.kind === "education" ? educationSection.entries : []}
+            />
+          )}
+        </TileLayout.Provider>
       </div>
     </Page>
   );

@@ -5,9 +5,10 @@ const PADDING = { md: "p-5 sm:px-6", sm: "p-4", none: "" };
 /**
  * "flat" draws the tiles inside it as groups of rows: no box, a heading over its rows.
  * Settings uses it, so the same cards stay boxed elsewhere (onboarding). A page of
- * settings is a list of rows, not a stack of objects.
+ * settings is a list of rows, not a stack of objects. "ruled" is flat with a hairline
+ * under each group (Profile), for long forms whose groups need telling apart.
  */
-export const TileLayout = createContext<"box" | "flat">("box");
+export const TileLayout = createContext<"box" | "flat" | "ruled">("box");
 
 /**
  * A tile: the soft grey surface with a hairline border and 4px corners. Inside a tile use
@@ -45,9 +46,14 @@ export function Tile({
 } & Partial<Record<`aria-${string}` | `data-${string}` | "id", string>>) {
   const heading = title || eyebrow || meta || actions || description;
   const Title = embedded ? "h3" : "h2";
-  const flat = useContext(TileLayout) === "flat";
-  const box =
-    embedded || flat ? "" : `rounded-sm border border-line bg-panel ${PADDING[padding]}`.trim();
+  const layout = useContext(TileLayout);
+  const box = embedded
+    ? ""
+    : layout === "ruled"
+      ? "border-b border-line pb-6"
+      : layout === "flat"
+        ? ""
+        : `rounded-sm border border-line bg-panel ${PADDING[padding]}`.trim();
   return (
     <Tag className={["min-w-0", box, className].filter(Boolean).join(" ")} {...rest}>
       {heading && (

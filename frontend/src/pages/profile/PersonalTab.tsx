@@ -38,7 +38,7 @@ export function PersonalTab({
     target?.scrollIntoView({ block: "center" });
   }
   return (
-    <div className="space-y-4">
+    <div className="space-y-6">
       <ProfileGapBanner gaps={gaps} onOpen={openFirstGap} />
       <Tile id="profile-basics" title="Basics" description="The names forms ask for.">
         <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
@@ -47,63 +47,61 @@ export function PersonalTab({
           ))}
         </div>
       </Tile>
-      <div className="grid items-start gap-4 lg:grid-cols-2">
-        <Tile title="Resume contact" description="Printed at the top of every tailored resume.">
-          <div className="grid gap-4 sm:grid-cols-2">
-            {RESUME_CONTACT.map((key) => (
-              <label key={key} className="text-sm">
-                {key === "name"
-                  ? "Name on resume"
-                  : key === "location"
-                    ? "Location"
-                    : fieldLabel(key)}
-                <input
-                  className="field mt-1"
-                  value={resume?.contact[key] ?? ""}
-                  onChange={(e) =>
-                    resume &&
-                    setResume({ ...resume, contact: { ...resume.contact, [key]: e.target.value } })
-                  }
+      <Tile title="Resume contact" description="Printed at the top of every tailored resume.">
+        <div className="grid gap-4 sm:grid-cols-2">
+          {RESUME_CONTACT.map((key) => (
+            <label key={key} className="text-sm">
+              {key === "name"
+                ? "Name on resume"
+                : key === "location"
+                  ? "Location"
+                  : fieldLabel(key)}
+              <input
+                className="field mt-1"
+                value={resume?.contact[key] ?? ""}
+                onChange={(e) =>
+                  resume &&
+                  setResume({ ...resume, contact: { ...resume.contact, [key]: e.target.value } })
+                }
+              />
+            </label>
+          ))}
+        </div>
+        {resume && <CustomLinesFields resume={resume} setResume={setResume} />}
+      </Tile>
+      <Tile id="application-contact" title="Application contact">
+        <p className="text-xs text-ink-muted">
+          Leave a field blank to use your resume contact. Fill it in to give forms something
+          different (say, a personal email instead of a school one).
+        </p>
+        <div className="mt-3 grid gap-4 sm:grid-cols-2">
+          {CONTACT_PAIRS.map((pair) => {
+            const fallback = resume?.contact[pair.resume] ?? "";
+            const overridden = !!draft[pair.applicant];
+            return (
+              <div key={pair.applicant}>
+                <ProfileField
+                  name={pair.applicant}
+                  ctx={{
+                    ...ctx,
+                    fallbacks: { ...ctx.fallbacks, [pair.applicant]: fallback },
+                  }}
+                  label={`${fieldLabel(pair.applicant)} · ${overridden ? "different from resume" : "from resume"}`}
                 />
-              </label>
-            ))}
-          </div>
-          {resume && <CustomLinesFields resume={resume} setResume={setResume} />}
-        </Tile>
-        <Tile id="application-contact" title="Application contact">
-          <p className="text-xs text-ink-muted">
-            Leave a field blank to use your resume contact. Fill it in to give forms something
-            different (say, a personal email instead of a school one).
-          </p>
-          <div className="mt-3 grid gap-3 sm:grid-cols-2">
-            {CONTACT_PAIRS.map((pair) => {
-              const fallback = resume?.contact[pair.resume] ?? "";
-              const overridden = !!draft[pair.applicant];
-              return (
-                <div key={pair.applicant}>
-                  <ProfileField
-                    name={pair.applicant}
-                    ctx={{
-                      ...ctx,
-                      fallbacks: { ...ctx.fallbacks, [pair.applicant]: fallback },
-                    }}
-                    label={`${fieldLabel(pair.applicant)} · ${overridden ? "different from resume" : "from resume"}`}
-                  />
-                  {overridden && (
-                    <button
-                      type="button"
-                      className="rt-link mt-1 text-xs"
-                      onClick={() => ctx.set(pair.applicant, "")}
-                    >
-                      Use resume value
-                    </button>
-                  )}
-                </div>
-              );
-            })}
-          </div>
-        </Tile>
-      </div>
+                {overridden && (
+                  <button
+                    type="button"
+                    className="rt-link mt-1 text-xs"
+                    onClick={() => ctx.set(pair.applicant, "")}
+                  >
+                    Use resume value
+                  </button>
+                )}
+              </div>
+            );
+          })}
+        </div>
+      </Tile>
     </div>
   );
 }
