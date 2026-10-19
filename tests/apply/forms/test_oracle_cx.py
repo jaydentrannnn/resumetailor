@@ -99,3 +99,14 @@ def test_country_then_postal_code_fill_the_address_chain(page):
     assert not [item for item in run.merged["required_empty"]
                 if "County" in item or "Postal" in item or "City" in item]
     assert run.needs_review == []
+
+
+def test_a_postal_code_already_picked_is_kept(page):
+    page.click("#postalCode-32")
+    page.click("text=95815, Sacramento, Sacramento, CA")
+    assert page.input_value("#postalCode-32") == "95815"
+    run = _run(page)
+    run._resolve_leftovers()  # noqa: SLF001
+    assert page.input_value("#postalCode-32") == "95815"  # not the profile's 95814
+    kept = {item["selector"] for item in run.merged["filled"] if item.get("preserved")}
+    assert "#postalCode-32" in kept

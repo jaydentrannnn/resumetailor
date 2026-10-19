@@ -71,18 +71,37 @@ def known_dates(fields: dict[str, Any]) -> set[str]:
     }
 
 
-def _date_shapes(value: str, placeholder: str, known: set[str]) -> list[str]:
+def _meant(value: str, known: set[str]) -> tuple[datetime, bool] | None:
+    """The one date ``value`` means, or None: day and month could swap, and only a
+    profile date settles which."""
     readings = date_readings(value)
-    if len(readings) > 1:  # day and month could swap: only a profile date settles it
+    if len(readings) > 1:
         readings = {reading for reading in readings if _spelled(reading) in known}
-    if len(readings) != 1:
+    return readings.pop() if len(readings) == 1 else None
+
+
+def _date_shapes(value: str, placeholder: str, known: set[str]) -> list[str]:
+    meant = _meant(value, known)
+    if meant is None:
         return []
-    when, has_day = readings.pop()
-    formats = [*(_DATE_FORMATS if has_day else _MONTH_FORMATS)]
+    when, has_day = meant
     preferred = _placeholder_format(placeholder)
-    if preferred and (has_day or "%d" not in preferred):
-        formats.insert(0, preferred)
-    return [when.strftime(fmt) for fmt in dict.fromkeys(formats)]
+    if not (preferred and (has_day or "%d" not in preferred)):
+        preferred = None
+    # A shape the form could read with day and month swapped ("05/06/2027") is typed
+    # only when the box's own placeholder says which comes first.
+    found = [preferred] if preferred else []
+    for fmt in _DATE_FORMATS if has_day else _MONTH_FORMATS:
+        if not has_day or _one_reading(when, fmt):
+            found.append(fmt)
+    return [when.strftime(fmt) for fmt in dict.fromkeys(found)]
+
+
+def _one_reading(when: datetime, fmt: str) -> bool:
+    """Whether any form reads ``when`` typed as ``fmt`` as that date: year first (ISO),
+    a month name, or a day no month number could be."""
+    return (fmt.startswith("%Y") or "%B" in fmt or "%b" in fmt
+            or when.day > 12 or when.day == when.month)
 
 
 def _phone_shapes(value: str, country_code: str) -> list[str]:
@@ -133,9 +152,12 @@ def shapes(
     return [shape for shape in dict.fromkeys(found) if shape != value]
 
 
-def _holds(kind: str, shape: str, retained: str, country_code: str) -> bool:
+def _holds(
+    kind: str, shape: str, retained: str, country_code: str,
+    meant: tuple[datetime, bool] | None = None,
+) -> bool:
     """Whether the box still holds the answer ``shape`` typed (a mask may reformat it;
-    a widget that emptied it or kept part of it does not)."""
+    a widget that emptied it, kept part of it, or read it as another date does not)."""
     if not retained.strip():
         return False
     if kind == "phone":
@@ -143,7 +165,8 @@ def _holds(kind: str, shape: str, retained: str, country_code: str) -> bool:
         return typed is not None and typed == kept
     if kind == "postal":
         return re.sub(r"[\s-]", "", retained).upper() == re.sub(r"[\s-]", "", shape).upper()
-    return bool(date_readings(retained) & date_readings(shape)) or retained.strip() == shape
+    # Reformatted, it must spell the original date and nothing else.
+    return retained.strip() == shape or (meant is not None and date_readings(retained) == {meant})
 
 
 def note_for(item: dict[str, Any]) -> str:
@@ -163,12 +186,14 @@ def repair(
     try:
         control = target.locator(str(item["selector"])).first
         original = control.input_value(timeout=1000)
+        meant = _meant(original, known or set()) if kind == "date" else None
         for shape in shapes(item, original, country_code=country_code, known=known):
             control.fill(shape, timeout=2000)
             control.blur(timeout=1000)
             target.wait_for_timeout(200)
+            retained = control.input_value(timeout=1000)
             if (control.evaluate(_STILL_REFUSED_JS) is not True
-                    and _holds(kind, shape, control.input_value(timeout=1000), country_code)):
+                    and _holds(kind, shape, retained, country_code, meant)):
                 return True
         control.fill(original, timeout=2000)
         control.blur(timeout=1000)

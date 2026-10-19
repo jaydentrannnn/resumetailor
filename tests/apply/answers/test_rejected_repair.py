@@ -5,6 +5,7 @@ becomes a review note. Runs in installed Edge, offline."""
 from __future__ import annotations
 
 import os
+from datetime import datetime
 
 import pytest
 from playwright.sync_api import sync_playwright
@@ -149,6 +150,26 @@ def test_a_date_whose_day_and_month_could_swap_is_reshaped_only_when_settled(
     item = {"label": "Start date", "kind": "text", "placeholder": "DD/MM/YYYY"}
     found = rejected_repair.shapes(item, value, known=known)
     assert found[:1] == expected
+
+
+def test_an_unambiguous_date_is_never_typed_in_a_shape_that_reads_both_ways():
+    item = {"label": "Start date", "kind": "text"}
+    assert rejected_repair.shapes(item, "2027-05-06") == ["May 06, 2027"]  # not 05/06/2027
+    assert "05/06/2027" in rejected_repair.shapes({**item, "placeholder": "MM/DD/YYYY"}, "2027-05-06")
+
+
+def test_a_widget_that_reads_the_retyped_date_the_other_way_is_not_a_repair(page):
+    page.set_content('<label for="d">Available from</label>'
+                     '<input id="d" placeholder="MM/DD/YYYY" aria-invalid="true" value="2027-05-06">'
+                     "<script>const d = document.getElementById('d');"
+                     "d.addEventListener('change', () => { d.setAttribute('aria-invalid', 'false');"
+                     " const m = d.value.match(/^(\\d\\d)\\/(\\d\\d)\\/(\\d{4})$/);"
+                     " if (m) d.value = `${m[3]}-${m[2]}-${m[1]}`; });</script>")  # day first
+    item = _rejected(page)["Available from"]
+    rejected_repair.repair(page, item)
+    shown = page.locator("#d").input_value()
+    assert shown != "2027-06-05"
+    assert {when for when, _day in rejected_repair.date_readings(shown)} == {datetime(2027, 5, 6)}
 
 
 def test_a_retyped_answer_the_widget_empties_is_not_a_repair(page):

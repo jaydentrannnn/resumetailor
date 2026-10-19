@@ -99,6 +99,7 @@ def test_a_shortened_saved_answer_keeps_its_note_after_reconcile(monkeypatch):
     }
     finish.completed_step_outcomes = {}
     finish.page = finish.filler_js = finish.hints = None
+    finish._sync_frames = lambda: []  # noqa: SLF001 - no page; the reader below is stubbed
     finish.needs_review = [note, "Phone"]
     monkeypatch.setattr(
         fill_widgets, "_observe_fields",

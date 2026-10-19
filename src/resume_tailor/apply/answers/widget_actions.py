@@ -251,15 +251,18 @@ def _placeholder(value: str) -> bool:
     ))
 
 
+def _postal_code(text: str) -> str:
+    """The code a postal-code lookup row or box shows: "95814, Sacramento, ..." -> 95814."""
+    return re.sub(r"\s+", "", text.split(",")[0]).upper()
+
+
 def _postal_option(
     options: list[str], target: str, context: dict[str, str] | None = None,
 ) -> str | None:
     """The postal-code lookup row for the profile's code: its first part is the code
     ("95814, Sacramento, Sacramento, CA"); of several, the one naming the profile's city.
     A ZIP+4 matches its five-digit rows."""
-    def code(text: str) -> str:
-        return re.sub(r"\s+", "", text.split(",")[0]).upper()
-
+    code = _postal_code
     wanted = code(target)
     rows = [option for option in options if code(option) == wanted]
     if not rows and re.fullmatch(r"\d{5}-\d{4}", wanted):
@@ -416,11 +419,12 @@ _COMMITTED_JS = r"""(el) => {
 }"""
 
 
-def committed_option(page: Any, trigger_selector: str) -> str | None:
+def committed_option(page: Any, trigger_selector: str, *, key: str = "") -> str | None:
     """The answer an input dropdown that takes typing already shows, when it is one of
     the dropdown's own options (a committed choice, the applicant's or an earlier fill's);
-    None for an empty box or search text no option carries. Opens the menu to compare,
-    types nothing, and closes it again."""
+    None for an empty box or search text no option carries. A postal-code lookup shows
+    only the code of the row picked ("95815" for "95815, Sacramento, ..."). Opens the menu
+    to compare, types nothing, and closes it again."""
     try:
         trigger = page.locator(trigger_selector).first
         if trigger.evaluate("el => el.tagName") != "INPUT":
@@ -434,6 +438,9 @@ def committed_option(page: Any, trigger_selector: str) -> str | None:
             texts = [text for _row, text in _choices(page, trigger, opened_before)]
         finally:
             trigger.press("Escape")
+        if key == "postal_code":
+            code = _postal_code(shown)
+            return shown if any(_postal_code(text) == code for text in texts) else None
         return shown if any(_norm(text) == _norm(shown) for text in texts) else None
     except Exception as exc:  # noqa: BLE001
         _log.debug("reading a dropdown's committed choice failed: %s", exc)

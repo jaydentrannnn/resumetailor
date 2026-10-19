@@ -3,21 +3,30 @@
 
 from __future__ import annotations
 
+import contextlib
 import os
 import time
 from datetime import date
 from pathlib import Path
+from typing import Any
 
 import pytest
 from playwright.sync_api import sync_playwright
 
-from resume_tailor.apply.answers import education, questions, widget_actions
+from resume_tailor.apply.answers import (
+    education,
+    hybrid_resolver,
+    questions,
+    resolver_types,
+    widget_actions,
+)
 from resume_tailor.apply.forms import (
     field_matcher,
     fill_answers,
     fill_buttons,
     fill_page,
     fill_widgets,
+    fill_wizard,
 )
 
 _FORMS = Path(__file__).parents[2] / "fixtures/forms"
@@ -251,6 +260,7 @@ def test_answers_a_resume_upload_cleared_are_filled_again(page):
     messages: list[str] = []
     run.page, run.filler_js, run.fields, run.hints, run.facts = (
         page, fill_page._load_filler_js(), PAYLOCITY_FIELDS, {}, facts)
+    run.frames = page.frames
     run.merged = {"filled": [{**item, "frame_index": 0} for item in first["filled"]]}
     run.progress = messages.append
     run.classify_unkeyed = run.classify_notices = None
@@ -370,6 +380,79 @@ def test_a_question_turned_required_is_a_change(page):
     before = run._question_signature()  # noqa: SLF001
     page.evaluate("document.getElementById('b').required = true")
     assert run._question_signature() != before  # noqa: SLF001
+
+
+def test_an_upload_revealed_alone_reaches_the_upload_handler(page):
+    page.set_content('<label for="a">Middle name</label><input id="a">')
+    run = _stub_run(page, {})
+    before = run._question_signature()  # noqa: SLF001
+    page.evaluate("""document.body.insertAdjacentHTML('beforeend',
+      '<label for="t">Transcript</label><input id="t" type="file" required>')""")
+    uploads: list[str] = []
+    run._upload_attachments = lambda: uploads.extend(  # noqa: SLF001
+        item["selector"] for item in run.merged["file_inputs"])
+    run._resolve_leftover = lambda _item: None  # noqa: SLF001
+    run._stop_if_out_of_time = lambda _note: False  # noqa: SLF001
+    run._rescan_changed_questions(before)  # noqa: SLF001
+    assert uploads == ["#t"]
+
+
+def test_a_question_in_a_frame_added_after_the_pass_is_filled(page):
+    page.set_content('<label for="a">First name</label><input id="a">')
+    run = _stub_run(page, {"first_name": "Zyxta", "city": "Sacramento"})
+    before = run._question_signature()  # noqa: SLF001
+    page.evaluate("""document.body.insertAdjacentHTML('beforeend', '<iframe srcdoc="'
+      + '<label for=city>City</label><input id=city required>' + '"></iframe>')""")
+    page.wait_for_function("() => document.querySelector('iframe').contentDocument"
+                           "?.getElementById('city')")
+    run._stop_if_out_of_time = lambda _note: False  # noqa: SLF001
+    run._rescan_changed_questions(before)  # noqa: SLF001
+    added = page.frames[1]
+    assert added.input_value("#city") == "Sacramento"
+    assert run.frames[0] is page.main_frame  # earlier answers keep their frame
+    assert any(item["frame_index"] == run.frames.index(added) and item["selector"] == "#city"
+               for item in run.merged["filled"])
+
+
+def test_read_back_numbers_frames_as_the_fill_did_after_one_is_removed(page):
+    page.set_content('<iframe id="a" srcdoc="<label for=f>First name</label><input id=f>"></iframe>'
+                     '<iframe id="b" srcdoc="<label for=c>City</label><input id=c>"></iframe>')
+    page.wait_for_function("() => [...document.querySelectorAll('iframe')]"
+                           ".every(f => f.contentDocument?.querySelector('input'))")
+    run = _stub_run(page, {"first_name": "Zyxta", "city": "Sacramento"})
+    frames = run._sync_frames()  # noqa: SLF001
+    for index, frame in enumerate(frames):
+        run.merged["filled"].extend(
+            {**item, "frame_index": index} for item in fill_widgets._fill_frame(  # noqa: SLF001
+                frame, run.filler_js, run.fields, {}, run.facts)["filled"])
+    attempted = {(item["frame_index"], item["selector"]): item for item in run.merged["filled"]}
+    page.evaluate("document.getElementById('a').remove()")
+    observed = fill_widgets._observe_fields(  # noqa: SLF001
+        page, run.filler_js, {}, attempted, run._sync_frames())  # noqa: SLF001
+    assert {identity: item["key"] for identity, item in observed.items()} == {(2, "#c"): "city"}
+
+
+def test_a_refused_advance_retries_each_frame_with_its_own_ledger(page, monkeypatch):
+    page.set_content('<iframe id="a" srcdoc="<input id=f>"></iframe>'
+                     '<iframe id="b" srcdoc="<input id=p type=tel>"></iframe>')
+    page.wait_for_function("() => [...document.querySelectorAll('iframe')]"
+                           ".every(f => f.contentDocument?.querySelector('input'))")
+    run = fill_wizard._FillWizard.__new__(fill_wizard._FillWizard)
+    run.page, run.frames = page, list(page.frames)
+    first, second = resolver_types.StepLedger(), resolver_types.StepLedger()
+    first.rejected_tried.add("#p")  # frame a's marker: frame b's phone was never tried
+    run.ledgers = {1: first, 2: second}
+    run.answer_pin, run.progress = contextlib.nullcontext, lambda _msg: None
+    run.pkt = run.profile = run.deadline = None
+    run.model_unavailable, run.needs_review = False, []
+    used: list[tuple[str, Any]] = []
+    monkeypatch.setattr(hybrid_resolver, "resolve_step_blockers",
+                        lambda frame, *_a, ledger, **_k: used.append((frame.name or frame.url, ledger)))
+    b_frame = page.frames[2]
+    page.evaluate("document.getElementById('a').remove()")
+    run._resolve_invalid_blockers()  # noqa: SLF001
+    assert [ledger for _frame, ledger in used][1:] == [second]
+    assert run.frames.index(b_frame) == 2
 
 
 def _timed(fn):

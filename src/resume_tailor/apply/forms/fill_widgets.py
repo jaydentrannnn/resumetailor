@@ -91,7 +91,7 @@ def kept_choice(target: Any, item: dict[str, Any], fields: dict[str, str]) -> st
     key = str(item.get("key") or "")
     if key in {"phone_country_code", "salary_expectation"}:
         return None
-    shown = widget_actions.committed_option(target, str(item.get("selector") or ""))
+    shown = widget_actions.committed_option(target, str(item.get("selector") or ""), key=key)
     if not shown or not key:  # no profile answer: whatever option it shows stays
         return shown
     planned = [str(item["value"])] if item.get("value") else []
@@ -144,12 +144,17 @@ def _availability_note(earliest_start: str, jd_text: str) -> str | None:
         return None
     return f"Availability {available.isoformat()} is after the posting's program start {starts.isoformat()}; review before submitting"
 
-def _observe_fields(page: Any, filler_js: str, hints: dict[str, str], attempted: dict[tuple[int, str], dict[str, Any]]) -> dict[tuple[int, str], dict[str, Any]]:
-    """Read current selected values without filling any new answer."""
+def _observe_fields(
+    page: Any, filler_js: str, hints: dict[str, str],
+    attempted: dict[tuple[int, str], dict[str, Any]], frames: list[Any] | None = None,
+) -> dict[tuple[int, str], dict[str, Any]]:
+    """Read current selected values without filling any new answer. ``frames`` numbers
+    the frames as the fill did (`_FillState._sync_frames`), so a frame removed since
+    shifts no answer onto another frame's record."""
     from resume_tailor.apply.ats import workday_dates
 
     observed: dict[tuple[int, str], dict[str, Any]] = {}
-    for frame_index, frame in enumerate(page.frames):
+    for frame_index, frame in enumerate(page.frames if frames is None else frames):
         try:
             current = frame.evaluate(
                 filler_js, {"fields": {}, "hints": hints, "synonyms": fill_page._synonym_payload()}

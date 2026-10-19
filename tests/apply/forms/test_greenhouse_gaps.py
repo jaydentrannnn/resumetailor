@@ -162,7 +162,7 @@ def test_relative_names_are_not_invented():
 def test_successful_empty_final_scan_does_not_restore_old_missing_fields():
     frame = SimpleNamespace(evaluate=lambda *a: [])
     state = SimpleNamespace(
-        page=SimpleNamespace(frames=[frame]),
+        _numbered_frames=lambda: [(0, frame)],
         readiness_js="ready",
         merged={"required_empty": ["Old question"], "leftovers": []},
     )
@@ -174,7 +174,7 @@ def test_failed_final_scan_still_blocks_readiness():
         raise RuntimeError("frame lost")
 
     state = SimpleNamespace(
-        page=SimpleNamespace(frames=[SimpleNamespace(evaluate=fail)]),
+        _numbered_frames=lambda: [(0, SimpleNamespace(evaluate=fail))],
         readiness_js="ready",
         merged={"leftovers": []},
     )

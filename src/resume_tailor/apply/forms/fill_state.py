@@ -252,6 +252,23 @@ class _FillState:
         if self.on_progress:
             self.on_progress(msg)
 
+    def _sync_frames(self) -> list[Any]:
+        """The step's frames with any the page added since appended: every recorded
+        ``frame_index`` keeps naming its frame (a detached one stays in place and fails to
+        evaluate). Filling, rescans and read-back all number frames this way."""
+        frames = list(getattr(self, "frames", None) or [])
+        frames.extend(frame for frame in self.page.frames if frame not in frames)
+        self.frames = frames
+        return frames
+
+    def _numbered_frames(self) -> list[tuple[int, Any]]:
+        """``(frame_index, frame)`` for the frames still on the page, numbered as
+        `_sync_frames` numbers them: what a per-frame record (a resolver ledger, a
+        leftover) is looked up by."""
+        attached = self.page.frames
+        return [(index, frame) for index, frame in enumerate(self._sync_frames())
+                if frame in attached]
+
     def answer_pin(self) -> Any:
         """Pin Fill's answer model: Heavy, or Light once Heavy is at its limit."""
         return model_fallback.pin(self.model_route)

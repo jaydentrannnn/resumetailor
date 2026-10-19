@@ -94,7 +94,7 @@ class _FillFinish(fill_state._FillState):
         """(required fields still empty, fields whose value the form rejects)."""
         required_empty: list[str] = []
         rejected: list[str] = []
-        for frame_index, frame in enumerate(self.page.frames):
+        for frame_index, frame in self._numbered_frames():
             try:
                 ready = (
                     frame.evaluate(self.readiness_js, {"revalidate": True}) if revalidate
@@ -130,7 +130,8 @@ class _FillFinish(fill_state._FillState):
         })
         observed = {
             **self.completed_step_outcomes,
-            **fill_widgets._observe_fields(self.page, self.filler_js, self.hints, attempted),
+            **fill_widgets._observe_fields(
+                self.page, self.filler_js, self.hints, attempted, self._sync_frames()),
         }
         unresolved_labels = {
             str(item.get("label") or "") for identity, item in attempted.items()

@@ -6,9 +6,9 @@
  * exactly one option wins, one naming two stops). ``correct`` runs only the post-upload pass: put
  * back contact facts an ATS's resume parser overwrote, and touch nothing else.
  *
- * ``scan`` fills nothing and returns ``{ questions }``: one entry per question (a radio,
- * checkbox or toggle-button group counts once) with its id, label, kind, options and
- * date part. `questions.plan_for` turns those into ``plan``, ``{ qid: { key, value } }``;
+ * ``scan`` fills nothing and returns ``{ questions, file_inputs }``: one entry per question
+ * (a radio, checkbox or toggle-button group counts once) with its id, label, kind, options
+ * and date part, and the upload controls. `questions.plan_for` turns those into ``plan``, ``{ qid: { key, value } }``;
  * given a plan, a planned question takes its key from it (null: leave it for review)
  * and its ``value``, when set, over ``fields[key]`` (`fill._fill_frame`).
  */
@@ -1433,7 +1433,7 @@
     filled.push({ key, label, value: written, selector: sel });
   }
 
-  if (scan) return { questions: questions_out, frames_skipped };
+  if (scan) return { questions: questions_out, file_inputs, frames_skipped };
   return {
     filled,
     leftovers,

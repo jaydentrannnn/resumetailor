@@ -2309,3 +2309,36 @@ current probe's counting, not the Batch 1 table's.
 - The packaged app (v1.16) stopped these fills at the email/code step: one reported the
   six "digit N of six" code boxes as missing answers. Batch 1's split-code-box detection
   on platform adapters covers that shape; not re-verified live.
+
+### 2026-10-18 — second review round: date repair, revealed uploads, new frames
+
+- **Refused-date repair verifies the meaning, not the text.** `_holds` used to accept any
+  overlap between the readings of what was typed and what the box kept, so "05/06/2027"
+  typed for May 6 and kept by a day-first widget as 2027-06-05 counted as success.
+  Now the kept text must equal the typed shape, or read as exactly the original date
+  (`_meant`). And a numeric shape with day <= 12 that could read both ways is typed only when
+  the box's placeholder declares the order (`_one_reading`); ISO and month-name shapes
+  are always safe.
+- **An upload that appears alone triggers a rescan.** `filler.js` scan mode skipped
+  `type=file`, so the question signature missed a newly inserted required upload. The scan
+  now returns `file_inputs`, and the signature includes them.
+- **Rescans see frames added after the pass.** The signature read `page.frames` but the
+  rescan filled the cached `self.frames`, so a City in a new iframe stayed blank.
+  `_sync_frames` appends new frames and keeps earlier ones at their index (a detached frame
+  stays in place and fails to evaluate), so every `frame_index` already recorded stays
+  valid; `_refill_emptied` uses it too. The signature is keyed by the frame object, not
+  its index.
+- **A postal code the applicant already picked is kept.** Oracle's lookup box shows only
+  the code of the row picked ("95815" for "95815, Sacramento, Sacramento, CA"), so
+  `committed_option` never matched it against the full row text, and the fill replaced it
+  with the profile's code. With `key="postal_code"` it compares codes (`_postal_code`).
+- **Read-back numbers frames as the fill did.** `_observe_fields` enumerated `page.frames`
+  while answers were recorded against the synced list, so removing an earlier iframe put
+  City's verification record under another frame's index. It now takes the fill's frame
+  list; `_sync_frames` moved to `_FillState` so the wizard and finish read-backs use it.
+- **Resolver ledgers and readiness use the same frame numbering.** The refused-Next retry
+  enumerated `page.frames`, so after an earlier iframe was removed another frame got its
+  ledger and skipped its own refused phone as "already tried". `_FillState._numbered_frames`
+  yields `(frame_index, frame)` from `_sync_frames` for frames still attached;
+  `_resolve_blockers` (both callers) and `_scan_readiness` (leftovers matched by
+  `frame_index`) use it, and a removed frame is skipped rather than reported as unreadable.

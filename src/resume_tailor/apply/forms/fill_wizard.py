@@ -233,7 +233,7 @@ class _FillWizard(fill_answers._FillAnswers, fill_ats_steps._FillAtsSteps):
         last_step = step >= fill_outcomes._MAX_WIZARD_STEPS - 1
         advance_btn = self._advance_button()
         if (not advance_btn or self.merged.get("required_empty")) and not last_step:
-            self._resolve_blockers(self.frames)
+            self._resolve_blockers()
             advance_btn = self._advance_button()
 
         if not advance_btn or last_step:
@@ -249,7 +249,8 @@ class _FillWizard(fill_answers._FillAnswers, fill_ats_steps._FillAtsSteps):
             for item in self.merged["filled"] if isinstance(item, dict)
         }
         self.completed_step_outcomes.update(
-            fill_widgets._observe_fields(page, self.filler_js, self.hints, attempted_step)
+            fill_widgets._observe_fields(
+                page, self.filler_js, self.hints, attempted_step, self._sync_frames())
         )
         self.progress(f"advancing wizard step {step + 1}")
         before_step = fill_page._form_step_signature(page)
@@ -283,13 +284,14 @@ class _FillWizard(fill_answers._FillAnswers, fill_ats_steps._FillAtsSteps):
 
     def _resolve_invalid_blockers(self) -> None:
         # After a refused advance: every frame (an iframe form's Next refuses too), once.
-        self._resolve_blockers(self.page.frames, only_invalid=True)
+        self._resolve_blockers(only_invalid=True)
 
-    def _resolve_blockers(self, frames: list[Any], *, only_invalid: bool = False) -> None:
+    def _resolve_blockers(self, *, only_invalid: bool = False) -> None:
         """The hybrid resolver on each frame with that frame's ledger for this step. Its
-        notes (answers the form refused in every shape) go to review."""
+        notes (answers the form refused in every shape) go to review. Frames are numbered
+        as the fill numbered them, so a removed iframe hands no ledger to another frame."""
         with self.answer_pin():
-            for frame_index, frame in enumerate(frames):
+            for frame_index, frame in self._numbered_frames():
                 ledger = self.ledgers.setdefault(frame_index, resolver_types.StepLedger())
                 hybrid_resolver.resolve_step_blockers(
                     frame, self.pkt, self.profile, on_progress=self.progress,

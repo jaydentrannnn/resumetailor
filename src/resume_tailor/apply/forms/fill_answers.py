@@ -71,9 +71,8 @@ class _FillAnswers(fill_state._FillState):
             (item.get("frame_index", 0), item.get("selector"))
             for item in self.merged["filled"] if isinstance(item, dict)
         }
-        self.frames = self.page.frames
         refilled = 0
-        for frame_index, frame in enumerate(self.frames):
+        for frame_index, frame in enumerate(self._sync_frames()):
             try:
                 again = fill_widgets._fill_frame(
                     frame, self.filler_js, self.fields, self.hints, self.facts,
@@ -515,20 +514,27 @@ class _FillAnswers(fill_state._FillState):
             target.fill(selector, canned)
 
     def _question_signature(self) -> frozenset[tuple[Any, ...]]:
-        """Each visible question on the step as (frame, id, label, required, options):
-        what tells that an answer revealed or changed a question."""
+        """Each visible question and each upload on the step as (frame, id, label,
+        required, options): what tells that an answer revealed or changed a question.
+        Keyed by the frame itself, so a frame added or removed moves no other's entries."""
         args = {"fields": {}, "hints": self.hints, "synonyms": fill_page._synonym_payload(),
                 "scan": True}
         seen: set[tuple[Any, ...]] = set()
-        for frame_index, frame in enumerate(self.page.frames):
+        for frame in self.page.frames:
             try:
                 scanned = frame.evaluate(self.filler_js, args)
             except Exception:  # noqa: BLE001 - cross-origin frames fail evaluate
                 continue
+            scanned = scanned if isinstance(scanned, dict) else {}
             seen.update(
-                (frame_index, q.get("qid"), q.get("label"), bool(q.get("required")),
+                (frame, q.get("qid"), q.get("label"), bool(q.get("required")),
                  tuple(q.get("options") or ()))
-                for q in (scanned or {}).get("questions") or [] if isinstance(q, dict)
+                for q in scanned.get("questions") or [] if isinstance(q, dict)
+            )
+            seen.update(
+                (frame, f"file:{item.get('selector')}", item.get("label"),
+                 bool(item.get("required")), ())
+                for item in scanned.get("file_inputs") or [] if isinstance(item, dict)
             )
         return frozenset(seen)
 
@@ -560,7 +566,7 @@ class _FillAnswers(fill_state._FillState):
         new: dict[str, list[dict[str, Any]]] = {
             key: [] for key in ("leftovers", "long_text", "file_inputs")
         }
-        for frame_index, frame in enumerate(self.frames):
+        for frame_index, frame in enumerate(self._sync_frames()):
             try:
                 revealed = fill_widgets._fill_frame(
                     frame, self.filler_js, self.fields, self.hints, self.facts,
