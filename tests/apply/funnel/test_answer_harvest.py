@@ -160,6 +160,10 @@ def test_a_repeated_label_is_never_paired_with_another_rows_field():
     ("06/2027", "2027-06", True),
     ("(916) 555-0147", "+1 916 555 0147", True),
     ("Apt 12, 3 Main St", "Apt 3, 12 Main St", False),
+    ("$90,000", "$900.00", False),
+    ("2027-05-06", "2027-06-05", False),
+    ("2027-06-05", "June 5, 2027", True),
+    ("2027-06-05", "06/05/2027", True),
 ])
 def test_answers_compare_by_their_kind(given, shown, same):
     assert harvest._same_answer(given, shown) is same

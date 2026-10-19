@@ -32,6 +32,16 @@ def test_reads_lookups_and_unmarked_writes_pass():
     assert _decide("POST", "https://jobs.example.com/api/form", b'{"query": "{ form { id } }"}').allow
 
 
+def test_a_write_no_pattern_names_is_refused_and_telemetry_passes():
+    unnamed = _decide("POST", "https://jobs.example.com/api/state", b'{"q1": "Yes"}')
+    assert (unnamed.allow, unnamed.reason) == (False, "unrecognized write")
+    assert _decide("POST", "https://www.google-analytics.com/g/collect", b"v=2").allow
+    assert _decide("POST", "https://jobs.example.com/cdn-cgi/rum", b"{}").allow
+    questions = "https://x.eightfold.ai/api/application/v2/questions"
+    assert _decide("POST", questions, b'{"pid": "1234"}').allow
+    assert not _decide("POST", questions, b'{"answers": [' + b'"Yes", ' * 20 + b'"No"]}').allow
+
+
 def test_a_form_save_never_leaves_whatever_it_carries():
     answers = _decide("POST", "https://jobs.example.com/api/state",
                       b'{"school": "California State University", "gpa": "3.7"}')

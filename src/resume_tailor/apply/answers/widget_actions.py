@@ -388,6 +388,30 @@ _COMMITTED_JS = r"""(el) => {
 }"""
 
 
+def committed_option(page: Any, trigger_selector: str) -> str | None:
+    """The answer an input dropdown that takes typing already shows, when it is one of
+    the dropdown's own options (a committed choice, the applicant's or an earlier fill's);
+    None for an empty box or search text no option carries. Opens the menu to compare,
+    types nothing, and closes it again."""
+    try:
+        trigger = page.locator(trigger_selector).first
+        if trigger.evaluate("el => el.tagName") != "INPUT":
+            return None
+        shown = _committed_text(trigger)
+        if not shown or _placeholder(shown):
+            return None
+        opened_before = _open_menus(page)
+        clicks.safe_click(trigger, purpose="select", timeout=3000)
+        try:
+            texts = [text for _row, text in _choices(page, trigger, opened_before)]
+        finally:
+            trigger.press("Escape")
+        return shown if any(_norm(text) == _norm(shown) for text in texts) else None
+    except Exception as exc:  # noqa: BLE001
+        _log.debug("reading a dropdown's committed choice failed: %s", exc)
+        return None
+
+
 def _committed_text(trigger: Any) -> str:
     """The choice a combobox shows once its menu has closed: React Select's value, else a
     ``role=combobox`` input's own value or a div trigger's own text (Rippling, Workable).

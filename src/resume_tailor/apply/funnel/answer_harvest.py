@@ -33,7 +33,7 @@ from dataclasses import dataclass
 from typing import Any
 
 from resume_tailor import config
-from resume_tailor.apply.answers import answer_memory
+from resume_tailor.apply.answers import answer_memory, rejected_repair
 from resume_tailor.apply.funnel import store, store_models
 
 _log = logging.getLogger(__name__)
@@ -218,9 +218,10 @@ def _amount(text: str) -> float | None:
 def _same_answer(given: str, shown: str) -> bool:
     """Whether the page still shows the fill's answer, written differently or not: case,
     spacing, punctuation, a phone's formatting, a number's ("3.70", "$90,000") or a date's
-    order do not count. Each rule applies to its own kind of answer only, so "3.7" and
-    "7.3" differ."""
-    if _flat(given) == _flat(shown):
+    format do not count. Each rule applies to its own kind of answer only, so "3.7" and
+    "7.3" differ, as do "$900.00" and "$90,000"."""
+    # Punctuation may differ, never the numbers it separates: "$900.00" is not "$90,000".
+    if _flat(given) == _flat(shown) and _NUMBER.findall(given) == _NUMBER.findall(shown):
         return True
     if _PHONE.fullmatch(given) and _PHONE.fullmatch(shown):
         given_digits, shown_digits = re.sub(r"\D", "", given), re.sub(r"\D", "", shown)
@@ -231,10 +232,9 @@ def _same_answer(given: str, shown: str) -> bool:
         return amounts[0] == amounts[1]
     if not (_YEAR.search(given) and _YEAR.search(shown)):
         return False
-    numbers = sorted(int(n) for n in _NUMBER.findall(given))
-    return numbers == sorted(int(n) for n in _NUMBER.findall(shown)) and (
-        re.sub(r"[^a-z]+", "", given.casefold()) == re.sub(r"[^a-z]+", "", shown.casefold())
-    )
+    # A date written another way reads as the same day ("06/05/2027" may be either
+    # order); a swapped day and month in one unambiguous form ("2027-05-06") does not.
+    return bool(rejected_repair.date_readings(given) & rejected_repair.date_readings(shown))
 
 
 def corrections(fill: store_models.FillResult, fields: Iterable[Any]) -> list[dict[str, str]]:

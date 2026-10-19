@@ -402,13 +402,16 @@ class _StepResolver:
         (`rejected_repair`); one no shape fixes becomes a review note. Never the model's.
         True when one was fixed."""
         ledger, fixed = self.ledger, False
+        known = rejected_repair.known_dates(self.packet.fields)
         for item in rejected:
             selector = str(item.get("selector") or "")
-            if not selector or selector in ledger.rejected_tried:
+            seen = selector or f"label:{item.get('label')}"
+            if seen in ledger.rejected_tried:
                 continue
-            ledger.rejected_tried.add(selector)
-            if rejected_repair.repair(
+            ledger.rejected_tried.add(seen)
+            if selector and not item.get("ambiguous") and rejected_repair.repair(
                 self.page, item, country_code=self.profile.phone_country_code or "+1",
+                known=known,
             ):
                 fixed = True
                 self.log(f"retyped {str(item.get('label') or 'a field')[:40]} in the form's shape")

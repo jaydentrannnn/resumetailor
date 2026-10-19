@@ -136,3 +136,63 @@ def test_a_calling_code_menu_only_the_model_could_set_goes_to_it_only_when_refus
              "phone_code_menu": True, "invalid": False}
     refused = {**quiet, "selector": "#code2", "invalid": True}
     assert resolver._select_phone_codes([quiet, refused]) == [refused]  # noqa: SLF001
+
+
+@pytest.mark.parametrize(("value", "known", "expected"), [
+    ("05/06/2027", set(), []),  # May 6 or June 5: left as typed
+    ("06/05/2027", {"2027-06-05"}, ["05/06/2027"]),  # the profile's date settles it
+    ("25/06/2027", set(), ["06/25/2027"]),  # a day past 12 is unambiguous
+])
+def test_a_date_whose_day_and_month_could_swap_is_reshaped_only_when_settled(
+    value, known, expected,
+):
+    item = {"label": "Start date", "kind": "text", "placeholder": "DD/MM/YYYY"}
+    found = rejected_repair.shapes(item, value, known=known)
+    assert found[:1] == expected
+
+
+def test_a_retyped_answer_the_widget_empties_is_not_a_repair(page):
+    page.set_content('<label for="d">Available from</label>'
+                     '<input id="d" placeholder="MM/DD/YYYY" value="2027-05-15"'
+                     ' pattern="[0-9]{2}/[0-9]{2}/[0-9]{4}">'
+                     "<script>const d = document.getElementById('d');"
+                     "d.addEventListener('change', () => { if (d.value !== '2027-05-15')"
+                     " d.value = ''; });</script>")
+    item = _rejected(page)["Available from"]
+    assert not rejected_repair.repair(page, item)
+    assert page.locator("#d").input_value() == "2027-05-15"
+
+
+TWO_PHONES = """
+<div id="home"></div><div id="work"></div>
+<script>
+  for (const [host, value] of [['home', '916-555-0147'], ['work', '(916) 555-0148']]) {
+    document.getElementById(host).attachShadow({mode: 'open'}).innerHTML =
+      `<label for="phone">${host} phone</label><input id="phone" type="tel"
+        pattern="[0-9]{3}-[0-9]{3}-[0-9]{4}" value="${value}">`;
+  }
+</script>"""
+
+
+def test_a_reused_id_in_another_shadow_root_is_repaired_in_its_own_root(page):
+    page.set_content(TWO_PHONES)
+    found = _rejected(page)
+    assert list(found) == ["work phone"]
+    assert found["work phone"]["selector"] == "#work >> #phone"
+    assert rejected_repair.repair(page, found["work phone"])
+    assert page.locator("#work >> #phone").input_value() == "916-555-0148"
+    assert page.locator("#home >> #phone").input_value() == "916-555-0147"
+
+
+def test_a_reused_id_no_host_tells_apart_is_noted_and_left(page):
+    page.set_content(TWO_PHONES.replace('id="home"', 'class="home"').replace(
+        'id="work"', 'class="work"').replace("getElementById(host)",
+                                             "querySelector('.' + host)"))
+    item = _rejected(page)["work phone"]
+    assert item["ambiguous"] and item["selector"] == ""
+    ledger = resolver_types.StepLedger()
+    hybrid_resolver.resolve_step_blockers(
+        page, Packet.model_construct(fields={}), ApplicantProfile(), ledger=ledger,
+    )
+    assert ledger.review_notes[0].startswith("work phone: ")
+    assert page.locator(".home >> #phone").input_value() == "916-555-0147"

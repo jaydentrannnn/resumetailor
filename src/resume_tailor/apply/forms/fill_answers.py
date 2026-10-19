@@ -430,6 +430,21 @@ class _FillAnswers(fill_state._FillState):
             return
         if leftover.get("type") == "combobox" and leftover.get("key"):
             target = self.frames[int(leftover.get("frame_index") or 0)]
+            kept = fill_widgets.kept_choice(target, leftover, self.fields)
+            if kept:
+                self.merged["filled"].append({
+                    "key": "existing", "label": label, "value": kept, "preserved": True,
+                    "selector": leftover["selector"],
+                    "frame_index": leftover.get("frame_index", 0),
+                })
+                self.merged["leftovers"] = [
+                    item for item in self.merged["leftovers"] if item is not leftover
+                ]
+                self.merged["required_empty"] = [
+                    item for item in self.merged.get("required_empty") or []
+                    if item not in {label, leftover["selector"]}
+                ]
+                return
             selected = fill_widgets._fill_declared_combobox(target, leftover, self.fields)
             if selected:
                 self.merged["filled"].append({
@@ -515,41 +530,67 @@ class _FillAnswers(fill_state._FillState):
             if now == before:
                 return
             self.progress(f"{len(now - before)} question(s) appeared or changed; filling them")
-            self._rescan_revealed_choices()
+            self._rescan_revealed()
             before = now
 
-    def _rescan_revealed_choices(self) -> None:
+    def _rescan_revealed(self) -> None:
+        """Fill the step again and hand only what it had not seen to the usual handlers:
+        new answers, choices, written answers, uploads and required questions."""
         merged = self.merged
-        known = {
-            (item.get("frame_index", 0), item.get("selector"))
-            for item in merged["leftovers"] if isinstance(item, dict)
+        seen = {
+            key: {
+                (item.get("frame_index", 0), item.get("selector"))
+                for item in merged[key] if isinstance(item, dict)
+            }
+            for key in ("filled", "leftovers", "long_text", "file_inputs")
         }
-        known_filled = {
-            (item.get("frame_index", 0), item.get("selector"))
-            for item in merged["filled"] if isinstance(item, dict)
+        new: dict[str, list[dict[str, Any]]] = {
+            key: [] for key in ("leftovers", "long_text", "file_inputs")
         }
         for frame_index, frame in enumerate(self.frames):
-            with contextlib.suppress(Exception):
+            try:
                 revealed = fill_widgets._fill_frame(
                     frame, self.filler_js, self.fields, self.hints, self.facts,
                     self.classify_unkeyed, self.classify_notices,
                 )
-                merged["filled"].extend(
-                    {**item, "frame_index": frame_index} for item in revealed.get("filled") or []
-                    if isinstance(item, dict) and item.get("key") != "existing"
-                    and (frame_index, item.get("selector")) not in known_filled
+            except Exception as exc:  # noqa: BLE001 - cross-origin frames fail evaluate
+                _log.debug("rescan skipped frame %d: %s", frame_index, exc)
+                continue
+            if not isinstance(revealed, dict):
+                continue
+            merged["filled"].extend(
+                {**item, "frame_index": frame_index} for item in revealed.get("filled") or []
+                if isinstance(item, dict) and item.get("key") != "existing"
+                and (frame_index, item.get("selector")) not in seen["filled"]
+            )
+            for key, items in new.items():
+                items.extend(
+                    {**item, "frame_index": frame_index} for item in revealed.get(key) or []
+                    if isinstance(item, dict)
+                    and (frame_index, item.get("selector")) not in seen[key]
                 )
-                for item in revealed.get("leftovers") or []:
-                    identity = (frame_index, item.get("selector"))
-                    if identity in known or item.get("type") != "combobox":
-                        continue
-                    item = {**item, "frame_index": frame_index}
-                    merged["leftovers"].append(item)
-                    known.add(identity)
-                    selected = fill_widgets._fill_declared_combobox(frame, item, self.fields)
-                    if selected:
-                        merged["filled"].append({
-                            "key": item.get("key"), "label": item.get("label"),
-                            "value": selected, "selector": item.get("selector"),
-                            "frame_index": frame_index,
-                        })
+            merged["required_empty"].extend(
+                item for item in revealed.get("required_empty") or []
+                if item not in merged["required_empty"]
+            )
+        self._handle_revealed(new)
+
+    def _handle_revealed(self, new: dict[str, list[dict[str, Any]]]) -> None:
+        """Uploads and written answers for the new controls alone (the step's earlier ones
+        were handled), then the new leftovers."""
+        merged = self.merged
+        earlier = {key: merged[key] for key in ("long_text", "file_inputs")}
+        try:
+            merged["long_text"], merged["file_inputs"] = new["long_text"], new["file_inputs"]
+            if new["file_inputs"]:
+                self._upload_attachments()
+            if new["long_text"]:
+                self._answer_long_text()
+        finally:
+            for key, items in earlier.items():
+                merged[key] = items + merged[key]
+        for leftover in new["leftovers"]:
+            merged["leftovers"].append(leftover)
+            if self._stop_if_out_of_time("Fill stopped before all choices were checked"):
+                break
+            self._resolve_leftover(leftover)

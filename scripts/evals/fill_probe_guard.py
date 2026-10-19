@@ -7,7 +7,8 @@ binary), or goes to a session-recording service. A write (a request with a body)
 aborted when it carries one of the applicant's other answers, is a GraphQL mutation, or
 goes to a save-shaped path (autosave, draft, answers, candidate...): answers such as "Yes"
 or "3.7" cannot be told apart from other data, so a form save is refused by its shape.
-Geocoding lookups (a typed city) may pass.
+Geocoding lookups (a typed city), GraphQL reads and writes to known telemetry and
+bot-check services pass; every other write is refused as unrecognized.
 
 `Audit` writes one JSON line per request (method, host, path without query, size,
 decision, reason) and checks every request again, whatever the decision, for the identity
@@ -48,6 +49,23 @@ _SAVE_PATH = re.compile(
     r"auto[-_]?save|save|draft|answers?\b|candidates?\b|submit|upload|resume|profile", re.I
 )
 _MUTATION = re.compile(rb"\bmutation\b")
+#: A GraphQL read: a JSON body whose "query" document opens with `{` or `query`.
+_GRAPHQL_READ = re.compile(rb'"query"\s*:\s*"\s*(?:query\b|\{)')
+#: Telemetry, consent and bot-check services the reviewed runs wrote to (2026-10).
+_TELEMETRY_HOSTS = re.compile(
+    r"(?:^|\.)(?:google-analytics\.com|analytics\.google\.com|doubleclick\.net|"
+    r"googleadservices\.com|google\.com|linkedin\.com|nr-data\.net|datadome\.co|"
+    r"hcaptcha\.com|recaptcha\.net|userway\.org|onetrust\.com|tiktokv\.com|"
+    r"byteoversea\.com|c\.spl\.greenhouse\.io|rum\.smartrecruiters\.com)$",
+    re.I,
+)
+#: A site's own telemetry and bot-check paths (Cloudflare, RUM sinks, view logs).
+_TELEMETRY_PATH = re.compile(r"^/cdn-cgi/|^/rum\b|/vslog$|^/sink/?$", re.I)
+#: Reads a form makes by POST: Eightfold fetches its question list as the form opens
+#: (a 14-byte body, before anything is typed; refusing it leaves an empty form). Only a
+#: short body passes, so no list of answers fits.
+_POSTED_READS = re.compile(r"^/api/application/v\d+/questions$", re.I)
+_POSTED_READ_BYTES = 64
 _TEXT_TYPES = ("json", "x-www-form-urlencoded", "text/", "javascript", "xml", "graphql")
 _BASE64_RUN = re.compile(rb"[A-Za-z0-9+/_-]{12,}={0,2}")
 
@@ -116,7 +134,15 @@ def decide(
         return Decision(False, "applicant answers in body", marked=True)
     if _MUTATION.search(body) or _SAVE_PATH.search(parts.path):
         return Decision(False, "form write")
-    return Decision(True, "write without applicant data" if method not in _READS else "read")
+    if _GRAPHQL_READ.search(body):
+        return Decision(True, "graphql read")
+    if _TELEMETRY_HOSTS.search(host) or _TELEMETRY_PATH.search(parts.path):
+        return Decision(True, "telemetry write")
+    if _POSTED_READS.search(parts.path) and len(body) <= _POSTED_READ_BYTES:
+        return Decision(True, "posted read")
+    # Anything else may be a form save under a name no pattern knows ({"q1": "Yes"} to
+    # /api/state): refused, so an allowed write is one a reviewer can name.
+    return Decision(False, "unrecognized write")
 
 
 def check(

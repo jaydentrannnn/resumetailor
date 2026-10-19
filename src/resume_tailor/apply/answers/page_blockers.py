@@ -74,6 +74,27 @@ _INSPECT_PAGE_JS = """
   const labelFor = getLabel;
   /*DOM_COMMON*/
 
+  // Separate components can reuse an id inside their own shadow roots (two "#phone"s):
+  // such a selector is scoped by its hosts ("#host >> #phone", as Playwright chains it)
+  // and kept only when the chain finds this element alone; else '' (not actionable).
+  const inside = (node, part) => [
+    ...deepQueryAll(node, part), ...(node.shadowRoot ? deepQueryAll(node.shadowRoot, part) : []),
+  ];
+  const resolveChain = (parts) => parts.reduce(
+    (nodes, part) => [...new Set(nodes.flatMap(node => inside(node, part)))], [document]);
+  const actionableSelector = (el) => {
+    const sel = uniqueSelector(el);
+    if (!sel || deepQueryAll(document, sel).length <= 1) return sel;
+    const parts = [sel];
+    for (let root = el.getRootNode(); root instanceof ShadowRoot; root = root.host.getRootNode()) {
+      const hostSel = uniqueSelector(root.host);
+      if (!hostSel) return '';
+      parts.unshift(hostSel);
+    }
+    const found = resolveChain(parts);
+    return found.length === 1 && found[0] === el ? parts.join(' >> ') : '';
+  };
+
   const errors = [];
   document.querySelectorAll('[data-automation-id*="error" i], [role="alert"], .alert-danger, .field-error, [aria-invalid="true"]').forEach(el => {
     if (isVisible(el)) {
@@ -118,7 +139,7 @@ _INSPECT_PAGE_JS = """
       if (singleVal) current = singleVal.innerText.trim();
 
       const label = getLabel(el);
-      const sel = uniqueSelector(el);
+      const sel = actionableSelector(el);
       const phoneCode = !!el.closest('.phone-input__country, [data-automation-id="formField-countryPhoneCode"]')
         || /dial(?:ing|ling)? code|calling code|phone country|country code/i.test(label);
       if (sel && (phoneCode || !current || current.toLowerCase().includes('select') || current.toLowerCase().includes('choose'))) {
@@ -192,8 +213,8 @@ _INSPECT_PAGE_JS = """
     if (!String(el.value || '').trim()) return;
     const refused = el.getAttribute('aria-invalid') === 'true'
       || (el.validity && !el.validity.valid && !el.validity.valueMissing);
-    const sel = uniqueSelector(el);
-    if (!refused || !sel) return;
+    if (!refused) return;
+    const sel = actionableSelector(el);
     const field = el.closest('[data-automation-id^="formField-"], .form-group, fieldset, label')
       || el.parentElement;
     const notices = field?.querySelectorAll(
@@ -202,6 +223,7 @@ _INSPECT_PAGE_JS = """
       .find(text => text && text.length < 200);
     rejected.push({
       selector: sel,
+      ambiguous: !sel,  // a reused id no chain tells apart: noted, never retyped
       label: getLabel(el) || 'Field',
       help: helpFor(el),
       kind: el.tagName === 'SELECT' ? 'select' : el.tagName === 'TEXTAREA' ? 'textarea' : type,

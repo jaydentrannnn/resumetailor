@@ -2260,3 +2260,32 @@ current probe's counting, not the Batch 1 table's.
   profile's code cannot be confirmed there, and it went to the model (one call, about
   20 s, nothing gained). A calling-code menu the profile could not set now goes to the
   model only when the form marks it invalid. Rerun: sr1/sr2 0 calls, 7/8 committed.
+
+### 2026-10-18 — Batch 2 follow-ups from an outside review
+
+- **Existing dropdown answers**: `filler.js` cannot tell a committed choice from search
+  text in an input dropdown that takes typing, so such a box became a leftover and
+  `_fill_declared_combobox` replaced "Female" with the profile's answer.
+  `widget_actions.committed_option` opens the menu (typing nothing) and reads the box's
+  text as a choice only when it is one of the menu's options; `fill_widgets.kept_choice`
+  keeps it unless it is what the fill would pick anyway (selecting that commits it).
+- **Date repair**: "05/06/2027" reads as May 6 and June 5; a date whose day and month
+  could swap is reshaped only when one reading is a date in the packet fields, else it
+  is left as typed and noted.
+- **Repair verification**: a new shape counts only when the form accepts it *and* the box
+  still holds the same answer (same phone number, postal code or date); a widget that
+  empties the box is not a repair, and the original is put back.
+- **Reused ids in shadow roots**: `page_blockers` scopes a selector that matches more than
+  one element by its hosts (`#work >> #phone`, Playwright's chain), kept only when the
+  chain finds that element alone; otherwise a refused box is `ambiguous` and only noted,
+  and an unresolved dropdown is not reported (as before shadow roots were read).
+- **Rescans**: the pass after a question change hands its new written answers, uploads,
+  leftovers and required questions to the usual handlers (only the new ones), not just
+  dropdowns.
+- **Probe guard (eval only)**: writes are refused unless they are telemetry or bot-check
+  traffic (named hosts, `/cdn-cgi/`, `/rum`, `/vslog`, `/sink`), a GraphQL read, or
+  Eightfold's question-list POST (short body only; refusing it leaves an empty form).
+  `{"q1": "Yes"}` to an unnamed path is now refused as an unrecognized write.
+- **Corrections signal**: punctuation may differ but never the numbers it separates
+  ("$900.00" ≠ "$90,000"), and dates compare by their readings, so a swapped day and
+  month in ISO form is a change.

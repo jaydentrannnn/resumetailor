@@ -100,6 +100,21 @@ def test_rippling_dropdowns_commit_by_input_value_and_div_text(page):
     assert page.get_attribute("#field-59", "aria-expanded") == "false"
 
 
+@pytest.mark.parametrize(("shown", "kept"), [
+    ("He/him/his", "He/him/his"),  # one of its options: an existing answer
+    ("He/h", None),  # search text no option carries
+    ("They/them/theirs", None),  # what the fill picks anyway: selecting commits it
+])
+def test_an_input_dropdown_keeps_an_option_it_already_shows(page, shown, kept):
+    page.set_content((_FORMS / "rippling_dropdowns.html").read_text(encoding="utf-8"))
+    page.fill("#field-24", shown)
+    page.keyboard.press("Escape")
+    item = {"key": "pronouns", "label": "Pronouns", "selector": "#field-24"}
+    assert fill_widgets.kept_choice(page, item, {"pronouns": "They/them/theirs"}) == kept
+    assert page.input_value("#field-24") == shown  # read, never typed into
+    assert page.get_attribute("#field-24", "aria-expanded") == "false"
+
+
 def test_a_div_dropdown_showing_its_choice_is_kept(page):
     page.set_content((_FORMS / "rippling_dropdowns.html").read_text(encoding="utf-8"))
     page.evaluate("document.querySelector('#field-72').textContent = 'Female'")
@@ -281,7 +296,9 @@ def _stub_run(page, fields):
     run = fill_answers._FillAnswers.__new__(fill_answers._FillAnswers)
     run.page, run.filler_js, run.fields, run.hints = page, fill_page._load_filler_js(), fields, {}  # noqa: SLF001
     run.facts = questions.facts_for(fields, today=date(2026, 10, 18))
-    run.frames, run.merged, run.messages = page.frames, {"filled": [], "leftovers": []}, []
+    run.frames, run.messages = page.frames, []
+    run.merged = {key: [] for key in (
+        "filled", "leftovers", "long_text", "file_inputs", "required_empty")}
     run.progress = run.messages.append
     run.classify_unkeyed = run.classify_notices = None
     run._out_of_time = lambda: False  # noqa: SLF001
@@ -297,6 +314,44 @@ def test_a_question_an_answer_reveals_is_filled_by_one_more_pass(page):
     run._rescan_changed_questions(before)  # noqa: SLF001
     assert page.eval_on_selector("#state", "el => el.selectedOptions[0].text") == "California"
     assert run.messages == ["1 question(s) appeared or changed; filling them"]
+
+
+UNCOVERING = """
+<label for="source">How did you hear about us?</label>
+<select id="source"><option value="">Select</option><option>Referral</option><option>Other</option></select>
+<div id="more" hidden>
+  <label for="why">Tell us more about the referral</label><textarea id="why" rows="4" required></textarea>
+  <label for="letter">Referral letter</label><input id="letter" type="file" required>
+  <label for="badge">Referrer badge number</label><input id="badge" required>
+</div>
+<script>
+  document.getElementById('source').addEventListener('change', e => {
+    document.getElementById('more').hidden = e.target.value !== 'Referral';
+  });
+</script>"""
+
+
+def test_a_revealed_written_answer_and_upload_reach_their_handlers(page):
+    page.set_content(UNCOVERING)
+    run = _stub_run(page, {"how_heard": "Referral"})
+    run.merged["long_text"] = [{"label": "Earlier question", "selector": "#old"}]
+    before = run._question_signature()  # noqa: SLF001
+    fill_widgets._fill_frame(page, run.filler_js, run.fields, {}, run.facts)  # noqa: SLF001
+    handled: dict[str, list[str]] = {}
+    run._upload_attachments = lambda: handled.setdefault(  # noqa: SLF001
+        "uploads", [item["selector"] for item in run.merged["file_inputs"]])
+    run._answer_long_text = lambda: handled.setdefault(  # noqa: SLF001
+        "written", [item["selector"] for item in run.merged["long_text"]])
+    run._resolve_leftover = lambda item: handled.setdefault("left", []).append(  # noqa: SLF001
+        item["selector"])
+    run._stop_if_out_of_time = lambda _note: False  # noqa: SLF001
+    run._rescan_changed_questions(before)  # noqa: SLF001
+    assert {key: handled[key] for key in ("uploads", "written")} == {
+        "uploads": ["#letter"], "written": ["#why"]}  # the new ones alone
+    assert "#source" not in handled.get("left", [])
+    assert [item["selector"] for item in run.merged["long_text"]] == ["#old", "#why"]
+    assert "Referrer badge number" in run.merged["required_empty"]
+    assert "#badge" in handled["left"]
 
 
 def test_a_step_whose_questions_did_not_change_gets_no_extra_pass(page):
