@@ -232,8 +232,10 @@ def install(
             route.abort()
 
     def _socket(ws: Any) -> None:
+        # Never connect_to_server(): the page's socket is then a mock that reaches nobody.
+        # Calling ws.close() here deadlocks the sync API (every eightfold1 run stalled
+        # right after its chat widget's socket, 2026-10).
         audit.record("WEBSOCKET", ws.url, 0, Decision(False, "websocket"))
-        ws.close()
 
     context.add_init_script(NO_SERVICE_WORKERS_JS)
     context.route("**/*", _route)

@@ -20,6 +20,7 @@ from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 
+import capture_form  # noqa: E402
 import fill_probe_data as synth  # noqa: E402
 import fill_probe_guard  # noqa: E402
 
@@ -139,6 +140,20 @@ def measures(result: store_models.FillResult | None, progress: list[str]) -> dic
     }
 
 
+def _progress_log(progress: list[str], started: float):
+    """Keep each progress line, and write it to ``<tag>.progress.log`` at once, so a run
+    cut by the parent's time limit still shows where it stopped."""
+    log = (OUT / f"{TAG}.progress.log").open("w", encoding="utf-8")
+
+    def record(message: str) -> None:
+        line = f"{time.monotonic() - started:6.1f}s {message}"
+        progress.append(line)
+        log.write(line + "\n")
+        log.flush()
+
+    return record
+
+
 def main() -> int:
     _patch()
     progress: list[str] = []
@@ -153,7 +168,7 @@ def main() -> int:
             submit_mode="awaiting_review",
             fill_mode="initial",
             should_cancel=None,
-            on_progress=lambda m: progress.append(f"{time.monotonic() - started:6.1f}s {m}"),
+            on_progress=_progress_log(progress, started),
             applicant_profile=synth.PROFILE,
         )
         result = run.run()
@@ -161,6 +176,11 @@ def main() -> int:
             for page in connected.contexts[0].pages:
                 if page.url.startswith("http"):
                     page.screenshot(path=str(OUT / f"{TAG}.png"), full_page=True)
+                    if os.environ.get("PROBE_CAPTURE"):  # the page as the fill left it
+                        for index, frame in enumerate(page.frames):
+                            with contextlib.suppress(Exception):
+                                name = "end" if index == 0 else f"end.frame{index}"
+                                capture_form.capture(frame, OUT / "captures" / f"{TAG}.{name}.html")
     except Exception:  # noqa: BLE001
         error = traceback.format_exc()[-2000:]
     AUDIT.close()

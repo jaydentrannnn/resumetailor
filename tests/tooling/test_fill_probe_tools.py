@@ -168,3 +168,35 @@ def test_fixtures_from_probe_captures_pass_the_leak_check():
     found = {name: capture_form.leaks((forms / f"{name}.html").read_text(encoding="utf-8"))
              for name in _PROBE_FIXTURES}
     assert not {name: left for name, left in found.items() if left}
+
+
+class _Context:
+    def __init__(self):
+        self.socket_handler = None
+
+    def add_init_script(self, script):
+        pass
+
+    def route(self, pattern, handler):
+        pass
+
+    def route_web_socket(self, pattern, handler):
+        self.socket_handler = handler
+
+
+class _Socket:
+    url = "wss://chat.example.com/?session=secret"
+
+    def connect_to_server(self):
+        raise AssertionError("a probe socket never reaches the site")
+
+    def close(self, *args):
+        raise AssertionError("close() inside the sync handler deadlocks Playwright")
+
+
+def test_a_page_socket_is_recorded_and_left_unconnected(tmp_path):
+    context, audit = _Context(), fill_probe_guard.Audit(tmp_path / "r.jsonl")
+    fill_probe_guard.install(context, audit, MARKERS, ANSWERS)
+    context.socket_handler(_Socket())
+    audit.close()
+    assert audit.summary()["counts"] == {"block: websocket": 1}
