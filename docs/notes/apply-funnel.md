@@ -2116,3 +2116,33 @@ frozen worktree of the pre-change commit, run twice for noise.
 - **Corrections signal:** a label asked or filled more than once is never paired (the fill record and the page's fields share no identity); `_same_answer` compares numbers as amounts, digits as phones and number sets only for dates ("3.7" ≠ "7.3").
 - **GPA:** "At least / Minimum of" are inclusive lower bounds; "At most / Up to" inclusive upper bounds.
 - **Probe tools (eval only):** the live guard blocks writes carrying the made-up applicant's other answers, GraphQL mutations and save-shaped paths, allowing geocoding lookups; the audit re-checks every request apart from the decision and lists allowed writes. The sanitizer clears embedded `data-*` state, widget selections and known made-up values; `leaks` is a pattern check, not a proof. The read-only probe uses `for_fill`, presses Apply off Workday, and re-checks the landed platform, falling back to the frozen baseline's own decisions. Measurements before this change are not comparable with later ones.
+
+### 2026-10-18 — Batch 1 measured (fill_probe, 25 postings, made-up applicant)
+
+Two runs of the pre-Batch-1 code (4129d56) give the noise; one run of Batch 1. Read-only
+runs were sequential; the live Batch 1 run ran beside old-code run B (separate browsers,
+reverse posting order), so its time is not comparable.
+
+| Measure | Old A | Old B | Batch 1 |
+|---|---|---|---|
+| Read-only: questions keyed by rules or model | 116 | 117 | 133 |
+| Read-only: required questions keyed | 71 | 72 | 80 |
+| Live: answers committed (17 live postings) | 101 | 100 | 109 |
+| Live: required questions left | 35 | 36 | 27 |
+| Live: steps reached | 17 | 17 | 17 |
+| Live: model calls | 13 | 13 | 13 |
+| Allowed requests carrying applicant data | 0 | 0 | 0 |
+
+- Live gains: pinpoint1 5→9 (section legend no longer the label), jazz1 0→1, rippling1 5→6,
+  ashby1 32→33; lever2 10 vs 9/8 is inside the noise. gh1, sr1, sr2, ashby2, tiktok1 equal;
+  gh1 required left 4→2 (dropdown stand-ins).
+- Read-only screen fixes: breezy1 sign-in→form (7 keyed, was 1), sr1/sr2 unknown→form,
+  avature1 create_account→sign_in (one password box), jibe1 now handled as iCIMS.
+- Rippling/Workable: labels are now the real questions, but those are custom dropdowns the
+  fill cannot commit yet ("Custom dropdown needs an observed selection"), so read-only
+  gains there wait on Batch 2's `widget_actions` work. paylocity1 (15 keyed, 0 committed)
+  and jobvite1/2 (0 committed) are open.
+- No Workday target in the set: Workday is covered by the test suite only. Steps are flat:
+  no live target had a later step to reach. eightfold1 timed out on every run.
+- Allowed writes reviewed by host/path: analytics, RUM, bot-challenge and Ashby's
+  read-only GraphQL queries only; no form save.
