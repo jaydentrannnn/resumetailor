@@ -76,9 +76,7 @@ export function ApplicationDetailPage() {
           {error}
         </p>
       )}
-      <div
-        className={`grid items-start gap-5 ${beside ? BESIDE_DOCUMENT : ""}`}
-      >
+      <div className={`grid items-start gap-5 ${beside ? BESIDE_DOCUMENT : ""}`}>
         <div className="min-w-0 space-y-4">
           <Tabs
             label="Application details"

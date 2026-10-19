@@ -46,8 +46,9 @@ hermetic backend).
 - Visual language (tokens, fonts, primitives, status marks, selected state): `docs/design.md`;
   the approved target to match is `docs/design/reference.html`. Use `components/ui`
   primitives; never hand-build tiles, buttons or status pills. Settings-like pages
-  (Settings, Profile, Vocabulary, Job sources, the Apply list) wrap their tiles in
-  `TileLayout` "flat" so they read as rows; `SettingRow` lives in `components/ui/`.
+  (Settings, Vocabulary, Job sources, the Apply list) wrap their tiles in `TileLayout`
+  "flat" so they read as rows; Profile and the setup wizard use "ruled" (a hairline under
+  each group); `SettingRow` lives in `components/ui/`.
 - Don't re-propose declined features: per-stage model overrides, hybrid routing,
   always-on repair toggles, run history.
 
