@@ -130,6 +130,18 @@
   "#\\34 000653003": "Veteran Status*",
   "#\\34 000654003": "Disability status*"
  },
+ "jobvite_apply_form.html": {
+  "#jv-field-a1": "First Name*",
+  "#jv-field-a2": "Last Name*",
+  "#jv-field-a3": "Email*",
+  "#jv-field-a4": "Cell Phone*",
+  "#jv-field-a5": "Country*",
+  "#jv-field-a6": "State*",
+  "#jv-field-a7": "Zip Code*"
+ },
+ "jobvite_location_gate.html": {
+  "#jv-country-select": "Location of Residence and Language:"
+ },
  "jobvite_send_application.html": {
   "#first": "First Name",
   "#email": "Email"
@@ -149,7 +161,24 @@
   "#source": "How did you hear about us?",
   "#visible_blank": "Leave this field blank if you have none"
  },
+ "paylocity_resume_parse.html": {
+  "#useAttachedResumeToFillOutApplication": "Fill out application with my resume",
+  "#info\\.firstName": "First Name (required)",
+  "#info\\.lastName": "Last Name (required)",
+  "#info\\.email": "Email Address (required)",
+  "#info\\.cellPhone": "Mobile Number (required)"
+ },
  "qualtrics_apply_chatbot.html": {},
+ "rippling_dropdowns.html": {
+  "#field-24": "Pronouns",
+  "#field-38": "Phone country code",
+  "#field-59": "Are you legally authorized to work in the United States?*",
+  "#field-72": "Gender"
+ },
+ "workable_dropdowns.html": {
+  "#input_CA_101_input": "Are you authorized to work in the United States?*",
+  "#input_CA_102_input": "Will you now or in the future require sponsorship?*"
+ },
  "workday_graduation_date.html": {
   "#primaryQuestionnaire--e2195e91707810003428d6cc5ab70000-dateSectionMonth-input": "Month",
   "#primaryQuestionnaire--e2195e91707810003428d6cc5ab70000-dateSectionDay-input": "Day",

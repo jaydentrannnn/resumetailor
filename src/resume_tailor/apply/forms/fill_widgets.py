@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import contextlib
 import json
+import logging
 import re
 import shutil
 from collections.abc import Callable
@@ -21,6 +22,8 @@ from resume_tailor.pipeline import report
 from resume_tailor.pipeline.jd import JobRequirements
 
 from . import fill_page
+
+_log = logging.getLogger(__name__)
 
 
 def _attachment_purpose(
@@ -129,10 +132,14 @@ def _observe_fields(page: Any, filler_js: str, hints: dict[str, str], attempted:
 
     observed: dict[tuple[int, str], dict[str, Any]] = {}
     for frame_index, frame in enumerate(page.frames):
-        with contextlib.suppress(Exception):
+        try:
             current = frame.evaluate(
                 filler_js, {"fields": {}, "hints": hints, "synonyms": fill_page._synonym_payload()}
             )
+        except Exception as exc:  # noqa: BLE001 - a cross-origin or navigating frame
+            _log.debug("read-back skipped frame %d: %s", frame_index, exc)
+            current = {}
+        if isinstance(current, dict):
             for item in current.get("filled") or []:
                 selector = item.get("selector")
                 if not selector:

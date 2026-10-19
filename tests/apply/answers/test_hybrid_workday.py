@@ -45,6 +45,7 @@ def test_greenhouse_degree_search_uses_bachelor_root(monkeypatch):
     trigger.count.return_value = 1
     trigger.is_visible.return_value = True
     trigger.evaluate.return_value = "input"
+    trigger.get_attribute.return_value = None  # a search input that takes typing
     option = MagicMock()
     option.is_visible.return_value = True
     option.inner_text.return_value = "Bachelor's Degree"
@@ -54,7 +55,7 @@ def test_greenhouse_degree_search_uses_bachelor_root(monkeypatch):
     monkeypatch.setattr(
         widget_actions,
         "_menu_choices",
-        lambda _page, _trigger: [option] if trigger.fill.call_args and trigger.fill.call_args.args[0] == "bachelor" else [],
+        lambda *_args: [option] if trigger.fill.call_args and trigger.fill.call_args.args[0] == "bachelor" else [],
     )
 
     assert widget_actions._select_combobox_option(page, "#degree", "Bachelors", key="degree_level")  # noqa: SLF001
@@ -76,7 +77,7 @@ def test_greenhouse_phone_code_verifies_selected_country_option(monkeypatch):
     canada.is_visible.return_value = True
     canada.inner_text.return_value = "Canada +1"
     monkeypatch.setattr(widget_actions, "_selected_combobox_text", lambda _trigger: "+1")
-    monkeypatch.setattr(widget_actions, "_menu_choices", lambda _page, _trigger: [us, canada])
+    monkeypatch.setattr(widget_actions, "_menu_choices", lambda *_args: [us, canada])
 
     assert widget_actions._select_combobox_option(  # noqa: SLF001
         page, "#country", "+1", key="phone_country_code", phone_region="United States",
@@ -230,7 +231,7 @@ def resolver_page(monkeypatch):
         page_blockers, "extract_page_blockers",
         lambda _page: {"errors": [], "unresolved": [dict(f) for f in state.unresolved], "advance_disabled": False},
     )
-    monkeypatch.setattr(widget_actions, "_menu_choices", lambda _page, trigger: [])
+    monkeypatch.setattr(widget_actions, "_menu_choices", lambda *_args: [])
     monkeypatch.setattr(widget_actions, "_is_upload_widget", lambda _locator: False)
     # These tests drive the resolver's rounds; the basis an answer cites is checked in
     # test_resolver_basis.py.
@@ -278,8 +279,9 @@ def test_transient_model_failure_is_recorded_for_review(resolver_page, monkeypat
     assert "[hybrid-resolver] Autofill model unavailable (HTTP 503); leaving 2 question(s) for review" in messages
 
 
-def test_a_second_pass_on_the_step_touches_only_the_new_gap(resolver_page):
+def test_a_second_pass_on_the_step_touches_only_the_new_gap(resolver_page, monkeypatch):
     state = resolver_page
+    monkeypatch.setattr(widget_actions, "_choices", lambda *_args, **_kwargs: [(None, "Yes"), (None, "No")])
     state.unresolved = [_field("#state", "State"), _field("#vet", "Veteran status")]
     # The model answers State; Veteran status it cannot answer.
     state.replies.append(resolver_types.StepResolution(actions=[resolver_types.FieldAction(
@@ -290,13 +292,14 @@ def test_a_second_pass_on_the_step_touches_only_the_new_gap(resolver_page):
     assert len(state.calls) == 1
     assert state.opened == ["#vet"]  # State's options were already known
 
-    # Same step, the field the model skipped: sent once more, alone; nothing is reopened.
+    # Same step, the field the model skipped: sent once more, alone. Its options are read
+    # again once, since State was answered after they were read (a list can follow it).
     state.replies.append(resolver_types.StepResolution(actions=[]))
     _resolve(state, ledger)
     assert len(state.calls) == 2
     sent = state.calls[1]["messages"][0]["content"]
     assert "#vet" in sent and "#state" not in sent
-    assert state.opened == ["#vet"]
+    assert state.opened == ["#vet", "#vet"]
 
     # Skipped twice: it is the applicant's; the model is not asked a third time.
     messages: list[str] = []
@@ -313,6 +316,7 @@ def test_a_second_pass_on_the_step_touches_only_the_new_gap(resolver_page):
     sent = state.calls[2]["messages"][0]["content"]
     assert "#reloc" in sent and "#vet" not in sent and "#state" not in sent
     assert any("retrying 1 unfilled field(s): Willing to relocate" in m for m in messages)
+    assert state.opened == ["#vet", "#vet", "#reloc"]  # nothing answered since: no re-read
 
 
 def _yes_no(selector: str, label: str) -> dict:

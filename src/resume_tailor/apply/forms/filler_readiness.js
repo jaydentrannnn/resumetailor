@@ -53,6 +53,15 @@
     return hiddenFromPeople(el) && TRAP_TEXT.test(`${labelFor(el)} ${el.getAttribute("placeholder") || ""}`);
   }
 
+  /** filler.js `reactSelectBox`: React Select's own control box, not any "-control" class. */
+  const REACT_SELECT_CLASS = /(?:^|\s)(?:[\w-]*select__control|css-\w+-control)(?:\s|$)/;
+  function reactSelectBox(el) {
+    const box = el.closest("[class*='select__control'], [class*='-control']");
+    if (!box) return null;
+    if (REACT_SELECT_CLASS.test(box.getAttribute("class") || "")) return box;
+    return box.querySelector("[class*='alueContainer'], [class*='value-container'], [class*='ndicatorsContainer']") ? box : null;
+  }
+
   /** querySelectorAll that also searches open shadow roots, in document order. */
   function deepQueryAll(root, sel) {
     const out = [];
@@ -154,7 +163,7 @@
     const type = (el.getAttribute("type") || el.tagName.toLowerCase()).toLowerCase();
     if (skipTypes.has(type)) continue;
     // React Select's internal required/search inputs belong to the parent question.
-    if (el.closest('.select__control, [class*="-control"]') && el.getAttribute('role') !== 'combobox') continue;
+    if (reactSelectBox(el) && el.getAttribute('role') !== 'combobox') continue;
     if (el.getAttribute("data-automation-id") === "beecatcher" || honeypot(el)) continue;
     // The stand-in is reported as its dropdown, once, when only the stand-in says required.
     const owner = twinOwner(el);

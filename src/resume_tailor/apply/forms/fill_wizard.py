@@ -61,6 +61,8 @@ class _FillWizard(fill_answers._FillAnswers, fill_ats_steps._FillAtsSteps):
                 return handoff
         if self._interstitial_barrier():
             return fill_outcomes._BREAK
+        if fill_buttons.decline_cookie_banner(self.page):
+            self.progress("declined the cookie banner covering the form")
 
         self._scan_frames()
         if self.is_workday and self._workday_blank_step():

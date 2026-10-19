@@ -337,3 +337,41 @@ def decide_submit_action(
     if auto and ready_to_submit:
         return "auto_submit"
     return "awaiting_review"
+
+
+#: A consent button that refuses optional cookies. "Accept" is never pressed for the
+#: applicant, so a banner offering only that is left where it is.
+_COOKIE_DECLINE = re.compile(
+    r"^\s*(?:decline|reject|refuse|deny)(?:\s+all)?(?:\s+(?:optional\s+|non-essential\s+)?cookies)?\s*$"
+    r"|^\s*(?:use\s+)?(?:only\s+)?(?:strictly\s+)?(?:necessary|essential)(?:\s+cookies)?(?:\s+only)?\s*$",
+    re.I,
+)
+#: True when the button sits in a cookie banner: a close ancestor named for cookies or
+#: consent, or a short one whose text mentions cookies (never a whole form).
+_COOKIE_BANNER_JS = r"""(el) => {
+  for (let box = el, depth = 0; box && depth < 8; box = box.parentElement, depth++) {
+    const clues = [box.id, String(box.className?.baseVal ?? box.className ?? ''),
+      box.getAttribute('data-ui'), box.getAttribute('data-testid'), box.getAttribute('aria-label')];
+    if (/cookie|consent|gdpr|onetrust|cookiebot/i.test(clues.join(' '))) return true;
+    const text = box.innerText || '';
+    if (/\bcookies?\b/i.test(text) && text.length < 1500) return true;
+  }
+  return false;
+}"""
+
+
+def decline_cookie_banner(page: Any) -> bool:
+    """Press a cookie banner's "Decline all" / "Reject all". The banner lies over the form
+    and swallows the clicks meant for the controls under it (every Workable dropdown click
+    timed out, 2026-10). True when one was pressed."""
+    try:
+        buttons = page.get_by_role("button", name=_COOKIE_DECLINE).filter(visible=True)
+        for index in range(min(buttons.count(), 4)):
+            button = buttons.nth(index)
+            if button.evaluate(_COOKIE_BANNER_JS, timeout=1000) is True:
+                clicks.safe_click(button, purpose="dismiss", timeout=2000)
+                page.wait_for_timeout(300)
+                return True
+    except Exception:  # noqa: BLE001 - unreadable or refused: the banner stays
+        pass
+    return False

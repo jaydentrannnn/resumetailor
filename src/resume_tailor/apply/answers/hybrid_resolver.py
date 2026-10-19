@@ -410,13 +410,19 @@ class _StepResolver:
         return seen_before, unresolved
 
     def _load_options(self, unresolved: list[dict[str, Any]]) -> None:
-        """Only let the model choose from options actually rendered by this form."""
+        """Only let the model choose from options actually rendered by this form.
+
+        Options are read once the menu has loaded, and read again after another control
+        on the step is answered (a State list follows the Country chosen); an empty read
+        is never kept."""
         page, ledger = self.page, self.ledger
+        answered = frozenset(ledger.done)
         for field in unresolved:
             if field.get("type") != "combobox" or not field.get("selector"):
                 continue
             selector = str(field["selector"])
-            if selector in ledger.options:
+            read_after = ledger.options_after.get(selector, answered)
+            if ledger.options.get(selector) and read_after == answered:
                 field["options"] = ledger.options[selector]
                 continue
             try:
@@ -424,16 +430,18 @@ class _StepResolver:
                 if widget_actions._is_upload_widget(trigger):
                     field["options"] = []
                     continue
+                opened_before = widget_actions._open_menus(page)
                 clicks.safe_click(trigger, purpose="select", timeout=3000)
-                choices = widget_actions._menu_choices(page, trigger)
                 all_options = [
-                    choice.inner_text().strip() for choice in choices if choice.is_visible()
+                    text for _row, text in widget_actions._choices(page, trigger, opened_before)
                 ]
                 trigger.press("Escape")
             except Exception:  # noqa: BLE001
                 all_options = []
             field["options"] = all_options[:50]
-            ledger.options[selector] = field["options"]
+            if field["options"]:
+                ledger.options[selector] = field["options"]
+                ledger.options_after[selector] = answered
 
     def _select_phone_codes(self, unresolved: list[dict[str, Any]]) -> list[dict[str, Any]]:
         """Answer phone calling-code menus from the profile; the rest stay unresolved."""

@@ -1,6 +1,6 @@
 """Choice lists that say a profile fact in their own shape: a graduation term
-("Spring 2027"), a GPA range ("3.5 - 3.79"), a class standing ("Junior") or a class year
-("2027").
+("Spring 2027"), a GPA range ("3.5 - 3.79"), a class standing ("Junior"), a class year
+("2027") or a location-and-language gate ("United States (English)").
 
 Each picker returns the one option the fact fits, or None when none or several do (a June
 graduation fits both "Spring 2027" and "Summer 2027"; a 3.6 GPA fits both "3.0+" and
@@ -122,3 +122,32 @@ def year_options(options: Sequence[str]) -> bool:
     named = [option for option in options if option.strip()]
     years = [option for option in named if re.fullmatch(r"\s*(?:19|20)\d{2}\s*", option)]
     return len(years) >= 2 and len(years) >= len(named) - 1
+
+
+#: A location-and-language gate option (Jobvite's data-consent step):
+#: "United States (English)", "All Locations (English)", "Deutschland (Deutsch)".
+_PLACE_LANGUAGE = re.compile(r"^\s*(.+?)\s*\(\s*([^()]+?)\s*\)\s*$")
+_ANY_PLACE = re.compile(r"^(?:all|any|other|global|worldwide|international)\b", re.I)
+_ENGLISH = re.compile(r"\benglish\b", re.I)
+
+
+def place_language_options(options: Sequence[str]) -> bool:
+    """Whether the options are "<place> (<language>)" choices."""
+    named = [option for option in options if option.strip()]
+    shaped = [option for option in named if _PLACE_LANGUAGE.match(option)]
+    return bool(shaped) and len(shaped) >= len(named) - 1
+
+
+def place_language_option(options: Sequence[str], countries: set[str]) -> str | None:
+    """The one English option for the applicant's country (any of ``countries``, its names
+    casefolded), else the one English all-locations option; None when unclear."""
+    english = []
+    for option in options:
+        found = _PLACE_LANGUAGE.match(option)
+        if found and _ENGLISH.search(found.group(2)):
+            english.append((option, found.group(1).strip()))
+    own = [option for option, place in english if place.casefold() in countries]
+    if own:
+        return own[0] if len(own) == 1 else None
+    anywhere = [option for option, place in english if _ANY_PLACE.search(place)]
+    return anywhere[0] if len(anywhere) == 1 else None

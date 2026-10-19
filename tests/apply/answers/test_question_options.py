@@ -188,3 +188,25 @@ def test_bot_checks_are_never_answered(text, help_text):
 ])
 def test_questions_about_ai_are_not_bot_checks(text):
     assert not form_facts.bot_check(text)
+
+
+GATE = "Location of Residence and Language:"
+
+
+@pytest.mark.parametrize(("options", "country", "chosen"), [
+    (("Select your location of residence and language", "All Locations (English)"),
+     "United States", "All Locations (English)"),
+    (("United States (English)", "Deutschland (Deutsch)", "All Locations (English)"),
+     "United States", "United States (English)"),
+    (("USA (English)", "Canada (English)", "Canada (Français)"), "United States", "USA (English)"),
+    (("Canada (English)", "Canada (Français)"), "United States", None),  # neither is theirs
+    (("Deutschland (Deutsch)", "France (Français)"), "Germany", None),  # no English option
+])
+def test_a_location_and_language_gate_takes_the_applicants_english_option(options, country, chosen):
+    question = Question(GATE, kind="choice", options=options)
+    assert _pick(question, _facts(country=country)) == ("residence_language", chosen)
+
+
+def test_a_plain_country_question_is_not_the_gate():
+    question = Question("Country of residence", kind="choice", options=("United States", "Canada"))
+    assert _pick(question, _facts(country="United States"))[0] != "residence_language"

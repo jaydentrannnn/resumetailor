@@ -29,7 +29,14 @@ from dataclasses import dataclass, field
 from datetime import date
 from typing import TYPE_CHECKING, Literal
 
-from resume_tailor.apply.answers import education, experience, form_facts, question_options, salary
+from resume_tailor.apply.answers import (
+    education,
+    experience,
+    form_facts,
+    question_options,
+    reference_data,
+    salary,
+)
 from resume_tailor.apply.ats import ats_hints
 from resume_tailor.apply.forms import field_matcher
 
@@ -323,6 +330,9 @@ _YEAR_IN_SCHOOL = re.compile(
 )
 _CLASS_OF = re.compile(r"^\W*class\s*(?:year|of)\b")
 _GPA = re.compile(r"\bgpa\b|\bgrade\s*point\s*average\b")
+_RESIDENCE_LANGUAGE = re.compile(
+    r"\b(?:location|country|place)\s+of\s+residence\s+and\s+language\b"
+)
 
 
 def _option_shaped_key(low: str, question: Question) -> str | None:
@@ -336,6 +346,8 @@ def _option_shaped_key(low: str, question: Question) -> str | None:
         return "class_year"
     if _CLASS_OF.search(low) and question_options.year_options(options):
         return "graduation_month"
+    if _RESIDENCE_LANGUAGE.search(low) and question_options.place_language_options(options):
+        return "residence_language"
     return None
 
 
@@ -625,6 +637,13 @@ def _answers(match: Match | None, question: Question, facts: Facts) -> list[str]
     derived = _derived(match, facts)
     if derived or match.key in {key for _pattern, key in _DERIVED}:
         return derived
+    if match.key == "residence_language":
+        found = reference_data.country(facts.fields.get("country", ""))
+        names = {found["name"], found["code"], *found["aliases"]} if found else set()
+        chosen = question_options.place_language_option(
+            question.options, {name.casefold() for name in names}
+        )
+        return [chosen] if chosen else []
     if match.key == "gpa" and question_options.gpa_options(question.options):
         gpa = re.search(r"\d+(?:\.\d+)?", facts.fields.get("gpa", ""))
         chosen = question_options.gpa_option(question.options, float(gpa.group(0))) if gpa else None

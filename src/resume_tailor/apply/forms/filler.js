@@ -431,6 +431,17 @@
     return Boolean(control && control.querySelector("[class*='-placeholder'], [class*='-singleValue'], [class*='single-value']"));
   }
 
+  /** React Select's own control box (``select__control``, or an emotion ``css-…-control``
+   * holding a value container), not any class ending in "-control": Jobvite wraps every
+   * field in ``jv-form-field-control``. */
+  const REACT_SELECT_CLASS = /(?:^|\s)(?:[\w-]*select__control|css-\w+-control)(?:\s|$)/;
+  function reactSelectBox(el) {
+    const box = el.closest("[class*='select__control'], [class*='-control']");
+    if (!box) return null;
+    if (REACT_SELECT_CLASS.test(box.getAttribute("class") || "")) return box;
+    return box.querySelector("[class*='alueContainer'], [class*='value-container'], [class*='ndicatorsContainer']") ? box : null;
+  }
+
   /** Normalise synonym entries to [pattern, key] pairs. */
   const TRIGGERS = "[role='combobox'], [aria-haspopup='listbox'], input[id^='react-select-']";
 
@@ -1132,7 +1143,10 @@
   const CODE_LABEL = "Verification code";
 
   // Toggle-button groups (Ashby's Yes/No) are questions too; a group is visited once.
-  const controls = deepQueryAll(document, "input, select, textarea, button[aria-pressed]").filter(isVisible);
+  // A div[role=combobox] with no input inside is a dropdown of its own (Rippling).
+  const controls = deepQueryAll(document,
+    "input, select, textarea, button[aria-pressed], div[role='combobox']:not(:has(input, select, textarea))",
+  ).filter(isVisible);
   const questions_out = [];
 
   // The previous control's key, in document order: "If other, please specify" right
@@ -1167,7 +1181,7 @@
       }
       continue;
     }
-    if (el.closest('.select__control, [class*="-control"]') && el.getAttribute('role') !== 'combobox' && !isReactSelect(el)) continue;
+    if (reactSelectBox(el) && el.getAttribute('role') !== 'combobox' && !isReactSelect(el)) continue;
     // The options of an open prompt popup (Skills search results) are not questions.
     if (el.closest("[data-automation-id='promptOption'], [data-automation-id='promptLeafNode'], [data-automation-id='activeListContainer'], [role='listbox']")) continue;
     if (el.closest("[data-automation-id='multiselectInputContainer']")) {
@@ -1274,8 +1288,17 @@
     }
     if (el.getAttribute("role") === "combobox" || isReactSelect(el)) {
       const control = el.closest(".select__control, [class*='-control']");
-      const selectedText = (control?.querySelector(".select__single-value, [class*='-singleValue']")?.textContent ||
+      let selectedText = (control?.querySelector(".select__single-value, [class*='-singleValue']")?.textContent ||
         Array.from(control?.querySelectorAll('.select__multi-value__label, [class*="-multiValue"]') || []).map(textOf).join('; ')).trim();
+      // A div dropdown shows its choice as its own text, else a "Select" placeholder; a
+      // closed input dropdown that is not React Select holds its choice as its value
+      // (Rippling, Workable). A failed pick clears what it typed (`widget_actions`).
+      const ownChoice = el.tagName === "DIV" ? textOf(el)
+        : el.tagName === "INPUT" && el.getAttribute("aria-expanded") !== "true" && !isReactSelect(el) && !reactSelectBox(el)
+          ? String(el.value || "").trim() : "";
+      if (!selectedText && !/^(?:(?:please\s+)?(?:select|choose)\b.*|-+)?$/i.test(ownChoice)) {
+        selectedText = ownChoice;
+      }
       if (selectedText) {
         filled.push({ key: "existing", label, value: selectedText, selector: sel, preserved: true });
         continue;

@@ -46,6 +46,8 @@ class StepLedger:
     """
 
     options: dict[str, list[str]] = dc_field(default_factory=dict)
+    #: The controls already answered when each control's options were read.
+    options_after: dict[str, frozenset[str]] = dc_field(default_factory=dict)
     asked: set[str] = dc_field(default_factory=set)
     done: set[str] = dc_field(default_factory=set)
     #: Model calls a control was sent in; one the model skipped is sent once more.

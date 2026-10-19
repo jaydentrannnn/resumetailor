@@ -2146,3 +2146,49 @@ reverse posting order), so its time is not comparable.
   no live target had a later step to reach. eightfold1 timed out on every run.
 - Allowed writes reviewed by host/path: analytics, RUM, bot-challenge and Ashby's
   read-only GraphQL queries only; no form save.
+
+## 2026-10-18 — Batch 2, part 1: custom dropdowns commit, zero-fill postings
+
+- **eightfold1 was the probe, not the fill.** Every run's audit ended on the chat widget's
+  WebSocket: the guard's `route_web_socket` handler called `ws.close()`, which deadlocks
+  the sync Playwright API, so nothing ran after it. The handler now only records the
+  socket and never calls `connect_to_server()`, which keeps it off the network.
+  `fill_probe_live.py` writes `<tag>.progress.log` as it goes, so a cut run shows where.
+- **Commit check** (`widget_actions._committed_text`): React Select's value, else a
+  `role=combobox` input's own value or a div trigger's own text, read only with the menu
+  closed (`aria-expanded` not true, no option row showing). Rippling and Workable both
+  write the option text into the input and close the menu (probe capture, 2026-10-18);
+  the old check returned "" for every `role=combobox`, so a working pick read as failed.
+  `_selected_combobox_text` is unchanged (the "before" read and `fill_repairs` use it).
+- **Menu ownership**: `aria-controls`/`aria-owns`, then the listbox holding
+  `aria-activedescendant`, then the one menu the click opened (handles taken before the
+  click); unclear means nothing is chosen. `[class*='-menu']` narrowed to React Select's
+  `select__menu` / emotion `css-…-menu`. Rows: ARIA options, `.select__option`, Workday
+  `promptOption`, `.oj-listbox-result`, `oj-option`, else a listbox's plain `li`.
+  "Loading…"/"Searching…" rows are waited out (≤3 s on open); "No options" rows are never
+  options. The search box is the owned menu's, else the trigger (not when read-only), else
+  the page's only visible one.
+- A failed pick clears search text it typed into an empty input dropdown, and
+  `filler.js` reads a closed non-React-Select input dropdown's value as its choice (else
+  `_reconcile_observed` dropped committed Rippling/Workable answers). `filler.js` also
+  scans `div[role=combobox]` with no input inside (Rippling's Yes/No and EEO questions).
+- Phone codes: Rippling lists "+1 US - United States" and shows "+1 US" once chosen;
+  `_phone_option` accepts the region's short codes and a "code - name" pair.
+- `_load_options` waits for the menu, never caches an empty list, and reads a control's
+  options again once another control on the step has been answered since (a State list
+  follows Country). Seeded options with no recorded basis count as current.
+- **Workable**: a cookie banner lay over the form and every dropdown click timed out.
+  `fill_buttons.decline_cookie_banner` presses a refusing button ("Decline all", "Reject
+  all", "Necessary only") inside a cookie/consent container, before each step's scan.
+  "Accept" is never pressed: Paylocity's OneTrust bar (Accept / Settings / ×) stays.
+- **paylocity1**: "Fill out application with my resume" is ticked by default and the
+  upload redraws the Information fields blank. The post-upload correction rewrites only
+  boxes that still hold a value, so the step ended empty and the read-back found nothing.
+  `_refill_emptied` runs the fill once more after a resume upload (filler keeps every box
+  that has a value; classifications come from the cache). `_observe_fields` now logs a
+  failed frame read instead of suppressing it.
+- **jobvite2**: `div.jv-form-field-control` wraps every field, and the "-control" class
+  check took each for a React Select box, so the scan saw 0 questions. `reactSelectBox`
+  now requires React Select's own class shape or its value/indicator containers.
+  **jobvite1**: a "Location of Residence and Language" gate select; the rule picks the
+  profile country's English option, else the single all-locations English one.

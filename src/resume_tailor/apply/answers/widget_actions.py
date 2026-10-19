@@ -36,16 +36,96 @@ def _option_match(options: list[str], target_value: str, *, key: str = "") -> st
     result = match_option(observed, target_value, key=key)
     return options[int(result.option_id)] if result.status == "matched" else None
 
-def _menu_choices(page: Any, trigger: Any) -> list[Any]:
+#: The rows a menu renders its options as: ARIA options, React Select, Workday prompts,
+#: Oracle JET. A listbox with none of these lists its options as plain ``li``.
+_OPTION_ROWS = (
+    "[role='option'], .select__option, [data-automation-id*='promptOption'], "
+    ".oj-listbox-result, oj-option"
+)
+#: Open menus a trigger does not name: listboxes, React Select's menu (``select__menu``,
+#: or emotion's ``css-…-menu``) and JET's drop. Not any class with "-menu" in it.
+_MENUS = (
+    "[role='listbox'], [class*='select__menu'], [class^='css-'][class*='-menu'], "
+    "[class*=' css-'][class*='-menu'], .oj-listbox-drop"
+)
+#: Rows a menu shows in place of options: never chosen, and a loading one is waited out.
+_LOADING_ROW = re.compile(r"^(?:loading|searching)\b", re.I)
+_EMPTY_ROW = re.compile(r"^no (?:options|results|matches)\b", re.I)
+_SEARCH_BOXES = (
+    "input[data-automation-id='searchBox'], input[role='searchbox'], input[placeholder*='search' i]"
+)
+
+
+def _open_menus(page: Any) -> list[Any]:
+    """Handles of the menus open now, so the one a click opens can be told apart."""
+    with contextlib.suppress(Exception):
+        return page.locator(_MENUS).filter(visible=True).element_handles()
+    return []
+
+
+def _owned_menu(page: Any, trigger: Any, opened_before: list[Any] | None = None) -> Any | None:
+    """The trigger's menu: the one it names (``aria-controls``/``aria-owns``), else the
+    listbox holding its ``aria-activedescendant``, else the one menu its click opened. None
+    when that is unclear, so nothing is chosen from another field's menu."""
     menu_id = trigger.get_attribute("aria-controls") or trigger.get_attribute("aria-owns")
     if menu_id:
         menu = page.locator(f"[id='{menu_id}']")
         if menu.count() > 0:
-            return menu.locator("[role='option'], .select__option, [data-automation-id*='promptOption']").all()
-    visible_menus = page.locator("[role='listbox']:visible, [class*='-menu']:visible")
-    if visible_menus.count() != 1:
+            return menu.first
+    active = trigger.get_attribute("aria-activedescendant")
+    if active:
+        holder = page.locator(f"[id='{active}']").locator("xpath=ancestor::*[@role='listbox'][1]")
+        if holder.count() > 0:
+            return holder.first
+    menus = page.locator(_MENUS).filter(visible=True).all()
+    if opened_before:
+        fresh = [menu for menu in menus if not any(
+            menu.evaluate("(el, old) => el === old", old) for old in opened_before
+        )]
+        if fresh:
+            menus = fresh
+    return menus[0] if len(menus) == 1 else None
+
+
+def _menu_choices(page: Any, trigger: Any, opened_before: list[Any] | None = None) -> list[Any]:
+    menu = _owned_menu(page, trigger, opened_before)
+    if menu is None:
         return []
-    return visible_menus.first.locator("[role='option'], .select__option, [data-automation-id*='promptOption']").all()
+    rows = menu.locator(_OPTION_ROWS)
+    if rows.count() == 0 and menu.get_attribute("role") == "listbox":
+        rows = menu.locator("li")
+    return rows.all()
+
+
+def _choices(
+    page: Any, trigger: Any, opened_before: list[Any] | None = None, *, wait_ms: int = 3000,
+) -> list[tuple[Any, str]]:
+    """The visible option rows of the trigger's menu with their text, once loaded: an
+    empty menu or one showing "Loading…" is read again for up to ``wait_ms``."""
+    waited = 0
+    while True:
+        rows = [row for row in _menu_choices(page, trigger, opened_before) if row.is_visible()]
+        texts = [row.inner_text().strip() for row in rows]
+        if (rows and not any(_LOADING_ROW.match(text) for text in texts)) or waited >= wait_ms:
+            return [(row, text) for row, text in zip(rows, texts, strict=True)
+                    if text and not _LOADING_ROW.match(text) and not _EMPTY_ROW.match(text)]
+        page.wait_for_timeout(250)
+        waited += 250
+
+
+def _search_box(page: Any, trigger: Any, opened_before: list[Any] | None, is_input: bool) -> Any | None:
+    """Where to type a search: a box inside the trigger's menu, else the trigger itself
+    when it takes typing, else the page's one visible search box."""
+    with contextlib.suppress(Exception):
+        menu = _owned_menu(page, trigger, opened_before)
+        if menu is not None:
+            inside = menu.locator("input:not([type='hidden'])").filter(visible=True)
+            if inside.count() > 0:
+                return inside.first
+    if is_input and trigger.get_attribute("readonly") is None:
+        return trigger
+    boxes = page.locator(_SEARCH_BOXES).filter(visible=True)
+    return boxes.first if boxes.count() == 1 else None
 
 def _select_combobox_option(
     page: Any, trigger_selector: str, target_value: str, *, key: str = "", phone_region: str = "",
@@ -69,6 +149,7 @@ def _select_combobox_option(
             return True
         if key == "phone_country_code" and _phone_identity_matches(trigger, target_value, phone_region):
             return True
+        opened_before = _open_menus(page)
         clicks.safe_click(trigger, purpose="select", timeout=3000)
         search_terms = [""]
         if key == "phone_country_code" and phone_region:
@@ -78,18 +159,22 @@ def _select_combobox_option(
             search_terms.extend([city, target_value])
         else:
             search_terms.extend(field_matcher.search_terms(key, target_value))
+        # Search text typed into an empty input dropdown is cleared again when nothing is
+        # picked, so it is never read back as the answer.
+        was_empty = is_input and not str(trigger.input_value() or "").strip()
+        typed_into_trigger = False
         match = None
         for term in search_terms:
             if term:
-                search_box = trigger if is_input else page.locator(
-                    "input[data-automation-id='searchBox'], input[role='searchbox'], input[placeholder*='search' i]"
-                ).first
-                if search_box.count() == 0 or not search_box.is_visible():
+                search_box = _search_box(page, trigger, opened_before, is_input)
+                if search_box is None:
                     continue
                 search_box.fill(term)
+                typed_into_trigger |= search_box is trigger and was_empty
             for _ in range(8 if term else 1):
-                choices = [choice for choice in _menu_choices(page, trigger) if choice.is_visible()]
-                option_texts = [choice.inner_text().strip() for choice in choices]
+                rows = _choices(page, trigger, opened_before, wait_ms=0 if term else 3000)
+                choices = [row for row, _text in rows]
+                option_texts = [text for _row, text in rows]
                 if key == "phone_country_code":
                     chosen_text = _phone_option(option_texts, target_value, phone_region)
                 elif key in {"city", "location"}:
@@ -102,7 +187,7 @@ def _select_combobox_option(
                         } else ""),
                     ), key, [target_value])
                 if chosen_text:
-                    match = next(choice for choice in choices if choice.inner_text().strip() == chosen_text)
+                    match = choices[option_texts.index(chosen_text)]
                     break
                 if term:
                     page.wait_for_timeout(250)
@@ -110,34 +195,35 @@ def _select_combobox_option(
                 break
         if match is None:
             trigger.press("Escape")
+            if typed_into_trigger:  # typed search text is not an answer to leave behind
+                trigger.fill("")
             return False
         if (key == "phone_country_code" and match.get_attribute("aria-selected") == "true"
                 and _phone_prefix_matches(before, target_value)):
             trigger.press("Escape")
             return True
-        selected_option = match.inner_text().strip()
+        selected_option = option_texts[choices.index(match)]
         clicks.safe_click(match, purpose="select", timeout=3000)
         page.wait_for_timeout(150)
-        selected = _selected_combobox_text(trigger)
+        selected = _committed_text(trigger)
         # Some widgets (Workday listbox buttons) repaint their text a few hundred ms later.
         for _ in range(8):
             if key == "phone_country_code" or _norm(selected) == _norm(selected_option):
                 break
             page.wait_for_timeout(250)
-            selected = _selected_combobox_text(trigger)
+            selected = _committed_text(trigger)
         if key == "phone_country_code":
             if _phone_identity_matches(trigger, target_value, phone_region):
                 return True
             # React Select often detaches the clicked option when its menu closes.
             # Reopen the owned menu and inspect the newly rendered committed choice.
             clicks.safe_click(trigger, purpose="select", timeout=3000)
-            refreshed = [choice for choice in _menu_choices(page, trigger) if choice.is_visible()]
-            labels = [choice.inner_text().strip() for choice in refreshed]
+            refreshed = _choices(page, trigger, wait_ms=0)
+            labels = [text for _row, text in refreshed]
             committed_label = _phone_option(labels, target_value, phone_region)
             committed = bool(committed_label) and any(
-                choice.inner_text().strip() == committed_label
-                and choice.get_attribute("aria-selected") == "true"
-                for choice in refreshed
+                text == committed_label and row.get_attribute("aria-selected") == "true"
+                for row, text in refreshed
             )
             trigger.press("Escape")
             return committed and _phone_prefix_matches(selected, target_value)
@@ -259,7 +345,7 @@ def _phone_prefix_matches(selected: str, code: str) -> bool:
 
 def _phone_identity_matches(trigger: Any, code: str, region: str) -> bool:
     """Trust a visible selected flag/region and prefix together, never a bare +1."""
-    selected = _selected_combobox_text(trigger)
+    selected = _committed_text(trigger)
     if not _phone_prefix_matches(selected, code) or reference_data.region_dial(region) != code:
         return False
     if _phone_option([selected], code, region) is not None:
@@ -289,6 +375,32 @@ def _selected_combobox_text(trigger: Any) -> str:
             return ""
     return str(trigger.inner_text() or "").strip()
 
+
+_COMMITTED_JS = r"""(el) => {
+  if (el.getAttribute('aria-expanded') === 'true') return '';
+  const id = el.getAttribute('aria-controls') || el.getAttribute('aria-owns');
+  const menu = id && document.getElementById(id);
+  const shown = (e) => !!(e.offsetWidth || e.offsetHeight || e.getClientRects().length);
+  if (menu && shown(menu) && menu.querySelector('[role="option"], li')) return '';
+  if (el.matches('input, textarea')) return el.value || '';
+  if (el.querySelector('input, textarea, select')) return '';
+  return (el.innerText || '').trim();
+}"""
+
+
+def _committed_text(trigger: Any) -> str:
+    """The choice a combobox shows once its menu has closed: React Select's value, else a
+    ``role=combobox`` input's own value or a div trigger's own text (Rippling, Workable).
+    While its menu is open or an option row still shows, nothing counts as chosen, so
+    text typed into a search box is never read as a commit."""
+    shown = _selected_combobox_text(trigger)
+    if shown:
+        return shown
+    with contextlib.suppress(Exception):
+        if trigger.get_attribute("role") == "combobox":
+            return str(trigger.evaluate(_COMMITTED_JS) or "").strip()
+    return ""
+
 def _phone_option(options: list[str], code: str, region: str) -> str | None:
     """Resolve a calling-code menu only when the declared phone region disambiguates it."""
     region_key = _norm(reference_data.region_key(region))
@@ -296,12 +408,24 @@ def _phone_option(options: list[str], code: str, region: str) -> str | None:
             or reference_data.region_dial(region) != code):
         return None
     code_pattern = re.compile(rf"(?<!\d){re.escape(code)}(?!\d)")
+    identifiers = reference_data.region_identifiers(region)
+
+    def names_region(rest: str) -> bool:
+        # "United States", or Rippling's "US - United States" / "US": every part is the
+        # region's name or one of its short codes.
+        if _norm(reference_data.region_key(rest)) == region_key:
+            return True
+        parts = [part for part in re.split(r"\s+[-–]\s+", rest) if part.strip()]
+        return bool(parts) and all(
+            part.strip().casefold() in identifiers
+            or _norm(reference_data.region_key(part)) == region_key
+            for part in parts
+        )
+
     matches = [
         option for option in options
         if (code_pattern.search(option) or not re.search(r"\+\d{1,4}\b", option))
-        and _norm(reference_data.region_key(
-            code_pattern.sub("", option).strip(" ()-"),
-        )) == region_key
+        and names_region(code_pattern.sub("", option).strip(" ()-"))
     ]
     return matches[0] if len(matches) == 1 else None
 

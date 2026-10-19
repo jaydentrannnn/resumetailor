@@ -1,0 +1,35 @@
+<!doctype html>
+<!-- Paylocity application step 1 (2026-10, reconstructed and anonymised from a probe
+     capture). "Fill out application with my resume" is ticked by default; choosing a
+     resume file redraws the Information fields blank (new elements, empty values) while the
+     site reads the file, so answers typed before the upload are gone afterwards. -->
+<html><head><meta charset="utf-8"><title>Apply</title></head>
+<body>
+<form>
+  <div class="rounded-box">
+    <input accept=".doc,.docx,.pdf" id="btn-resume" type="file" style="display:none">
+    <button type="button" class="button" data-automation-id="btn-resume">Select Resume to Upload</button>
+    <input checked id="useAttachedResumeToFillOutApplication" type="checkbox">
+    <label for="useAttachedResumeToFillOutApplication">Fill out application with my resume</label>
+  </div>
+  <h3>Information</h3>
+  <div id="info"></div>
+</form>
+<script>
+  const FIELDS = [
+    ["info.firstName", "First Name", true], ["info.lastName", "Last Name", true],
+    ["info.email", "Email Address", true], ["info.cellPhone", "Mobile Number", true],
+  ];
+  function draw() {
+    document.getElementById("info").innerHTML = FIELDS.map(([id, label, required]) =>
+      `<div class="form-group${required ? " form-required" : ""}"><label>${label}` +
+      `${required ? " <span><em>(required)</em></span>" : ""}</label>` +
+      `<input type="text" id="${id}" data-for="${label}" value=""></div>`).join("");
+  }
+  draw();
+  document.querySelector("[data-automation-id=btn-resume]").onclick = () => document.getElementById("btn-resume").click();
+  document.getElementById("btn-resume").addEventListener("change", () => {
+    if (document.getElementById("useAttachedResumeToFillOutApplication").checked) draw();
+  });
+</script>
+</body></html>

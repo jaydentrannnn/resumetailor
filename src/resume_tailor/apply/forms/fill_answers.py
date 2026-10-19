@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import contextlib
+import logging
 from pathlib import Path
 from typing import Any
 
@@ -22,6 +23,8 @@ from . import fill_buttons, fill_outcomes, fill_state, fill_widgets, upload_repl
 #: Review notes that carry their reason, so an observed value never clears them.
 SHORTENED_NOTE = "shortened to fit the form's limit"
 NOT_DRAFTED_NOTE = "could not draft an answer"
+
+_log = logging.getLogger(__name__)
 
 
 class _FillAnswers(fill_state._FillState):
@@ -46,6 +49,38 @@ class _FillAnswers(fill_state._FillState):
                     self.progress(f"corrected {fixed} after the resume upload")
                 else:
                     self.merged["leftovers"].append(item)
+            self._refill_emptied()
+
+    def _refill_emptied(self) -> None:
+        """Fill again what the resume upload emptied. Paylocity's "Fill out application
+        with my resume" redraws the form blank after the upload (2026-10), and the
+        correction pass rewrites only boxes that still hold a value. ``filler.js`` keeps
+        every box that has one, so only the emptied ones are typed into again."""
+        known = {
+            (item.get("frame_index", 0), item.get("selector"))
+            for item in self.merged["filled"] if isinstance(item, dict)
+        }
+        self.frames = self.page.frames
+        refilled = 0
+        for frame_index, frame in enumerate(self.frames):
+            try:
+                again = fill_widgets._fill_frame(
+                    frame, self.filler_js, self.fields, self.hints, self.facts,
+                    self.classify_unkeyed, self.classify_notices,
+                )
+            except Exception as exc:  # noqa: BLE001 - cross-origin frames fail evaluate
+                _log.debug("refill after upload skipped frame %d: %s", frame_index, exc)
+                continue
+            for item in (again or {}).get("filled") or []:
+                if not isinstance(item, dict) or item.get("preserved"):
+                    continue
+                identity = (frame_index, item.get("selector"))
+                refilled += identity in known
+                if identity not in known:
+                    self.merged["filled"].append({**item, "frame_index": frame_index})
+                    known.add(identity)
+        if refilled:
+            self.progress(f"filled {refilled} answer(s) again after the resume upload cleared them")
 
     def _file_inputs(self) -> list[Any]:
         """The scanned file inputs plus a resume/cover input found by selector if the scan

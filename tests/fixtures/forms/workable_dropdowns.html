@@ -1,0 +1,87 @@
+<!doctype html>
+<!-- Workable application form (2026-10, reconstructed and anonymised from a probe capture).
+     A cookie-consent banner ("Cookies settings / Accept all / Decline all") lies over the
+     form, so every click on a dropdown timed out until it was declined. Each dropdown is a
+     read-only input[role=combobox] that owns a listbox in a <dialog open>; choosing an
+     option writes its text into the input and its id into a hidden named input, then
+     closes the dialog. -->
+<html><head><meta charset="utf-8"><title>Apply</title>
+<style>
+  body { margin: 0; font: 14px sans-serif; }
+  form { padding: 24px; }
+  .field { margin: 16px 0; position: relative; }
+  dialog { position: absolute; margin: 0; padding: 0; top: 100%; left: 0; z-index: 3; }
+  ul[role=listbox] { list-style: none; margin: 0; padding: 0; }
+  li[role=option] { padding: 6px 12px; cursor: pointer; }
+  .consent { position: fixed; inset: 0; background: rgba(255, 255, 255, .6); z-index: 10; display: flex; align-items: flex-end; }
+  .consent .bar { background: #fff; width: 100%; padding: 16px; border-top: 1px solid #ccc; }
+</style></head>
+<body>
+<form>
+  <div class="field" data-ui="CA_101" data-input-type="select">
+    <span id="CA_101_label">Are you authorized to work in the United States?*</span>
+    <label><input id="input_CA_101_input" role="combobox" aria-haspopup="listbox" aria-expanded="false"
+      aria-owns="input_CA_101_listbox" aria-controls="input_CA_101_listbox" aria-autocomplete="none"
+      autocomplete="off" aria-labelledby="CA_101_label" placeholder="Select an option…" type="text" readonly
+      data-options="Yes|No"></label>
+    <input name="CA_101" required tabindex="-1" aria-hidden="true" style="display:none">
+  </div>
+  <div class="field" data-ui="CA_102" data-input-type="select">
+    <span id="CA_102_label">Will you now or in the future require sponsorship?*</span>
+    <label><input id="input_CA_102_input" role="combobox" aria-haspopup="listbox" aria-expanded="false"
+      aria-owns="input_CA_102_listbox" aria-controls="input_CA_102_listbox" aria-autocomplete="none"
+      autocomplete="off" aria-labelledby="CA_102_label" placeholder="Select an option…" type="text" readonly
+      data-options="Yes|No"></label>
+    <input name="CA_102" required tabindex="-1" aria-hidden="true" style="display:none">
+  </div>
+</form>
+<div class="consent" data-ui="cookie-consent"><div class="bar">
+  <p>This website uses cookies to improve your experience.</p>
+  <button type="button" data-ui="cookie-consent-settings">Cookies settings</button>
+  <button type="button" data-ui="cookie-consent-accept">Accept all</button>
+  <button type="button" data-ui="cookie-consent-decline">Decline all</button>
+</div></div>
+<script>
+  window.consent = '';
+  document.querySelectorAll('.consent button').forEach(button => button.addEventListener('click', () => {
+    window.consent = button.textContent;
+    if (button.dataset.ui !== 'cookie-consent-settings') document.querySelector('.consent').remove();
+  }));
+  function close(input) {
+    const dialog = input.closest('.field').querySelector('dialog');
+    if (dialog) dialog.remove();
+    input.setAttribute('aria-expanded', 'false');
+  }
+  document.querySelectorAll('[role=combobox]').forEach(input => {
+    input.addEventListener('keydown', e => { if (e.key === 'Escape') close(input); });
+    input.addEventListener('click', () => {
+      if (input.getAttribute('aria-expanded') === 'true') return;
+      const id = input.getAttribute('aria-controls');
+      const dialog = document.createElement('dialog');
+      dialog.setAttribute('open', '');
+      dialog.setAttribute('role', 'presentation');
+      const list = document.createElement('ul');
+      list.id = id;
+      list.setAttribute('role', 'listbox');
+      input.dataset.options.split('|').forEach((text, index) => {
+        const li = document.createElement('li');
+        li.id = id + '_' + index;
+        li.setAttribute('role', 'option');
+        li.setAttribute('aria-selected', 'false');
+        li.innerHTML = '<div role="presentation"><span><span data-role="option-label"></span></span></div>';
+        li.querySelector('[data-role=option-label]').textContent = text;
+        li.addEventListener('click', () => {
+          input.value = text;
+          input.closest('.field').querySelector('input[name]').value = String(index);
+          close(input);
+        });
+        list.appendChild(li);
+      });
+      list.setAttribute('aria-activedescendant', list.firstChild.id);
+      dialog.appendChild(list);
+      input.closest('.field').appendChild(dialog);
+      input.setAttribute('aria-expanded', 'true');
+    });
+  });
+</script>
+</body></html>

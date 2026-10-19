@@ -1,0 +1,85 @@
+<!doctype html>
+<!-- Rippling application form custom questions (2026-10, reconstructed and anonymised from a
+     probe capture). Two dropdown shapes, each owning its menu through aria-controls:
+     a search input (role=combobox) whose value becomes the chosen option, and a
+     div[role=combobox] whose <p>Select</p> placeholder is replaced by the chosen text.
+     Options are li[role=option] with the text in a nested <p>. The phone calling-code
+     input shows "+1 US" before anything is chosen. The menu list renders on open and is
+     removed on close, as the live widget does. -->
+<html><head><meta charset="utf-8"><title>Apply</title>
+<style>
+  .field { margin: 16px 0; position: relative; }
+  ul[role=listbox] { list-style: none; margin: 0; padding: 0; border: 1px solid #ccc; position: absolute; background: #fff; z-index: 5; width: 300px; }
+  li[role=option] { padding: 6px; cursor: pointer; }
+  div[role=combobox] { border: 1px solid #999; width: 300px; padding: 6px; }
+</style></head>
+<body>
+<form>
+  <div class="field" data-testid="select-controller">
+    <label id="field-24-label" for="field-24">Pronouns</label>
+    <div data-testid="select-search-input"><input id="field-24" role="combobox" aria-autocomplete="list"
+      aria-haspopup="listbox" aria-expanded="false" aria-controls="field-24-list" aria-labelledby="field-24-label"
+      placeholder="Search" aria-label="Search" autocomplete="off" data-options="She/her/hers|He/him/his|They/them/theirs|Prefer not to say"></div>
+  </div>
+  <div class="field">
+    <label id="field-38-label" for="field-38">Phone country code</label>
+    <div data-testid="select-search-input"><input id="field-38" role="combobox" aria-autocomplete="list"
+      aria-haspopup="listbox" aria-expanded="false" aria-controls="field-38-list" aria-labelledby="field-38-label"
+      placeholder="Search" aria-label="Search" autocomplete="off" value="+1 US" data-options="+1 CA - Canada|+1 US - United States|+44 GB - United Kingdom"></div>
+  </div>
+  <div class="field">
+    <label id="field-59-label">Are you legally authorized to work in the United States?<span>*</span></label>
+    <div data-testid="select-controller"><div id="field-59" role="combobox" aria-autocomplete="list" aria-haspopup="listbox"
+      aria-expanded="false" aria-label="Select" aria-labelledby="field-59-label" aria-required="true" tabindex="0"
+      aria-controls="field-59-list" data-options="Yes|No"><p>Select</p></div></div>
+  </div>
+  <div class="field">
+    <label id="field-72-label">Gender</label>
+    <div data-testid="select-controller"><div id="field-72" role="combobox" aria-autocomplete="list" aria-haspopup="listbox"
+      aria-expanded="false" aria-label="Select" aria-labelledby="field-72-label" tabindex="0"
+      aria-controls="field-72-list" data-options="Male|Female|Non-binary|I prefer not to answer"><p>Select</p></div></div>
+  </div>
+</form>
+<script>
+  function close(trigger) {
+    const list = document.getElementById(trigger.getAttribute('aria-controls'));
+    if (list) list.remove();
+    trigger.setAttribute('aria-expanded', 'false');
+  }
+  function open(trigger) {
+    if (trigger.getAttribute('aria-expanded') === 'true') return;
+    document.querySelectorAll('[role=combobox][aria-expanded=true]').forEach(close);
+    const list = document.createElement('ul');
+    list.id = trigger.getAttribute('aria-controls');
+    list.setAttribute('role', 'listbox');
+    list.setAttribute('data-testid', 'menuList');
+    trigger.getAttribute('data-options').split('|').forEach((text, index) => {
+      const li = document.createElement('li');
+      li.id = list.id + '-option-' + index;
+      li.setAttribute('role', 'option');
+      li.setAttribute('aria-selected', 'false');
+      li.innerHTML = '<div><div data-testid="menuListLabel"><p></p></div></div>';
+      li.querySelector('p').textContent = text;
+      li.addEventListener('click', () => {
+        if (trigger.tagName === 'INPUT') trigger.value = text.replace(/ - .*$/, '');
+        else trigger.textContent = text;
+        close(trigger);
+      });
+      list.appendChild(li);
+    });
+    trigger.closest('.field').appendChild(list);
+    trigger.setAttribute('aria-expanded', 'true');
+  }
+  document.querySelectorAll('[role=combobox]').forEach(trigger => {
+    trigger.addEventListener('click', () => open(trigger));
+    trigger.addEventListener('keydown', e => { if (e.key === 'Escape') close(trigger); });
+    if (trigger.tagName === 'INPUT') trigger.addEventListener('input', () => {
+      open(trigger);
+      const term = trigger.value.toLowerCase();
+      document.querySelectorAll('#' + trigger.getAttribute('aria-controls') + ' li').forEach(li => {
+        li.hidden = !li.textContent.toLowerCase().includes(term);
+      });
+    });
+  });
+</script>
+</body></html>
