@@ -5,13 +5,13 @@ import { useQuickAdjust } from "../../../lib/useQuickAdjust";
 import { useConfirm } from "../../../state/confirmState";
 import { useTemplateState } from "../../../state/templateState";
 import { Button, Spinner } from "../../ui";
-import { ADJUST_GRID, DOCUMENT_CELL, SWITCH_CELL, TOOLS_CELL } from "../workspace/workspaceLayout";
+import { DOCUMENT_CELL, TOOLS_CELL, WORKSPACE_GRID } from "../workspace/workspaceLayout";
 import { AdjustPreviewPane } from "./AdjustPreviewPane";
 import { AdjustSettings } from "./AdjustSettings";
 
 /**
- * The Resume view while adjusting: the draft rendered on the right (refreshed a moment
- * after each change, nothing installed), the settings on the left in a wider column.
+ * The Resume view while adjusting: the draft rendered on the left (refreshed a moment
+ * after each change, nothing installed), the settings on the right.
  * Apply installs the result as "<name> (adjusted)", replacing an earlier one of that
  * name (the original is never touched); Cancel drops the draft. The view switch
  * is replaced by these two so a draft can't be left behind by switching views.
@@ -62,41 +62,35 @@ export function AdjustMode({ onDone }: { onDone: () => void }) {
   }
 
   return (
-    <div className={ADJUST_GRID} role="region" aria-label="Quick adjustments">
-      <div className={SWITCH_CELL}>
-        <div className="flex items-center justify-between gap-3">
-          <h2 className="rt-tile-title">Quick adjustments</h2>
-          <div className="flex shrink-0 gap-2">
-            <Button variant="ghost" onClick={() => void cancel()} disabled={q.busy}>
-              Cancel
-            </Button>
-            <Button
-              variant="primary"
-              loading={q.busy}
-              disabled={!q.dirty}
-              onClick={() => void apply()}
-            >
-              Apply
-            </Button>
-          </div>
-        </div>
-        <p className="mt-1 text-sm text-ink-muted">{note}</p>
-        {q.error && (
-          <p role="alert" className="mt-2 text-sm text-danger">
-            {q.error}
-          </p>
-        )}
-      </div>
+    <div className={WORKSPACE_GRID} role="region" aria-label="Quick adjustments">
       <div className={DOCUMENT_CELL}>
-        <div className="lg:sticky lg:top-[calc(var(--rt-bar-top)+1.25rem)]">
-          <AdjustPreviewPane
-            pages={preview.pages}
-            loading={preview.loading}
-            error={preview.error}
-          />
-        </div>
+        <AdjustPreviewPane pages={preview.pages} loading={preview.loading} error={preview.error} />
       </div>
       <div className={TOOLS_CELL}>
+        <div>
+          <div className="flex items-center justify-between gap-3">
+            <h2 className="rt-tile-title">Quick adjustments</h2>
+            <div className="flex shrink-0 gap-2">
+              <Button variant="ghost" onClick={() => void cancel()} disabled={q.busy}>
+                Cancel
+              </Button>
+              <Button
+                variant="primary"
+                loading={q.busy}
+                disabled={!q.dirty}
+                onClick={() => void apply()}
+              >
+                Apply
+              </Button>
+            </div>
+          </div>
+          <p className="mt-1 text-sm text-ink-muted">{note}</p>
+          {q.error && (
+            <p role="alert" className="mt-2 text-sm text-danger">
+              {q.error}
+            </p>
+          )}
+        </div>
         {!draft
           ? !q.error && <Spinner />
           : q.current && (

@@ -1,6 +1,7 @@
 import { Button } from "../ui";
 import { useEffect, useState } from "react";
 import { templatePreviewUrl } from "../../api";
+import { VIEWER_HEIGHT } from "../../lib/viewer";
 import { DocumentViewer } from "../viewer/DocumentViewer";
 
 /** Fetch the exact revision before mounting a PDF; late responses cannot replace it. */
@@ -8,12 +9,10 @@ export function TemplatePreview({
   revision,
   pending,
   refreshKey,
-  activeLabel,
 }: {
   revision: string | null;
   pending: string | null;
   refreshKey: number;
-  activeLabel?: string | null;
 }) {
   const [pdf, setPdf] = useState<{ revision: string; url: string } | null>(null);
   const [error, setError] = useState<string | null>(null);
@@ -77,17 +76,8 @@ export function TemplatePreview({
   return (
     <DocumentViewer
       label="Template preview"
-      docs={[
-        {
-          id: "template",
-          label: "Template",
-          src: pdf.url,
-          actions: (
-            <span className="text-ink-muted">Active: {activeLabel || "Current template"}</span>
-          ),
-        },
-      ]}
-      className="aspect-[8.5/11]"
+      docs={[{ id: "template", label: "Template", src: pdf.url }]}
+      className={VIEWER_HEIGHT}
     />
   );
 }
