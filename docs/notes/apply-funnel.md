@@ -2192,3 +2192,8 @@ reverse posting order), so its time is not comparable.
   now requires React Select's own class shape or its value/indicator containers.
   **jobvite1**: a "Location of Residence and Language" gate select; the rule picks the
   profile country's English option, else the single all-locations English one.
+- Follow-up: the probe blocks uploads, so Paylocity's resume upload was never verified and
+  `_upload_one` returned False, skipping the after-upload passes. The form redraws on the
+  chosen file whether or not the upload verifies, so `_upload_one` now reports any resume
+  file it set. Live spot-check (one run each, same probe): jobvite2 0→10, workable1 →12,
+  rippling1 6→8, eightfold1 timeout→13, paylocity1 0→11, jobvite1 0→1; 0 leaks.

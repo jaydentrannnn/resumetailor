@@ -116,7 +116,9 @@ class _FillAnswers(fill_state._FillState):
         return file_inputs
 
     def _upload_one(self, fin: Any) -> bool:
-        """Attach the right document to one file input. True when a resume was uploaded."""
+        """Attach the right document to one file input. True when a resume file was set on
+        the form, verified or not: the form may react to the file either way (Paylocity
+        redraws its fields blank), so the after-upload passes run."""
         is_dict = isinstance(fin, dict)
         sel = fin.get("selector") if is_dict else None
         label = str(fin.get("label") or "") if is_dict else ""
@@ -234,7 +236,7 @@ class _FillAnswers(fill_state._FillState):
             )),
         })
         if not uploaded:
-            return False
+            return purpose == "resume"
         self.verified_purposes.add((purpose, frame_index))
         self.progress(f"{purpose.replace('_', ' ')} attachment verified")
         return purpose == "resume"
