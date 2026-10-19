@@ -17,6 +17,7 @@ import { startAdaptivePoll } from "../../lib/adaptivePoll";
 import {
   type ApplySnapshot,
   applyNotifications,
+  notificationsSupported,
   notifyPreference,
   setNotifyPreference,
 } from "../../lib/applyNotify";
@@ -26,7 +27,6 @@ import { useToast } from "../../lib/toast";
 import type { OperationControl } from "./OperationBanner";
 
 export const ACTIVE_STATES = ["queued", "running", "paused"];
-const notificationsSupported = () => typeof window !== "undefined" && "Notification" in window;
 
 /**
  * The page's live state: the current (or last) Apply task, the nightly run, browser

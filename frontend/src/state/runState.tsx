@@ -29,6 +29,8 @@ import {
   saveTargetField,
   triggerPdfDownload,
 } from "../api";
+import { notifyIfAllowed } from "../lib/applyNotify";
+import { useDesktop } from "../lib/useDesktop";
 import { DEFAULT_INCLUDE, DEFAULT_SETTINGS } from "./runDefaults";
 import {
   LEGACY_SETTINGS_KEY,
@@ -115,6 +117,7 @@ export function RunProvider({ children }: { children: ReactNode }) {
   // Lives here (not RunPage) so remounting on Tailor ↔ Master tab switches
   // does not reset and re-trigger the post-success PDF download.
   const autoDownloadedFor = useRef<string | null>(null);
+  const desktop = useDesktop();
   const saveSettingsTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
   const settingsRevision = useRef(0);
   const savedSettings = useRef<JobSettings>(DEFAULT_SETTINGS);
@@ -437,9 +440,12 @@ export function RunProvider({ children }: { children: ReactNode }) {
     if (!jobId || !report || status !== "succeeded") return;
     if (autoDownloadedFor.current === jobId) return;
     autoDownloadedFor.current = jobId;
-    void triggerPdfDownload(jobId);
+    // The desktop app keeps files in the app (Save as…, Show in folder) instead of
+    // dropping a copy in Downloads; it says the resume is ready if the window is away.
+    if (!desktop) void triggerPdfDownload(jobId);
+    else if (!document.hasFocus()) notifyIfAllowed("Your tailored resume is ready");
     void refreshHistory();
-  }, [jobId, report, status, refreshHistory]);
+  }, [jobId, report, status, refreshHistory, desktop]);
 
   useEffect(() => {
     if (status === "failed" || status === "cancelled") {

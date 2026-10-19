@@ -23,9 +23,9 @@ pub fn lock(window: &tauri::WebviewWindow) {
         let Ok(settings) = core.Settings() else {
             return;
         };
-        let _ = settings.SetAreDefaultContextMenusEnabled(false.into());
+        let _ = settings.SetAreDefaultContextMenusEnabled(false);
         if let Ok(settings3) = settings.cast::<ICoreWebView2Settings3>() {
-            let _ = settings3.SetAreBrowserAcceleratorKeysEnabled(false.into());
+            let _ = settings3.SetAreBrowserAcceleratorKeysEnabled(false);
         }
     });
     if let Err(error) = result {

@@ -12,11 +12,22 @@ export type TextMenuTarget = {
 };
 
 /** Text inputs that hold selectable text; checkboxes, buttons etc. do not. */
-const TEXT_INPUT_TYPES = new Set(["", "text", "search", "email", "url", "tel", "password", "number"]);
+const TEXT_INPUT_TYPES = new Set([
+  "",
+  "text",
+  "search",
+  "email",
+  "url",
+  "tel",
+  "password",
+  "number",
+]);
 
 export function editableElement(target: EventTarget | null): HTMLElement | null {
   if (!(target instanceof Element)) return null;
-  const field = target.closest<HTMLElement>("input, textarea, [contenteditable='true'], [contenteditable='']");
+  const field = target.closest<HTMLElement>(
+    "input, textarea, [contenteditable='true'], [contenteditable='']",
+  );
   if (!field) return null;
   if (field instanceof HTMLInputElement) {
     if (!TEXT_INPUT_TYPES.has(field.type) || field.readOnly || field.disabled) return null;
@@ -38,7 +49,8 @@ export function fieldHasSelection(field: HTMLElement | null): boolean {
 
 /** The items to show, or none: right-click on plain app chrome shows nothing. */
 export function textMenuItems({ editable, hasSelection }: TextMenuTarget): TextMenuItem[] {
-  if (editable) return hasSelection ? ["cut", "copy", "paste", "selectAll"] : ["paste", "selectAll"];
+  if (editable)
+    return hasSelection ? ["cut", "copy", "paste", "selectAll"] : ["paste", "selectAll"];
   return hasSelection ? ["copy"] : [];
 }
 

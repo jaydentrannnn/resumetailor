@@ -7,7 +7,7 @@ import {
   type UpdateStatus,
 } from "../../api";
 import { Button, Card, Kbd, Meter } from "../../components/ui";
-import { buttonClass } from "../../lib/buttonClass";
+import { SaveFileButton } from "../../components/FileActions";
 import { SHORTCUTS } from "../../lib/shortcuts";
 import { UPDATE_IN_PROGRESS, updateStatusLine } from "../../lib/updateStatus";
 import { SettingRow } from "./SettingRow";
@@ -37,13 +37,13 @@ export function AboutSection() {
           layout="action"
           description="The diagnostics file shows what the app did, with your name, contact details, keys and passwords removed. Attach it when you report a problem."
         >
-          <a
-            className={buttonClass("secondary", "md", "ml-auto")}
-            href="/api/diagnostics.zip"
-            download
-          >
-            Download diagnostics
-          </a>
+          <SaveFileButton
+            url="/api/diagnostics.zip"
+            what="diagnostics"
+            fallbackName="resumetailor-diagnostics.zip"
+            size="md"
+            className="ml-auto"
+          />
         </SettingRow>
         <SettingRow
           label="Reload window"

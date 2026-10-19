@@ -103,9 +103,14 @@ def request(command: str) -> None:
             _state.update(state="downloading", pct=0, error=None)
         elif command == "apply":
             _state.update(state="installing", waiting_for=None)
+    write_line(f"SHELL {command}")
+
+
+def write_line(line: str) -> None:
+    """Write one line to the shell (the server's stdout); one writer at a time."""
     out = _out or sys.stdout
     with _write_lock:
-        out.write(f"SHELL {command}\n")
+        out.write(f"{line}\n")
         out.flush()
 
 

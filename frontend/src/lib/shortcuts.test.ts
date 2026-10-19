@@ -19,4 +19,11 @@ describe("shortcutFor", () => {
     expect(shortcutFor(key("?", {}, document.createElement("input")))).toBeNull();
     expect(shortcutFor(key("Enter"))).toBeNull();
   });
+  it("maps Ctrl/Cmd+P to print, even while typing", () => {
+    const input = document.createElement("input");
+    expect(shortcutFor(key("p", { ctrlKey: true }, input))).toBe("print");
+    expect(shortcutFor(key("P", { metaKey: true }))).toBe("print");
+    expect(shortcutFor(key("p", { ctrlKey: true, shiftKey: true }))).toBeNull();
+    expect(shortcutFor(key("p"))).toBeNull();
+  });
 });

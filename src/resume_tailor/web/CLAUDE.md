@@ -45,7 +45,8 @@ same text (`tests/tooling/test_agent_docs.py` enforces it).
   `applications`, `extension`, `resume`,
   `template`, `libraries`, `config`, `workspaces`, `system`, `setup`, `answers`,
   `automation`, `discovery`, `jd`, `onboarding`, `secrets`, `diagnostics`, `update`, `reference`
-  (static Profile-page option lists).
+  (static Profile-page option lists), `desktop` (desktop app only, 404 elsewhere: Save as
+  via the shell's native dialog, Show in folder / Open for a run's files, window title).
 - `extension.py` — pairing codes → tokens; `security.py` — request gate; `state.py` —
   process-wide flags shared by the lifespan and routers.
 

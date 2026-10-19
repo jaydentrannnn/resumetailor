@@ -7,8 +7,9 @@ import {
   previewUrl,
   regenerateCoverLetter,
 } from "../api";
-import { buttonClass } from "../lib/buttonClass";
 import { CoverLetterActionBar, CoverLetterDetails } from "./CoverLetterPanel";
+import { usePrintTarget } from "../lib/printTarget";
+import { JobFileActions, OpenDocumentLink, SaveFileButton } from "./FileActions";
 import { SEGMENT_BASE, SEGMENT_OFF, SEGMENT_ON, SEGMENT_TRACK } from "./ui/Segmented";
 import { ResultFrame } from "./ui";
 
@@ -54,6 +55,7 @@ export function DocumentsCard({
   const activeSrc = tab === "cover" && hasCoverPdf ? coverSrc : tab === "resume" ? resumeSrc : null;
   const activeTitle =
     tab === "cover" && hasCoverPdf ? "Cover letter preview" : "Tailored resume preview";
+  usePrintTarget(activeSrc);
 
   async function handleCoverRegenerate(instruction: string) {
     const updated = await regenerateCoverLetter(jobId, instruction);
@@ -103,14 +105,10 @@ export function DocumentsCard({
           <h2 className="rt-tile-title">Tailored resume</h2>
         )}
         {activeSrc && (
-          <a
+          <OpenDocumentLink
             href={activeSrc}
-            target="_blank"
-            rel="noreferrer"
             className="text-[13px] text-ink-muted underline underline-offset-2 hover:text-ink"
-          >
-            Open in new tab
-          </a>
+          />
         )}
       </div>
 
@@ -125,12 +123,14 @@ export function DocumentsCard({
         {tab === "resume" && (
           <>
             <div className="mb-4 flex flex-wrap justify-end gap-2">
-              <a href={downloadPdfUrl(jobId)} download className={buttonClass("primary", "sm")}>
-                Download .pdf
-              </a>
-              <a href={downloadUrl(jobId)} download className={buttonClass("secondary", "sm")}>
-                Download .docx
-              </a>
+              <JobFileActions jobId={jobId} kind="resume-docx" />
+              <SaveFileButton
+                url={downloadPdfUrl(jobId)}
+                what="PDF"
+                fallbackName="resume.pdf"
+                variant="primary"
+              />
+              <SaveFileButton url={downloadUrl(jobId)} what="Word" fallbackName="resume.docx" />
             </div>
             <PdfFrame
               iframeKey={`resume-${jobId}-${revision}`}
@@ -185,11 +185,7 @@ function PdfFrame({ iframeKey, title, src }: { iframeKey: string; title: string;
         className="h-[70vh] w-full bg-doc-preview"
       >
         <p className="p-4 text-sm text-ink-muted">
-          PDF preview is not available in this browser.{" "}
-          <a href={src} target="_blank" rel="noreferrer" className="rt-link">
-            Open the PDF in a new tab
-          </a>
-          .
+          PDF preview is not available here. <OpenDocumentLink href={src} />.
         </p>
       </iframe>
     </div>

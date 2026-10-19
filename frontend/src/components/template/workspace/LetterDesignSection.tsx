@@ -2,7 +2,8 @@ import { useState } from "react";
 import { COVER_STARTER_URL, type CoverLetterSettings } from "../../../api";
 import { describe } from "../../../lib/errors";
 import { useConfirm } from "../../../state/confirmState";
-import { Button, buttonClass, Segmented, TileSection } from "../../ui";
+import { SaveFileButton } from "../../FileActions";
+import { Button, Segmented, TileSection } from "../../ui";
 import { UploadDropzone } from "../UploadDropzone";
 
 const DESIGNS = [
@@ -81,9 +82,12 @@ export function LetterDesignSection({
             Download your current letter with «fields» in place of the words, restyle it in Word
             (keep «Body» on its own line), then upload it.
           </p>
-          <a className={buttonClass("plain", "sm")} href={COVER_STARTER_URL} download>
-            Download starter letter
-          </a>
+          <SaveFileButton
+            url={COVER_STARTER_URL}
+            what="starter letter"
+            fallbackName="starter_letter.docx"
+            variant="plain"
+          />
           {ownLetter && (
             <div className="flex flex-wrap items-center gap-2">
               <span className="text-ink">Your letter is uploaded.</span>

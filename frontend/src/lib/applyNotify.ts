@@ -64,3 +64,13 @@ export function setNotifyPreference(on: boolean): void {
     /* private mode: the toggle simply doesn't persist */
   }
 }
+
+export const notificationsSupported = () =>
+  typeof window !== "undefined" && "Notification" in window;
+
+/** Raise a system notification when the person turned them on and the OS allows it. */
+export function notifyIfAllowed(body: string): void {
+  if (!notifyPreference() || !notificationsSupported() || Notification.permission !== "granted")
+    return;
+  new Notification("ResumeTailor", { body, tag: body });
+}

@@ -29,7 +29,10 @@ export function TextContextMenu() {
     function onContextMenu(e: MouseEvent) {
       e.preventDefault();
       const field = editableElement(e.target);
-      const items = textMenuItems({ editable: field !== null, hasSelection: fieldHasSelection(field) });
+      const items = textMenuItems({
+        editable: field !== null,
+        hasSelection: fieldHasSelection(field),
+      });
       setOpen(items.length ? { x: e.clientX, y: e.clientY, items, field } : null);
     }
     const close = () => setOpen(null);

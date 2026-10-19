@@ -3,6 +3,7 @@ import type { CoverLetter } from "../api";
 import { coverLetterDocxUrl, coverLetterMdUrl, coverLetterPdfUrl } from "../api";
 import { buttonClass } from "../lib/buttonClass";
 import { CopyButton } from "./CopyButton";
+import { JobFileActions, SaveFileButton } from "./FileActions";
 
 export function letterText(letter: CoverLetter): string {
   /** Full letter body for copy-all, excluding letterhead the .docx already carries. */
@@ -35,18 +36,21 @@ export function CoverLetterActionBar({ letter, jobId }: ActionProps) {
       </p>
       <div className="flex flex-wrap justify-end gap-2">
         <CopyButton label="Copy all" text={letterText(letter)} />
-        <a href={coverLetterMdUrl(jobId)} download className={buttonClass("secondary", "sm")}>
-          Download .md
-        </a>
+        {letter.has_docx && <JobFileActions jobId={jobId} kind="cover-docx" />}
+        <SaveFileButton url={coverLetterMdUrl(jobId)} what="text" fallbackName="cover_letter.md" />
         {letter.has_docx && (
-          <a href={coverLetterDocxUrl(jobId)} download className={buttonClass("secondary", "sm")}>
-            Download .docx
-          </a>
+          <SaveFileButton
+            url={coverLetterDocxUrl(jobId)}
+            what="Word"
+            fallbackName="cover_letter.docx"
+          />
         )}
         {letter.has_pdf && (
-          <a href={coverLetterPdfUrl(jobId)} download className={buttonClass("secondary", "sm")}>
-            Download .pdf
-          </a>
+          <SaveFileButton
+            url={coverLetterPdfUrl(jobId)}
+            what="PDF"
+            fallbackName="cover_letter.pdf"
+          />
         )}
       </div>
     </div>

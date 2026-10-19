@@ -2,6 +2,7 @@
 
 import type { ApplySettings } from "./applySettings";
 import type { AiModels } from "../lib/aiModels";
+import { downloadFilename } from "../lib/fileActions";
 import { apiError, request } from "./core";
 
 export type ContactField = "location" | "email" | "phone" | "linkedin" | "github";
@@ -384,10 +385,7 @@ export async function triggerPdfDownload(jobId: string): Promise<void> {
   if (!res.ok) return;
   const blob = await res.blob();
   const url = URL.createObjectURL(blob);
-  const match = /filename\*?=(?:UTF-8''|")?([^";]+)/i.exec(
-    res.headers.get("Content-Disposition") ?? "",
-  );
-  const filename = match ? decodeURIComponent(match[1].replace(/["']/g, "")) : "resume.pdf";
+  const filename = downloadFilename(res.headers.get("Content-Disposition"), "resume.pdf");
   const anchor = document.createElement("a");
   anchor.href = url;
   anchor.download = filename;

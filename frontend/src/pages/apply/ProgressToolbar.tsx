@@ -5,6 +5,7 @@ import {
   type SourcesStatus,
 } from "../../api";
 import { Button, buttonClass, Switch } from "../../components/ui";
+import { SaveFileButton } from "../../components/FileActions";
 import { canFillAfterReview } from "../../lib/applicationRows";
 import { canTailorFiles, fillBlockers, hasTailoredFiles } from "../../lib/applyPage";
 import { GLOSSARY } from "../../lib/glossary";
@@ -81,9 +82,13 @@ export function FindJobsTools({
           </label>
         </div>
       </details>
-      <a className={buttonClass("plain", "md", "rt-control")} href={applicationsExportUrl()}>
-        Export CSV
-      </a>
+      <SaveFileButton
+        url={applicationsExportUrl()}
+        what="CSV"
+        fallbackName="applications.csv"
+        variant="plain"
+        size="md"
+      />
       <Button
         disabled={busy || active || !anySource}
         title={anySource ? "Look for new postings now" : "Choose what to search for first"}

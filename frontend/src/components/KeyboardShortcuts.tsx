@@ -1,4 +1,5 @@
 import { useEffect, useState } from "react";
+import { currentPrintTarget, printDocument } from "../lib/printTarget";
 import { SHORTCUTS, shortcutFor } from "../lib/shortcuts";
 import { Kbd } from "./ui/Tile";
 import { Modal } from "./Modal";
@@ -6,7 +7,8 @@ import { Modal } from "./Modal";
 /**
  * Handles the global shortcuts. Pages opt in by marking elements:
  * `data-shortcut="primary"` (a button Ctrl/Cmd+Enter presses) and
- * `data-shortcut="search"` (an input "/" focuses).
+ * `data-shortcut="search"` (an input "/" focuses). Viewers register what Ctrl+P
+ * prints with `usePrintTarget`.
  */
 export function KeyboardShortcuts() {
   const [helpOpen, setHelpOpen] = useState(false);
@@ -17,6 +19,13 @@ export function KeyboardShortcuts() {
       if (action === "help") {
         e.preventDefault();
         setHelpOpen(true);
+        return;
+      }
+      if (action === "print") {
+        const url = currentPrintTarget();
+        if (!url) return;
+        e.preventDefault();
+        printDocument(url);
         return;
       }
       const target = document.querySelector<HTMLElement>(`[data-shortcut="${action}"]`);

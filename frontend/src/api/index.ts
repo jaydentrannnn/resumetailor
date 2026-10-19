@@ -16,3 +16,4 @@ export * from "./modelQueue";
 export * from "./coverLetter";
 export * from "./templateEdit";
 export * from "./vertex";
+export * from "./desktop";

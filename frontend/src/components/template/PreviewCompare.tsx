@@ -2,6 +2,7 @@ import { buttonClass } from "../../lib/buttonClass";
 import { useEffect, useRef, useState } from "react";
 
 import { fetchTemplateDraftPreview, fetchTemplateSourcePreview } from "../../api";
+import { OpenDocumentLink } from "../FileActions";
 
 type Props = {
   sourceSha256: string;
@@ -113,11 +114,7 @@ export function PreviewCompare({ sourceSha256, profile }: Props) {
         <div className="overflow-hidden rounded-sm border border-line/80 bg-paper/40">
           <p className="flex items-center justify-between border-b border-line/80 bg-paper/60 px-3 py-1.5 text-xs font-medium text-ink-muted">
             <span>Original upload</span>
-            {sourceUrl ? (
-              <a href={sourceUrl} target="_blank" rel="noreferrer" className="rt-link">
-                Open in new tab
-              </a>
-            ) : null}
+            {sourceUrl ? <OpenDocumentLink href={sourceUrl} /> : null}
           </p>
           {sourceLoading ? (
             <p className="p-3 text-xs text-ink-muted">Converting…</p>
@@ -130,11 +127,7 @@ export function PreviewCompare({ sourceSha256, profile }: Props) {
               className="h-[55vh] w-full bg-doc-preview"
             >
               <p className="p-3 text-xs text-ink-muted">
-                PDF preview unavailable.{" "}
-                <a href={sourceUrl} target="_blank" rel="noreferrer" className="rt-link">
-                  Open in new tab
-                </a>
-                .
+                PDF preview unavailable. <OpenDocumentLink href={sourceUrl} />.
               </p>
             </iframe>
           ) : null}
@@ -147,11 +140,7 @@ export function PreviewCompare({ sourceSha256, profile }: Props) {
               {draftUrl && draftStale ? (
                 <span className="text-attn">Mapping changed — refresh to update</span>
               ) : null}
-              {draftUrl ? (
-                <a href={draftUrl} target="_blank" rel="noreferrer" className="rt-link">
-                  Open in new tab
-                </a>
-              ) : null}
+              {draftUrl ? <OpenDocumentLink href={draftUrl} /> : null}
             </span>
           </p>
           {draftError ? (
@@ -163,11 +152,7 @@ export function PreviewCompare({ sourceSha256, profile }: Props) {
               className={`h-[55vh] w-full bg-doc-preview ${draftStale ? "opacity-60" : ""}`}
             >
               <p className="p-3 text-xs text-ink-muted">
-                PDF preview unavailable.{" "}
-                <a href={draftUrl} target="_blank" rel="noreferrer" className="rt-link">
-                  Open in new tab
-                </a>
-                .
+                PDF preview unavailable. <OpenDocumentLink href={draftUrl} />.
               </p>
             </iframe>
           ) : (

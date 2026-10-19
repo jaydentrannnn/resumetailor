@@ -1155,6 +1155,18 @@ class TemplateUnmappedLineOut(BaseModel):
     suggested_label: str = ""
 
 
+class DesktopSaveResult(BaseModel):
+    """Save as… in the desktop app (`routes/desktop.py`)."""
+
+    #: False when the person cancelled the Save dialog.
+    saved: bool
+    path: str | None = None
+
+
+class DesktopTitleRequest(BaseModel):
+    title: str = Field(max_length=200)
+
+
 class TemplateEditStatus(BaseModel):
     """The Edit-layout-in-Word session (`web/template_edit.py`)."""
 

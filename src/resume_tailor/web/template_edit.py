@@ -13,8 +13,6 @@ from __future__ import annotations
 import json
 import os
 import shutil
-import subprocess
-import sys
 import zipfile
 from datetime import UTC, datetime
 from pathlib import Path
@@ -29,13 +27,13 @@ from resume_tailor.document import (
     template_skeleton,
     template_style,
 )
+from resume_tailor.infra import local_files
 from resume_tailor.web.schemas import TemplateAnalyzeResponse, TemplateEditStatus
 
 from . import template_ops, template_uploads
 
 LAYOUT_NAME = "layout.docx"
 _SESSION_NAME = "session.json"
-_MAC_WORD = Path("/Applications/Microsoft Word.app")
 
 
 class EditSessionError(template_ops.TemplateValidationError):
@@ -73,17 +71,8 @@ def _stamp(path: Path) -> tuple[int, int] | None:
 
 
 def _open_file(path: Path) -> None:
-    """Open `path` in the person's word processor (Word, else LibreOffice on macOS).
-
-    Never Pages: it cannot save a .docx back in place, so the save would never arrive.
-    """
-    if sys.platform == "win32":
-        os.startfile(str(path))  # type: ignore[attr-defined]  # noqa: S606
-    elif sys.platform == "darwin":
-        app = "Microsoft Word" if _MAC_WORD.exists() else "LibreOffice"
-        subprocess.Popen(["open", "-a", app, str(path)])  # noqa: S603, S607
-    else:
-        subprocess.Popen(["xdg-open", str(path)])  # noqa: S603, S607
+    """Open `path` in the person's word processor (tests replace this seam)."""
+    local_files.open_in_word_processor(path)
 
 
 def _editor_open(path: Path) -> bool:

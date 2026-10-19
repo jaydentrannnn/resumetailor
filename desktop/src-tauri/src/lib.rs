@@ -14,6 +14,8 @@
 //! - hides the window on close so the nightly scheduler keeps running, with a tray menu
 //!   to reopen or quit; quitting stops the server;
 //! - checks for, downloads and installs updates when the server asks (`update.rs`);
+//! - opens the native Save dialog and sets the window title when the server asks
+//!   (`window_requests.rs`);
 //! - opens outside links in the default browser, keeping the window on the app
 //!   (`links.rs`);
 //! - switches off browser behaviours that do not belong in an app window: reload,
@@ -23,7 +25,8 @@
 //! The web UI runs from a 127.0.0.1 origin and gets no Tauri IPC (see
 //! `capabilities/default.json`); only the bundled start page can call `log_folder`.
 //! Everything else between the web UI and the shell goes through the server's pipes:
-//! `READY` and `SHELL <command>` lines on its stdout, `UPDATE <json>` lines on its stdin.
+//! `READY` and `SHELL <command>` lines on its stdout, `UPDATE <json>` and `DIALOG <json>`
+//! lines on its stdin.
 
 use std::io::{BufRead, BufReader, Write};
 use std::path::PathBuf;
@@ -39,6 +42,7 @@ use tauri::{AppHandle, Manager, RunEvent, Url, WebviewWindowBuilder, WindowEvent
 mod links;
 mod update;
 mod webview_settings;
+mod window_requests;
 
 const MAX_RESTARTS: u32 = 3;
 
@@ -186,6 +190,8 @@ fn start_server(app: &AppHandle) -> Result<(), String> {
                 update::on_ready(&handle);
             } else if let Some(command) = update::parse_command(&line) {
                 update::handle(&handle, command);
+            } else if let Some(request) = window_requests::parse(&line) {
+                window_requests::handle(&handle, request);
             }
         }
         server_exited(&handle, pid);

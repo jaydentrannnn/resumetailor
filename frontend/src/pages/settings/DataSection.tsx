@@ -10,8 +10,8 @@ import {
   type DataInfo,
 } from "../../api";
 import { CopyButton } from "../../components/CopyButton";
+import { SaveFileButton } from "../../components/FileActions";
 import { Button, Card, Modal, StatusChip } from "../../components/ui";
-import { buttonClass } from "../../lib/buttonClass";
 import { describe } from "../../lib/errors";
 import { formatBytes } from "../../lib/format";
 import { useToast } from "../../lib/toast";
@@ -157,9 +157,13 @@ export function DataSection() {
             </>
           }
         >
-          <a className={buttonClass("primary")} href={exportDataUrl(includeOutput)} download>
-            Export this profile
-          </a>
+          <SaveFileButton
+            url={exportDataUrl(includeOutput)}
+            what="profile export"
+            fallbackName="resumetailor-profile.zip"
+            variant="primary"
+            size="md"
+          />
           <Button variant="plain" loading={importing} onClick={() => fileInput.current?.click()}>
             Import from a .zip
           </Button>

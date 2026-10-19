@@ -201,18 +201,23 @@ def main(argv: list[str] | None = None) -> int:
             if self.started:
                 print(ready_line(port, token), flush=True)
 
-    from resume_tailor.infra import desktop_update
+    from resume_tailor.infra import desktop_shell, desktop_update
 
     desktop_update.CURRENT = _flag_value(args, "--app-version")
     server = _Server(uvicorn.Config(app, log_level="warning", access_log=False))
     if "--exit-with-stdin" in args:
         # Launched by the shell: it is on the other end of both pipes.
         desktop_update.ENABLED = True
+        desktop_shell.ENABLED = True
 
         def _parent_gone() -> None:
             server.should_exit = True
 
-        watch_stdin(_parent_gone, on_line=desktop_update.receive)
+        def _from_shell(line: str) -> None:
+            desktop_update.receive(line)
+            desktop_shell.receive(line)
+
+        watch_stdin(_parent_gone, on_line=_from_shell)
     server.run(sockets=[sock])
     return 0
 

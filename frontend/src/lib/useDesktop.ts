@@ -12,7 +12,9 @@ let cached: Promise<boolean> | null = null;
 let known: boolean | null = null;
 
 function loadDesktop(): Promise<boolean> {
-  cached ??= fetchConfig()
+  // Any failure, even a synchronous one, reads as the browser build.
+  cached ??= Promise.resolve()
+    .then(() => fetchConfig())
     .then((cfg) => Boolean(cfg.desktop))
     .catch(() => false)
     .then((desktop) => (known = desktop));

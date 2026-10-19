@@ -798,3 +798,25 @@ carry `data-dropzone`. Text gets the app's own Cut/Copy/Paste/Select all menu
 (`TextContextMenu`, desktop only via `lib/useDesktop`). The browser build is untouched.
 Recovery without F5: Reload on the error screen and Settings › About › Reload window.
 The pre-redesign UI is archived on branch `archive/classic-ui` (never merged back).
+
+### Desktop file actions (2026-10-19)
+
+In the desktop app, file buttons are native: **Save PDF… / Save Word…** (and the cover
+letter, diagnostics, profile export, starter letter and Apply CSV) open the system Save
+dialog; a run's resume and letter also get **Show in folder** and **Open in Word**. The
+browser build keeps plain download links (`components/FileActions.tsx` picks by
+`useDesktop`). The web UI still has no Tauri IPC: the page fetches the download URL's
+bytes and POSTs them to `/api/desktop/save-as?name=`; the server writes
+`SHELL save {id,name,ext}` on stdout, the shell (`window_requests.rs`, `rfd` directly —
+every tauri-plugin-dialog release that fits needs a newer tauri than the shell pins)
+shows the dialog and answers `DIALOG {id,path}` on stdin (`infra/desktop_shell.py`).
+The page never chooses a path, so a page script cannot write anywhere the person did not
+pick. Show in folder / Open take a run id and a fixed kind, never a path
+(`infra/local_files.py`, which also holds the Open-in-Word helper `template_edit` uses).
+Window titles use the same relay (`SHELL title`). Every `/api/desktop` route 404s unless
+the server runs as the desktop sidecar. The desktop app no longer auto-downloads the PDF
+after a run (it filled Downloads with copies); it raises a system notification instead
+when the window is in the background and notifications are on. **Ctrl+P** prints the
+document on screen (resume, letter, template preview) through an off-screen same-origin
+frame (`lib/printTarget.ts`); with no document showing, the browser build keeps its own
+Ctrl+P and the desktop app does nothing.
