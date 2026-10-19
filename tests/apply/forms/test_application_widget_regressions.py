@@ -17,12 +17,12 @@ from resume_tailor.apply.answers import (
 )
 from resume_tailor.apply.answers.profile import ApplicantProfile
 from resume_tailor.apply.ats import ats_hints
-from resume_tailor.apply.forms import field_matcher
+from resume_tailor.apply.forms import field_matcher, fill_page
 from resume_tailor.apply.funnel.packet_models import Packet
 
 _ROOT = Path(__file__).parents[3]
 _FIXTURE = _ROOT / "tests/fixtures/forms/doordash_pg_controls.html"
-_FILLER = (_ROOT / "src/resume_tailor/apply/forms/filler.js").read_text(encoding="utf-8")
+_FILLER = fill_page._load_filler_js()  # noqa: SLF001
 _SOURCE_QUESTION = (
     "What source(s) of information influenced your decision to apply for a P&G position?"
 )

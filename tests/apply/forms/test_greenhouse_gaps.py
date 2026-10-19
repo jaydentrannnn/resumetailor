@@ -9,15 +9,21 @@ from playwright.sync_api import sync_playwright
 from resume_tailor.apply.answers import form_facts, hybrid_resolver, questions
 from resume_tailor.apply.answers.profile import ApplicantProfile
 from resume_tailor.apply.ats import ats_hints
-from resume_tailor.apply.forms import attachments, fill_finish, fill_repairs, fill_widgets
+from resume_tailor.apply.forms import (
+    attachments,
+    fill_finish,
+    fill_page,
+    fill_repairs,
+    fill_widgets,
+)
 from resume_tailor.apply.forms.field_types import FieldObservation
 from resume_tailor.apply.funnel.packet_fields import build_fields
 from resume_tailor.apply.funnel.packet_models import Packet, PacketEducation
 from tests.fixtures import synthetic_resume
 
 ROOT = Path(__file__).parents[3]
-FILLER = (ROOT / "src/resume_tailor/apply/forms/filler.js").read_text(encoding="utf-8")
-READY = (ROOT / "src/resume_tailor/apply/forms/filler_readiness.js").read_text(encoding="utf-8")
+FILLER = fill_page._load_filler_js()  # noqa: SLF001
+READY = fill_page._load_readiness_js()  # noqa: SLF001
 FIXTURE = (ROOT / "tests/fixtures/forms/greenhouse_application_gaps.html").read_text(
     encoding="utf-8"
 )

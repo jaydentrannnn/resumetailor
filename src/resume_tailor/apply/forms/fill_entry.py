@@ -140,8 +140,7 @@ class _FillEntry(fill_state._FillState):
                 "fill it yourself in this tab, or try again later.",
             )
         self.progress("posting loaded; waiting for form controls")
-        with contextlib.suppress(Exception):
-            page.wait_for_load_state("networkidle", timeout=self._ms_left(10_000))
+        fill_page.wait_for_entry(page, timeout_ms=self._ms_left(10_000))
         if identity.lost_posting(self.url or "", str(page.url)):
             return self._handoff(fill_outcomes.LOST_POSTING_MSG, status="fill_failed")
         self.progress("locating application form")

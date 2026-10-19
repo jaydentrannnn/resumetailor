@@ -68,10 +68,11 @@ def find_and_click_apply(page: Any, ats: str, context: Any = None) -> Any:
         try:
             loc = _entry_control(current_page.locator(click_sel))
             if loc is not None:
+                before = _entry_state(current_page)
                 current_page = _click_and_track_popup(
                     current_page, context, lambda loc=loc: clicks.safe_click(loc, purpose="enter", timeout=4000)
                 )
-                current_page.wait_for_timeout(1000)
+                _settle_after_entry(current_page, before, 1000)
                 entered = True
                 break
         except Exception:  # noqa: BLE001
@@ -88,8 +89,9 @@ def find_and_click_apply(page: Any, ats: str, context: Any = None) -> Any:
                 current_page.get_by_role(role, name=ats_hints.APPLY_ENTRY_PATTERN)
             )
             if loc is not None:
+                before = _entry_state(current_page)
                 current_page = _enter(current_page, context, loc)
-                current_page.wait_for_timeout(1000)
+                _settle_after_entry(current_page, before, 1000)
                 break
         except Exception:  # noqa: BLE001
             pass
@@ -100,14 +102,48 @@ def find_and_click_apply(page: Any, ats: str, context: Any = None) -> Any:
             "button", name=re.compile(r"apply\s+manually", re.IGNORECASE)
         ).first
         if _is_locator_present_and_visible(manual_btn):
+            before = _entry_state(current_page)
             current_page = _click_and_track_popup(
                 current_page, context, lambda: clicks.safe_click(manual_btn, purpose="enter", timeout=4000)
             )
-            current_page.wait_for_timeout(1000)
+            _settle_after_entry(current_page, before, 1000)
     except Exception:  # noqa: BLE001
         pass
 
     return current_page
+
+_CONTROL_COUNT_JS = (
+    "() => document.querySelectorAll('input:not([type=\"hidden\"]), select, textarea').length"
+)
+
+
+def _entry_state(page: Any) -> tuple[str, int | None]:
+    """The page's URL and form-control count before an entry click."""
+    count = None
+    with contextlib.suppress(Exception):
+        found = page.evaluate(_CONTROL_COUNT_JS)
+        count = found if isinstance(found, int) else None
+    return str(getattr(page, "url", "")), count
+
+
+def _settle_after_entry(page: Any, before: tuple[str, int | None], cap_ms: int) -> None:
+    """After an entry click: until it shows its effect on ``page`` (another tab or URL,
+    or more form controls than before), at most ``cap_ms``, the fixed wait this replaces.
+    A page whose controls cannot be counted gets the fixed wait."""
+    url, count = before
+    if count is None:
+        page.wait_for_timeout(cap_ms)
+        return
+    for _ in range(max(cap_ms // 250, 1)):
+        now_url, now_count = _entry_state(page)
+        if now_url != url:
+            with contextlib.suppress(Exception):
+                page.wait_for_load_state("domcontentloaded", timeout=cap_ms)
+            return
+        if now_count is not None and now_count > count:
+            return
+        page.wait_for_timeout(250)
+
 
 def _enter(page: Any, context: Any, loc: Any) -> Any:
     """Click an entry control; when that leaves the page where it was, take the apply item
@@ -117,6 +153,7 @@ def _enter(page: Any, context: Any, loc: Any) -> Any:
     toggle whose "Apply Now" item leads to the sign-in; its ``href`` alone redirects home.
     Qualtrics' link sits under a chat widget that intercepts the click."""
     before = str(page.url)
+    state = _entry_state(page)
     href = _entry_href(page, loc)
     try:
         landed = _click_and_track_popup(
@@ -129,7 +166,7 @@ def _enter(page: Any, context: Any, loc: Any) -> Any:
     if landed is not page:
         return landed
     with contextlib.suppress(Exception):
-        page.wait_for_timeout(1500)
+        _settle_after_entry(page, state, 1500)
     if not _same_page(str(page.url), before):
         return page
     item = _apply_menu_item(page)

@@ -54,26 +54,7 @@
     return rect.width > 0 && rect.height > 0;
   }
 
-  /** The document or shadow root holding el: its `label[for]` and radio group live there. */
-  function rootOf(el) {
-    const root = el.getRootNode();
-    return root && typeof root.querySelectorAll === "function" ? root : document;
-  }
-
-  /**
-   * querySelectorAll that also searches open shadow roots, in document order. Web-component
-   * forms (SmartRecruiters' apply page) keep their inputs there; closed roots stay hidden,
-   * as they are from the page's own scripts. Playwright's CSS locators pierce open roots,
-   * so the selectors reported back still resolve.
-   */
-  function deepQueryAll(root, sel) {
-    const out = [];
-    for (const node of root.querySelectorAll("*")) {
-      if (node.matches(sel)) out.push(node);
-      if (node.shadowRoot) out.push(...deepQueryAll(node.shadowRoot, sel));
-    }
-    return out;
-  }
+  /*DOM_COMMON*/
 
   /**
    * A CSS selector for el. A radio/checkbox group member is named by its group (the
@@ -431,36 +412,6 @@
     return Boolean(control && control.querySelector("[class*='-placeholder'], [class*='-singleValue'], [class*='single-value']"));
   }
 
-  /** React Select's own control box (``select__control``, or an emotion ``css-…-control``
-   * holding a value container), not any class ending in "-control": Jobvite wraps every
-   * field in ``jv-form-field-control``. */
-  const REACT_SELECT_CLASS = /(?:^|\s)(?:[\w-]*select__control|css-\w+-control)(?:\s|$)/;
-  function reactSelectBox(el) {
-    const box = el.closest("[class*='select__control'], [class*='-control']");
-    if (!box) return null;
-    if (REACT_SELECT_CLASS.test(box.getAttribute("class") || "")) return box;
-    return box.querySelector("[class*='alueContainer'], [class*='value-container'], [class*='ndicatorsContainer']") ? box : null;
-  }
-
-  /** Normalise synonym entries to [pattern, key] pairs. */
-  const TRIGGERS = "[role='combobox'], [aria-haspopup='listbox'], input[id^='react-select-']";
-
-  /**
-   * The dropdown a validity stand-in belongs to: an input hidden from assistive tech and
-   * the tab order (``aria-hidden``, ``tabindex=-1``) beside one visible dropdown trigger in
-   * the same widget (Greenhouse's ``requiredInput``). Such an input is that dropdown, not
-   * a question of its own; a hidden native control that is a widget's only control is.
-   */
-  function twinOwner(el) {
-    if (el.tagName !== "INPUT" || el.getAttribute("aria-hidden") !== "true" || el.tabIndex !== -1) return null;
-    if (el.matches(TRIGGERS) || (el.id && rootOf(el).querySelector(`label[for="${CSS.escape(el.id)}"]`))) return null;
-    for (let node = el.parentElement, depth = 0; node && node !== document.body && depth < 4; node = node.parentElement, depth++) {
-      const triggers = Array.from(node.querySelectorAll(TRIGGERS)).filter((other) => other !== el && isVisible(other));
-      if (triggers.length) return triggers.length === 1 ? triggers[0] : null;
-    }
-    return null;
-  }
-
   /** A dropdown is required when its validity stand-in is. */
   function twinRequired(el) {
     if (!el.matches(TRIGGERS)) return false;
@@ -469,25 +420,6 @@
       if (twins.length) return twins.some((twin) => twin.required);
     }
     return false;
-  }
-
-  /** Hidden from people while still "visible" to scripts: off-screen, see-through, tiny. */
-  function hiddenFromPeople(el) {
-    const rect = el.getBoundingClientRect();
-    if (rect.width <= 2 || rect.height <= 2 || rect.right <= 0 || rect.bottom <= 0) return true;
-    for (let node = el; node && node.nodeType === 1; node = node.parentElement) {
-      if (getComputedStyle(node).opacity === "0" || node.getAttribute("aria-hidden") === "true") return true;
-    }
-    return false;
-  }
-
-  /** A trap for bots: never filled, never reported (Workday's ``beecatcher``). */
-  const TRAP_NAME = /honey\s*pot|beecatcher|bot[-_ ]?trap/i;
-  const TRAP_TEXT = /leave (?:this |it )?(?:field |box )?(?:blank|empty)|for robots|do not (?:fill|enter|type)|if you are (?:a )?human/i;
-  function honeypot(el) {
-    const ident = `${el.getAttribute("name") || ""} ${el.id || ""} ${el.getAttribute("class") || ""}`;
-    if (TRAP_NAME.test(ident)) return true;
-    return hiddenFromPeople(el) && TRAP_TEXT.test(`${labelFor(el)} ${el.getAttribute("placeholder") || ""}`);
   }
 
   /** One-character boxes that together take one code ("Digit 1 of 6"): one control. */
@@ -1291,10 +1223,11 @@
       let selectedText = (control?.querySelector(".select__single-value, [class*='-singleValue']")?.textContent ||
         Array.from(control?.querySelectorAll('.select__multi-value__label, [class*="-multiValue"]') || []).map(textOf).join('; ')).trim();
       // A div dropdown shows its choice as its own text, else a "Select" placeholder; a
-      // closed input dropdown that is not React Select holds its choice as its value
-      // (Rippling, Workable). A failed pick clears what it typed (`widget_actions`).
+      // read-only input dropdown holds its choice as its value (Workable). Text in an
+      // input that takes typing is never read as a choice (`_observe_fields` keeps a
+      // pick `widget_actions` verified there).
       const ownChoice = el.tagName === "DIV" ? textOf(el)
-        : el.tagName === "INPUT" && el.getAttribute("aria-expanded") !== "true" && !isReactSelect(el) && !reactSelectBox(el)
+        : el.tagName === "INPUT" && el.readOnly && el.getAttribute("aria-expanded") !== "true"
           ? String(el.value || "").trim() : "";
       if (!selectedText && !/^(?:(?:please\s+)?(?:select|choose)\b.*|-+)?$/i.test(ownChoice)) {
         selectedText = ownChoice;

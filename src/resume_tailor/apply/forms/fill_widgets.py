@@ -168,6 +168,22 @@ def _observe_fields(page: Any, filler_js: str, hints: dict[str, str], attempted:
             with contextlib.suppress(Exception):
                 if workday_dates.question_date_matches(frame, prior):
                     observed[identity] = dict(prior)
+        # A dropdown whose input takes typing (Rippling) shows a pick as its value, which
+        # ``filler.js`` never reads as a choice: one this fill picked counts while the
+        # control still shows it, menu closed.
+        for identity, prior in attempted.items():
+            if (identity[0] != frame_index or identity in observed or not prior.get("value")
+                    or "reason" in prior):  # a leftover carries its planned value only
+                continue
+            with contextlib.suppress(Exception):
+                control = frame.locator(str(identity[1])).first
+                if control.get_attribute("role", timeout=1000) != "combobox":
+                    continue
+                shown = widget_actions._committed_text(control)  # noqa: SLF001
+                if shown and widget_actions._option_match(  # noqa: SLF001
+                    [shown], str(prior["value"]), key=str(prior.get("key") or ""),
+                ):
+                    observed[identity] = {**prior, "value": shown, "frame_index": frame_index}
     return observed
 
 def _correct_resume_prefill(

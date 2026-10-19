@@ -10,7 +10,6 @@ from __future__ import annotations
 
 import json
 import os
-from importlib import resources
 from pathlib import Path
 
 import pytest
@@ -116,7 +115,7 @@ def test_honeypots_are_never_questions(sources):
 
 def test_readiness_reports_a_stand_in_as_its_dropdown(sources):
     _questions, page = sources
-    script = resources.files("resume_tailor.apply.forms").joinpath("filler_readiness.js").read_text(encoding="utf-8")
+    script = fill_page._load_readiness_js()  # noqa: SLF001
     empty = page.evaluate(script, {})["required_empty"]
     assert "How did you hear about us?" in empty
     assert not [label for label in empty if label.startswith("Unlabeled")]

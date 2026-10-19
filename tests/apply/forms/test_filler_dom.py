@@ -4,18 +4,15 @@ from __future__ import annotations
 
 import json
 import os
-from pathlib import Path
 
 import pytest
 from playwright.sync_api import sync_playwright
 
 from resume_tailor.apply.ats import ats_hints
-from resume_tailor.apply.forms import field_matcher
+from resume_tailor.apply.forms import field_matcher, fill_page
 
-_FILLER = (Path(__file__).parents[3] / "src/resume_tailor/apply/forms/filler.js").read_text(encoding="utf-8")
-_READINESS = (Path(__file__).parents[3] / "src/resume_tailor/apply/forms/filler_readiness.js").read_text(
-    encoding="utf-8"
-)
+_FILLER = fill_page._load_filler_js()  # noqa: SLF001
+_READINESS = fill_page._load_readiness_js()  # noqa: SLF001
 _SYNONYMS = [list(pair) for pair in ats_hints.SYNONYMS]
 
 

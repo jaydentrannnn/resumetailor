@@ -16,11 +16,11 @@ from playwright.sync_api import sync_playwright
 
 from resume_tailor.apply.answers import questions
 from resume_tailor.apply.ats import ats_hints
-from resume_tailor.apply.forms import field_matcher
+from resume_tailor.apply.forms import field_matcher, fill_page
 from resume_tailor.apply.funnel import packet_profile_fields
 
 _ROOT = Path(__file__).parents[3]
-_FILLER = (_ROOT / "src/resume_tailor/apply/forms/filler.js").read_text(encoding="utf-8")
+_FILLER = fill_page._load_filler_js()  # noqa: SLF001
 _FORMS = Path(__file__).parents[2] / "fixtures" / "forms"
 _TODAY = date(2026, 9, 27)
 

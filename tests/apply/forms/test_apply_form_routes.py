@@ -3,13 +3,12 @@
 from __future__ import annotations
 
 import time
-from pathlib import Path
 
 import pytest
 from playwright.sync_api import sync_playwright
 
 from resume_tailor.apply.ats.workday_repeaters import fill_education_years_async
-from resume_tailor.apply.forms import form_routes
+from resume_tailor.apply.forms import fill_page, form_routes
 from resume_tailor.apply.funnel.packet_models import Packet, PacketEducation
 
 
@@ -50,7 +49,7 @@ def test_preferred_name_context_and_correction(page):
       <fieldset><legend>Legal Name</legend><label for="legal">First Name</label><input id="legal" value="Alex Jordan"></fieldset>
       <fieldset><legend>Preferred Name</legend><label for="preferred">First Name</label><input id="preferred" value="Alex Jordan"></fieldset>
     """)
-    js = (Path(__file__).parents[3] / "src/resume_tailor/apply/forms/filler.js").read_text(encoding="utf-8")
+    js = fill_page._load_filler_js()  # noqa: SLF001
     result = page.evaluate(js, {"fields": {"first_name": "Alex Jordan", "preferred_name": "AJ"}, "hints": {}, "synonyms": []})
     assert page.locator("#legal").input_value() == "Alex Jordan"
     assert page.locator("#preferred").input_value() == "AJ"
@@ -63,7 +62,7 @@ def test_education_year_select_uses_year_from_full_resume_date(page):
         <select id="start-year"><option value="">Select</option><option value="2023">2023</option></select>
       </fieldset>
     """)
-    js = (Path(__file__).parents[3] / "src/resume_tailor/apply/forms/filler.js").read_text(encoding="utf-8")
+    js = fill_page._load_filler_js()  # noqa: SLF001
     page.evaluate(js, {"fields": {"education_start_month": "2023-09"}, "hints": {}, "synonyms": []})
     assert page.locator("#start-year").input_value() == "2023"
 

@@ -20,7 +20,7 @@ _INSPECT_PAGE_JS = """
 
   const getLabel = (el) => {
     if (el.id) {
-      const lbl = document.querySelector(`label[for="${CSS.escape(el.id)}"]`);
+      const lbl = rootOf(el).querySelector(`label[for="${CSS.escape(el.id)}"]`);
       if (lbl) return lbl.innerText.trim();
     }
     // Workday: the question lives in the form field's label/legend; the button's own
@@ -70,6 +70,10 @@ _INSPECT_PAGE_JS = """
   const helpFor = (el) => (el.getAttribute('aria-describedby') || '').split(/\\s+/)
     .map(id => document.getElementById(id)?.textContent || '').join(' ').trim();
 
+  // The shared helpers (rootOf, deepQueryAll, honeypot, twinOwner) use these two.
+  const labelFor = getLabel;
+  /*DOM_COMMON*/
+
   const errors = [];
   document.querySelectorAll('[data-automation-id*="error" i], [role="alert"], .alert-danger, .field-error, [aria-invalid="true"]').forEach(el => {
     if (isVisible(el)) {
@@ -101,8 +105,10 @@ _INSPECT_PAGE_JS = """
 
   // 1. Custom comboboxes / dropdown buttons (real popup triggers only)
   // React Select inputs do not always carry role=combobox (Epic Games' form).
-  document.querySelectorAll('[role="combobox"], [aria-haspopup="listbox"], input[id^="react-select-"][id$="-input"]').forEach(el => {
-    if (isVisible(el) && !notADropdown(el)) {
+  const dropdowns =
+    '[role="combobox"], [aria-haspopup="listbox"], input[id^="react-select-"][id$="-input"]';
+  deepQueryAll(document, dropdowns).forEach(el => {
+    if (isVisible(el) && !notADropdown(el) && !honeypot(el)) {
       // One question per Workday form field, however many triggers it renders.
       const key = fieldKey(el);
       if (key && seenFields.has(key)) return;
@@ -132,10 +138,11 @@ _INSPECT_PAGE_JS = """
 
   // 2. Unchecked required radio button groups
   const radioNames = new Set();
-  document.querySelectorAll('input[type="radio"]').forEach(r => {
-    if (r.name && !radioNames.has(r.name) && isVisible(r)) {
+  deepQueryAll(document, 'input[type="radio"]').forEach(r => {
+    if (r.name && !radioNames.has(r.name) && isVisible(r) && !honeypot(r)) {
       radioNames.add(r.name);
-      const group = Array.from(document.querySelectorAll(`input[type="radio"][name="${r.name}"]`));
+      const group = Array.from(
+        rootOf(r).querySelectorAll(`input[type="radio"][name="${CSS.escape(r.name)}"]`));
       const anyChecked = group.some(g => g.checked);
       if (!anyChecked) {
         const question = r.closest(
@@ -173,6 +180,36 @@ _INSPECT_PAGE_JS = """
     });
   });
 
+  // 2c. Filled boxes the form refuses (aria-invalid, or native validity for any reason
+  // but emptiness): a typed answer in a shape the form does not take. Kept apart from
+  // `unresolved`, since the value is the applicant's and never goes to the model.
+  const rejected = [];
+  const skipTypes = ['hidden', 'file', 'submit', 'button', 'image', 'reset', 'checkbox', 'radio'];
+  deepQueryAll(document, 'input, textarea, select').forEach(el => {
+    const type = (el.getAttribute('type') || el.tagName.toLowerCase()).toLowerCase();
+    if (skipTypes.includes(type) || el.matches(TRIGGERS) || !isVisible(el)) return;
+    if (honeypot(el) || twinOwner(el) || reactSelectBox(el)) return;
+    if (!String(el.value || '').trim()) return;
+    const refused = el.getAttribute('aria-invalid') === 'true'
+      || (el.validity && !el.validity.valid && !el.validity.valueMissing);
+    const sel = uniqueSelector(el);
+    if (!refused || !sel) return;
+    const field = el.closest('[data-automation-id^="formField-"], .form-group, fieldset, label')
+      || el.parentElement;
+    const notices = field?.querySelectorAll(
+      '[role="alert"], [class*="error" i], [data-automation-id*="error" i]') || [];
+    const shown = Array.from(notices).map(node => (node.innerText || '').trim())
+      .find(text => text && text.length < 200);
+    rejected.push({
+      selector: sel,
+      label: getLabel(el) || 'Field',
+      help: helpFor(el),
+      kind: el.tagName === 'SELECT' ? 'select' : el.tagName === 'TEXTAREA' ? 'textarea' : type,
+      placeholder: el.getAttribute('placeholder') || '',
+      message: shown || el.validationMessage || '',
+    });
+  });
+
   // 3. Check if Next / Continue button is currently disabled
   let advanceDisabled = false;
   const nextBtn = Array.from(document.querySelectorAll('button')).find(b => {
@@ -183,20 +220,25 @@ _INSPECT_PAGE_JS = """
     advanceDisabled = nextBtn.disabled || nextBtn.getAttribute('aria-disabled') === 'true';
   }
 
-    return {
+  return {
     errors: errors,
     unresolved: unresolved.slice(0, 30),
+    rejected: rejected.slice(0, 30),
     advance_disabled: advanceDisabled
   };
 }
 """
 
 def extract_page_blockers(page: Any) -> dict[str, Any]:
-    """Inspect the page for validation errors and unresolved custom controls."""
+    """Inspect the page (open shadow roots included) for validation errors, unresolved
+    custom controls, and filled boxes the form ``rejected``."""
+    from resume_tailor.apply.forms import fill_page  # noqa: PLC0415 - forms imports answers
+
     try:
-        data = page.evaluate(_INSPECT_PAGE_JS)
+        data = page.evaluate(fill_page.with_dom_common(_INSPECT_PAGE_JS))
         if isinstance(data, dict):
+            data.setdefault("rejected", [])
             return data
     except Exception as exc:  # noqa: BLE001
         _log.debug("error inspecting page blockers: %s", exc)
-    return {"errors": [], "unresolved": [], "advance_disabled": False}
+    return {"errors": [], "unresolved": [], "rejected": [], "advance_disabled": False}

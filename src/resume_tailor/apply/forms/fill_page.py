@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import contextlib
 import json
+import time
 from importlib import resources
 from pathlib import Path
 from typing import Any
@@ -12,10 +13,24 @@ from resume_tailor.apply.ats import ats_hints
 
 from . import fill_buttons
 
+#: Where a page script takes the shared helpers of ``dom_common.js``.
+DOM_COMMON_MARKER = "/*DOM_COMMON*/"
+
+
+def with_dom_common(script: str) -> str:
+    """``script`` with ``dom_common.js`` put in place of its marker, inside its own
+    function, so the helpers use that script's ``isVisible`` and ``labelFor``."""
+    common = (
+        resources.files("resume_tailor.apply.forms")
+        .joinpath("dom_common.js")
+        .read_text(encoding="utf-8")
+    )
+    return script.replace(DOM_COMMON_MARKER, common, 1)
+
 
 def _load_filler_js() -> str:
     """Read the packaged filler script."""
-    return (
+    return with_dom_common(
         resources.files("resume_tailor.apply.forms")
         .joinpath("filler.js")
         .read_text(encoding="utf-8")
@@ -25,7 +40,7 @@ def _load_readiness_js() -> str:
     """Read the packaged required-empty checker, if present."""
     path = resources.files("resume_tailor.apply.forms").joinpath("filler_readiness.js")
     try:
-        return path.read_text(encoding="utf-8")
+        return with_dom_common(path.read_text(encoding="utf-8"))
     except (FileNotFoundError, OSError):
         return "( ) => ({ required_empty: [] })"
 
@@ -78,6 +93,61 @@ def _form_step_signature(page: Any) -> tuple[str, tuple[str, ...]] | None:
     except Exception:  # noqa: BLE001
         pass
     return None
+
+_REFUSAL_SHOWN_JS = """() => Array.from(document.querySelectorAll(
+  '[aria-invalid="true"], [role="alert"], [data-automation-id="errorMessage"]'))
+  .some(el => el.getClientRects().length > 0)"""
+
+
+def wait_for_new_step(page: Any, before: Any, *, timeout_ms: float) -> bool:
+    """After an advance click: until the visible controls differ from ``before`` and hold
+    still across two reads (the next step has painted), or the unchanged step shows a
+    validation refusal, at most ``timeout_ms``. True when the step changed."""
+    deadline = time.monotonic() + max(timeout_ms, 0) / 1000
+    started, last = time.monotonic(), None
+    while True:
+        now = _form_step_signature(page)
+        if now is None and before is None:  # unreadable controls: the old fixed settle
+            page.wait_for_timeout(min(1000, max(timeout_ms, 0)))
+            return False
+        if now is not None and now != before and now == last and now[1]:
+            return True
+        if now == before and time.monotonic() - started >= 0.5:
+            with contextlib.suppress(Exception):
+                if page.evaluate(_REFUSAL_SHOWN_JS) is True:
+                    return False
+        if time.monotonic() >= deadline:
+            return now is not None and now != before
+        last = now
+        page.wait_for_timeout(250)
+
+
+_ENTRY_READY_JS = """() => Array.from(document.querySelectorAll(
+  'input:not([type="hidden"]), select, textarea, button, a[href], [role="button"]'))
+  .some(el => el.getClientRects().length > 0 && (el.matches('input, select, textarea')
+    || /apply|interested/i.test(el.innerText || el.getAttribute('aria-label') || '')))"""
+
+
+def wait_for_entry(page: Any, *, timeout_ms: float) -> None:
+    """After the posting loads: until it shows a form control or an Apply control, then
+    a short network settle (at most 2 s, for script-built pages), all within
+    ``timeout_ms`` (the fixed 10 s network wait this replaces)."""
+    deadline = time.monotonic() + max(timeout_ms, 0) / 1000
+    while time.monotonic() < deadline:
+        ready = None
+        with contextlib.suppress(Exception):
+            ready = page.evaluate(_ENTRY_READY_JS)
+        if ready is True:
+            break
+        if not isinstance(ready, bool):  # unreadable page: the old network wait alone
+            with contextlib.suppress(Exception):
+                page.wait_for_load_state("networkidle", timeout=max(timeout_ms, 1))
+            return
+        page.wait_for_timeout(250)
+    left_ms = (deadline - time.monotonic()) * 1000
+    with contextlib.suppress(Exception):
+        page.wait_for_load_state("networkidle", timeout=max(min(2000, left_ms), 1))
+
 
 #: What each ATS shows after a successful submit: page selectors, and phrases that
 #: must be new on the page (absent before the click). Any one signal confirms. Generic

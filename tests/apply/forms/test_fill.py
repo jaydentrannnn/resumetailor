@@ -35,11 +35,17 @@ _SITE_PROBES = (ats_fingerprint.SIGNALS_JS, wizards.GENERIC_SNAPSHOT_JS)
 
 
 def _evaluate_replies(*replies):
-    """A ``page.evaluate`` side effect giving ``replies`` in order to the fill's own scripts."""
+    """A ``page.evaluate`` side effect giving ``replies`` in order to the fill's own scripts.
+    A scan beyond the queued ones (the step's question signature) sees no questions."""
     queue = list(replies)
 
-    def evaluate(script, *_args, **_kwargs):
-        return {} if script in _SITE_PROBES else queue.pop(0)
+    def evaluate(script, *args, **_kwargs):
+        if script in _SITE_PROBES:
+            return {}
+        scan = bool(args and isinstance(args[0], dict) and args[0].get("scan"))
+        if scan and not (queue and isinstance(queue[0], dict) and "questions" in queue[0]):
+            return {"questions": []}
+        return queue.pop(0)
 
     return evaluate
 

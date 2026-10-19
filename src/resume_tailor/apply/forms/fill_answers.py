@@ -18,13 +18,16 @@ from resume_tailor.apply.answers import (
 from resume_tailor.apply.forms import form_guards, form_routes
 from resume_tailor.apply.funnel import cover_on_demand
 
-from . import fill_buttons, fill_outcomes, fill_state, fill_widgets, upload_replace
+from . import fill_buttons, fill_outcomes, fill_page, fill_state, fill_widgets, upload_replace
 
 #: Review notes that carry their reason, so an observed value never clears them.
 SHORTENED_NOTE = "shortened to fit the form's limit"
 NOT_DRAFTED_NOTE = "could not draft an answer"
 
 _log = logging.getLogger(__name__)
+
+#: Extra fill passes a step gets when its questions change after answers.
+_MAX_RESCANS = 2
 
 
 class _FillAnswers(fill_state._FillState):
@@ -482,6 +485,38 @@ class _FillAnswers(fill_state._FillState):
                 raise RuntimeError("No matching dropdown option")
         elif not target.locator(selector).first.input_value().strip():
             target.fill(selector, canned)
+
+    def _question_signature(self) -> frozenset[tuple[Any, ...]]:
+        """Each visible question on the step as (frame, id, label, required, options):
+        what tells that an answer revealed or changed a question."""
+        args = {"fields": {}, "hints": self.hints, "synonyms": fill_page._synonym_payload(),
+                "scan": True}
+        seen: set[tuple[Any, ...]] = set()
+        for frame_index, frame in enumerate(self.page.frames):
+            try:
+                scanned = frame.evaluate(self.filler_js, args)
+            except Exception:  # noqa: BLE001 - cross-origin frames fail evaluate
+                continue
+            seen.update(
+                (frame_index, q.get("qid"), q.get("label"), bool(q.get("required")),
+                 tuple(q.get("options") or ()))
+                for q in (scanned or {}).get("questions") or [] if isinstance(q, dict)
+            )
+        return frozenset(seen)
+
+    def _rescan_changed_questions(self, before: frozenset[tuple[Any, ...]]) -> None:
+        """Fill what this step's answers revealed or changed (a State list after Country,
+        "please specify" after "Other", a question turned required): a pass per change,
+        at most `_MAX_RESCANS`; an unchanged step costs one scan."""
+        for _ in range(_MAX_RESCANS):
+            if self._out_of_time():
+                return
+            now = self._question_signature()
+            if now == before:
+                return
+            self.progress(f"{len(now - before)} question(s) appeared or changed; filling them")
+            self._rescan_revealed_choices()
+            before = now
 
     def _rescan_revealed_choices(self) -> None:
         merged = self.merged

@@ -53,3 +53,7 @@ class StepLedger:
     #: Model calls a control was sent in; one the model skipped is sent once more.
     tries: dict[str, int] = dc_field(default_factory=dict)
     model_unavailable: bool = False
+    #: Filled boxes the form refused that were already typed again (`rejected_repair`),
+    #: and the review notes for the ones no shape fixed.
+    rejected_tried: set[str] = dc_field(default_factory=set)
+    review_notes: list[str] = dc_field(default_factory=list)

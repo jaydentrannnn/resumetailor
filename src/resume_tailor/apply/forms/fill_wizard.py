@@ -64,6 +64,8 @@ class _FillWizard(fill_answers._FillAnswers, fill_ats_steps._FillAtsSteps):
         if fill_buttons.decline_cookie_banner(self.page):
             self.progress("declined the cookie banner covering the form")
 
+        # The questions before anything is answered: what the answers reveal is the change.
+        questions_before = self._question_signature()
         self._scan_frames()
         if self.is_workday and self._workday_blank_step():
             return fill_outcomes._CONTINUE
@@ -76,11 +78,10 @@ class _FillWizard(fill_answers._FillAnswers, fill_ats_steps._FillAtsSteps):
         if self._stop_if_out_of_time("Fill stopped before this form step was complete"):
             return fill_outcomes._BREAK
         self._resolve_leftovers()
-        # A Greenhouse choice can reveal another EEO control, and a "How did you hear"
-        # answer of "Other" reveals "please specify" (filled by the rescan). Scan once more
-        # after declared choices, without repeating unresolved model guesses.
-        if self.ats_name == "greenhouse" or self.other_chosen:
-            self._rescan_revealed_choices()
+        # An answer can reveal or change a question (a Greenhouse EEO follow-up, "please
+        # specify" after "Other", a State list after Country): fill what changed, without
+        # repeating unresolved model guesses.
+        self._rescan_changed_questions(questions_before)
         if self._stop_if_out_of_time("Fill stopped before this form step was complete"):
             return fill_outcomes._BREAK
 
@@ -232,14 +233,7 @@ class _FillWizard(fill_answers._FillAnswers, fill_ats_steps._FillAtsSteps):
         last_step = step >= fill_outcomes._MAX_WIZARD_STEPS - 1
         advance_btn = self._advance_button()
         if (not advance_btn or self.merged.get("required_empty")) and not last_step:
-            with self.answer_pin():
-                for frame_index, frame in enumerate(self.frames):
-                    hybrid_resolver.resolve_step_blockers(
-                        frame, self.pkt, self.profile, on_progress=self.progress,
-                        deadline=self.deadline,
-                        ledger=self.ledgers.setdefault(frame_index, resolver_types.StepLedger()),
-                    )
-                    self.model_unavailable |= self.ledgers[frame_index].model_unavailable
+            self._resolve_blockers(self.frames)
             advance_btn = self._advance_button()
 
         if not advance_btn or last_step:
@@ -274,12 +268,13 @@ class _FillWizard(fill_answers._FillAnswers, fill_ats_steps._FillAtsSteps):
                 found = fill_buttons._find_advance_button(scope)
         return found
 
-    def _settle_after_advance(self, fallback_ms: int, wd_before: str) -> None:
-        # Workday saves the step server-side before painting the next one.
+    def _settle_after_advance(self, cap_ms: int, wd_before: str, before_step: Any) -> None:
+        # Workday saves the step server-side before painting the next one; elsewhere the
+        # next step is there once its controls have painted (or the form refused).
         if self.is_workday:
             workday_flow.wait_for_step_change(self.page, wd_before, deadline=self.deadline)
         else:
-            self.page.wait_for_timeout(fallback_ms)
+            fill_page.wait_for_new_step(self.page, before_step, timeout_ms=self._ms_left(cap_ms))
 
     def _step_unchanged(self, before_step: Any, wd_before: str) -> bool:
         if self.is_workday:
@@ -287,14 +282,24 @@ class _FillWizard(fill_answers._FillAnswers, fill_ats_steps._FillAtsSteps):
         return before_step is not None and fill_page._form_step_signature(self.page) == before_step
 
     def _resolve_invalid_blockers(self) -> None:
+        # After a refused advance: every frame (an iframe form's Next refuses too), once.
+        self._resolve_blockers(self.page.frames, only_invalid=True)
+
+    def _resolve_blockers(self, frames: list[Any], *, only_invalid: bool = False) -> None:
+        """The hybrid resolver on each frame with that frame's ledger for this step. Its
+        notes (answers the form refused in every shape) go to review."""
         with self.answer_pin():
-            hybrid_resolver.resolve_step_blockers(
-                self.page, self.pkt, self.profile, max_retries=1, on_progress=self.progress,
-                deadline=self.deadline,
-                ledger=self.ledgers.setdefault(0, resolver_types.StepLedger()),
-                only_invalid=True,
-            )
-            self.model_unavailable |= self.ledgers[0].model_unavailable
+            for frame_index, frame in enumerate(frames):
+                ledger = self.ledgers.setdefault(frame_index, resolver_types.StepLedger())
+                hybrid_resolver.resolve_step_blockers(
+                    frame, self.pkt, self.profile, on_progress=self.progress,
+                    deadline=self.deadline, ledger=ledger,
+                    **({"max_retries": 1, "only_invalid": True} if only_invalid else {}),
+                )
+                self.model_unavailable |= ledger.model_unavailable
+                self.needs_review.extend(
+                    note for note in ledger.review_notes if note not in self.needs_review
+                )
 
     def _click_advance(
         self, advance_btn: Any, before_step: Any, wd_before: str
@@ -302,9 +307,7 @@ class _FillWizard(fill_answers._FillAnswers, fill_ats_steps._FillAtsSteps):
         retried_advance = False
         try:
             clicks.safe_click(advance_btn, purpose="advance", timeout=5000)
-            self._settle_after_advance(1000, wd_before)
-            with contextlib.suppress(Exception):
-                self.page.wait_for_load_state("networkidle", timeout=self._ms_left(5000))
+            self._settle_after_advance(6000, wd_before, before_step)
             if self.is_workday and workday_flow.is_site_error(workday_page.snapshot(self.page)):
                 # Save and Continue hit Workday's error page; after a refresh the draft
                 # reopens on whichever step it saved, so scan that one afresh.
@@ -320,7 +323,7 @@ class _FillWizard(fill_answers._FillAnswers, fill_ats_steps._FillAtsSteps):
                 return fill_outcomes._BREAK
             try:
                 clicks.safe_click(retry_button, purpose="advance", timeout=5000)
-                self._settle_after_advance(500, wd_before)
+                self._settle_after_advance(3000, wd_before, before_step)
             except Exception:  # noqa: BLE001
                 return fill_outcomes._BREAK
         if not self._step_unchanged(before_step, wd_before):
@@ -335,7 +338,7 @@ class _FillWizard(fill_answers._FillAnswers, fill_ats_steps._FillAtsSteps):
             return fill_outcomes._BREAK
         with contextlib.suppress(Exception):
             clicks.safe_click(retry_button, purpose="advance", timeout=5000)
-            self._settle_after_advance(500, wd_before)
+            self._settle_after_advance(3000, wd_before, before_step)
         if self._step_unchanged(before_step, wd_before):
             self.progress("wizard is unchanged; handing this tab over for review")
             return fill_outcomes._BREAK

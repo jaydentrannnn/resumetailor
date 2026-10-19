@@ -2197,3 +2197,36 @@ reverse posting order), so its time is not comparable.
   chosen file whether or not the upload verifies, so `_upload_one` now reports any resume
   file it set. Live spot-check (one run each, same probe): jobvite2 0→10, workable1 →12,
   rippling1 6→8, eightfold1 timeout→13, paylocity1 0→11, jobvite1 0→1; 0 leaks.
+
+## 2026-10-18 — Batch 2, part 2: recovery sees what the filler sees, rescans, evidence waits
+
+- **`forms/dom_common.js`** holds the helpers the three page readers had each copied
+  (`rootOf`, `deepQueryAll`, `reactSelectBox`, `TRIGGERS`, `twinOwner`, `hiddenFromPeople`,
+  `honeypot`). It is spliced in at a `/*DOM_COMMON*/` marker inside each script's own
+  function (`fill_page.with_dom_common`), so it uses that script's `isVisible` and
+  `labelFor`. Tests and the frontend test load the scripts through the same loaders.
+  `page_blockers` keeps its script inline (one marker) rather than moving it to a `.js`.
+- **`page_blockers`** reads open shadow roots, skips honeypots, and reports a filled box
+  the form refuses (aria-invalid, or native validity other than empty) in a separate
+  `rejected` list: selector, label, help, kind, placeholder and the form's message, never
+  the value. `rejected_repair` types the same value again in another shape (phone,
+  postal, date; the placeholder's date shape first) and puts the original back when none
+  is accepted; a select, textarea or anything else becomes a review note "Label:
+  message". The model is never asked about a rejected box.
+- The resolver runs on every frame for both the advance and the invalid-blocker passes
+  (`_resolve_blockers(frames, only_invalid=...)`), with the ledger's notes going to
+  `needs_review`.
+- **Rescans** follow a signature of the step's questions (frame, id, label, required,
+  options) taken before the scan, not Greenhouse or an "Other" answer: up to 2 extra
+  passes when a question appeared or changed. Classifications come from the cache, so an
+  unchanged question is never asked again.
+- **Waits on evidence**: entry waits for a visible form control or Apply control (then at
+  most 2 s of network settle) within the old 10 s; Apply clicks wait for a URL change or
+  more controls, with the old 1–1.5 s as the cap; a non-Workday advance waits for the
+  step signature to change and hold across two reads, or a shown refusal on the unchanged
+  step, capped at 6 s first / 3 s on a retry. An unreadable page falls back to the old
+  fixed wait.
+- `_observe_fields` keeps a verified pick in an input dropdown whose box shows the chosen
+  option while `filler.js` (which ignores typed text in an open box) reads no choice.
+- eightfold1's "hang" was the probe's WebSocket close deadlock (`0cbaaa3`), not the fill;
+  no `_ms_left` change was needed.

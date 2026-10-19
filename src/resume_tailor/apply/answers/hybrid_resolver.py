@@ -33,6 +33,7 @@ from . import (
     form_facts,
     page_blockers,
     questions,
+    rejected_repair,
     resolver_basis,
     resolver_types,
     widget_actions,
@@ -326,6 +327,8 @@ class _StepResolver:
         round again."""
         ledger = self.ledger
         info = page_blockers.extract_page_blockers(self.page)
+        if self._repair_rejected(info.get("rejected") or []):
+            info = page_blockers.extract_page_blockers(self.page)
         errors = info.get("errors") or []
         unresolved = info.get("unresolved") or []
         advance_disabled = bool(info.get("advance_disabled"))
@@ -393,6 +396,27 @@ class _StepResolver:
         finally:
             self._release()
         return self._after_actions(executed, present, observed)
+
+    def _repair_rejected(self, rejected: list[dict[str, Any]]) -> bool:
+        """Type each filled answer the form refuses again in another shape, once per step
+        (`rejected_repair`); one no shape fixes becomes a review note. Never the model's.
+        True when one was fixed."""
+        ledger, fixed = self.ledger, False
+        for item in rejected:
+            selector = str(item.get("selector") or "")
+            if not selector or selector in ledger.rejected_tried:
+                continue
+            ledger.rejected_tried.add(selector)
+            if rejected_repair.repair(
+                self.page, item, country_code=self.profile.phone_country_code or "+1",
+            ):
+                fixed = True
+                self.log(f"retyped {str(item.get('label') or 'a field')[:40]} in the form's shape")
+            else:
+                note = rejected_repair.note_for(item)
+                if note not in ledger.review_notes:
+                    ledger.review_notes.append(note)
+        return fixed
 
     def _still_open(
         self, unresolved: list[dict[str, Any]]
