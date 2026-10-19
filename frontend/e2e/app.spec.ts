@@ -21,7 +21,14 @@ test("tailor a resume, edit a bullet and re-render without AI", async ({ page })
   await page.getByRole("button", { name: "Update resume (no AI)" }).click();
   await expect(page.getByText(/Resume updated · \d page/)).toBeVisible({ timeout: 60_000 });
 
-  // Recent runs: the Apply page's table, with a row menu.
+  // The documents sit in the viewer beside the panes.
+  const viewer = page.getByRole("region", { name: "Documents" });
+  await expect(viewer.getByRole("button", { name: "Download PDF" })).toHaveCount(0);
+  await expect(viewer.getByRole("link", { name: "Download PDF" })).toBeVisible();
+  await expect(viewer.getByRole("button", { name: "Fit page" })).toBeVisible();
+
+  // Recent runs: the Apply page's table in the History drawer, with a row menu.
+  await page.getByRole("button", { name: "History" }).click();
   await expect(page.getByRole("heading", { name: "Recent runs" })).toBeVisible();
   await expect(page.getByRole("columnheader", { name: /Skill match/ })).toBeVisible();
   const actions = page.getByRole("button", { name: /^Actions for / }).first();
@@ -30,7 +37,7 @@ test("tailor a resume, edit a bullet and re-render without AI", async ({ page })
   await page.evaluate(() => new Promise((done) => requestAnimationFrame(() => done(null))));
   await actions.click();
   await expect(page.getByRole("menuitem", { name: "Download PDF" })).toBeVisible();
-  await expect(page.getByRole("menuitem", { name: "Showing above" })).toBeDisabled();
+  await expect(page.getByRole("menuitem", { name: "Showing now" })).toBeDisabled();
   await page.keyboard.press("Escape");
   await expectAccessible(page);
 });

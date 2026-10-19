@@ -1,25 +1,17 @@
-import { useEffect, useRef, useState } from "react";
-import { useSearchParams } from "react-router-dom";
-import { DocumentsCard } from "../../components/DocumentsCard";
+import { CoverLetterDetails } from "../../components/CoverLetterPanel";
 import { ExperienceCard } from "../../components/ExperienceCard";
 import { GenerateExperienceCard } from "../../components/GenerateExperienceCard";
 import { RegenerateExpansionButton } from "../../components/RegenerateExpansionButton";
 import { SkillsCard } from "../../components/SkillsCard";
-import { Tabs } from "../../components/Tabs";
-import { Tile } from "../../components/ui";
+import { regenerateCoverLetter } from "../../api";
 import { useRunState } from "../../state/runState";
 import { BulletReview } from "./BulletReview";
 import { ReportCard } from "./ReportCard";
 
-const TABS = [
-  { id: "overview", label: "Overview" },
-  { id: "bullets", label: "Review bullets" },
-  { id: "documents", label: "Documents" },
-  { id: "content", label: "Application content" },
-];
+export type ResultPane = "report" | "bullets" | "content";
 
 /** "Halcyon Health · Data Analyst Intern · Oct 7, 1:12 PM" for the shown run. */
-function runMeta(
+export function runMeta(
   entry: { title?: string; company?: string; created_at?: string } | undefined,
   fallback: string | undefined,
 ): string {
@@ -41,12 +33,23 @@ function runMeta(
 }
 
 /**
- * The "Last result" tile: the shown run's report, bullet review, documents and
- * application content behind segmented tabs. The selected tab lives in the URL
- * (`result_tab`) and resets when a different run is shown. Each card renders
- * `embedded`, so nothing inside the tile is boxed again.
+ * The shown run's report, bullet review or application content (skills, experience
+ * descriptions, the cover letter's text) in the Tailor page's left pane; the documents
+ * themselves are in the viewer beside it. Each card renders `embedded`.
  */
-export function RunResults({ jobId }: { jobId: string }) {
+export function RunResults({
+  jobId,
+  pane,
+  onResumeChanged,
+  onCoverChanged,
+}: {
+  jobId: string;
+  pane: ResultPane;
+  /** A bullet edit re-rendered the resume. */
+  onResumeChanged: () => void;
+  /** The cover letter was regenerated. */
+  onCoverChanged: () => void;
+}) {
   const {
     report,
     refreshReport,
@@ -56,114 +59,61 @@ export function RunResults({ jobId }: { jobId: string }) {
     coverLetter,
     setCoverLetter,
     busy,
-    history,
   } = useRunState();
-  const [resultParams, setResultParams] = useSearchParams();
-  // Bumped after a re-render so the documents preview reloads the new PDF.
-  const [docsRevision, setDocsRevision] = useState(0);
-  const resultTab = TABS.some((tab) => tab.id === resultParams.get("result_tab"))
-    ? resultParams.get("result_tab")!
-    : "overview";
-  const setResultTab = (tab: string) =>
-    setResultParams(
-      (previous) => {
-        const next = new URLSearchParams(previous);
-        next.set("result_tab", tab);
-        return next;
-      },
-      { replace: true },
+
+  if (pane === "report")
+    return report ? (
+      <ReportCard report={report} embedded />
+    ) : (
+      <p className="text-sm text-ink-muted">A report has not been saved for this run.</p>
     );
-
-  // `setSearchParams` changes identity on every URL change, so this keys on an actual
-  // jobId change — otherwise each tab click re-ran it and deleted the tab just set.
-  const resetForJob = useRef(jobId);
-  useEffect(() => {
-    if (!jobId || resetForJob.current === jobId) return;
-    resetForJob.current = jobId;
-    setResultParams(
-      (previous) => {
-        const next = new URLSearchParams(previous);
-        next.delete("result_tab");
-        return next;
-      },
-      { replace: true },
-    );
-  }, [jobId, setResultParams]);
-
-  const entry = history?.find((run) => run.job_id === jobId);
-
-  return (
-    <Tile
-      id="tailored-results"
-      title="Last result"
-      aria-label="Last result"
-      meta={runMeta(entry, report?.title)}
-    >
-      <Tabs
-        label="Tailored results"
-        variant="segmented"
-        items={TABS}
-        value={resultTab}
-        onChange={setResultTab}
+  if (pane === "bullets")
+    return (
+      <BulletReview
+        jobId={jobId}
+        ready={!busy}
+        embedded
+        onSaved={() => {
+          onResumeChanged();
+          void refreshReport();
+        }}
       />
-      <div role="tabpanel" className="mt-5">
-        {resultTab === "overview" &&
-          (report ? (
-            <ReportCard report={report} embedded />
-          ) : (
-            <p className="text-sm text-ink-muted">A report has not been saved for this run.</p>
-          ))}
-        {resultTab === "bullets" && (
-          <BulletReview
+    );
+  return (
+    <div className="space-y-6">
+      {skills && <SkillsCard plan={skills} gaps={report?.gaps ?? []} jobId={jobId} embedded />}
+      <div className={skills ? "border-t border-line pt-6" : undefined}>
+        {expansion ? (
+          <ExperienceCard
+            expansion={expansion}
             jobId={jobId}
-            ready={!busy}
             embedded
-            onSaved={() => {
-              setDocsRevision((n) => n + 1);
-              void refreshReport();
-            }}
+            extraActions={
+              <RegenerateExpansionButton
+                jobId={jobId}
+                disabled={busy}
+                onRegenerated={setExpansion}
+              />
+            }
           />
-        )}
-        {resultTab === "documents" && (
-          <DocumentsCard
-            revision={docsRevision}
-            jobId={jobId}
-            coverLetter={coverLetter}
-            onCoverRegenerated={setCoverLetter}
-            embedded
-          />
-        )}
-        {resultTab === "content" && (
-          <div className="space-y-6">
-            {skills && (
-              <SkillsCard plan={skills} gaps={report?.gaps ?? []} jobId={jobId} embedded />
-            )}
-            <div className={skills ? "border-t border-line pt-6" : undefined}>
-              {expansion ? (
-                <ExperienceCard
-                  expansion={expansion}
-                  jobId={jobId}
-                  embedded
-                  extraActions={
-                    <RegenerateExpansionButton
-                      jobId={jobId}
-                      disabled={busy}
-                      onRegenerated={setExpansion}
-                    />
-                  }
-                />
-              ) : (
-                <GenerateExperienceCard
-                  jobId={jobId}
-                  ready={!busy}
-                  onGenerated={setExpansion}
-                  embedded
-                />
-              )}
-            </div>
-          </div>
+        ) : (
+          <GenerateExperienceCard jobId={jobId} ready={!busy} onGenerated={setExpansion} embedded />
         )}
       </div>
-    </Tile>
+      {coverLetter && (
+        <section aria-labelledby="cover-letter-heading" className="border-t border-line pt-6">
+          <h3 id="cover-letter-heading" className="rt-tile-title mb-3">
+            Cover letter
+          </h3>
+          <CoverLetterDetails
+            letter={coverLetter}
+            onRegenerate={async (instruction) => {
+              setCoverLetter(await regenerateCoverLetter(jobId, instruction));
+              onCoverChanged();
+            }}
+          />
+        </section>
+      )}
+    </div>
   );
 }

@@ -1,9 +1,6 @@
 import { useState } from "react";
 import type { CoverLetter } from "../api";
-import { coverLetterDocxUrl, coverLetterMdUrl, coverLetterPdfUrl } from "../api";
 import { buttonClass } from "../lib/buttonClass";
-import { CopyButton } from "./CopyButton";
-import { JobFileActions, SaveFileButton } from "./FileActions";
 
 export function letterText(letter: CoverLetter): string {
   /** Full letter body for copy-all, excluding letterhead the .docx already carries. */
@@ -19,42 +16,6 @@ export function letterText(letter: CoverLetter): string {
     letter.signature,
   ];
   return blocks.filter((line, i, arr) => line !== "" || (i > 0 && arr[i - 1] !== "")).join("\n");
-}
-
-type ActionProps = {
-  letter: CoverLetter;
-  jobId: string;
-};
-
-export function CoverLetterActionBar({ letter, jobId }: ActionProps) {
-  /** Download and copy controls for the cover letter tab. */
-  return (
-    <div className="flex flex-wrap items-center justify-between gap-3">
-      <p className="text-sm text-ink-muted">
-        <span className="font-mono tabular-nums">{letter.word_count}</span> words · model{" "}
-        <span className="font-mono">{letter.model || "—"}</span>
-      </p>
-      <div className="flex flex-wrap justify-end gap-2">
-        <CopyButton label="Copy all" text={letterText(letter)} />
-        {letter.has_docx && <JobFileActions jobId={jobId} kind="cover-docx" />}
-        <SaveFileButton url={coverLetterMdUrl(jobId)} what="text" fallbackName="cover_letter.md" />
-        {letter.has_docx && (
-          <SaveFileButton
-            url={coverLetterDocxUrl(jobId)}
-            what="Word"
-            fallbackName="cover_letter.docx"
-          />
-        )}
-        {letter.has_pdf && (
-          <SaveFileButton
-            url={coverLetterPdfUrl(jobId)}
-            what="PDF"
-            fallbackName="cover_letter.pdf"
-          />
-        )}
-      </div>
-    </div>
-  );
 }
 
 type DetailsProps = {
@@ -82,7 +43,11 @@ export function CoverLetterDetails({ letter, onRegenerate, readOnly = false }: D
   }
 
   return (
-    <div className="mt-4 space-y-4 border-t border-line pt-4">
+    <div className="space-y-4">
+      <p className="text-xs text-ink-muted">
+        <span className="font-mono tabular-nums">{letter.word_count}</span> words · model{" "}
+        <span className="font-mono">{letter.model || "—"}</span>
+      </p>
       {letter.warnings.length > 0 && (
         <ul className="list-disc space-y-1 pl-5 text-sm text-attn">
           {letter.warnings.map((warning) => (

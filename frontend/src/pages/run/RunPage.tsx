@@ -1,121 +1,170 @@
+import { useEffect, useState } from "react";
+import { useSearchParams } from "react-router-dom";
+import { DocumentsCard } from "../../components/DocumentsCard";
+import { Modal } from "../../components/Modal";
 import { RunCostEstimate } from "../../components/RunCostEstimate";
 import { RunHistoryPanel } from "../../components/RunHistoryPanel";
-import { buttonClass, CommandBar, Page } from "../../components/ui";
+import { Tabs } from "../../components/Tabs";
+import { Button, CommandBar, EmptyState, Page } from "../../components/ui";
 import { useRunState } from "../../state/runState";
 import { useWorkspaceState } from "../../state/workspaceState";
 import { JobInput } from "./JobInput";
 import { ProgressPanel } from "./ProgressPanel";
 import { RunOptions } from "./RunOptions";
-import { RunResults } from "./RunResults";
+import { type ResultPane, RunResults, runMeta } from "./RunResults";
+import { RunSaveNotice } from "./RunSaveNotice";
+
+type Pane = "job" | ResultPane;
+
+const PANES: { id: Pane; label: string }[] = [
+  { id: "job", label: "Job" },
+  { id: "report", label: "Report" },
+  { id: "bullets", label: "Review bullets" },
+  { id: "content", label: "Application content" },
+];
+
+// The viewer fills the window below the bars.
+const VIEWER_HEIGHT = "h-[calc(100vh-var(--rt-bar-top)-var(--rt-bar-bottom)-5.5rem)] min-h-[28rem]";
 
 /**
- * Tailor page: the header, the Options tile, the job description beside "This run",
- * then the last result and the recent runs.
+ * Tailor: the job and options (or, after a run, its report, bullet review and
+ * application content) on the left; the tailored documents on the right, or the run's
+ * progress while it works. Below `lg` the panes stack.
  *
- * State lives in `RunProvider` so leaving the page mid-run keeps the JD, settings,
- * SSE stream and results; PDF auto-download is owned there too. At `lg` the job
- * description and this run sit side by side; below it every tile stacks in source order.
+ * State lives in `RunProvider`, so leaving the page mid-run keeps the JD, settings,
+ * stream and results. The left pane lives in the URL (`pane`).
  */
 export function RunPage() {
-  const {
-    config,
-    jdText,
-    setJdText,
-    settings,
-    setSettings,
-    jobId,
-    busy,
-    settingsLoaded,
-    settingsSaveState,
-    settingsSaveError,
-    flushSettings,
-    startJob,
-  } = useRunState();
+  const run = useRunState();
+  const { config, jdText, setJdText, settings, setSettings, jobId, status, busy } = run;
   const { switching, activeId } = useWorkspaceState();
+  const [params, setParams] = useSearchParams();
+  const [docsRevision, setDocsRevision] = useState(0);
+  const [coverRevision, setCoverRevision] = useState(0);
+  const [historyOpen, setHistoryOpen] = useState(false);
+  const requested = params.get("pane");
+  const pane: Pane = jobId && PANES.some((p) => p.id === requested) ? (requested as Pane) : "job";
+  const setPane = (next: string) =>
+    setParams(
+      (previous) => {
+        const query = new URLSearchParams(previous);
+        query.set("pane", next);
+        return query;
+      },
+      { replace: true },
+    );
 
-  async function onSubmit(e: React.FormEvent) {
-    e.preventDefault();
-    await startJob();
-  }
+  // Opening a run from History shows it; the drawer has done its job.
+  useEffect(() => setHistoryOpen(false), [jobId]);
 
-  function onFormKeyDown(e: React.KeyboardEvent<HTMLFormElement>) {
-    /** Enter in a text/number field must not submit the whole form. Textareas,
-     * selects, and buttons are unaffected. */
-    if (e.key === "Enter" && (e.target as HTMLElement).tagName === "INPUT") {
-      e.preventDefault();
-    }
-  }
-
-  const saveNotice = settingsLoaded && settingsSaveState !== "saved" && (
-    <p
-      className={`mb-3 text-xs ${settingsSaveState === "failed" ? "text-danger" : "text-ink-muted"}`}
-      role={settingsSaveState === "failed" ? "alert" : "status"}
-    >
-      {settingsSaveState === "saving"
-        ? "Saving options…"
-        : settingsSaveState === "unsaved"
-          ? "Unsaved options"
-          : `Options could not be saved: ${settingsSaveError ?? "Please retry."}`}
-      {settingsSaveState === "failed" && (
-        <button
-          type="button"
-          onClick={() => void flushSettings()}
-          className="rt-link ml-2 font-medium"
-        >
-          Retry
-        </button>
-      )}
-    </p>
-  );
-
-  const submit = (
-    <>
-      <button
-        type="submit"
-        data-shortcut="primary"
-        disabled={busy || !jdText.trim() || !settingsLoaded || switching}
-        className={buttonClass("primary", "lg")}
-      >
-        {busy
-          ? "Tailoring…"
-          : switching
-            ? "Switching profile…"
-            : !settingsLoaded
-              ? "Loading settings…"
-              : "Tailor resume"}
-      </button>
-      <div className="ml-auto">
-        <RunCostEstimate
-          jdText={jdText}
-          settings={settings}
-          enabled={settingsLoaded && !busy && !switching}
-        />
-      </div>
-    </>
-  );
+  const ready = run.settingsLoaded && !switching;
+  const entry = run.history?.find((item) => item.job_id === jobId);
+  const showProgress = busy || status === "failed" || status === "cancelled";
 
   return (
     <Page width="wide">
-      <CommandBar title="Tailor" />
-      <form onSubmit={onSubmit} onKeyDown={onFormKeyDown} className="space-y-4">
-        <RunOptions
-          config={config}
-          settings={settings}
-          onChange={setSettings}
-          disabled={!settingsLoaded}
-          workspaceId={activeId ?? "default"}
-          saveNotice={saveNotice}
-        />
-
-        <div className="grid grid-cols-1 items-start gap-4 lg:grid-cols-[minmax(0,1.55fr)_minmax(0,1fr)]">
-          <JobInput jdText={jdText} setJdText={setJdText} disabled={busy} footer={submit} />
-          <ProgressPanel />
-        </div>
-
-        {jobId && <RunResults jobId={jobId} />}
-
-        <RunHistoryPanel />
-      </form>
+      <CommandBar
+        title="Tailor"
+        state={jobId ? runMeta(entry, run.report?.title) : null}
+        actions={
+          <>
+            <Button variant="plain" size="sm" onClick={() => setHistoryOpen(true)}>
+              History
+            </Button>
+            <Button
+              variant="primary"
+              size="sm"
+              data-shortcut="primary"
+              disabled={busy || !jdText.trim() || !ready}
+              onClick={() => void run.startJob()}
+            >
+              {busy
+                ? "Tailoring…"
+                : switching
+                  ? "Switching profile…"
+                  : !run.settingsLoaded
+                    ? "Loading settings…"
+                    : "Tailor resume"}
+            </Button>
+          </>
+        }
+      />
+      <div className="grid items-start gap-4 lg:grid-cols-[minmax(22rem,30rem)_minmax(0,1fr)]">
+        <section aria-label="Job and results" className="min-w-0 space-y-4">
+          {jobId && (
+            <Tabs
+              label="Tailor"
+              variant="segmented"
+              items={PANES}
+              value={pane}
+              onChange={setPane}
+            />
+          )}
+          {pane === "job" || !jobId ? (
+            <>
+              <JobInput
+                jdText={jdText}
+                setJdText={setJdText}
+                disabled={busy}
+                footer={
+                  <RunCostEstimate jdText={jdText} settings={settings} enabled={ready && !busy} />
+                }
+              />
+              <RunOptions
+                config={config}
+                settings={settings}
+                onChange={setSettings}
+                disabled={!run.settingsLoaded}
+                workspaceId={activeId ?? "default"}
+                saveNotice={<RunSaveNotice />}
+              />
+            </>
+          ) : (
+            <div role="tabpanel" className="rounded-sm border border-line bg-panel p-5">
+              <RunResults
+                jobId={jobId}
+                pane={pane}
+                onResumeChanged={() => setDocsRevision((n) => n + 1)}
+                onCoverChanged={() => setCoverRevision((n) => n + 1)}
+              />
+            </div>
+          )}
+        </section>
+        <section
+          aria-label="Document"
+          className="min-w-0 lg:sticky lg:top-[calc(var(--rt-bar-top)+1.25rem)]"
+        >
+          {showProgress ? (
+            <ProgressPanel />
+          ) : jobId ? (
+            <DocumentsCard
+              jobId={jobId}
+              revision={docsRevision}
+              coverRevision={coverRevision}
+              coverLetter={run.coverLetter}
+              onCoverRegenerated={run.setCoverLetter}
+              coverDetails={false}
+              viewerClassName={VIEWER_HEIGHT}
+            />
+          ) : (
+            <div className="rounded-sm border border-line bg-panel">
+              <EmptyState title="Your tailored resume shows here">
+                Paste a job posting on the left and press Tailor resume (Ctrl+Enter).
+              </EmptyState>
+            </div>
+          )}
+        </section>
+      </div>
+      {historyOpen && (
+        <Modal
+          title="Run history"
+          placement="right"
+          size="lg"
+          onClose={() => setHistoryOpen(false)}
+        >
+          <RunHistoryPanel />
+        </Modal>
+      )}
     </Page>
   );
 }

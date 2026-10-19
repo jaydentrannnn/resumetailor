@@ -1,8 +1,7 @@
 import { Button } from "../ui";
 import { useEffect, useState } from "react";
 import { templatePreviewUrl } from "../../api";
-import { usePrintTarget } from "../../lib/printTarget";
-import { OpenDocumentLink } from "../FileActions";
+import { DocumentViewer } from "../viewer/DocumentViewer";
 
 /** Fetch the exact revision before mounting a PDF; late responses cannot replace it. */
 export function TemplatePreview({
@@ -53,7 +52,6 @@ export function TemplatePreview({
       if (objectUrl) URL.revokeObjectURL(objectUrl);
     };
   }, [revision, pending, retry, refreshKey]);
-  usePrintTarget(!pending && pdf?.revision === revision ? pdf.url : null);
 
   if (pending)
     return (
@@ -77,17 +75,19 @@ export function TemplatePreview({
       </p>
     );
   return (
-    <div className="min-w-0 overflow-hidden rounded-sm">
-      <div className="flex items-center justify-between gap-3 pb-2">
-        <span className="text-xs text-ink-muted">Active: {activeLabel || "Current template"}</span>
-        <OpenDocumentLink href={pdf.url} className="rt-link text-xs" />
-      </div>
-      <iframe
-        key={pdf.url}
-        title="Template preview"
-        src={`${pdf.url}#toolbar=0&navpanes=0&view=FitH`}
-        className="aspect-[8.5/11] w-full rounded-sm border border-line bg-doc-preview"
-      />
-    </div>
+    <DocumentViewer
+      label="Template preview"
+      docs={[
+        {
+          id: "template",
+          label: "Template",
+          src: pdf.url,
+          actions: (
+            <span className="text-ink-muted">Active: {activeLabel || "Current template"}</span>
+          ),
+        },
+      ]}
+      className="aspect-[8.5/11]"
+    />
   );
 }

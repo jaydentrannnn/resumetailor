@@ -1,9 +1,12 @@
 import { useEffect, useMemo, useState } from "react";
 import { type RunHistoryEntry, downloadPdfUrl, downloadUrl } from "../api";
 import { type RunSort, type RunStatusFilter, filterRuns, sortRuns } from "../lib/runHistory";
+import { saveLabel } from "../lib/fileActions";
+import { useDesktop } from "../lib/useDesktop";
 import { useConfirm } from "../state/confirmState";
 import { useRunState } from "../state/runState";
 import { CompareRunsDialog } from "./CompareRunsDialog";
+import { useSaveFile } from "./FileActions";
 import { SkillMatchMeter } from "./SkillMatchMeter";
 import { DataTable, Pagination, RowActionsMenu, type TableColumn } from "./TableControls";
 import { Button, SelectionBar, StatusChip, Tile, TruncatedText, type Tone } from "./ui";
@@ -17,8 +20,8 @@ function isDeletable(run: RunHistoryEntry): boolean {
  * Recent tailoring runs for the active profile — survives reload via disk-backed
  * `run.json`. The same table as the Apply page: search and status filter, sortable
  * headers, a bulk bar for selected rows, and a row menu. "Open" loads the run into the
- * results tiles above without re-downloading; two selected runs can be compared bullet
- * by bullet.
+ * results without re-downloading; two selected runs can be compared bullet by bullet.
+ * A run's files save through the Save dialog in the desktop app, else download.
  */
 export function RunHistoryPanel() {
   const { history, jobId, loadRun, busy, deleteHistoryRuns, refreshHistory } = useRunState();
@@ -33,6 +36,12 @@ export function RunHistoryPanel() {
   const [sort, setSort] = useState<RunSort>("started");
   const [direction, setDirection] = useState<"asc" | "desc">("desc");
   const [comparing, setComparing] = useState<[RunHistoryEntry, RunHistoryEntry] | null>(null);
+  const desktop = useDesktop();
+  const saveFile = useSaveFile();
+  const fileItem = (what: string, url: string, name: string, disabled: boolean) =>
+    desktop
+      ? { label: saveLabel(what, true), action: () => void saveFile(url, name), disabled }
+      : { label: saveLabel(what, false), href: url, disabled };
 
   const filtered = useMemo(
     () => sortRuns(filterRuns(history, query, status), sort, direction),
@@ -211,12 +220,12 @@ export function RunHistoryPanel() {
           label={`Actions for ${run.title}`}
           items={[
             {
-              label: run.job_id === jobId ? "Showing above" : "Open",
+              label: run.job_id === jobId ? "Showing now" : "Open",
               action: () => openRun(run),
               disabled: busy || deleting || run.job_id === jobId,
             },
-            { label: "Download PDF", href: downloadPdfUrl(run.job_id), disabled: !run.has_pdf },
-            { label: "Download .docx", href: downloadUrl(run.job_id), disabled: !run.has_docx },
+            fileItem("PDF", downloadPdfUrl(run.job_id), "resume.pdf", !run.has_pdf),
+            fileItem("Word", downloadUrl(run.job_id), "resume.docx", !run.has_docx),
             {
               label: "Delete",
               danger: true,

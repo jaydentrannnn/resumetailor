@@ -1,19 +1,19 @@
 import { useEffect, useState } from "react";
 import type { CoverLetter } from "../api";
 import {
+  coverLetterDocxUrl,
+  coverLetterMdUrl,
+  coverLetterPdfUrl,
   coverLetterPreviewUrl,
   downloadPdfUrl,
   downloadUrl,
   previewUrl,
   regenerateCoverLetter,
 } from "../api";
-import { CoverLetterActionBar, CoverLetterDetails } from "./CoverLetterPanel";
-import { usePrintTarget } from "../lib/printTarget";
-import { JobFileActions, OpenDocumentLink, SaveFileButton } from "./FileActions";
-import { SEGMENT_BASE, SEGMENT_OFF, SEGMENT_ON, SEGMENT_TRACK } from "./ui/Segmented";
-import { ResultFrame } from "./ui";
-
-type PreviewTab = "resume" | "cover";
+import { CopyButton } from "./CopyButton";
+import { CoverLetterDetails, letterText } from "./CoverLetterPanel";
+import { JobFileActions, SaveFileButton } from "./FileActions";
+import { DocumentViewer, type ViewerDoc } from "./viewer/DocumentViewer";
 
 type Props = {
   jobId: string;
@@ -22,15 +22,18 @@ type Props = {
   readOnly?: boolean;
   /** Bumped when the resume was re-rendered, so the preview is fetched fresh. */
   revision?: number;
-  /** Inside the Tailor page's "Last result" tile: no box of its own. */
-  embedded?: boolean;
+  /** Bumped when the cover letter was regenerated elsewhere. */
+  coverRevision?: number;
+  /** Show the letter's text and regenerate controls under the viewer (the Tailor page
+   * keeps them in its Content tab instead). */
+  coverDetails?: boolean;
+  /** Height of the document area. */
+  viewerClassName?: string;
 };
 
 /**
- * Tabbed documents section: tailored resume and optional cover letter.
- *
- * Only one PDF iframe mounts at a time — Chrome/Edge on Windows use a singleton PDF
- * plugin, so two embedded previews on one page often leaves one blank.
+ * A run's documents in the shared viewer: the tailored resume and, when there is one,
+ * the cover letter, each with its Save / Show in folder / Open actions.
  */
 export function DocumentsCard({
   jobId,
@@ -38,186 +41,96 @@ export function DocumentsCard({
   onCoverRegenerated,
   readOnly = false,
   revision = 0,
-  embedded = false,
+  coverRevision = 0,
+  coverDetails = true,
+  viewerClassName,
 }: Props) {
-  const hasCoverLetter = Boolean(coverLetter);
-  const hasCoverPdf = Boolean(coverLetter?.has_pdf);
-  const [tab, setTab] = useState<PreviewTab>("resume");
-  const [coverPreviewKey, setCoverPreviewKey] = useState(0);
-
+  const [tab, setTab] = useState("resume");
+  const [coverKey, setCoverKey] = useState(0);
   useEffect(() => {
     setTab("resume");
-    setCoverPreviewKey(0);
+    setCoverKey(0);
   }, [jobId]);
 
-  const resumeSrc = revision ? `${previewUrl(jobId)}?v=${revision}` : previewUrl(jobId);
-  const coverSrc = coverLetterPreviewUrl(jobId, coverPreviewKey);
-  const activeSrc = tab === "cover" && hasCoverPdf ? coverSrc : tab === "resume" ? resumeSrc : null;
-  const activeTitle =
-    tab === "cover" && hasCoverPdf ? "Cover letter preview" : "Tailored resume preview";
-  usePrintTarget(activeSrc);
+  const docs: ViewerDoc[] = [
+    {
+      id: "resume",
+      label: "Resume",
+      src: revision ? `${previewUrl(jobId)}?v=${revision}` : previewUrl(jobId),
+      actions: (
+        <>
+          <JobFileActions jobId={jobId} kind="resume-docx" />
+          <SaveFileButton
+            url={downloadUrl(jobId)}
+            what="Word"
+            fallbackName="resume.docx"
+            variant="plain"
+          />
+          <SaveFileButton
+            url={downloadPdfUrl(jobId)}
+            what="PDF"
+            fallbackName="resume.pdf"
+            variant="primary"
+          />
+        </>
+      ),
+    },
+  ];
+  if (coverLetter)
+    docs.push({
+      id: "cover",
+      label: "Cover letter",
+      src: coverLetter.has_pdf ? coverLetterPreviewUrl(jobId, coverKey + coverRevision) : null,
+      empty: "PDF preview is not available for this cover letter. Save it as Word or text.",
+      actions: (
+        <>
+          <CopyButton label="Copy text" text={letterText(coverLetter)} />
+          {coverLetter.has_docx && <JobFileActions jobId={jobId} kind="cover-docx" />}
+          <SaveFileButton
+            url={coverLetterMdUrl(jobId)}
+            what="text"
+            fallbackName="cover_letter.md"
+            variant="plain"
+          />
+          {coverLetter.has_docx && (
+            <SaveFileButton
+              url={coverLetterDocxUrl(jobId)}
+              what="Word"
+              fallbackName="cover_letter.docx"
+              variant="plain"
+            />
+          )}
+          {coverLetter.has_pdf && (
+            <SaveFileButton
+              url={coverLetterPdfUrl(jobId)}
+              what="PDF"
+              fallbackName="cover_letter.pdf"
+              variant="primary"
+            />
+          )}
+        </>
+      ),
+    });
 
-  async function handleCoverRegenerate(instruction: string) {
+  async function regenerate(instruction: string) {
     const updated = await regenerateCoverLetter(jobId, instruction);
     onCoverRegenerated(updated);
-    setCoverPreviewKey((key) => key + 1);
+    setCoverKey((key) => key + 1);
   }
 
   return (
-    <ResultFrame embedded={embedded}>
-      <div className="flex flex-wrap items-center justify-between gap-3">
-        {hasCoverLetter ? (
-          <div
-            role="tablist"
-            aria-label="Documents"
-            className={SEGMENT_TRACK}
-            onKeyDown={(e) => {
-              /** Roving-tabindex arrow navigation, as `role="tablist"` promises. */
-              if (e.key !== "ArrowLeft" && e.key !== "ArrowRight") return;
-              e.preventDefault();
-              const next = tab === "resume" ? "cover" : "resume";
-              setTab(next);
-              (
-                e.currentTarget.querySelector(`#documents-tab-${next}`) as HTMLElement | null
-              )?.focus();
-            }}
-          >
-            <PreviewTabButton
-              id="documents-tab-resume"
-              panelId="documents-panel"
-              selected={tab === "resume"}
-              onSelect={() => setTab("resume")}
-            >
-              Tailored resume
-            </PreviewTabButton>
-            <PreviewTabButton
-              id="documents-tab-cover"
-              panelId="documents-panel"
-              selected={tab === "cover"}
-              onSelect={() => setTab("cover")}
-            >
-              Cover letter
-            </PreviewTabButton>
-          </div>
-        ) : embedded ? (
-          <h3 className="rt-tile-title">Tailored resume</h3>
-        ) : (
-          <h2 className="rt-tile-title">Tailored resume</h2>
-        )}
-        {activeSrc && (
-          <OpenDocumentLink
-            href={activeSrc}
-            className="text-[13px] text-ink-muted underline underline-offset-2 hover:text-ink"
-          />
-        )}
-      </div>
-
-      <div
-        id="documents-panel"
-        role="tabpanel"
-        aria-labelledby={
-          tab === "cover" && hasCoverLetter ? "documents-tab-cover" : "documents-tab-resume"
-        }
-        className="mt-4"
-      >
-        {tab === "resume" && (
-          <>
-            <div className="mb-4 flex flex-wrap justify-end gap-2">
-              <JobFileActions jobId={jobId} kind="resume-docx" />
-              <SaveFileButton
-                url={downloadPdfUrl(jobId)}
-                what="PDF"
-                fallbackName="resume.pdf"
-                variant="primary"
-              />
-              <SaveFileButton url={downloadUrl(jobId)} what="Word" fallbackName="resume.docx" />
-            </div>
-            <PdfFrame
-              iframeKey={`resume-${jobId}-${revision}`}
-              title={activeTitle}
-              src={resumeSrc}
-            />
-          </>
-        )}
-
-        {tab === "cover" && coverLetter && (
-          <>
-            <div className="mb-4">
-              <CoverLetterActionBar letter={coverLetter} jobId={jobId} />
-            </div>
-            {hasCoverPdf ? (
-              <PdfFrame iframeKey={`cover-${coverPreviewKey}`} title={activeTitle} src={coverSrc} />
-            ) : (
-              <p className="py-6 text-sm text-ink-muted">
-                PDF preview is not available for this cover letter. Use the downloads above or the
-                letter text below.
-              </p>
-            )}
-            <CoverLetterDetails
-              letter={coverLetter}
-              onRegenerate={handleCoverRegenerate}
-              readOnly={readOnly}
-            />
-          </>
-        )}
-      </div>
-    </ResultFrame>
-  );
-}
-
-function PdfFrame({ iframeKey, title, src }: { iframeKey: string; title: string; src: string }) {
-  /**
-   * Single embedded PDF viewer for the active document tab.
-   *
-   * `#toolbar=0&navpanes=0` hides Chrome's own PDF chrome (dark toolbar +
-   * thumbnail rail) inside the embed — it's the viewer's UI, not this page's,
-   * and at full chrome it was the single darkest, most alien element on an
-   * otherwise cream/editorial page. "Open in new tab" (elsewhere on this card)
-   * still points at the bare URL, so a real full viewer with its own
-   * download/print controls is one click away.
-   */
-  return (
-    <div className="overflow-hidden rounded-sm border border-line bg-sunken">
-      <iframe
-        key={iframeKey}
-        title={title}
-        src={`${src}#toolbar=0&navpanes=0`}
-        className="h-[70vh] w-full bg-doc-preview"
-      >
-        <p className="p-4 text-sm text-ink-muted">
-          PDF preview is not available here. <OpenDocumentLink href={src} />.
-        </p>
-      </iframe>
+    <div className="space-y-4">
+      <DocumentViewer
+        label="Documents"
+        docs={docs}
+        active={tab}
+        onActive={setTab}
+        frameKey={`${jobId}-${revision}`}
+        className={viewerClassName}
+      />
+      {coverDetails && tab === "cover" && coverLetter && (
+        <CoverLetterDetails letter={coverLetter} onRegenerate={regenerate} readOnly={readOnly} />
+      )}
     </div>
-  );
-}
-
-function PreviewTabButton({
-  id,
-  panelId,
-  selected,
-  onSelect,
-  children,
-}: {
-  id: string;
-  panelId: string;
-  selected: boolean;
-  onSelect: () => void;
-  children: string;
-}) {
-  /** One documents tab; only the selected tab's iframe is mounted in the parent. */
-  return (
-    <button
-      type="button"
-      role="tab"
-      id={id}
-      aria-selected={selected}
-      aria-controls={panelId}
-      tabIndex={selected ? 0 : -1}
-      onClick={onSelect}
-      className={`${SEGMENT_BASE} ${selected ? SEGMENT_ON : SEGMENT_OFF}`}
-    >
-      {children}
-    </button>
   );
 }

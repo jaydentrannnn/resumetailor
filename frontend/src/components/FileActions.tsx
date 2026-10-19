@@ -18,6 +18,19 @@ type SaveProps = {
   className?: string;
 };
 
+/** Save a download through the native Save dialog (desktop app), saying how it went. */
+export function useSaveFile(): (url: string, fallbackName: string) => Promise<void> {
+  const toast = useToast();
+  return async (url, fallbackName) => {
+    try {
+      const result = await saveFileAs(url, fallbackName);
+      if (result.saved) toast.success("Saved", result.path ?? undefined);
+    } catch (err) {
+      toast.error("Could not save the file", describe(err).detail);
+    }
+  };
+}
+
 /**
  * Desktop: Save X… through the native Save dialog. Browser: a plain download link.
  */
@@ -30,7 +43,7 @@ export function SaveFileButton({
   className = "",
 }: SaveProps) {
   const desktop = useDesktop();
-  const toast = useToast();
+  const saveFile = useSaveFile();
   const [busy, setBusy] = useState(false);
   const label = saveLabel(what, desktop);
 
@@ -43,14 +56,8 @@ export function SaveFileButton({
 
   async function save() {
     setBusy(true);
-    try {
-      const result = await saveFileAs(url, fallbackName);
-      if (result.saved) toast.success("Saved", result.path ?? undefined);
-    } catch (err) {
-      toast.error("Could not save the file", describe(err).detail);
-    } finally {
-      setBusy(false);
-    }
+    await saveFile(url, fallbackName);
+    setBusy(false);
   }
 
   return (

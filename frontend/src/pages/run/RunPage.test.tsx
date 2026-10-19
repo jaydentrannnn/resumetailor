@@ -46,21 +46,33 @@ import { RunPage } from "./RunPage";
 
 afterEach(cleanup);
 
-describe("RunPage tailored results tabs", () => {
-  it("keeps a selected result tab instead of snapping back to Overview", () => {
+describe("RunPage", () => {
+  it("shows the run's documents beside the selected pane, which stays selected", () => {
     render(
       <MemoryRouter>
         <RunPage />
       </MemoryRouter>,
     );
-    fireEvent.click(screen.getByRole("tab", { name: "Documents" }));
-    expect(screen.getByRole("tab", { name: "Documents" }).getAttribute("aria-selected")).toBe(
+    expect(screen.getByText("documents panel")).toBeTruthy();
+    expect(screen.getByRole("tab", { name: "Job" }).getAttribute("aria-selected")).toBe("true");
+    fireEvent.click(screen.getByRole("tab", { name: "Review bullets" }));
+    expect(screen.getByRole("tab", { name: "Review bullets" }).getAttribute("aria-selected")).toBe(
       "true",
     );
-    expect(screen.getByText("documents panel")).toBeTruthy();
     fireEvent.click(screen.getByRole("tab", { name: "Application content" }));
     expect(
       screen.getByRole("tab", { name: "Application content" }).getAttribute("aria-selected"),
     ).toBe("true");
+    expect(screen.getByText("documents panel")).toBeTruthy();
+  });
+
+  it("puts Tailor resume and History in the command bar", () => {
+    render(
+      <MemoryRouter>
+        <RunPage />
+      </MemoryRouter>,
+    );
+    expect(screen.getByRole("button", { name: "Tailor resume" })).toBeTruthy();
+    expect(screen.getByRole("button", { name: "History" })).toBeTruthy();
   });
 });

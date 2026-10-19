@@ -49,7 +49,7 @@ export function DetailHeader({
           <>
             {app.posting_url && (
               <a
-                className={buttonClass("secondary", "sm")}
+                className={buttonClass("plain", "sm")}
                 href={app.posting_url}
                 target="_blank"
                 rel="noreferrer"
@@ -62,7 +62,7 @@ export function DetailHeader({
                 Open application tab
               </Button>
             )}
-            <Button size="sm" disabled={busy} onClick={onMove}>
+            <Button variant="plain" size="sm" disabled={busy} onClick={onMove}>
               {app.archived_at ? "Restore" : "Archive"}
             </Button>
           </>

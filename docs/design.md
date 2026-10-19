@@ -129,6 +129,10 @@ statuses map through `lib/applicationStatus.ts` (`applicationStatusTone`).
   `actions` on the right. Every page starts with it; there is no intro copy under it
   (instructions live in empty states only). It renders into the shell's slot, so it spans
   the work area whatever the page column's width.
+- **DocumentViewer** (`components/viewer/`): the one PDF viewer (Tailor, an application's
+  Files, Template). A `chrome` toolbar with document tabs, Fit width / Fit page and zoom
+  (PDF URL fragments), Open in window and the document's Save / Show in folder / Open
+  actions, over one embedded PDF on `sunken`; Ctrl+P prints the document shown.
 - **Tile:** grey surface, 1px `line` border, 4px corners, 20–24px padding. Optional
   eyebrow, `rt-tile-title` h2, `meta`, `actions`. Sub-sections use `TileSection` (one
   hairline).

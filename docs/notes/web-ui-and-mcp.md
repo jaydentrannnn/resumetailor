@@ -844,3 +844,22 @@ pages in both builds (Chrome keeps Ctrl+1…8 for its tabs, so the rail shows th
 in the desktop app). The window title is "<page> — ResumeTailor", with "• " while edits
 are unsaved, set through the shell relay on desktop. `docs/design/reference.html` still
 shows the old header; it is redrawn once the page density pass lands.
+
+### Tailor workspace and the shared document viewer (2026-10-19)
+
+Tailor is two panes: the job description and Options on the left (after a run, tabs
+Job | Report | Review bullets | Application content, kept in `?pane=`), and the tailored
+documents on the right, sticky and filling the window, or the run's progress while it
+works. Tailor resume and History sit in the command bar; History (the Recent runs table)
+opens in a right-hand drawer and closes when a run is opened. The old "Last result" tile
+and its Documents tab are gone: documents are always beside the report. A job file
+dropped on the Job description tile is read like Upload a file. `DocumentViewer`
+(`components/viewer/`) replaces the hand-built iframes in `DocumentsCard` (Tailor and an
+application's Files) and `TemplatePreview`: document tabs, Fit width / Fit page and zoom
+through the PDF URL fragment (`lib/viewer.ts`; the frame remounts on a change because
+Chromium's viewer ignores fragment changes), Open in window, and each document's own
+actions. Still one PDF frame at a time (Chromium's single PDF plugin on Windows).
+`PreviewCompare` keeps its two side-by-side frames: comparing is its point. The cover
+letter's text and Regenerate moved to Application content on Tailor; an application's
+Files tab still shows them under the viewer. The run history's row menu saves through
+the Save dialog in the desktop app.
