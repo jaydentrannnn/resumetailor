@@ -1,8 +1,11 @@
 import type { ReactNode } from "react";
 
+/** The label column every label-left row shares, so controls line up down a page. */
+export const ROW_LABEL_COLUMN = "sm:grid-cols-[minmax(0,17rem)_minmax(0,1fr)]";
+
 const GRID = {
-  // Label/description left, control right-aligned and vertically centred.
-  split: "sm:grid-cols-[minmax(0,1fr)_auto] sm:items-center sm:gap-6",
+  // Label/description in a fixed column on the left, the control beside it.
+  split: `${ROW_LABEL_COLUMN} sm:items-center sm:gap-8`,
   // Label/description on top, the control full width underneath.
   stacked: "",
   // Text takes the room it needs on the left; buttons sit right-aligned at the end.
@@ -30,7 +33,11 @@ export function SettingRow({
         {description && <div className="mt-1 text-xs text-ink-muted">{description}</div>}
       </div>
       <div
-        className={layout === "stacked" ? "min-w-0" : "flex min-w-0 flex-wrap gap-2 sm:justify-end"}
+        className={
+          layout === "stacked"
+            ? "min-w-0"
+            : `flex min-w-0 flex-wrap items-center gap-2 ${layout === "action" ? "sm:justify-end" : ""}`
+        }
       >
         {children}
       </div>

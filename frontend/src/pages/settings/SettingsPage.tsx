@@ -25,23 +25,29 @@ function tabFor(requested: string | null): TabId {
   return TABS.some((t) => t.id === requested) ? (requested as TabId) : "ai";
 }
 
-/** App-wide settings. The tab lives in the URL (`?tab=`) so links can open one directly. */
+/**
+ * App-wide settings: the sections in a column down the left, the open section's rows to
+ * the right (a readable width, never the whole window). The tab lives in the URL
+ * (`?tab=`) so links can open one directly.
+ */
 export function SettingsPage() {
   const wide = useMediaQuery(WIDE);
   const [params, setParams] = useSearchParams();
   const tab = tabFor(params.get("tab"));
   return (
-    <Page>
+    <Page width="wide" className="lg:-mb-12 lg:-mt-5">
       <CommandBar title="Settings" />
-      <div className="grid min-w-0 gap-6 lg:grid-cols-[180px_minmax(0,1fr)] lg:gap-8">
-        <Tabs
-          label="Settings sections"
-          items={TABS.map((t) => ({ id: t.id, label: t.label }))}
-          value={tab}
-          orientation={wide ? "vertical" : "horizontal"}
-          onChange={(id) => setParams({ tab: id }, { replace: true })}
-        />
-        <div role="tabpanel" className="min-w-0 space-y-10">
+      <div className="grid min-w-0 gap-6 lg:grid-cols-[13rem_minmax(0,1fr)] lg:gap-0">
+        <div className="lg:-ml-2 lg:min-h-[calc(100vh-var(--rt-bar-top)-var(--rt-bar-bottom))] lg:border-r lg:border-line lg:py-5 lg:pr-3">
+          <Tabs
+            label="Settings sections"
+            items={TABS.map((t) => ({ id: t.id, label: t.label }))}
+            value={tab}
+            orientation={wide ? "vertical" : "horizontal"}
+            onChange={(id) => setParams({ tab: id }, { replace: true })}
+          />
+        </div>
+        <div role="tabpanel" className="min-w-0 max-w-[60rem] space-y-10 lg:py-5 lg:pb-12 lg:pl-10">
           <TileLayout.Provider value="flat">
             {tab === "ai" && <AiSection />}
             {tab === "data" && <DataSection />}

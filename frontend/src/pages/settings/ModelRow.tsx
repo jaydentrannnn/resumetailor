@@ -1,6 +1,6 @@
 import { useId } from "react";
 import type { ModelQueueStatus } from "../../api";
-import { Button, StatusChip } from "../../components/ui";
+import { Button, ROW_LABEL_COLUMN, StatusChip } from "../../components/ui";
 import { modelsFor, selectionDefault, type ModelProvider } from "../../lib/aiModels";
 import { limitLabel } from "../../lib/modelLimits";
 import { PROVIDERS, privacyFor, providerInfo } from "../../lib/providers";
@@ -37,67 +37,73 @@ export function ModelRow({
   );
   const models = connection.vertex?.models.map((m) => m.id) ?? connection.local?.models ?? [];
   return (
-    <div role="group" aria-labelledby={`${id}-name`} className="min-w-0 py-4 first:pt-0 last:pb-0">
-      <div className="flex flex-wrap items-center justify-between gap-x-3 gap-y-1">
-        <div className="min-w-0">
-          <h3 id={`${id}-name`} className="text-sm font-semibold text-ink">
+    <div
+      role="group"
+      aria-labelledby={`${id}-name`}
+      className={`grid min-w-0 gap-3 py-4 first:pt-0 last:pb-0 sm:gap-8 ${ROW_LABEL_COLUMN}`}
+    >
+      <div className="min-w-0 space-y-2">
+        <div>
+          <h3 id={`${id}-name`} className="text-sm font-medium text-ink">
             {ROLES[role].name}
           </h3>
-          <p className="text-xs text-ink-muted">{ROLES[role].uses}</p>
+          <p className="mt-1 text-xs text-ink-muted">{ROLES[role].uses}</p>
         </div>
         <RowStatus model={model} limit={limitLabel(queue, role)} />
       </div>
-      <div className="mt-3 grid min-w-0 gap-3 sm:grid-cols-2">
-        <label className="block min-w-0 text-sm font-medium">
-          Provider
-          <select
-            className="field mt-1"
-            value={selection.provider}
-            onChange={(e) => selectProvider(e.target.value as ModelProvider)}
-          >
-            {PROVIDERS.map((p) => (
-              <option key={p.id} value={p.id === "claude" ? "anthropic" : p.id}>
-                {p.name}
-              </option>
-            ))}
-          </select>
-        </label>
-        {selection.provider === "vertex_ai" ? (
-          <VertexModelField model={model} />
-        ) : (
+      <div className="min-w-0">
+        <div className="grid min-w-0 gap-3 sm:grid-cols-2">
           <label className="block min-w-0 text-sm font-medium">
-            Model
-            <input
-              className="field mt-1 font-mono"
-              value={selection.model_name}
-              placeholder={fallback}
-              list={models.length ? `${id}-models` : undefined}
-              onChange={(e) => patch({ model_name: e.target.value })}
-            />
-            {models.length > 0 && (
-              <datalist id={`${id}-models`}>
-                {models.map((name) => (
-                  <option key={name} value={name} />
-                ))}
-              </datalist>
-            )}
+            Provider
+            <select
+              className="field mt-1"
+              value={selection.provider}
+              onChange={(e) => selectProvider(e.target.value as ModelProvider)}
+            >
+              {PROVIDERS.map((p) => (
+                <option key={p.id} value={p.id === "claude" ? "anthropic" : p.id}>
+                  {p.name}
+                </option>
+              ))}
+            </select>
           </label>
+          {selection.provider === "vertex_ai" ? (
+            <VertexModelField model={model} />
+          ) : (
+            <label className="block min-w-0 text-sm font-medium">
+              Model
+              <input
+                className="field mt-1 font-mono"
+                value={selection.model_name}
+                placeholder={fallback}
+                list={models.length ? `${id}-models` : undefined}
+                onChange={(e) => patch({ model_name: e.target.value })}
+              />
+              {models.length > 0 && (
+                <datalist id={`${id}-models`}>
+                  {models.map((name) => (
+                    <option key={name} value={name} />
+                  ))}
+                </datalist>
+              )}
+            </label>
+          )}
+          {selection.provider === "custom" && (
+            <CustomServerFields selection={selection} patch={patch} />
+          )}
+          {selection.provider === "vertex_ai" && <VertexFields model={model} id={id} />}
+          <PlanField selection={selection} patch={patch} />
+        </div>
+        <RowNotes model={model} />
+        {privacy && privacy !== LOCAL_PRIVACY && (
+          <p className="mt-2 text-xs text-ink-muted">{privacy}</p>
         )}
-        {selection.provider === "custom" && (
-          <CustomServerFields selection={selection} patch={patch} />
+        {role === "light" && Object.keys(modelsFor(settings).legacy_light_overrides).length > 0 && (
+          <p className="mt-2 text-xs text-ink-muted">
+            Existing stage overrides are preserved until you edit this model.
+          </p>
         )}
-        {selection.provider === "vertex_ai" && <VertexFields model={model} id={id} />}
-        <PlanField selection={selection} patch={patch} />
       </div>
-      <RowNotes model={model} />
-      {privacy && privacy !== LOCAL_PRIVACY && (
-        <p className="mt-2 text-xs text-ink-muted">{privacy}</p>
-      )}
-      {role === "light" && Object.keys(modelsFor(settings).legacy_light_overrides).length > 0 && (
-        <p className="mt-2 text-xs text-ink-muted">
-          Existing stage overrides are preserved until you edit this model.
-        </p>
-      )}
     </div>
   );
 }
@@ -117,7 +123,7 @@ function RowStatus({ model, limit }: { model: RoleModel; limit: string | null })
   else if (check?.ok) chip = <StatusChip tone="done">Working</StatusChip>;
   else if (check) chip = <StatusChip tone="failed">Not working</StatusChip>;
   return (
-    <div className="flex items-center gap-2">
+    <div className="flex flex-wrap items-center gap-2">
       {chip}
       {ready && !connection.needsKey && !needsGoogle && (
         <Button size="sm" variant="plain" loading={check === "testing"} onClick={retest}>
