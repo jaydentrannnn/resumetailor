@@ -1,4 +1,4 @@
-import { createContext, useContext, useEffect, useState, type ReactNode } from "react";
+import { createContext, useCallback, useContext, useEffect, useState, type ReactNode } from "react";
 import {
   getApplicantProfile,
   putApplicantProfile,
@@ -72,16 +72,18 @@ export function ApplicantProfileProvider({ children }: { children: ReactNode }) 
     };
   }, []);
   const dirty = !!draft && !!saved && JSON.stringify(draft) !== JSON.stringify(saved);
-  async function refreshSummaries() {
+  // Stable: ExperienceFields refreshes in an effect keyed on it, so a new function per
+  // render would refetch forever.
+  const refreshSummaries = useCallback(async () => {
     const result = await getApplicantProfile();
     setExperienceSummaries(result.experience_summaries ?? {});
-  }
+  }, []);
   useEffect(
     () =>
       onAppEvent("rt:resume-saved", () => {
         void refreshSummaries().catch(() => undefined);
       }),
-    [],
+    [refreshSummaries],
   );
   async function save(): Promise<boolean> {
     if (!draft) return false;

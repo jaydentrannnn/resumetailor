@@ -155,6 +155,15 @@ describe("experience source preference", () => {
     expect(await screen.findByText(label)).toBeTruthy();
   });
 
+  it("loads the summaries once when it mounts, not on every render", async () => {
+    // A fresh object per call, as the server sends: a refresh that re-renders must not refresh.
+    vi.mocked(getApplicantProfile).mockImplementation(async () => response());
+    mount();
+    await screen.findByText("1.23 years from dated entries");
+    await act(() => new Promise((resolve) => setTimeout(resolve, 50)));
+    expect(getApplicantProfile).toHaveBeenCalledTimes(2);
+  });
+
   it("refreshes summaries after a resume save without discarding a pending profile draft", async () => {
     mount();
     await screen.findByText("1.23 years from dated entries");
