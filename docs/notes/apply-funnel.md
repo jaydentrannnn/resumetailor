@@ -2230,3 +2230,33 @@ reverse posting order), so its time is not comparable.
   option while `filler.js` (which ignores typed text in an open box) reads no choice.
 - eightfold1's "hang" was the probe's WebSocket close deadlock (`0cbaaa3`), not the fill;
   no `_ms_left` change was needed.
+
+### 2026-10-18 — Batch 2 measured (fill_probe, 25 postings, made-up applicant)
+
+Batch 1 (3b2cb83) twice for the noise, Batch 2 (abf62cd) once. The two read-only runs
+of Batch 1 A and Batch 2 ran alone (9.5 / 9.1 min); the rest ran up to three at once on
+separate ports and posting orders, so their times are not compared. Totals use the
+current probe's counting, not the Batch 1 table's.
+
+| Measure | Batch 1 A | Batch 1 B | Batch 2 |
+|---|---|---|---|
+| Read-only: questions keyed | 159 | 160 | 190 |
+| Read-only: required questions keyed | 103 | 104 | 115 |
+| Live: answers committed (18 postings) | 121 | 121 | 159 |
+| Live: required questions left | 46 | 46 | 41 |
+| Live: model calls | 15 | 15 | 16 → 14 after the fix below |
+| Allowed requests carrying applicant data | 0 | 0 | 0 |
+
+- Committed gains: jobvite2 0→10 (and fill_failed→awaiting_review), paylocity1 0→12,
+  jazz1 1→9 (the referral follow-up), workable1 9→14, rippling1 6→9, jobvite1 0→1. Ashby,
+  SmartRecruiters, Lever, Pinpoint, TikTok and Eightfold equal; gh1 16 vs 17 was noise
+  (17 on a rerun). No new wrong screens. Allowed writes are the same hosts in all runs.
+- The probe counted every `classify_questions` call, cache hits included, so the
+  after-upload refill and the rescans showed as 7 extra calls; the cached question keys
+  per posting were identical. The probe now counts only calls that reach the model, and
+  records each control's label and type that the resolver put to the model.
+- The real extra: SmartRecruiters' phone "Country code" picker (`spl-select`) keeps its
+  value in a shadow root; `page_blockers` now finds the picker but reads it as empty, the
+  profile's code cannot be confirmed there, and it went to the model (one call, about
+  20 s, nothing gained). A calling-code menu the profile could not set now goes to the
+  model only when the form marks it invalid. Rerun: sr1/sr2 0 calls, 7/8 committed.

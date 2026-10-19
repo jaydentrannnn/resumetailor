@@ -14,6 +14,7 @@ from resume_tailor.apply.answers import (
     page_blockers,
     rejected_repair,
     resolver_types,
+    widget_actions,
 )
 from resume_tailor.apply.answers.profile import ApplicantProfile
 from resume_tailor.apply.funnel.packet_models import Packet
@@ -118,3 +119,20 @@ def test_a_refused_select_in_a_frame_becomes_a_review_note_without_the_model(pag
 ])
 def test_shapes_keep_the_value_and_change_only_its_form(item, value, expected):
     assert rejected_repair.shapes(item, value)[: len(expected)] == expected
+
+
+def test_a_calling_code_menu_only_the_model_could_set_goes_to_it_only_when_refused(
+    monkeypatch,
+):
+    """SmartRecruiters' code picker keeps its value in a shadow root no reader sees: the
+    profile's code cannot be confirmed there, and the model would pick the same code."""
+    monkeypatch.setattr(widget_actions, "_select_combobox_option", lambda *a, **k: False)
+    resolver = hybrid_resolver._StepResolver(  # noqa: SLF001
+        None, Packet.model_construct(fields={}), ApplicantProfile(), max_retries=1,
+        on_progress=None, deadline=None, ledger=resolver_types.StepLedger(),
+        only_invalid=False,
+    )
+    quiet = {"type": "combobox", "selector": "#code", "label": "Country code",
+             "phone_code_menu": True, "invalid": False}
+    refused = {**quiet, "selector": "#code2", "invalid": True}
+    assert resolver._select_phone_codes([quiet, refused]) == [refused]  # noqa: SLF001

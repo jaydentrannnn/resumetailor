@@ -502,7 +502,14 @@ class _StepResolver:
                     resolved_phone.add(str(field["selector"]))
                     self.log(f"selected phone calling code for {field.get('label')}")
         self.ledger.done |= resolved_phone
-        return [field for field in unresolved if str(field.get("selector")) not in resolved_phone]
+        # A calling-code menu the profile could not set and the form does not refuse is
+        # not what blocks the step: SmartRecruiters keeps its chosen code in a shadow root
+        # no reader sees, and the model would only pick the same code again (2026-10).
+        return [
+            field for field in unresolved
+            if str(field.get("selector")) not in resolved_phone
+            and not (field.get("phone_code_menu") and not field.get("invalid"))
+        ]
 
     def _resolve_known(self, unresolved: list[dict[str, Any]]) -> list[dict[str, Any]]:
         """Retry authoritative facts; neither a model nor its cache may replace them."""

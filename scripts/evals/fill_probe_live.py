@@ -36,6 +36,8 @@ OUT, TAG, URL = Path(sys.argv[1]), sys.argv[2], sys.argv[3]
 ATS = sys.argv[4] if len(sys.argv) > 4 else ""
 AUDIT = fill_probe_guard.Audit(OUT / f"{TAG}.requests.jsonl")
 CALLS: Counter[str] = Counter()
+CLIENTS = [0]  # classifier client builds: one per model call
+ASKED: list[dict[str, str]] = []  # controls the resolver put to the model (labels only)
 _STEP = re.compile(r"scanning form step (\d+)")
 
 
@@ -93,12 +95,36 @@ def _guarded_cdp():
         yield connected
 
 
-def _count(name, fn):
+def _count(name, fn, *, via_client=False):
+    """Count each call of ``fn``; with ``via_client``, only one that reached the model
+    (the classifiers answer cached questions without a call)."""
     def wrapper(*args, **kwargs):
+        before = CLIENTS[0]
         try:
             return fn(*args, **kwargs)
         finally:
-            CALLS[name] += 1
+            if not via_client or CLIENTS[0] > before:
+                CALLS[name] += 1
+
+    return wrapper
+
+
+def _client_counted(fn):
+    def wrapper(*args, **kwargs):
+        CLIENTS[0] += 1
+        return fn(*args, **kwargs)
+
+    return wrapper
+
+
+def _asked_recorded(fn):
+    """Keep the label and type of each control put to the resolver's model, never its value."""
+    def wrapper(self, to_ask, *args, **kwargs):
+        ASKED.extend(
+            {"label": str(f.get("label") or "")[:120], "type": str(f.get("type") or "")}
+            for f in to_ask if isinstance(f, dict)
+        )
+        return fn(self, to_ask, *args, **kwargs)
 
     return wrapper
 
@@ -106,11 +132,16 @@ def _count(name, fn):
 def _patch() -> None:
     browser.cdp_browser = _guarded_cdp
     fill_mod.browser.cdp_browser = _guarded_cdp
-    answer.classify_questions = _count("classify_questions", answer.classify_questions)
-    answer.classify_notices = _count("classify_notices", answer.classify_notices)
+    answer._classify_client = _client_counted(answer._classify_client)
+    answer.classify_questions = _count(
+        "classify_questions", answer.classify_questions, via_client=True
+    )
+    answer.classify_notices = _count(
+        "classify_notices", answer.classify_notices, via_client=True
+    )
     answer.answer_question = _count("answer_question", answer.answer_question)
     hybrid_resolver._StepResolver._call_model = _count(
-        "resolver", hybrid_resolver._StepResolver._call_model
+        "resolver", _asked_recorded(hybrid_resolver._StepResolver._call_model)
     )
 
 
@@ -189,6 +220,7 @@ def main() -> int:
         "url": URL,
         "seconds": round(time.monotonic() - started, 1),
         "calls": dict(CALLS),
+        "resolver_asked": ASKED,
         "error": error,
         "measures": measures(result, progress),
         "audit": AUDIT.summary(),
