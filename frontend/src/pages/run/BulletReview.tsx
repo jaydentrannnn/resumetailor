@@ -225,7 +225,7 @@ export function BulletReview({
           </p>
         )}
       </div>
-      <div className="sticky bottom-0 -mx-5 -mb-5 mt-4 flex flex-wrap items-center gap-3 rounded-b-sm border-t border-line bg-panel px-5 py-3 sm:-mx-6 sm:px-6">
+      <div className="sticky bottom-(--rt-bar-bottom) -mx-5 -mb-5 mt-4 flex flex-wrap items-center gap-3 rounded-b-sm border-t border-line bg-panel px-5 py-3 sm:-mx-6 sm:px-6">
         <span className="text-sm text-ink-muted" role="status">
           {pending === 0
             ? "No changes"

@@ -88,7 +88,7 @@ export function AdjustMode({ onDone }: { onDone: () => void }) {
         )}
       </div>
       <div className={DOCUMENT_CELL}>
-        <div className="lg:sticky lg:top-5">
+        <div className="lg:sticky lg:top-[calc(var(--rt-bar-top)+1.25rem)]">
           <AdjustPreviewPane
             pages={preview.pages}
             loading={preview.loading}

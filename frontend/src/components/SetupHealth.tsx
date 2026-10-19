@@ -81,7 +81,7 @@ export function SetupHealth() {
       {open && (
         <div
           id={panelId}
-          className="absolute left-0 top-full z-40 mt-2 w-80 max-w-[calc(100vw-2rem)] rounded-sm sm:left-auto sm:right-0 bg-chrome p-4 shadow-lg"
+          className="absolute bottom-0 left-full z-40 ml-3 w-80 max-w-[calc(100vw-5rem)] rounded-sm bg-chrome p-4 shadow-lg"
         >
           <p className="rt-tile-title mb-3">Setup checklist</p>
           <ul className="space-y-3">

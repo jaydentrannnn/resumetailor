@@ -1,6 +1,8 @@
 import { useEffect, useState } from "react";
+import { useNavigate } from "react-router-dom";
 import { currentPrintTarget, printDocument } from "../lib/printTarget";
 import { SHORTCUTS, shortcutFor } from "../lib/shortcuts";
+import { railTarget } from "./shell/railItems";
 import { Kbd } from "./ui/Tile";
 import { Modal } from "./Modal";
 
@@ -12,8 +14,15 @@ import { Modal } from "./Modal";
  */
 export function KeyboardShortcuts() {
   const [helpOpen, setHelpOpen] = useState(false);
+  const navigate = useNavigate();
   useEffect(() => {
     function onKey(e: KeyboardEvent) {
+      const page = railTarget(e);
+      if (page) {
+        e.preventDefault();
+        navigate(page);
+        return;
+      }
       const action = shortcutFor(e);
       if (!action) return;
       if (action === "help") {
@@ -36,13 +45,13 @@ export function KeyboardShortcuts() {
     }
     document.addEventListener("keydown", onKey);
     return () => document.removeEventListener("keydown", onKey);
-  }, []);
+  }, [navigate]);
   if (!helpOpen) return null;
   return (
     <Modal title="Keyboard shortcuts" onClose={() => setHelpOpen(false)}>
       <ul className="space-y-2 text-sm">
         {SHORTCUTS.map((shortcut) => (
-          <li key={shortcut.action} className="flex items-center justify-between gap-4">
+          <li key={shortcut.description} className="flex items-center justify-between gap-4">
             <span className="text-ink">{shortcut.description}</span>
             <span className="flex gap-1">
               {shortcut.keys.map((key) => (

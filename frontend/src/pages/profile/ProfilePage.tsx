@@ -1,9 +1,8 @@
 import { useCallback, useEffect, useState } from "react";
 import { Link, useLocation, useNavigate } from "react-router-dom";
 import { getOnboarding } from "../../api";
-import { ProfileGapBanner } from "../../components/ProfileGapBanner";
 import { underlineTabClass } from "../../components/Tabs";
-import { Button, Page, PageHeader, StatusMark } from "../../components/ui";
+import { Button, CommandBar, Page, StatusMark } from "../../components/ui";
 import {
   changedKeys,
   fieldLabel,
@@ -17,17 +16,15 @@ import {
 import { useToast } from "../../lib/toast";
 import { useConfirm } from "../../state/confirmState";
 import { useEditorState } from "../../state/editorState";
-import { EditorPage } from "../editor/EditorPage";
 import { ApplicationTab } from "./ApplicationTab";
 import { PersonalTab } from "./PersonalTab";
 import { TailoringTab } from "./TailoringTab";
 import { useProfileFields } from "./useProfileFields";
 
-type Tab = "personal" | "resume" | "application" | "tailoring";
+type Tab = "personal" | "application" | "tailoring";
 
 const TABS: [Tab, string][] = [
   ["personal", "Personal information"],
-  ["resume", "Resume content"],
   ["application", "Application details"],
   ["tailoring", "Tailoring"],
 ];
@@ -40,13 +37,11 @@ const TABS: [Tab, string][] = [
 export function ProfilePage() {
   const { pathname: path, search } = useLocation();
   const navigate = useNavigate();
-  const tab: Tab = path.endsWith("/resume")
-    ? "resume"
-    : path.endsWith("/application")
-      ? "application"
-      : path.endsWith("/tailoring")
-        ? "tailoring"
-        : "personal";
+  const tab: Tab = path.endsWith("/application")
+    ? "application"
+    : path.endsWith("/tailoring")
+      ? "tailoring"
+      : "personal";
   const editor = useEditorState();
   const { applicant, draft, ctx, allErrors, attempted, setAttempted, reset } = useProfileFields();
   const toast = useToast();
@@ -157,10 +152,7 @@ export function ProfilePage() {
 
   return (
     <Page className="pb-4">
-      <PageHeader
-        title="Profile"
-        description="Your resume content and the details application forms ask for, saved together."
-      />
+      <CommandBar title="Profile" />
       <nav aria-label="Profile sections" className="flex flex-wrap gap-4 border-b border-line">
         {TABS.map(([id, label]) => (
           <Link
@@ -173,20 +165,6 @@ export function ProfilePage() {
           </Link>
         ))}
       </nav>
-      {tab === "resume" && (
-        <div className="space-y-4">
-          <ProfileGapBanner
-            gaps={applicant.gaps.filter((gap) => gap.path === "/profile/resume")}
-            onOpen={() =>
-              educationSection &&
-              document
-                .getElementById(`resume-section-${educationSection.id}`)
-                ?.scrollIntoView({ block: "start" })
-            }
-          />
-          <EditorPage showContact={false} embedded />
-        </div>
-      )}
       {tab === "tailoring" && <TailoringTab />}
       {!ctx && (tab === "personal" || tab === "application") && (
         <p className="text-sm text-ink-muted">{applicant.error ?? "Loading your profile…"}</p>
@@ -207,7 +185,7 @@ export function ProfilePage() {
       <div
         role="region"
         aria-label="Save profile"
-        className="sticky bottom-0 z-10 flex flex-wrap items-center gap-3 border-t border-line bg-chrome py-3"
+        className="sticky bottom-(--rt-bar-bottom) z-10 flex flex-wrap items-center gap-3 border-t border-line bg-chrome py-3"
       >
         <Button
           variant="primary"
@@ -243,15 +221,10 @@ export function ProfilePage() {
         )}
         {failed.resume && editor.dirty && (
           <span role="alert" className="text-sm text-danger">
-            Resume not saved{editor.errors[0] ? `: ${editor.errors[0]}` : ""}
-            {tab !== "resume" && (
-              <>
-                {" "}
-                <Link className="underline" to="/profile/resume">
-                  Open resume
-                </Link>
-              </>
-            )}
+            Resume not saved{editor.errors[0] ? `: ${editor.errors[0]}` : ""}{" "}
+            <Link className="underline" to="/resume">
+              Open resume
+            </Link>
           </span>
         )}
         {failed.profile && applicant.error && (

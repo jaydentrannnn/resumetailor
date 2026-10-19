@@ -25,11 +25,8 @@ for (const theme of ["light", "dark"] as const) {
       expected,
     );
     release();
-    await expect(
-      page.getByRole("button", {
-        name: new RegExp(`Theme: ${theme === "dark" ? "Dark" : "Light"}`),
-      }),
-    ).toBeVisible();
+    await expect(page.getByRole("navigation", { name: "Main" })).toBeVisible();
+    await expect(page.locator("html")).toHaveAttribute("data-theme", theme);
     await expect(page.locator('link[rel="icon"]')).toHaveAttribute(
       "href",
       new RegExp(`logo-mark-${theme === "dark" ? "white" : "black"}`),

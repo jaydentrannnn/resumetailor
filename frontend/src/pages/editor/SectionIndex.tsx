@@ -44,7 +44,10 @@ export function SectionIndex({ sections }: { sections: Section[] }) {
           ))}
         </select>
       </label>
-      <nav aria-label="Resume sections" className="sticky top-4 hidden space-y-1 lg:block">
+      <nav
+        aria-label="Resume sections"
+        className="sticky top-[calc(var(--rt-bar-top)+1rem)] hidden space-y-1 lg:block"
+      >
         <p className="rt-eyebrow mb-3 px-3">Sections</p>
         {sections.map((section) => (
           <a

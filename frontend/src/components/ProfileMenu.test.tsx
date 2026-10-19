@@ -3,7 +3,6 @@ import { cleanup, fireEvent, render, screen } from "@testing-library/react";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { ThemeProvider } from "../state/themeState";
 import { ProfileMenu } from "./ProfileMenu";
-import { ThemeButton } from "./ThemeButton";
 
 vi.mock("./workspace/ProfileSwitcher", () => ({ ProfileSwitcher: () => <p>profile switcher</p> }));
 vi.mock("../state/workspaceState", () => ({
@@ -27,7 +26,6 @@ function renderMenu() {
   return render(
     <ThemeProvider>
       <ProfileMenu />
-      <ThemeButton />
       <p>outside</p>
     </ThemeProvider>,
   );
@@ -41,13 +39,6 @@ describe("ProfileMenu", () => {
     fireEvent.click(button);
     expect(button.getAttribute("aria-expanded")).toBe("true");
     expect(screen.getByText("profile switcher")).toBeTruthy();
-  });
-
-  it("the theme button cycles System, Light, Dark and names the current mode", () => {
-    renderMenu();
-    fireEvent.click(screen.getByRole("button", { name: /Theme: System/ }));
-    fireEvent.click(screen.getByRole("button", { name: /Theme: Light/ }));
-    expect(screen.getByRole("button", { name: /Theme: Dark\. Switch to System/ })).toBeTruthy();
   });
 
   it("closes on Escape and on a click outside, but not while a modal is open", () => {

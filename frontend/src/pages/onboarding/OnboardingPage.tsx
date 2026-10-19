@@ -1,7 +1,7 @@
 import { useEffect, useRef, useState } from "react";
 import { useNavigate } from "react-router-dom";
 import { getOnboarding, putOnboarding, type OnboardingState } from "../../api";
-import { Button, Page, PageHeader, Stepper } from "../../components/ui";
+import { Button, CommandBar, Page, Stepper } from "../../components/ui";
 import { describe } from "../../lib/errors";
 import { ONBOARDING_STEPS, stepIndex, type OnboardingStep } from "../../lib/onboarding";
 import { useToast } from "../../lib/toast";
@@ -87,7 +87,7 @@ export function OnboardingPage() {
     const ok = await confirm({
       title: "Leave setup?",
       message:
-        "Anything you haven't set up won't work yet: tailoring needs a model and your resume, and autofill needs your application details. The setup checklist in the header brings you back here.",
+        "Anything you haven't set up won't work yet: tailoring needs a model and your resume, and autofill needs your application details. The setup checklist in the sidebar brings you back here.",
       confirmLabel: "Skip setup",
     });
     if (!ok || !(await saveRef.current())) return;
@@ -96,9 +96,8 @@ export function OnboardingPage() {
 
   return (
     <Page>
-      <PageHeader
+      <CommandBar
         title="Welcome to ResumeTailor"
-        description="Set up once and you're ready to tailor and apply. Everything can be changed later."
         actions={
           !state.completed && (
             <Button variant="ghost" size="sm" onClick={() => void skipAll()} disabled={saving}>
@@ -107,6 +106,9 @@ export function OnboardingPage() {
           )
         }
       />
+      <p className="text-[15px] text-ink-muted">
+        Set up once and you&apos;re ready to tailor and apply. Everything can be changed later.
+      </p>
       <Stepper
         steps={ONBOARDING_STEPS.filter((s) => s.id !== "done")}
         current={current}

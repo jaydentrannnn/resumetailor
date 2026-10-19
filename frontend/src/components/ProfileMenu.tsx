@@ -8,9 +8,9 @@ function modalOpen() {
 }
 
 /**
- * The header's profile pill: a person icon and the active profile's name, opening the
- * profile switcher and profile management. Theme has its own button (`ThemeButton`);
- * everything else is on the Settings page.
+ * The rail's profile pill: a person icon and the active profile's name, opening the
+ * profile switcher and profile management beside the rail. Theme is in Settings ›
+ * Appearance.
  */
 export function ProfileMenu() {
   const [open, setOpen] = useState(false);
@@ -75,7 +75,7 @@ export function ProfileMenu() {
           id={panelId}
           role="group"
           aria-label="Profile"
-          className="absolute right-0 z-40 mt-2 w-72 max-w-[calc(100vw-2rem)] space-y-2 rounded-sm border border-line bg-chrome p-4 shadow-lg"
+          className="absolute bottom-0 left-full z-40 ml-3 w-72 max-w-[calc(100vw-5rem)] space-y-2 rounded-sm border border-line bg-chrome p-4 shadow-lg"
         >
           <section className="space-y-2">
             <h2 className="rt-eyebrow">Profile</h2>

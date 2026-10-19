@@ -15,7 +15,7 @@ export function ReportNotes({ report }: { report: RunReport }) {
   const gaps = gapGroups(report);
   const missingRequired = gaps.missing.filter((g) => g.required);
   const missingOptional = gaps.missing.filter((g) => !g.required);
-  const editor = <Link to="/profile/resume">Open resume editor</Link>;
+  const editor = <Link to="/resume">Open resume editor</Link>;
 
   return (
     <div className="space-y-5">
@@ -42,7 +42,7 @@ export function ReportNotes({ report }: { report: RunReport }) {
         <GapList
           title="In your resume, but not on a bullet"
           note="Mention it in a bullet that shows it (or add it to that bullet's Extra skills) so future runs can pick it."
-          action={<Link to="/profile/resume">Open the editor</Link>}
+          action={<Link to="/resume">Open the editor</Link>}
           items={gaps.untagged.map((g) => ({
             key: g.phrase,
             text: g.phrase,

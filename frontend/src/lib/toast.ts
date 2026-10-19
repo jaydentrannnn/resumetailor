@@ -59,3 +59,15 @@ export const ToastContext = createContext<ToastApi>(noop);
 export function useToast(): ToastApi {
   return useContext(ToastContext);
 }
+
+/**
+ * The status bar's message: success and info notes land here instead of the toast stack
+ * (errors stay toasts, which wait to be read). Null when nothing was said lately.
+ */
+export type StatusLine = { message: Toast | null; clear: (id: number) => void };
+
+export const StatusLineContext = createContext<StatusLine>({ message: null, clear: () => {} });
+
+export function useStatusLine(): StatusLine {
+  return useContext(StatusLineContext);
+}

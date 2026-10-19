@@ -1,5 +1,5 @@
 import { Link, useSearchParams } from "react-router-dom";
-import { DataList, Page, PageHeader, Tabs } from "../components/ui";
+import { CommandBar, DataList, Page, Tabs } from "../components/ui";
 import { useLibraryState } from "../state/libraryState";
 import { DictionarySection } from "./vocabulary/DictionarySection";
 import { SuggestionsSection } from "./vocabulary/SuggestionsSection";
@@ -20,10 +20,13 @@ export function VocabularyPage() {
   }, 0);
   return (
     <Page>
-      <PageHeader
+      <CommandBar
         title="Vocabulary"
-        back={<Link to="/settings">← Settings</Link>}
-        description="How skills are recognised across spellings. Used automatically on every run."
+        back={
+          <Link to="/settings" className="hover:text-ink">
+            ← Settings
+          </Link>
+        }
       />
       <DataList
         mono

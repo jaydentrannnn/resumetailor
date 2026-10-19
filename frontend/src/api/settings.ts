@@ -181,7 +181,7 @@ export interface SetupStatus {
 }
 
 export function fetchSetupStatus(): Promise<SetupStatus> {
-  /** Prerequisites checklist for the header pill; never makes a model call. */
+  /** Prerequisites checklist for the rail pill; never makes a model call. */
   return request("/api/setup-status");
 }
 

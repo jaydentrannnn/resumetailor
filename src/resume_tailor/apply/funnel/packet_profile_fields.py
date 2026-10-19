@@ -168,11 +168,11 @@ _PROFILE_EDUCATION_KEYS = frozenset({
 })
 
 def profile_path(section: str, key: str = "") -> str:
-    """The Profile page tab that holds ``section`` (or, for education, ``key``)."""
+    """The page (a Profile tab, or Resume) that holds ``section`` (or, for education, ``key``)."""
     if section == "Answering questions" or key == "auto_accept_routine_acknowledgements":
         return "/apply"
     if section == _EDUCATION and key not in _PROFILE_EDUCATION_KEYS:
-        return "/profile/resume"
+        return "/resume"
     return "/profile/personal" if section == _CONTACT else "/profile/application"
 
 _US_STATES = frozenset({

@@ -1,5 +1,5 @@
 import { Link } from "react-router-dom";
-import { Page, PageHeader } from "../../components/ui";
+import { CommandBar, Page } from "../../components/ui";
 import { useRunState } from "../../state/runState";
 import { useSourcesStatus } from "./sourceHooks";
 import { SourcesTab } from "./SourcesTab";
@@ -15,12 +15,11 @@ export function SourcesPage() {
   const status = useSourcesStatus();
   return (
     <Page>
-      <PageHeader
+      <CommandBar
         title="Job sources"
-        description="Where new postings come from. Each source is checked on the nightly run, or when you find jobs."
         back={
-          <Link to="/applications" className="text-sm text-ink-muted hover:text-ink">
-            ← Applications
+          <Link to="/applications" className="hover:text-ink">
+            ← Apply
           </Link>
         }
       />

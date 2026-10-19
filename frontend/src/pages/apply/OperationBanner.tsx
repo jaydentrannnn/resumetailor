@@ -113,7 +113,7 @@ export function OperationBanner({
   return (
     <Tile
       padding="sm"
-      className={`sm:px-5 ${active ? "sticky top-2 z-20" : ""}`}
+      className={`sm:px-5 ${active ? "sticky top-[calc(var(--rt-bar-top)+0.5rem)] z-10" : ""}`}
       aria-live="polite"
     >
       <div className="grid items-center gap-x-5 gap-y-3 lg:grid-cols-[minmax(0,auto)_minmax(120px,1fr)_auto]">

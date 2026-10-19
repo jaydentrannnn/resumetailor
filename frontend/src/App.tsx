@@ -1,7 +1,6 @@
 import {
   createBrowserRouter,
   Navigate,
-  NavLink,
   Route,
   RouterProvider,
   Routes,
@@ -9,17 +8,14 @@ import {
   useLocation,
   useNavigate,
 } from "react-router-dom";
-import { lazy, Suspense, useEffect, useRef, useState } from "react";
+import { lazy, Suspense, useEffect, useMemo, useRef, useState } from "react";
 import { getOnboarding } from "./api";
 import { needsWelcome, setupActive } from "./lib/onboarding";
 import { ErrorBoundary } from "./components/ErrorBoundary";
-import { ProfileMenu } from "./components/ProfileMenu";
 import { KeyboardShortcuts } from "./components/KeyboardShortcuts";
 import { TextContextMenu } from "./components/TextContextMenu";
-import { AutomationSwitch } from "./components/AutomationSwitch";
-import { SetupHealth } from "./components/SetupHealth";
-import { ThemeButton } from "./components/ThemeButton";
-import { UpdateChip } from "./components/UpdateChip";
+import { AppRail } from "./components/shell/AppRail";
+import { StatusBar } from "./components/shell/StatusBar";
 import { ToastProvider } from "./components/ui/Toast";
 import { RunPage } from "./pages/run/RunPage";
 import { ConfirmProvider } from "./state/confirmState";
@@ -34,12 +30,12 @@ import { useApplicantProfile } from "./state/applicantProfileState";
 import { useEditorState } from "./state/editorState";
 import { useConfirm } from "./state/confirmState";
 import { LogoMark } from "./components/LogoMark";
+import { ShellContext, type ShellSlots } from "./lib/shell";
+import { useWindowTitle } from "./lib/useWindowTitle";
+import { ResumePage } from "./pages/resume/ResumePage";
 
-// Text links; the active one is ink with a 2px accent underline sitting on the header rule.
-const navLinkClassName = ({ isActive }: { isActive: boolean }) =>
-  `relative inline-flex h-11 items-center whitespace-nowrap px-3 text-[13px] font-medium transition-colors duration-[var(--dur-short)] ease-out after:absolute after:inset-x-3 after:-bottom-px after:h-0.5 sm:h-14 ${
-    isActive ? "text-ink after:bg-accent" : "text-ink-muted after:bg-transparent hover:text-ink"
-  }`;
+/** Profile and Resume share unsaved-edit protection: leaving both asks first. */
+const guarded = (path: string) => path.startsWith("/profile/") || path === "/resume";
 
 /**
  * Root: `ThemeProvider` owns light/dark/system preference (localStorage).
@@ -118,86 +114,55 @@ function WorkspaceScope() {
 }
 
 /**
- * Brand + profile switcher + nav, then the three pages. Remounts on a profile
- * switch along with the providers above — a brief nav flicker is an acceptable
- * trade for `ProfileSwitcher` being able to read the *outgoing* profile's editor
- * state directly (see its docstring) instead of needing a separate cross-boundary
- * store just to check for unsaved edits.
+ * The window: the rail on the left; the work area's command bar (filled by each page's
+ * `CommandBar`), page and status bar on the right. Remounts on a profile switch along
+ * with the providers above, so `ProfileMenu` can read the outgoing profile's editor
+ * state directly. The document still scrolls (pages use `window.scrollTo`); the rail,
+ * command bar and status bar are sticky.
  */
 function Shell() {
   const settingUp = useOnboardingGate();
+  const [commandBar, setCommandBar] = useState<HTMLElement | null>(null);
+  const [pageTitle, setPageTitle] = useState<string | null>(null);
+  const slots = useMemo<ShellSlots>(() => ({ commandBar, setPageTitle }), [commandBar]);
+  const { dirty: resumeDirty } = useEditorState();
+  const applicant = useApplicantProfile();
+  useWindowTitle(pageTitle, resumeDirty || applicant.dirty);
   return (
-    <div className="min-h-screen">
-      <NavigationGuard />
-      <header className="relative z-30 border-b border-line bg-chrome">
-        <div className="mx-auto flex max-w-[1920px] flex-wrap items-center justify-between gap-x-6 gap-y-1 px-4 py-2 sm:px-6 sm:py-0">
-          {/* Brand and nav read left-to-right as one group; profile and theme
-              utilities sit on the right. min-w-0 lets each group shrink below its
-              max-content width, and flex-wrap keeps a 320px viewport from scrolling
-              sideways — the old unwrapped row was the app's one real horizontal-scroll bug. */}
-          <div className="flex min-w-0 flex-wrap items-center gap-x-7 gap-y-0">
-            <p className="inline-flex items-center gap-2.5 font-display text-lg font-semibold tracking-tight text-ink [overflow-wrap:anywhere]">
-              <LogoMark />
-              ResumeTailor
-            </p>
-            {/* During first-run setup the wizard is the only page: no nav to wander off by. */}
-            {!settingUp && (
-              <nav className="flex flex-wrap">
-                <NavLink to="/" end className={navLinkClassName}>
-                  Tailor
-                </NavLink>
-                <NavLink to="/applications" className={navLinkClassName}>
-                  Apply
-                </NavLink>
-                {/* "/profile", not "/profile/personal": a non-`end` NavLink matches every
-                  /profile/* sub-tab, so Profile stays highlighted on Resume content and
-                  Application details. The route redirects to the personal tab. */}
-                <NavLink to="/profile" className={navLinkClassName}>
-                  Profile
-                </NavLink>
-                <NavLink to="/template" className={navLinkClassName}>
-                  Template
-                </NavLink>
-                <NavLink to="/settings" className={navLinkClassName}>
-                  Settings
-                </NavLink>
-              </nav>
-            )}
-          </div>
-          {!settingUp && (
-            <div className="flex min-w-0 flex-wrap items-center gap-2 py-2.5">
-              <SetupHealth />
-              <UpdateChip />
-              <AutomationSwitch />
-              <ThemeButton />
-              <ProfileMenu />
-            </div>
-          )}
+    <ShellContext.Provider value={slots}>
+      <div className="flex min-h-screen">
+        <NavigationGuard />
+        {/* During first-run setup the wizard is the only page: no rail to wander off by. */}
+        {!settingUp && <AppRail />}
+        <div className="flex min-w-0 flex-1 flex-col">
+          <div ref={setCommandBar} className="sticky top-0 z-30" />
+          <KeyboardShortcuts />
+          <TextContextMenu />
+          <main className="w-full max-w-[1920px] flex-1 px-4 pb-12 pt-5 sm:px-6">
+            <Suspense fallback={<PageLoading />}>
+              <Routes>
+                <Route path="/" element={<RunPage />} />
+                <Route path="/applications" element={<ApplyPage />} />
+                <Route path="/applications/sources" element={<SourcesPage />} />
+                <Route path="/applications/:applicationId" element={<ApplicationDetailPage />} />
+                <Route path="/resume" element={<ResumePage />} />
+                <Route path="/profile" element={<Navigate to="/profile/personal" replace />} />
+                <Route path="/profile/personal" element={<ProfilePage />} />
+                <Route path="/profile/application" element={<ProfilePage />} />
+                <Route path="/profile/tailoring" element={<ProfilePage />} />
+                <Route path="/profile/resume" element={<Navigate to="/resume" replace />} />
+                <Route path="/editor" element={<Navigate to="/resume" replace />} />
+                <Route path="/template" element={<TemplatePage />} />
+                <Route path="/vocabulary" element={<VocabularyPage />} />
+                <Route path="/settings" element={<SettingsPage />} />
+                <Route path="/welcome" element={<OnboardingPage />} />
+              </Routes>
+            </Suspense>
+          </main>
+          <StatusBar />
         </div>
-      </header>
-      <KeyboardShortcuts />
-      <TextContextMenu />
-      <main className="mx-auto max-w-[1920px] px-4 pb-12 pt-6 sm:px-6">
-        <Suspense fallback={<PageLoading />}>
-          <Routes>
-            <Route path="/" element={<RunPage />} />
-            <Route path="/applications" element={<ApplyPage />} />
-            <Route path="/applications/sources" element={<SourcesPage />} />
-            <Route path="/applications/:applicationId" element={<ApplicationDetailPage />} />
-            <Route path="/profile" element={<Navigate to="/profile/personal" replace />} />
-            <Route path="/profile/personal" element={<ProfilePage />} />
-            <Route path="/profile/resume" element={<ProfilePage />} />
-            <Route path="/profile/application" element={<ProfilePage />} />
-            <Route path="/profile/tailoring" element={<ProfilePage />} />
-            <Route path="/editor" element={<Navigate to="/profile/resume" replace />} />
-            <Route path="/template" element={<TemplatePage />} />
-            <Route path="/vocabulary" element={<VocabularyPage />} />
-            <Route path="/settings" element={<SettingsPage />} />
-            <Route path="/welcome" element={<OnboardingPage />} />
-          </Routes>
-        </Suspense>
-      </main>
-    </div>
+      </div>
+    </ShellContext.Provider>
   );
 }
 
@@ -271,8 +236,8 @@ function NavigationGuard() {
   const prompted = useRef(false);
   const blocker = useBlocker(
     ({ nextLocation }) =>
-      location.pathname.startsWith("/profile/") &&
-      !nextLocation.pathname.startsWith("/profile/") &&
+      guarded(location.pathname) &&
+      !guarded(nextLocation.pathname) &&
       (resumeDirty || applicant.dirty),
   );
   useEffect(() => {
@@ -293,8 +258,8 @@ function NavigationGuard() {
     if (prompted.current) return;
     prompted.current = true;
     void confirm({
-      title: "Unsaved profile edits",
-      message: "Leaving Profile will discard unsaved resume and application changes.",
+      title: "Unsaved edits",
+      message: "Leaving will discard unsaved resume and application changes.",
       confirmLabel: "Discard changes",
       cancelLabel: "Stay",
       tone: "danger",

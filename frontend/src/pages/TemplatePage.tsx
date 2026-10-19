@@ -1,4 +1,4 @@
-import { Page, PageHeader } from "../components/ui";
+import { CommandBar, Page } from "../components/ui";
 import { PageFitCard } from "../components/template/PageFitCard";
 import { SavedTemplatesPanel } from "../components/template/SavedTemplatesPanel";
 import { StarterTemplatesPanel } from "../components/template/StarterTemplatesPanel";
@@ -16,15 +16,12 @@ export function TemplatePage() {
   const { info } = useTemplateState();
   return (
     <Page>
-      <PageHeader
-        title="Template"
-        description="The Word document every tailored resume is poured into. Only the words change; the look stays yours."
-      />
+      <CommandBar title="Template" />
       <TemplateWorkspace />
       {info?.tagged.exists && <PageFitCard calibration={info.calibration} />}
       <SavedTemplatesPanel />
       <StarterTemplatesPanel />
-      <div id={WIZARD_ANCHOR} className="scroll-mt-4">
+      <div id={WIZARD_ANCHOR} className="scroll-mt-[calc(var(--rt-bar-top)+1rem)]">
         <TemplateImportWizard />
       </div>
     </Page>

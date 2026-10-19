@@ -221,7 +221,7 @@ function EducationSummary({
           Edit on resume
         </button>
       ) : (
-        <Link className="rt-link mt-1 inline-block" to="/profile/resume">
+        <Link className="rt-link mt-1 inline-block" to="/resume">
           Edit on resume
         </Link>
       )}

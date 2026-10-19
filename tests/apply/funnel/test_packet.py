@@ -324,7 +324,7 @@ def test_blank_resume_education_is_a_gap_that_links_to_the_resume_editor():
     resume.education[0].major = ""
     assert "major" in profile_gaps(build_fields(ApplicantProfile(), resume))
     entry = missing_profile([{"key": "major", "label": "Field of study"}], filled_labels=set())[0]
-    assert entry["path"] == "/profile/resume"
+    assert entry["path"] == "/resume"
 
 
 def test_degree_name_names_the_one_resume_degree_at_the_profile_level():
@@ -583,7 +583,7 @@ def test_profile_path_routes_profile_owned_education_to_application_tab():
     from resume_tailor.apply.funnel.packet_profile_fields import PROFILE_FIELDS, profile_path
 
     section = PROFILE_FIELDS["school"].section
-    assert profile_path(section, "school") == "/profile/resume"
+    assert profile_path(section, "school") == "/resume"
     assert profile_path(section, "class_year") == "/profile/application"
     assert profile_path(section, "school_email") == "/profile/application"
     assert profile_path(PROFILE_FIELDS["email"].section, "email") == "/profile/personal"

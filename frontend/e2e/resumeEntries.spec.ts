@@ -7,7 +7,7 @@ test("resume content: collapse, edit, move, undo and save through the real API",
 }) => {
   const original = await (await request.get("/api/master-resume")).json();
   try {
-    await page.goto("/profile/resume");
+    await page.goto("/resume");
     const source = page.locator("#resume-section-experience");
     const heading = source.getByRole("button", { name: /^Expand Example Corp/ });
     await expect(heading).toHaveAttribute("aria-expanded", "false");
@@ -80,7 +80,7 @@ test("resume content: collapse, edit, move, undo and save through the real API",
       .getByRole("combobox", { name: /^Move Example Corp revised/ })
       .selectOption("research");
     await expectAccessible(page);
-    await page.getByRole("button", { name: "Save changes" }).click();
+    await page.getByRole("button", { name: "Save", exact: true }).click();
     await expect(page.getByText("All changes saved")).toBeVisible();
 
     const saved = await (await request.get("/api/master-resume")).json();
@@ -146,7 +146,7 @@ test("dated entries stay chronological through editing, saving and reload, with 
   payload.sections.push({ id: "awards", kind: "list", title: "Awards", entries: [] });
   try {
     expect((await request.put("/api/master-resume", { data: payload })).ok()).toBeTruthy();
-    await page.goto("/profile/resume");
+    await page.goto("/resume");
     const source = page.locator("#resume-section-experience");
     const titles = source.locator("[data-entry-summary] > div:first-child > button");
     await expect(titles).toHaveText([/Current Company/, /Recent Company/, /Older Company/]);
@@ -160,7 +160,7 @@ test("dated entries stay chronological through editing, saving and reload, with 
     await expect(endYear).toBeFocused();
     await source.getByRole("button", { name: /^Collapse Older Company/ }).click();
     await expect(titles).toHaveText([/Current Company/, /Older Company/, /Recent Company/]);
-    await page.getByRole("button", { name: "Save changes" }).click();
+    await page.getByRole("button", { name: "Save", exact: true }).click();
     await expect(page.getByText("All changes saved")).toBeVisible();
     const saved = await (await request.get("/api/master-resume")).json();
     expect(

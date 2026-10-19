@@ -140,6 +140,13 @@
   --rt-overlay: 0 0 0 1px var(--color-line-hover);
 }
 
+/* App shell bars: the command bar above the work area and the status bar below it.
+   Sticky page parts offset by these so they never slide under a bar. */
+:root {
+  --rt-bar-top: 3rem;
+  --rt-bar-bottom: 1.75rem;
+}
+
 /* Type roles. Titles and big figures are Fraunces; everything else is Geist. */
 @utility rt-title {
   font-family: var(--font-display);

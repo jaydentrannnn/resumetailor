@@ -11,6 +11,7 @@ import type {
   SourceField,
   SourcesStatus,
 } from "../../api";
+import { StatusMessage } from "../../components/shell/StatusBar";
 import { ToastProvider } from "../../components/ui";
 import { PhraseChips } from "./SourceEditors";
 import type { SaveState } from "./SourcePanel";
@@ -165,6 +166,7 @@ function renderTab(sources: SourceConfig[], extra: Extra = {}) {
     <MemoryRouter>
       <ToastProvider>
         <Harness initial={sources} spy={onChange} extra={extra} />
+        <StatusMessage />
       </ToastProvider>
     </MemoryRouter>,
   );

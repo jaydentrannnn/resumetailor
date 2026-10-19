@@ -75,8 +75,17 @@ test("template page: gallery card and page fit card", async ({ page }) => {
   await expectAccessible(page);
 });
 
-test("resume editor: coach tips and a section preset", async ({ page }) => {
+test("resume: its own page; old Profile links land there", async ({ page }) => {
   await page.goto("/profile/resume");
+  await expect(page).toHaveURL(/\/resume$/);
+  await expect(page.getByRole("heading", { name: "Resume", level: 1 })).toBeVisible();
+  await page.keyboard.press("Control+5");
+  await expect(page).toHaveURL(/\/profile\/personal$/);
+  await expect(page.getByRole("link", { name: "Resume content" })).toHaveCount(0);
+});
+
+test("resume editor: coach tips and a section preset", async ({ page }) => {
+  await page.goto("/resume");
   await page.getByRole("button", { name: /^Expand Example Corp/ }).click();
   const bullet = page.getByRole("textbox", { name: /^Bullet / }).first();
   await bullet.fill("Responsible for the weekly report");
@@ -101,7 +110,7 @@ test("onboarding and settings pages render accessibly", async ({ page }) => {
 
 test("resume editor: import a PDF's content as a draft", async ({ page, request }) => {
   const pdf = await request.get("/e2e/resume.pdf");
-  await page.goto("/profile/resume");
+  await page.goto("/resume");
   await page.getByText("Import resume content").click();
   const panel = page.locator("section").filter({ hasText: "Import from a document" });
   await panel.locator('input[type="file"]').setInputFiles({
@@ -147,7 +156,7 @@ test("template page: Use on a saved template moves the In use badge without a re
   await expect(page.getByRole("heading", { name: "E2E template", level: 2 })).toBeVisible();
 });
 
-test("header: pause and resume all automation", async ({ page }) => {
+test("rail: pause and resume all automation", async ({ page }) => {
   await page.goto("/applications");
   const pause = page.getByRole("button", { name: "Pause automation" });
   await expect(pause).toHaveAttribute("aria-pressed", "false");
@@ -167,7 +176,7 @@ test("sources: their own page, reached from Apply settings, not a tab", async ({
   await drawer.getByRole("link", { name: "Job sources →" }).click();
   await expect(page).toHaveURL(/\/applications\/sources$/);
   await expect(page.getByRole("heading", { name: "Job sources", level: 1 })).toBeVisible();
-  await page.getByRole("link", { name: "← Applications" }).click();
+  await page.getByRole("link", { name: "← Apply" }).click();
   await expect(page).toHaveURL(/\/applications$/);
   // An old link to the tab lands on the page.
   await page.goto("/applications?tab=sources");
@@ -237,7 +246,6 @@ test("sources: remove a source, then undo", async ({ page }) => {
   const headline = page.getByText(/^Searching \d+ sources?/);
   const before = (await headline.textContent()) ?? "";
   const first = page.getByRole("region", { name: "Job lists" }).getByRole("listitem").first();
-  const name = (await first.locator('button[title="Edit"]').textContent()) ?? "";
   // The menu closes on any scroll, and a scroll event lands a frame after scrollIntoView.
   await first.scrollIntoViewIfNeeded();
   await page.evaluate(
@@ -245,10 +253,13 @@ test("sources: remove a source, then undo", async ({ page }) => {
   );
   await first.getByRole("button", { name: /^Actions for / }).click();
   await page.getByRole("menuitem", { name: "Remove" }).click();
-  // No confirm dialog: a toast with Undo instead.
+  // No confirm dialog: the status bar says what was removed, with Undo.
   await expect(page.getByRole("dialog")).toHaveCount(0);
   await expect(headline).not.toHaveText(before);
-  await expect(page.getByText(`Removed ${name}`)).toBeVisible();
+  // The name is read from the note: a row's label settles once the source catalog loads.
+  const note = page.getByRole("contentinfo").getByText(/^Removed /);
+  await expect(note).toBeVisible();
+  const name = ((await note.textContent()) ?? "").replace(/^Removed /, "");
   await page.getByRole("button", { name: "Undo" }).click();
   await expect(headline).toHaveText(before);
   await expect(page.getByRole("switch", { name: `${name} on` })).toBeVisible();

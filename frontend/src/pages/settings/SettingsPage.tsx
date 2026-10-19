@@ -1,8 +1,9 @@
 import { useSearchParams } from "react-router-dom";
 import { useEffect, useState } from "react";
-import { Page, PageHeader, Tabs } from "../../components/ui";
+import { CommandBar, Page, Tabs } from "../../components/ui";
 import { AboutSection } from "./AboutSection";
 import { AiSection } from "./AiSection";
+import { AppearanceSection } from "./AppearanceSection";
 import { BrowserSection } from "./BrowserSection";
 import { DataSection } from "./DataSection";
 
@@ -10,6 +11,7 @@ const TABS = [
   { id: "ai", label: "AI model" },
   { id: "data", label: "Data & backups" },
   { id: "browser", label: "Browser extension" },
+  { id: "appearance", label: "Appearance" },
   { id: "about", label: "About" },
 ] as const;
 
@@ -36,10 +38,7 @@ export function SettingsPage() {
   const tab = tabFor(params.get("tab"));
   return (
     <Page>
-      <PageHeader
-        title="Settings"
-        description="AI, data and app preferences. Shared by every profile unless marked."
-      />
+      <CommandBar title="Settings" />
       <div className="grid min-w-0 gap-6 lg:grid-cols-[180px_minmax(0,1fr)] lg:gap-8">
         <Tabs
           label="Settings sections"
@@ -52,6 +51,7 @@ export function SettingsPage() {
           {tab === "ai" && <AiSection />}
           {tab === "data" && <DataSection />}
           {tab === "browser" && <BrowserSection />}
+          {tab === "appearance" && <AppearanceSection />}
           {tab === "about" && <AboutSection />}
         </div>
       </div>

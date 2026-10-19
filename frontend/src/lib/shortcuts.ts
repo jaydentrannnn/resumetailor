@@ -1,8 +1,15 @@
 /** Global keyboard shortcuts: which action a keydown maps to, if any. */
-export type ShortcutAction = "primary" | "search" | "help" | "print";
+/** "pages" (Ctrl+1…5, Ctrl+,) is listed for the help dialog; `railTarget` handles it. */
+export type ShortcutAction = "primary" | "search" | "help" | "print" | "pages";
 
 export const SHORTCUTS: { keys: string[]; action: ShortcutAction; description: string }[] = [
   { keys: ["Ctrl", "Enter"], action: "primary", description: "Tailor resume (on the Tailor page)" },
+  {
+    keys: ["Ctrl", "1…5"],
+    action: "pages",
+    description: "Tailor, Apply, Resume, Template, Profile",
+  },
+  { keys: ["Ctrl", ","], action: "pages", description: "Settings" },
   { keys: ["Ctrl", "P"], action: "print", description: "Print the open resume or letter" },
   { keys: ["/"], action: "search", description: "Search applications (on the Apply page)" },
   { keys: ["?"], action: "help", description: "Show these shortcuts" },

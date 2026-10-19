@@ -6,12 +6,13 @@ import { ResumeHistoryList } from "../../components/ResumeHistoryList";
 import { ImportResumePanel } from "../../components/ImportResumePanel";
 import { BulletSkillsProvider } from "../../state/bulletSkillsState";
 import { BulletSkillsNotice } from "./BulletSkillsNotice";
+import { useConfirm } from "../../state/confirmState";
 import { useEditorState } from "../../state/editorState";
 import { AddSectionPanel, SectionShell } from "./SectionShell";
 import { ContactSection } from "./ContactSection";
 import { SectionIndex } from "./SectionIndex";
 import { UndoBar } from "./UndoBar";
-import { Button, PageHeader, StatusChip, Tile } from "../../components/ui";
+import { Button, CommandBar, StatusMark, Tile } from "../../components/ui";
 import {
   type MasterResume,
   type Section,
@@ -40,7 +41,7 @@ export function EditorPage({
   embedded = false,
 }: {
   showContact?: boolean;
-  /** Inside Profile, whose single save bar replaces this page's Save button and pill. */
+  /** Inside setup, whose own flow saves: no command bar or Save button. */
   embedded?: boolean;
 }) {
   const {
@@ -53,7 +54,19 @@ export function EditorPage({
     dirty,
     validate: onValidate,
     save: onSave,
+    discard,
   } = useEditorState();
+  const { confirm } = useConfirm();
+
+  async function discardAll() {
+    const ok = await confirm({
+      title: "Discard unsaved changes?",
+      message: "Your resume goes back to what was last saved.",
+      confirmLabel: "Discard",
+      tone: "danger",
+    });
+    if (ok) discard();
+  }
 
   const vocabList = [...(config?.tag_vocabulary ?? [])].sort((a, b) =>
     a.toLowerCase().localeCompare(b.toLowerCase()),
@@ -153,35 +166,57 @@ export function EditorPage({
     setResume((previous) => moveEntryToSection(previous, sourceId, key, destinationId));
   }
 
+  const tools = (
+    <>
+      <Button variant="plain" size="sm" onClick={() => setHistoryOpen(true)}>
+        History
+      </Button>
+      <Button variant="plain" size="sm" onClick={onValidate} disabled={busy}>
+        Validate
+      </Button>
+    </>
+  );
+
   return (
     <EntryEditorProvider sections={resume.sections} moveEntry={moveEntry}>
       <BulletSkillsProvider dirty={dirty}>
         <div className="space-y-6">
-          {!embedded && (
-            <PageHeader
-              title="Master resume"
-              description="Every fact a tailored resume can use lives here."
+          {embedded ? (
+            <div className="flex flex-wrap items-center justify-between gap-3">
+              <p className="text-sm text-ink-muted">
+                The skills each bullet shows are worked out automatically when you save.
+              </p>
+              <div className="flex flex-wrap items-center gap-2">{tools}</div>
+            </div>
+          ) : (
+            <CommandBar
+              title="Resume"
+              state={
+                <span className="flex items-center gap-1.5">
+                  <StatusMark tone={dirty ? "attention" : "done"} />
+                  {dirty ? "Unsaved changes" : "All changes saved"}
+                </span>
+              }
+              actions={
+                <>
+                  {tools}
+                  {dirty && (
+                    <Button
+                      variant="ghost"
+                      size="sm"
+                      disabled={busy}
+                      onClick={() => void discardAll()}
+                    >
+                      Discard
+                    </Button>
+                  )}
+                  <Button variant="primary" size="sm" onClick={onSave} disabled={busy}>
+                    Save
+                  </Button>
+                </>
+              }
             />
           )}
-          <div className="flex flex-wrap items-center justify-between gap-3">
-            <p className="text-sm text-ink-muted">
-              The skills each bullet shows are worked out automatically when you save.
-            </p>
-            <div className="flex flex-wrap items-center gap-2">
-              {dirty && !embedded && <StatusChip tone="attention">Unsaved changes</StatusChip>}
-              <Button size="sm" onClick={() => setHistoryOpen(true)}>
-                History
-              </Button>
-              <Button variant="plain" size="sm" onClick={onValidate} disabled={busy}>
-                Validate
-              </Button>
-              {!embedded && (
-                <Button variant="primary" size="sm" onClick={onSave} disabled={busy}>
-                  Save
-                </Button>
-              )}
-            </div>
-          </div>
           <div>
             <BulletSkillsNotice />
             {message && (
@@ -223,7 +258,7 @@ export function EditorPage({
                   key={section.id}
                   id={`resume-section-${section.id}`}
                   data-resume-section
-                  className="scroll-mt-4"
+                  className="scroll-mt-[calc(var(--rt-bar-top)+1rem)]"
                 >
                   <SectionShell
                     key={section.id}

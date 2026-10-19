@@ -1,5 +1,5 @@
 import type { ApplySettings } from "../../api";
-import { Button, PageHeader } from "../../components/ui";
+import { Button, CommandBar } from "../../components/ui";
 import { nightlyRunLabel } from "../../lib/applyPage";
 import type { BrowserView } from "../../lib/browserState";
 import { ConnectionStatus } from "./BrowserConnection";
@@ -17,9 +17,8 @@ export function ApplyHeader({
   onSettings: () => void;
 }) {
   return (
-    <PageHeader
+    <CommandBar
       title="Apply"
-      description="Postings from your job sources, each prepared with its own tailored resume."
       actions={
         <>
           <ConnectionStatus view={browser} />

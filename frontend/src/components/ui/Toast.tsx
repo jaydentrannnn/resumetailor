@@ -1,4 +1,12 @@
-import { type ReactNode, useCallback, useEffect, useMemo, useReducer, useRef } from "react";
+import {
+  type ReactNode,
+  useCallback,
+  useEffect,
+  useMemo,
+  useReducer,
+  useRef,
+  useState,
+} from "react";
 import {
   defaultTimeout,
   type Toast,
@@ -6,6 +14,8 @@ import {
   ToastContext,
   type ToastInput,
   toastReducer,
+  StatusLineContext,
+  type StatusLine,
 } from "../../lib/toast";
 import type { Tone } from "../../lib/tone";
 import { StatusChip } from "./Status";
@@ -18,17 +28,34 @@ const KIND_TONE: Record<Toast["kind"], Tone | null> = {
 };
 const KIND_WORD: Record<Toast["kind"], string> = { success: "Done", error: "Failed", info: "" };
 
-/** Provides `useToast()` and renders the stack in the bottom-right corner. */
+/**
+ * Provides `useToast()`. Errors stack in the bottom-right corner; success and info go
+ * to the status bar (`useStatusLine`), newest only.
+ */
 export function ToastProvider({ children }: { children: ReactNode }) {
   const [toasts, dispatch] = useReducer(toastReducer, []);
+  const [message, setMessage] = useState<Toast | null>(null);
   const nextId = useRef(1);
-  const dismiss = useCallback((id: number) => dispatch({ type: "dismiss", id }), []);
+  const clear = useCallback(
+    (id: number) => setMessage((current) => (current?.id === id ? null : current)),
+    [],
+  );
+  const dismiss = useCallback(
+    (id: number) => {
+      dispatch({ type: "dismiss", id });
+      clear(id);
+    },
+    [clear],
+  );
   const show = useCallback((input: ToastInput) => {
     const id = nextId.current++;
     const timeoutMs = input.timeoutMs === undefined ? defaultTimeout(input.kind) : input.timeoutMs;
-    dispatch({ type: "push", toast: { ...input, id, timeoutMs } });
+    const toast = { ...input, id, timeoutMs };
+    if (input.kind === "error") dispatch({ type: "push", toast });
+    else setMessage(toast);
     return id;
   }, []);
+  const statusLine = useMemo<StatusLine>(() => ({ message, clear }), [message, clear]);
   const api = useMemo<ToastApi>(
     () => ({
       show,
@@ -41,8 +68,8 @@ export function ToastProvider({ children }: { children: ReactNode }) {
   );
   return (
     <ToastContext.Provider value={api}>
-      {children}
-      <div className="pointer-events-none fixed inset-x-4 bottom-4 z-[60] flex flex-col items-end gap-2 sm:left-auto sm:w-96">
+      <StatusLineContext.Provider value={statusLine}>{children}</StatusLineContext.Provider>
+      <div className="pointer-events-none fixed inset-x-4 bottom-10 z-[60] flex flex-col items-end gap-2 sm:left-auto sm:w-96">
         {toasts.map((toast) => (
           <ToastItem key={toast.id} toast={toast} onDismiss={dismiss} />
         ))}

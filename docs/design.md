@@ -31,14 +31,14 @@ Use the Tailwind classes (`bg-panel`, `text-ink-muted`, `border-line`), never ra
 | Token | Light | Dark | Use |
 |---|---|---|---|
 | `paper` | `#ffffff` | `#0a0a0a` | page |
-| `chrome` | `#ffffff` | `#0a0a0a` | header, overlays, sticky bars |
+| `chrome` | `#ffffff` | `#0a0a0a` | command bar, status bar, overlays, sticky bars |
 | `panel` | `#f7f7f6` | `#151515` | tile surface |
 | `sunken` | `#efefed` | `#1d1d1d` | segment track, hover, skeleton, meter track |
 | `field` | `#ffffff` | `#0f0f0f` | input background |
 | `line` / `line-hover` | `#e2e2df` / `#c8c8c4` | `#2a2a2a` / `#3d3d3d` | hairline / control border |
 | `ink` / `ink-2` / `ink-muted` | `#0b0b0b` / `#3a3a38` / `#6b6b68` | `#f5f5f4` / `#d4d4d2` / `#8f8f8c` | text |
 | `primary` / `on-primary` | `#0b0b0b` / `#fff` | `#ffffff` / `#0b0b0b` | primary button |
-| `accent` | `#1f6b4a` | `#6fbf98` | progress, ticks, focus, active nav |
+| `accent` | `#1f6b4a` | `#6fbf98` | progress, ticks, focus, active rail row |
 | `accent-soft` | 6% accent | 12% accent | quiet green wash |
 | `selected` / `on-selected` / `selected-line` | `#1f6b4a` / `#fff` / `#1f6b4a` | 12% mint / `#6fbf98` / `#6fbf98` | selected segment, tab, filter |
 | `selected-row` | 9% accent | 12% mint | selected table row wash |
@@ -73,8 +73,9 @@ fetched from a CDN, so the desktop app works offline.
 | Supporting text | — | 12px, `text-ink-muted` |
 | Times, counts, IDs, model names | `font-mono` | Geist Mono, tabular numbers |
 
-Controls are at least 36px tall (44px on coarse pointers). Header pills are exactly
-`rt-header-pill rt-control`: 36px/44px at 12px/16px/600 — a Playwright test pins this.
+Controls are at least 36px tall (44px on coarse pointers). Rail pills (Pause automation,
+setup, update) are exactly `rt-header-pill rt-control`: 36px/44px at 12px/16px/600 — a
+Playwright test pins this.
 Never add an unlayered `font: inherit` reset; it beats Tailwind text utilities.
 
 **Links.** An inline text link (in a sentence, an empty state, a toast, "Connect", "Open
@@ -116,8 +117,18 @@ statuses map through `lib/applicationStatus.ts` (`applicationStatusTone`).
 
 ## Anatomy
 
-- **PageHeader:** mono `eyebrow`, serif `rt-title` h1, one-line lede, `actions` on the
-  right, optional `back` link above. Every page starts with it, then tiles.
+- **Shell** (2026-10-19, desktop-first; approved mockup in the decision log): a left
+  **rail** (`components/shell/AppRail`, `panel` grey, 184px, icons only below 900px):
+  Tailor, Apply (Needs-you count), Resume, Template, Profile, then nightly apply, setup,
+  update, the profile switcher and Settings at the bottom; the active row is an accent
+  wash with accent text. A **status bar** (`StatusBar`, 28px) holds the last success or
+  info note (with Undo) and background work; errors stay toasts. The window title is
+  "<page> — ResumeTailor", "• " in front while edits are unsaved.
+- **CommandBar:** the page's 48px bar at the top of the work area: serif 18px h1, an
+  optional `back` link before it, a short `state` line after a hairline divider, and
+  `actions` on the right. Every page starts with it; there is no intro copy under it
+  (instructions live in empty states only). It renders into the shell's slot, so it spans
+  the work area whatever the page column's width.
 - **Tile:** grey surface, 1px `line` border, 4px corners, 20–24px padding. Optional
   eyebrow, `rt-tile-title` h2, `meta`, `actions`. Sub-sections use `TileSection` (one
   hairline).
@@ -137,8 +148,8 @@ statuses map through `lib/applicationStatus.ts` (`applicationStatusTone`).
   neutral `sunken`; selected rows keep their green tint. Buttons carry no status mark, so a
   tinted button and a status chip stay distinct.
   ghost is muted text. On/off settings that apply at once use `Switch` (the Job sources
-  track), not a checkbox; checkboxes stay for picking items from a list. Header utilities
-  (Pause automation, the settings menu) are borderless text like the nav; the menu marks
+  track), not a checkbox; checkboxes stay for picking items from a list. Rail utilities
+  (Pause automation, the profile menu) are borderless text like the rail rows; the menu marks
   the active profile and theme with the accent bar/underline, not a box. Every button and button-styled link has the same 36px
   floor (44px on touch, via `rt-control` in `buttonClass`); `sm` only changes text and
   padding. Use `md` for page and tile actions and `sm` only in dense rows; table row
@@ -168,7 +179,7 @@ statuses map through `lib/applicationStatus.ts` (`applicationStatusTone`).
 - Marks are `aria-hidden` and paired with text; progress uses `role=progressbar` with a
   name; tabs/radiogroups keep full ARIA and arrow-key behaviour.
 - Reduced motion is honoured globally in `index.css`.
-- Layouts must not scroll horizontally at 390px; header wraps instead.
+- Layouts must not scroll horizontally at 390px; the rail drops to icons below 900px.
 
 ## Primitives
 
@@ -177,7 +188,7 @@ All exported from `components/ui` (`import { … } from "../components/ui"`).
 | Primitive | Props | Use it when |
 |---|---|---|
 | `Page` | `width?: "standard" \| "wide"`, `className` | The shell of every page: `standard` is one centred 6xl column, `wide` is a full-width dashboard. |
-| `PageHeader` | `title`, `eyebrow?`, `description?`, `back?`, `actions?` | The first thing on every page. |
+| `CommandBar` | `title`, `back?`, `state?`, `actions?`, `windowTitle?` | The first thing on every page; also names the window (`windowTitle`, else a string `title`). |
 | `Tile` (alias `Card`) | `title?`, `eyebrow?`, `meta?`, `description?`, `actions?`, `as?`, `padding?: "md" \| "sm" \| "none"`, `embedded?`, `className`, `id`/`aria-*`/`data-*` | Any grouped content. Default element is `<section>`; pass `as="aside"` etc. `embedded` renders the same heading and content with no box (no border, fill or padding) and the title as an h3 — for a tile's content shown inside another tile. |
 | `ResultFrame` | `embedded?`, `title?`, `description?`, `actions?`, `className` | The frame of a result card (report, documents, skills, experience, bullet review): a `Tile` standalone, unboxed with an h3 when `embedded` inside another tile. |
 | `TileSection` | `title?`, `actions?`, `className` | A second group inside a tile, separated by one hairline instead of a nested box. |

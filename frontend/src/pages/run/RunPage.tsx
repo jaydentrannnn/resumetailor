@@ -1,6 +1,6 @@
 import { RunCostEstimate } from "../../components/RunCostEstimate";
 import { RunHistoryPanel } from "../../components/RunHistoryPanel";
-import { buttonClass, Page, PageHeader } from "../../components/ui";
+import { buttonClass, CommandBar, Page } from "../../components/ui";
 import { useRunState } from "../../state/runState";
 import { useWorkspaceState } from "../../state/workspaceState";
 import { JobInput } from "./JobInput";
@@ -96,10 +96,7 @@ export function RunPage() {
 
   return (
     <Page width="wide">
-      <PageHeader
-        title="Tailor resume"
-        description="Paste a job posting. Your bullets are rewritten to match it, and the document keeps its original layout."
-      />
+      <CommandBar title="Tailor" />
       <form onSubmit={onSubmit} onKeyDown={onFormKeyDown} className="space-y-4">
         <RunOptions
           config={config}

@@ -46,7 +46,7 @@ export function ContentStep({ nav }: { nav: StepNav }) {
         </ul>
       )}
       <ProfileGapBanner
-        gaps={gaps.filter((gap) => gap.path === "/profile/resume")}
+        gaps={gaps.filter((gap) => gap.path === "/resume")}
         onOpen={() => {
           const education = editor.resume?.sections.find((s) => s.kind === "education");
           if (education)

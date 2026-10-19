@@ -189,7 +189,7 @@ def setup_status() -> dict[str, Any]:
     items.append(_item(
         "resume", "Your experience", resume_ok,
         resume_detail if resume_ok else "Import your resume or add an entry.",
-        "Open editor", "/profile/resume",
+        "Open editor", "/resume",
     ))
 
     try:

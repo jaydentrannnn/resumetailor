@@ -820,3 +820,27 @@ when the window is in the background and notifications are on. **Ctrl+P** prints
 document on screen (resume, letter, template preview) through an off-screen same-origin
 frame (`lib/printTarget.ts`); with no document showing, the browser build keeps its own
 Ctrl+P and the desktop app does nothing.
+
+### App shell: rail, command bar, status bar (2026-10-19)
+
+One desktop-first layout for both builds (approved mockup:
+https://claude.ai/artifact/497Eg1bPqf2WWRXUkBF4AJ; the pre-redesign UI is on branch
+`archive/classic-ui`). The wrapping header is gone: a left rail (`components/shell/AppRail`)
+holds Tailor, Apply (with the Needs-you count, polled from `/api/applications?group=review`),
+Resume, Template, Profile, then nightly apply, setup health, update, the profile switcher
+and Settings; below 900px it shows icons only and the bottom group opens from one button.
+Each page's title is a `ui/CommandBar` rendered through a portal into the shell's slot
+(`lib/shell.ts`), so it spans the work area whatever width the page column has; intro
+copy under titles was deleted. Success and info toasts now go to the status bar
+(`StatusBar`, `useStatusLine`), held 8 s, or 30 s when they carry an action such as Undo;
+errors stay toasts because they must be read. The document still scrolls (Apply and the
+application page restore positions with `window.scrollTo`), so the rail, command bar and
+status bar are sticky and sticky page parts offset by `--rt-bar-top` / `--rt-bar-bottom`.
+The master resume moved from Profile › Resume content to its own page, `/resume`, with its
+own Save and Discard; `/profile/resume`, `/editor` and stored packet links redirect, and the
+backend now emits `/resume` for education gaps. Theme moved from a header button to
+Settings › Appearance with the notifications switch. Ctrl+1…5 and Ctrl+, open the rail's
+pages in both builds (Chrome keeps Ctrl+1…8 for its tabs, so the rail shows the hints only
+in the desktop app). The window title is "<page> — ResumeTailor", with "• " while edits
+are unsaved, set through the shell relay on desktop. `docs/design/reference.html` still
+shows the old header; it is redrawn once the page density pass lands.
