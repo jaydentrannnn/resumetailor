@@ -10,7 +10,8 @@ type FillReport = {
 // The scripts take the shared helpers in place of their marker, as `fill_page` loads them.
 const forms = (name: string) =>
   readFileSync(resolve(process.cwd(), `../src/resume_tailor/apply/forms/${name}`), "utf8");
-const withDomCommon = (text: string) => text.replace("/*DOM_COMMON*/", () => forms("dom_common.js"));
+const withDomCommon = (text: string) =>
+  text.replace("/*DOM_COMMON*/", () => forms("dom_common.js"));
 const script = withDomCommon(forms("filler.js"));
 const readinessScript = withDomCommon(forms("filler_readiness.js"));
 
