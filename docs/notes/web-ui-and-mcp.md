@@ -778,3 +778,23 @@ format + URL (unchanged backend), so changing the URL shows Not set. Needed keys
 listed even if `/api/secrets` has no slot for them yet. `useRoleModel` holds each
 role's selection, connection and test once per page so the tile and the keys list
 never test twice. Onboarding's Tools step uses the same tile with only the needed keys.
+
+### Desktop window lockdown (2026-10-19)
+
+The desktop window no longer behaves like a browser tab. F5 / Ctrl+R reload,
+Alt+arrow and mouse-button history navigation, the browser's right-click menu (Back,
+Reload, Save as, Print, Inspect), Ctrl+P/S/U/O/F/N/T/W, page zoom, Ctrl/middle-click
+opening a second app window, and a file dropped outside a drop zone (which would
+replace the app with that file) are all switched off. Reason: a reload mid-run dropped
+the live progress stream and Back left the page; none of these has a meaning in an app.
+Two layers, because neither covers everything alone: `desktop/src-tauri/src/lockdown.js`
+(an initialization script, main frame only, also works on macOS) only calls
+`preventDefault()` — never `stopPropagation()` — so the SPA still sees every key for its
+own shortcuts; on Windows `webview_settings.rs` turns off WebView2's browser accelerator
+keys and default context menus, which also covers the embedded PDF viewer that page
+script cannot reach. Debug builds keep DevTools/Inspect. `dragDropEnabled: false` hands
+file drops to the page (Tauri's native handler swallowed them before), and drop zones
+carry `data-dropzone`. Text gets the app's own Cut/Copy/Paste/Select all menu
+(`TextContextMenu`, desktop only via `lib/useDesktop`). The browser build is untouched.
+Recovery without F5: Reload on the error screen and Settings › About › Reload window.
+The pre-redesign UI is archived on branch `archive/classic-ui` (never merged back).

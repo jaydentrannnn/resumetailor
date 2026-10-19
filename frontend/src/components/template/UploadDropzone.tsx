@@ -63,6 +63,7 @@ export function UploadDropzone({ disabled, onFile, label, allowPdf }: Props) {
 
   return (
     <div
+      data-dropzone
       onDragEnter={(e) => {
         e.preventDefault();
         if (!disabled) setDragging(true);

@@ -15,7 +15,10 @@
 //!   to reopen or quit; quitting stops the server;
 //! - checks for, downloads and installs updates when the server asks (`update.rs`);
 //! - opens outside links in the default browser, keeping the window on the app
-//!   (`links.rs`).
+//!   (`links.rs`);
+//! - switches off browser behaviours that do not belong in an app window: reload,
+//!   history navigation, the browser's menus, print/save-page, page zoom, file drops
+//!   that would replace the app (`lockdown.js`, plus `webview_settings.rs` on Windows).
 //!
 //! The web UI runs from a 127.0.0.1 origin and gets no Tauri IPC (see
 //! `capabilities/default.json`); only the bundled start page can call `log_folder`.
@@ -35,6 +38,7 @@ use tauri::{AppHandle, Manager, RunEvent, Url, WebviewWindowBuilder, WindowEvent
 
 mod links;
 mod update;
+mod webview_settings;
 
 const MAX_RESTARTS: u32 = 3;
 
@@ -126,6 +130,15 @@ fn theme_script_from_json(text: &str) -> String {
 /// Seed the bundled startup page before paint, from the app's last saved preference.
 fn theme_script() -> String {
     theme_script_from_json(&std::fs::read_to_string(theme_path()).unwrap_or_default())
+}
+
+/// `lockdown.js`, told whether this is a debug build (which keeps the DevTools keys).
+fn lockdown_script() -> String {
+    format!(
+        "window.__RT_DEBUG__={};\n{}",
+        cfg!(debug_assertions),
+        include_str!("lockdown.js")
+    )
 }
 
 fn start_server(app: &AppHandle) -> Result<(), String> {
@@ -271,8 +284,9 @@ fn main_window(app: &AppHandle) -> tauri::Result<tauri::WebviewWindow> {
         .expect("tauri.conf.json defines the main window");
     let navigation = app.clone();
     let popup = app.clone();
-    WebviewWindowBuilder::from_config(app, &config)?
+    let window = WebviewWindowBuilder::from_config(app, &config)?
         .initialization_script(theme_script())
+        .initialization_script(lockdown_script())
         .on_navigation(move |url| {
             // A link followed in the window itself.
             let server = navigation
@@ -303,7 +317,9 @@ fn main_window(app: &AppHandle) -> tauri::Result<tauri::WebviewWindow> {
                 links::Route::Block => NewWindowResponse::Deny,
             }
         })
-        .build()
+        .build()?;
+    webview_settings::lock(&window);
+    Ok(window)
 }
 
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
@@ -365,7 +381,15 @@ pub fn run() {
 
 #[cfg(test)]
 mod tests {
-    use super::{ready_url, theme_script_from_json};
+    use super::{lockdown_script, ready_url, theme_script_from_json};
+
+    #[test]
+    fn lockdown_script_states_the_build_kind_before_the_lockdown() {
+        let script = lockdown_script();
+        let flag = format!("window.__RT_DEBUG__={};", cfg!(debug_assertions));
+        assert!(script.starts_with(&flag));
+        assert!(script.contains("window.__RT_LOCKDOWN__"));
+    }
 
     #[test]
     fn startup_theme_accepts_saved_preferences_and_defaults_invalid_input() {

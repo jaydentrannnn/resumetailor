@@ -45,6 +45,15 @@ export function AboutSection() {
             Download diagnostics
           </a>
         </SettingRow>
+        <SettingRow
+          label="Reload window"
+          layout="action"
+          description="Starts this window over if it stops responding. A tailoring run or Apply operation keeps going and shows again after the reload."
+        >
+          <Button variant="secondary" className="ml-auto" onClick={() => window.location.reload()}>
+            Reload window
+          </Button>
+        </SettingRow>
       </Card>
       <Card title="Keyboard shortcuts">
         <ul className="space-y-2 text-sm">

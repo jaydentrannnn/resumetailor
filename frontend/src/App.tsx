@@ -15,6 +15,7 @@ import { needsWelcome, setupActive } from "./lib/onboarding";
 import { ErrorBoundary } from "./components/ErrorBoundary";
 import { ProfileMenu } from "./components/ProfileMenu";
 import { KeyboardShortcuts } from "./components/KeyboardShortcuts";
+import { TextContextMenu } from "./components/TextContextMenu";
 import { AutomationSwitch } from "./components/AutomationSwitch";
 import { SetupHealth } from "./components/SetupHealth";
 import { ThemeButton } from "./components/ThemeButton";
@@ -175,6 +176,7 @@ function Shell() {
         </div>
       </header>
       <KeyboardShortcuts />
+      <TextContextMenu />
       <main className="mx-auto max-w-[1920px] px-4 pb-12 pt-6 sm:px-6">
         <Suspense fallback={<PageLoading />}>
           <Routes>
