@@ -1,6 +1,6 @@
 import { useSearchParams } from "react-router-dom";
-import { useEffect, useState } from "react";
-import { CommandBar, Page, Tabs } from "../../components/ui";
+import { CommandBar, Page, Tabs, TileLayout } from "../../components/ui";
+import { WIDE, useMediaQuery } from "../../lib/useMediaQuery";
 import { AboutSection } from "./AboutSection";
 import { AiSection } from "./AiSection";
 import { AppearanceSection } from "./AppearanceSection";
@@ -27,13 +27,7 @@ function tabFor(requested: string | null): TabId {
 
 /** App-wide settings. The tab lives in the URL (`?tab=`) so links can open one directly. */
 export function SettingsPage() {
-  const [wide, setWide] = useState(() => window.matchMedia("(min-width: 1024px)").matches);
-  useEffect(() => {
-    const query = window.matchMedia("(min-width: 1024px)");
-    const change = () => setWide(query.matches);
-    query.addEventListener("change", change);
-    return () => query.removeEventListener("change", change);
-  }, []);
+  const wide = useMediaQuery(WIDE);
   const [params, setParams] = useSearchParams();
   const tab = tabFor(params.get("tab"));
   return (
@@ -47,12 +41,14 @@ export function SettingsPage() {
           orientation={wide ? "vertical" : "horizontal"}
           onChange={(id) => setParams({ tab: id }, { replace: true })}
         />
-        <div role="tabpanel" className="min-w-0 space-y-4">
-          {tab === "ai" && <AiSection />}
-          {tab === "data" && <DataSection />}
-          {tab === "browser" && <BrowserSection />}
-          {tab === "appearance" && <AppearanceSection />}
-          {tab === "about" && <AboutSection />}
+        <div role="tabpanel" className="min-w-0 space-y-10">
+          <TileLayout.Provider value="flat">
+            {tab === "ai" && <AiSection />}
+            {tab === "data" && <DataSection />}
+            {tab === "browser" && <BrowserSection />}
+            {tab === "appearance" && <AppearanceSection />}
+            {tab === "about" && <AboutSection />}
+          </TileLayout.Provider>
         </div>
       </div>
     </Page>

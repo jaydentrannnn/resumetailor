@@ -6,11 +6,10 @@ import {
   installUpdate,
   type UpdateStatus,
 } from "../../api";
-import { Button, Card, Kbd, Meter } from "../../components/ui";
+import { Button, Card, Kbd, Meter, SettingRow } from "../../components/ui";
 import { SaveFileButton } from "../../components/FileActions";
 import { SHORTCUTS } from "../../lib/shortcuts";
 import { UPDATE_IN_PROGRESS, updateStatusLine } from "../../lib/updateStatus";
-import { SettingRow } from "./SettingRow";
 import { SystemCheckCard } from "./SystemCheckCard";
 
 /** Settings → About: version, updates, diagnostics for support, shortcuts. */
@@ -22,7 +21,7 @@ export function AboutSection() {
       .catch(() => setVersion(null));
   }, []);
   return (
-    <div className="space-y-4">
+    <div className="space-y-10">
       <Card title="ResumeTailor" description={version ? `Version ${version}` : undefined}>
         <p className="text-sm text-ink">
           Tailors your resume to each job without changing its look, and never adds anything you did

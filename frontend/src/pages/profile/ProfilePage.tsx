@@ -2,7 +2,7 @@ import { useCallback, useEffect, useState } from "react";
 import { Link, useLocation, useNavigate } from "react-router-dom";
 import { getOnboarding } from "../../api";
 import { underlineTabClass } from "../../components/Tabs";
-import { Button, CommandBar, Page, StatusMark } from "../../components/ui";
+import { Button, CommandBar, Page, StatusMark, TileLayout } from "../../components/ui";
 import {
   changedKeys,
   fieldLabel,
@@ -168,89 +168,119 @@ export function ProfilePage() {
 
   const educationSection = editor.resume?.sections.find((section) => section.kind === "education");
 
+  const problems = [
+    attempted && invalidCount > 0 && (
+      <button
+        key="invalid"
+        type="button"
+        role="alert"
+        className="text-sm text-danger underline"
+        onClick={() => focusField(firstInvalid())}
+      >
+        {invalidCount} field{invalidCount === 1 ? " needs" : "s need"} attention:{" "}
+        {Object.keys(allErrors).slice(0, 3).map(fieldLabel).join(", ")}
+        {invalidCount > 3 ? "…" : ""}
+      </button>
+    ),
+    failed.resume && editor.dirty && (
+      <span key="resume" role="alert" className="text-sm text-danger">
+        Resume not saved{editor.errors[0] ? `: ${editor.errors[0]}` : ""}{" "}
+        <Link className="underline" to="/resume">
+          Open resume
+        </Link>
+      </span>
+    ),
+    failed.profile && applicant.error && (
+      <span key="profile" role="alert" className="text-sm text-danger">
+        Application details not saved: {applicant.error}
+      </span>
+    ),
+  ].filter(Boolean);
+
   return (
     <Page className="pb-4">
-      <CommandBar title="Profile" />
-      <nav aria-label="Profile sections" className="flex flex-wrap gap-4 border-b border-line">
-        {TABS.map(([id, label]) => (
-          <Link
-            key={id}
-            to={`/profile/${id}`}
-            aria-current={tab === id ? "page" : undefined}
-            className={underlineTabClass(tab === id)}
-          >
-            {label}
-          </Link>
-        ))}
-      </nav>
-      {tab === "tailoring" && <TailoringTab />}
-      {!ctx && (tab === "personal" || tab === "application") && (
-        <p className="text-sm text-ink-muted">{applicant.error ?? "Loading your profile…"}</p>
-      )}
-      {ctx && tab === "personal" && (
-        <PersonalTab ctx={ctx} resume={editor.resume} setResume={editor.setResume} />
-      )}
-      {ctx && tab === "application" && (
-        <ApplicationTab
-          ctx={ctx}
-          open={open}
-          onToggle={setGroupOpen}
-          onOpenGroup={openGroup}
-          education={educationSection?.kind === "education" ? educationSection.entries : []}
-        />
-      )}
-
-      <div
-        role="region"
-        aria-label="Save profile"
-        className="sticky bottom-(--rt-bar-bottom) z-10 flex flex-wrap items-center gap-3 border-t border-line bg-chrome py-3"
-      >
-        <Button
-          variant="primary"
-          className="order-3"
-          data-shortcut="save"
-          loading={saving || applicant.saving}
-          disabled={changeCount === 0 || editor.busy}
-          onClick={() => void saveAll()}
+      <CommandBar
+        title="Profile"
+        state={
+          <span className="flex items-center gap-1.5" aria-live="polite">
+            <StatusMark tone={changeCount === 0 ? "done" : "attention"} />
+            {changeCount === 0
+              ? "All changes saved"
+              : `${changeCount} unsaved change${changeCount === 1 ? "" : "s"}`}
+          </span>
+        }
+        actions={
+          <>
+            {changeCount > 0 && (
+              <Button variant="ghost" size="sm" disabled={saving} onClick={() => void discardAll()}>
+                Discard
+              </Button>
+            )}
+            <Button
+              variant="primary"
+              size="sm"
+              data-shortcut="save"
+              aria-label="Save profile"
+              loading={saving || applicant.saving}
+              disabled={changeCount === 0 || editor.busy}
+              onClick={() => void saveAll()}
+            >
+              Save
+            </Button>
+          </>
+        }
+      />
+      <div className="grid min-w-0 gap-6 lg:grid-cols-[180px_minmax(0,1fr)] lg:gap-8">
+        <nav
+          aria-label="Profile sections"
+          className="-mb-px flex gap-4 overflow-x-auto border-b border-line lg:flex-col lg:gap-0.5 lg:self-start lg:border-0"
         >
-          Save changes
-        </Button>
-        <span className="mr-auto flex items-center gap-2 text-sm text-ink-muted" aria-live="polite">
-          <StatusMark tone={changeCount === 0 ? "done" : "attention"} />
-          {changeCount === 0
-            ? "All changes saved"
-            : `${changeCount} unsaved change${changeCount === 1 ? "" : "s"}`}
-        </span>
-        {changeCount > 0 && (
-          <Button variant="ghost" size="sm" disabled={saving} onClick={() => void discardAll()}>
-            Discard
-          </Button>
-        )}
-        {attempted && invalidCount > 0 && (
-          <button
-            type="button"
-            role="alert"
-            className="text-sm text-danger underline"
-            onClick={() => focusField(firstInvalid())}
-          >
-            {invalidCount} field{invalidCount === 1 ? " needs" : "s need"} attention:{" "}
-            {Object.keys(allErrors).slice(0, 3).map(fieldLabel).join(", ")}
-            {invalidCount > 3 ? "…" : ""}
-          </button>
-        )}
-        {failed.resume && editor.dirty && (
-          <span role="alert" className="text-sm text-danger">
-            Resume not saved{editor.errors[0] ? `: ${editor.errors[0]}` : ""}{" "}
-            <Link className="underline" to="/resume">
-              Open resume
+          {TABS.map(([id, label]) => (
+            <Link
+              key={id}
+              to={`/profile/${id}`}
+              aria-current={tab === id ? "page" : undefined}
+              className={`${underlineTabClass(tab === id)} lg:hidden`}
+            >
+              {label}
             </Link>
-          </span>
-        )}
-        {failed.profile && applicant.error && (
-          <span role="alert" className="text-sm text-danger">
-            Application details not saved: {applicant.error}
-          </span>
-        )}
+          ))}
+          {TABS.map(([id, label]) => (
+            <Link
+              key={`side-${id}`}
+              to={`/profile/${id}`}
+              aria-current={tab === id ? "page" : undefined}
+              className={`hidden rounded-sm px-3 py-2 text-[13px] font-medium lg:block ${tab === id ? "bg-panel text-ink shadow-[inset_2px_0_0_var(--color-accent)]" : "text-ink-muted hover:bg-sunken hover:text-ink"}`}
+            >
+              {label}
+            </Link>
+          ))}
+        </nav>
+        <div className="min-w-0 space-y-10">
+          {problems.length > 0 && (
+            <div role="region" aria-label="Save problems" className="flex flex-wrap gap-3">
+              {problems}
+            </div>
+          )}
+          <TileLayout.Provider value="flat">
+            {tab === "tailoring" && <TailoringTab />}
+            {!ctx && (tab === "personal" || tab === "application") && (
+              <p className="text-sm text-ink-muted">{applicant.error ?? "Loading your profile…"}</p>
+            )}
+            {ctx && tab === "personal" && (
+              <PersonalTab ctx={ctx} resume={editor.resume} setResume={editor.setResume} />
+            )}
+            {ctx && tab === "application" && (
+              <ApplicationTab
+                ctx={ctx}
+                open={open}
+                onToggle={setGroupOpen}
+                onOpenGroup={openGroup}
+                education={educationSection?.kind === "education" ? educationSection.entries : []}
+              />
+            )}
+          </TileLayout.Provider>
+        </div>
       </div>
     </Page>
   );

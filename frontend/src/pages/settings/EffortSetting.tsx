@@ -1,4 +1,4 @@
-import { Segmented } from "../../components/ui";
+import { Segmented, SettingRow } from "../../components/ui";
 import { modelsFor } from "../../lib/aiModels";
 import {
   customLevels,
@@ -10,7 +10,6 @@ import {
 } from "../../lib/effortSteps";
 import { useRunState } from "../../state/runState";
 import { SELECT_WIDTH } from "./selectWidth";
-import { SettingRow } from "./SettingRow";
 import { useVertexConnection } from "./useVertexConnection";
 import { withEffortMode } from "../../lib/advancedSettings";
 

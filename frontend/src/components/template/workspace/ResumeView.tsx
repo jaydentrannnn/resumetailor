@@ -10,7 +10,7 @@ import { DOCUMENT_CELL, SWITCH_CELL, TOOLS_CELL, WORKSPACE_GRID } from "./worksp
 
 /**
  * Template page › Resume view: the template filled with the full master resume on the
- * left; on the right the view switch, what it is, its look and the technical details.
+ * right; on the left the view switch, what it is, its look and the technical details.
  * Quick adjustments swaps the whole view for its adjust mode until applied or cancelled.
  */
 export function ResumeView({ switcher }: { switcher: ReactNode }) {

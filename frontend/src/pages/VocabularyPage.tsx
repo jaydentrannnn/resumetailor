@@ -1,5 +1,5 @@
 import { Link, useSearchParams } from "react-router-dom";
-import { CommandBar, DataList, Page, Tabs } from "../components/ui";
+import { CommandBar, Page, Tabs, TileLayout } from "../components/ui";
 import { useLibraryState } from "../state/libraryState";
 import { DictionarySection } from "./vocabulary/DictionarySection";
 import { SuggestionsSection } from "./vocabulary/SuggestionsSection";
@@ -27,15 +27,12 @@ export function VocabularyPage() {
             ← Settings
           </Link>
         }
-      />
-      <DataList
-        mono
-        items={[
-          { label: "Terms", value: effective.term_count },
-          { label: "Spellings", value: effective.tag_alias_count },
-          { label: "Opening verbs", value: effective.verb_count },
-          { label: "Your additions", value: yours },
-        ]}
+        state={
+          <span className="font-mono text-xs">
+            {effective.term_count} terms · {effective.tag_alias_count} spellings ·{" "}
+            {effective.verb_count} opening verbs · {yours} yours
+          </span>
+        }
       />
       <Tabs
         variant="underline"
@@ -47,12 +44,14 @@ export function VocabularyPage() {
         value={tab}
         onChange={(value) => setParams({ tab: value })}
       />
-      <div role="tabpanel" hidden={tab !== "dictionary"}>
-        <DictionarySection />
-      </div>
-      <div role="tabpanel" hidden={tab !== "suggestions"}>
-        <SuggestionsSection />
-      </div>
+      <TileLayout.Provider value="flat">
+        <div role="tabpanel" hidden={tab !== "dictionary"}>
+          <DictionarySection />
+        </div>
+        <div role="tabpanel" hidden={tab !== "suggestions"}>
+          <SuggestionsSection />
+        </div>
+      </TileLayout.Provider>
     </Page>
   );
 }

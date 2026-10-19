@@ -1,6 +1,6 @@
 import { useEffect, useState } from "react";
 import { fetchModelQueue, saveModelQueue, type ModelQueueStatus } from "../../api";
-import { Button } from "../../components/ui";
+import { Button, SettingRow } from "../../components/ui";
 import { startAdaptivePoll } from "../../lib/adaptivePoll";
 import {
   presetFor,
@@ -12,7 +12,6 @@ import { useToast } from "../../lib/toast";
 import { queueEndpoints } from "../../lib/modelEndpoints";
 import { useRunState } from "../../state/runState";
 import { SELECT_WIDTH } from "./selectWidth";
-import { SettingRow } from "./SettingRow";
 
 /**
  * How many model requests run at once, as a speed-vs-rate-limits choice. Shared by

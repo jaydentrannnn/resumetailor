@@ -50,6 +50,7 @@ export function FilesPanel({
   expansionNeeded,
   onBulletsSaved,
   onArtifactsChanged,
+  viewerBeside = false,
 }: {
   app: ApplicationRow;
   job: JobStatus | null;
@@ -57,6 +58,8 @@ export function FilesPanel({
   expansionNeeded: boolean;
   onBulletsSaved: () => void;
   onArtifactsChanged: () => void;
+  /** The documents already show beside the tabs (wide windows). */
+  viewerBeside?: boolean;
 }) {
   if (!app.job_id)
     return (
@@ -68,13 +71,15 @@ export function FilesPanel({
     );
   return (
     <div className="space-y-4">
-      <DocumentsCard
-        revision={revision}
-        jobId={app.job_id}
-        coverLetter={job?.cover_letter}
-        onCoverRegenerated={() => {}}
-        readOnly
-      />
+      {!viewerBeside && (
+        <DocumentsCard
+          revision={revision}
+          jobId={app.job_id}
+          coverLetter={job?.cover_letter}
+          onCoverRegenerated={() => {}}
+          readOnly
+        />
+      )}
       {!app.archived_at && (
         <ArtifactsCard
           jobId={app.job_id}

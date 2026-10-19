@@ -3,7 +3,7 @@ import { cleanup, render, screen } from "@testing-library/react";
 import { MemoryRouter } from "react-router-dom";
 import { afterEach, describe, expect, it } from "vitest";
 import type { AttentionItem, DailyStatus } from "../../api";
-import { NightlyRunTile } from "./NightlyRunTile";
+import { NightlyRunStrip } from "./NightlyRunStrip";
 
 afterEach(cleanup);
 
@@ -26,14 +26,25 @@ const daily = (fields: Partial<DailyStatus> = {}): DailyStatus => ({
 const renderTile = (status: DailyStatus) =>
   render(
     <MemoryRouter>
-      <NightlyRunTile daily={status} />
+      <NightlyRunStrip daily={status} />
     </MemoryRouter>,
   );
 
-describe("NightlyRunTile", () => {
+describe("NightlyRunStrip", () => {
   it("shows the nightly run's progress while it runs", () => {
     renderTile(daily());
     expect(screen.getByText("Nightly run in progress")).toBeTruthy();
+  });
+
+  it("folds what a finished run left for review into one line", () => {
+    const attention: AttentionItem[] = [
+      { application_id: "a", label: "Acme — Engineer", kind: "failed", message: "x", at: "" },
+    ];
+    renderTile(
+      daily({ running: false, finished_at: "2026-10-08T03:00:00", summary: { attention } }),
+    );
+    expect(screen.getByText(/^Finished /)).toBeTruthy();
+    expect(screen.getByText("Acme — Engineer").closest("details")).toBeTruthy();
   });
 
   it("stays hidden while a Find jobs runs through the same pass", () => {

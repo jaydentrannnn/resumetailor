@@ -424,11 +424,57 @@ tbody tr:has(input:checked) td:first-child { box-shadow: inset 2px 0 0 var(--acc
 @media (prefers-reduced-motion: reduce) {
   *, *::before, *::after { animation: none !important; transition: none !important; }
 }
+
+/* ---- v6 desktop shell: rail, command bar, status bar ---- */
+[hidden] { display: none !important; }
+.frame { display: grid; grid-template-columns: 184px minmax(0, 1fr); max-width: 1440px; overflow: hidden; }
+.side { display: flex; flex-direction: column; gap: 2px; padding: 12px 8px; background: var(--raised); border-right: 1px solid var(--line); min-height: 760px; }
+.side .mark { padding: 6px 10px 16px; font-size: 16px; }
+.nav-link { position: relative; display: flex; align-items: center; gap: 10px; width: 100%; height: 34px; padding: 0 10px; border: 0; border-radius: var(--r); background: none; color: var(--ink-2); font: 500 13px/1 var(--font-body); text-align: left; cursor: pointer; }
+.nav-link:hover { background: var(--sunken); color: var(--ink); }
+.nav-link[aria-current="page"] { background: color-mix(in srgb, var(--acc) var(--tint), transparent); color: var(--acc); }
+.nav-link[aria-current="page"]::after { content: none; }
+.nav-link .ic { width: 16px; height: 16px; flex: none; }
+.nav-link .badge { margin-left: auto; padding: 1px 6px; border-radius: 9px; background: color-mix(in srgb, var(--danger) 14%, transparent); color: var(--danger); font: 500 11px/1.4 var(--font-mono); }
+.nav-link .kbd-hint { margin-left: auto; font: 400 11px/1 var(--font-mono); color: var(--muted); }
+.side-foot { margin-top: auto; display: grid; gap: 2px; padding-top: 8px; border-top: 1px solid var(--line); }
+.work { display: flex; flex-direction: column; min-width: 0; }
+.main { max-width: none; margin: 0; padding: 0 24px 32px; flex: 1; }
+.page-head { position: sticky; top: 0; z-index: 5; display: flex; flex-wrap: wrap; align-items: center; gap: 8px 12px; min-height: 48px; padding: 6px 24px; margin: 0 -24px 20px; background: var(--chrome); border-bottom: 1px solid var(--line); }
+.page-head .display { font: 400 19px/1.2 var(--font-display); letter-spacing: -0.01em; }
+.page-head .state { padding-left: 12px; border-left: 1px solid var(--line); font-size: 12px; color: var(--muted); display: inline-flex; align-items: center; gap: 6px; }
+.page-head .tools { margin-left: auto; display: flex; flex-wrap: wrap; gap: 8px; }
+.page-head .summary { flex-basis: 100%; }
+.status { display: flex; align-items: center; gap: 16px; height: 28px; padding: 0 16px; border-top: 1px solid var(--line); background: var(--chrome); font-size: 12px; color: var(--muted); }
+.status .lnk { color: var(--ink); font-weight: 600; text-decoration: underline; }
+.status .right { margin-left: auto; font-family: var(--font-mono); }
+.workspace { display: grid; grid-template-columns: minmax(20rem, 28rem) minmax(0, 1fr); gap: 16px; align-items: start; }
+.viewer { border: 1px solid var(--line); border-radius: var(--r); background: var(--chrome); min-width: 0; position: sticky; top: 68px; }
+.viewer-bar { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; padding: 8px; border-bottom: 1px solid var(--line); }
+.viewer-bar .tools { margin-left: auto; display: flex; gap: 6px; }
+.viewer-doc { background: var(--sunken); padding: 20px; height: 560px; overflow: hidden; }
+.viewer-doc .sheet { background: #fff; color: #111; max-width: 520px; margin: 0 auto; padding: 32px 36px; font: 10.5px/1.45 Georgia, serif; box-shadow: 0 0 0 1px var(--doc-line); }
+.viewer-doc .sheet h4 { font: 700 15px/1.2 Georgia, serif; text-align: center; }
+.viewer-doc .sheet .c { text-align: center; color: #444; margin-bottom: 10px; }
+.viewer-doc .sheet b { display: block; margin-top: 10px; border-bottom: 1px solid #111; font-size: 10px; letter-spacing: 0.04em; }
+.palette { width: min(560px, 100%); background: var(--chrome); border-radius: var(--r); box-shadow: var(--overlay); overflow: hidden; }
+.palette input { width: 100%; border: 0; border-bottom: 1px solid var(--line); background: transparent; padding: 12px 16px; font: inherit; font-size: 14px; color: var(--ink); outline: none; }
+.palette li { display: flex; align-items: center; gap: 12px; min-height: 40px; padding: 0 16px; font-size: 13px; }
+.palette li[aria-selected="true"] { background: color-mix(in srgb, var(--acc) var(--tint), transparent); }
+.palette li .g { margin-left: auto; color: var(--muted); font-size: 12px; }
+.flat .panel, .panel.flat { border: 0; background: none; padding: 0; }
+@media (max-width: 900px) {
+  .frame { grid-template-columns: 52px minmax(0, 1fr); }
+  .side .mark span, .nav-link .t, .nav-link .kbd-hint { display: none; }
+  .nav-link .badge { position: absolute; top: 2px; right: 2px; }
+  .workspace { grid-template-columns: minmax(0, 1fr); }
+  .viewer { position: static; }
+}
 </style>
 
 <section class="pv" aria-label="Preview controls">
   <div class="pv-head">
-    <strong>ResumeTailor redesign · v5 reference</strong>
+    <strong>ResumeTailor desktop · v6 reference</strong>
     <span>Mock data. Navigation, tabs, rails, choices, toggles and row checkboxes work; other buttons are for looks only.</span>
   </div>
   <div class="pv-groups">
@@ -445,7 +491,7 @@ tbody tr:has(input:checked) td:first-child { box-shadow: inset 2px 0 0 var(--acc
       <div class="seg">
         <button type="button" data-set="screen:detail">Application detail</button>
         <button type="button" data-set="screen:sources">Job sources</button>
-        <button type="button" data-set="screen:editor">Resume editor</button>
+        
         <button type="button" data-set="screen:vocab">Vocabulary</button>
         <button type="button" data-set="screen:welcome">Onboarding</button>
         <button type="button" data-set="screen:ext">Extension</button>
@@ -456,44 +502,36 @@ tbody tr:has(input:checked) td:first-child { box-shadow: inset 2px 0 0 var(--acc
 </section>
 
 <div class="frame">
-  <header class="top">
-    <div class="top-row">
-      <span class="mark"><i aria-hidden="true"></i>ResumeTailor</span>
-      <nav class="nav" aria-label="Main">
-        <button type="button" class="nav-link" data-go="tailor">Tailor</button>
-        <button type="button" class="nav-link" data-go="apply">Apply</button>
-        <button type="button" class="nav-link" data-go="profile">Profile</button>
-        <button type="button" class="nav-link" data-go="template">Template</button>
-        <button type="button" class="nav-link" data-go="settings">Settings</button>
-      </nav>
-      <div class="top-tools">
-        <span class="chip s-ok header-pill"><span class="mk"></span>Ready</span>
-        <button type="button" class="btn btn-quiet hide-sm">Pause automation</button>
-        <button type="button" class="btn btn-quiet">Default <svg viewBox="0 0 10 10" aria-hidden="true"><path d="M2 3.5 5 6.5 8 3.5" fill="none" stroke="currentColor" stroke-width="1.4"/></svg></button>
-      </div>
+  <aside class="side">
+    <span class="mark"><i aria-hidden="true"></i><span>ResumeTailor</span></span>
+    <nav aria-label="Main" style="display:grid;gap:2px">
+      <button type="button" class="nav-link" data-go="tailor"><svg class="ic" viewBox="0 0 16 16" aria-hidden="true" fill="none" stroke="currentColor" stroke-width="1.4" stroke-linecap="round" stroke-linejoin="round"><path d="M3 2h7l3 3v9H3zM6 8h4M6 11h4"/></svg><span class="t">Tailor</span><span class="kbd-hint">^1</span></button>
+      <button type="button" class="nav-link" data-go="apply"><svg class="ic" viewBox="0 0 16 16" aria-hidden="true" fill="none" stroke="currentColor" stroke-width="1.4" stroke-linecap="round" stroke-linejoin="round"><path d="M2 4h12v9H2zM6 4V2.5h4V4"/></svg><span class="t">Apply</span><span class="badge">3</span></button>
+      <button type="button" class="nav-link" data-go="editor"><svg class="ic" viewBox="0 0 16 16" aria-hidden="true" fill="none" stroke="currentColor" stroke-width="1.4" stroke-linecap="round" stroke-linejoin="round"><path d="M3 3h10M3 6.5h10M3 10h6M3 13.5h8"/></svg><span class="t">Resume</span><span class="kbd-hint">^3</span></button>
+      <button type="button" class="nav-link" data-go="template"><svg class="ic" viewBox="0 0 16 16" aria-hidden="true" fill="none" stroke="currentColor" stroke-width="1.4" stroke-linecap="round" stroke-linejoin="round"><path d="M2.5 2h11v12h-11zM2.5 6h11M6.5 6v8"/></svg><span class="t">Template</span><span class="kbd-hint">^4</span></button>
+      <button type="button" class="nav-link" data-go="profile"><svg class="ic" viewBox="0 0 16 16" aria-hidden="true" fill="none" stroke="currentColor" stroke-width="1.4" stroke-linecap="round" stroke-linejoin="round"><path d="M5.5 5.5a2.5 2.5 0 1 0 5 0a2.5 2.5 0 1 0-5 0M3 14c.6-2.8 2.6-4 5-4s4.4 1.2 5 4"/></svg><span class="t">Profile</span><span class="kbd-hint">^5</span></button>
+    </nav>
+    <div class="side-foot">
+      <button type="button" class="nav-link"><span class="t">Pause automation</span></button>
+      <span class="chip s-ok" style="margin:2px 10px"><span class="mk"></span><span class="t">Ready</span></span>
+      <button type="button" class="nav-link"><span class="t">Jordan</span></button>
+      <button type="button" class="nav-link" data-go="settings"><svg class="ic" viewBox="0 0 16 16" aria-hidden="true" fill="none" stroke="currentColor" stroke-width="1.4" stroke-linecap="round" stroke-linejoin="round"><path d="M8 5.8a2.2 2.2 0 1 0 0 4.4a2.2 2.2 0 1 0 0-4.4M8 1.5v2M8 12.5v2M1.5 8h2M12.5 8h2"/></svg><span class="t">Settings</span></button>
     </div>
-  </header>
+  </aside>
+  <div class="work">
 
   <main class="main">
     <!-- ================= Tailor ================= -->
     <section data-screen="tailor">
-      <div class="page-head">
-        <p class="label">Resume: Jordan Rivera</p>
-        <h1 class="display">Tailor a resume</h1>
-        <p class="lede">Paste a job posting. Your bullets are rewritten to match it, and the document keeps its original layout.</p>
-      </div>
-      <div class="stack">
-        <section class="panel" aria-labelledby="opt-h">
-          <div class="panel-head"><h2 id="opt-h">Options</h2><button type="button" class="btn btn-secondary btn-sm">Change</button></div>
-          <div class="summary">
-            <div><span class="label">Pages</span><span class="val">1 page</span></div>
-            <div><span class="label">Cover letter</span><span class="val">Off</span></div>
-            <div><span class="label">Model</span><span class="val">Ollama<span class="mono">gemma4:cloud</span></span></div>
-            <div><span class="label">Page fit</span><span class="val">Estimated</span></div>
+      <div class="page-head"><h1 class="display">Tailor</h1><span class="state">Northwind Robotics · Software Engineer Intern · 2 h ago</span><div class="tools"><button type="button" class="btn btn-quiet btn-sm">History</button><button type="button" class="btn btn-primary btn-sm">Tailor resume</button></div></div>
+      <div class="workspace">
+        <div class="stack">
+          <div class="seg" role="tablist" aria-label="Tailor">
+            <button type="button" role="tab" aria-selected="true">Job</button>
+            <button type="button" role="tab" aria-selected="false">Report</button>
+            <button type="button" role="tab" aria-selected="false">Review bullets</button>
+            <button type="button" role="tab" aria-selected="false">Application content</button>
           </div>
-        </section>
-
-        <div class="split">
           <section class="panel" aria-labelledby="jd-h">
             <div class="panel-head"><h2 id="jd-h">Job description</h2></div>
             <div class="seg" role="tablist" aria-label="How to add the job description">
@@ -522,72 +560,34 @@ What you'll need
               <div class="filerow"><button type="button" class="btn btn-secondary btn-sm">Choose a file</button><span>.pdf, .docx or .txt, up to 5 MB</span></div>
             </div>
             <div class="actions">
-              <button type="button" class="btn btn-primary">Tailor resume</button>
               <button type="button" class="btn btn-ghost">Clear</button>
               <span class="hint mono">~ $0.004 · 612 words</span>
             </div>
           </section>
-
-          <aside class="panel" aria-labelledby="run-h">
-            <div class="panel-head"><h2 id="run-h">This run</h2><span class="meta mono">00:41 elapsed</span></div>
-            <div class="run-pct"><strong>58%</strong><span class="chip s-live"><span class="mk"></span>Rewriting bullets</span></div>
-            <div class="meter" aria-hidden="true"><span style="--w:58%"></span></div>
-            <ol class="stages">
-              <li class="done"><span class="st"><svg viewBox="0 0 14 14" aria-hidden="true"><path d="M3 7.2 5.8 10 11 4" fill="none" stroke="currentColor" stroke-width="1.6"/></svg></span><span>Read the job description</span><span class="t mono">3.1s</span></li>
-              <li class="done"><span class="st"><svg viewBox="0 0 14 14" aria-hidden="true"><path d="M3 7.2 5.8 10 11 4" fill="none" stroke="currentColor" stroke-width="1.6"/></svg></span><span>Score bullets for relevance</span><span class="t mono">6.8s</span></li>
-              <li class="done"><span class="st"><svg viewBox="0 0 14 14" aria-hidden="true"><path d="M3 7.2 5.8 10 11 4" fill="none" stroke="currentColor" stroke-width="1.6"/></svg></span><span>Pick project tech and coursework</span><span class="t mono">2.2s</span></li>
-              <li class="active"><span class="st"><span class="pulse"></span></span><span>Rewrite bullets</span><span class="t mono">9 / 14</span></li>
-              <li><span class="st"><span class="ring"></span></span><span>Expand experience</span><span class="t mono">–</span></li>
-              <li><span class="st"><span class="ring"></span></span><span>Select skills</span><span class="t mono">–</span></li>
-            </ol>
-            <div class="actions"><button type="button" class="btn btn-secondary btn-sm">Cancel</button><span class="hint">Details (2)</span></div>
-          </aside>
+          <section class="panel" aria-labelledby="opt-h">
+            <div class="panel-head"><h2 id="opt-h">Options</h2><button type="button" class="btn btn-secondary btn-sm">Change</button></div>
+            <div class="summary">
+              <div><span class="label">Pages</span><span class="val">1 page</span></div>
+              <div><span class="label">Cover letter</span><span class="val">On</span></div>
+              <div><span class="label">Model</span><span class="val">Ollama<span class="mono">gemma4:cloud</span></span></div>
+            </div>
+          </section>
         </div>
-
-        <section class="panel" aria-labelledby="res-h">
-          <div class="panel-head"><h2 id="res-h">Last result</h2><span class="meta">Halcyon Health · Data Analyst Intern · 2 hours ago</span></div>
-          <div class="figures">
-            <div><span class="fig">1</span><span class="fig-l">page, 47 of 48 lines used</span></div>
-            <div><span class="fig">82</span><span class="fig-l">skill match out of 100</span></div>
-            <div><span class="fig">11</span><span class="fig-l">bullets rewritten</span></div>
+        <section class="viewer" aria-label="Document">
+          <div class="viewer-bar">
+            <div class="seg"><button type="button" aria-pressed="true">Resume</button><button type="button" aria-pressed="false">Cover letter</button></div>
+            <div class="seg"><button type="button" aria-pressed="true">Fit width</button><button type="button" aria-pressed="false">Fit page</button></div>
+            <span class="mono muted small">− 100% +</span>
+            <div class="tools"><button type="button" class="btn btn-quiet btn-sm">Show in folder</button><button type="button" class="btn btn-quiet btn-sm">Save Word…</button><button type="button" class="btn btn-primary btn-sm">Save PDF…</button></div>
           </div>
-          <ul class="notes">
-            <li><span class="chip s-attn"><span class="mk"></span>Kept as written</span>2 rewrites used terms that aren't in your resume, so the original wording stayed.</li>
-            <li><span class="chip s-ok"><span class="mk"></span>Fits</span>Every section fit on one page without dropping an entry.</li>
-          </ul>
-          <div class="actions">
-            <button type="button" class="btn btn-primary">Download .docx</button>
-            <button type="button" class="btn btn-secondary">Download PDF</button>
-            <button type="button" class="btn btn-ghost">Review bullets</button>
-          </div>
-        </section>
-
-        <section class="panel" aria-labelledby="hist-h">
-          <div class="panel-head"><h2 id="hist-h">Recent runs<span class="count">5</span></h2></div>
-          <div class="table-wrap">
-            <table class="compact">
-              <thead><tr><th>Job</th><th>When</th><th class="num">Skill match</th><th>Result</th><th class="cell-act"><span class="sr">Actions</span></th></tr></thead>
-              <tbody>
-                <tr><td><span class="co">Halcyon Health</span> <span class="job">· Data Analyst Intern</span></td><td class="mono muted">Oct 7, 1:12 PM</td><td class="num mono">82</td><td><span class="chip s-ok"><span class="mk"></span>1 page</span></td><td class="cell-act"><button class="icon-btn" type="button" aria-label="Actions for Halcyon Health">⋯</button></td></tr>
-                <tr><td><span class="co">Quarry Data</span> <span class="job">· Analytics Engineer Intern</span></td><td class="mono muted">Oct 6, 8:40 PM</td><td class="num mono">77</td><td><span class="chip s-fail"><span class="mk"></span>Overflowed</span></td><td class="cell-act"><button class="icon-btn" type="button" aria-label="Actions for Quarry Data">⋯</button></td></tr>
-                <tr><td><span class="co">Lumen Bio</span> <span class="job">· Computational Biology Intern</span></td><td class="mono muted">Oct 6, 9:02 AM</td><td class="num mono">74</td><td><span class="chip s-ok"><span class="mk"></span>1 page</span></td><td class="cell-act"><button class="icon-btn" type="button" aria-label="Actions for Lumen Bio">⋯</button></td></tr>
-              </tbody>
-            </table>
-          </div>
+          <div class="viewer-doc"><div class="sheet"><h4>Jordan Rivera</h4><p class="c">jordan@example.com · Seattle, WA · github.com/jrivera</p><b>EXPERIENCE</b><p>Built Airflow pipelines moving robot telemetry into the warehouse, cutting load time 40%.</p><p>Streamed fleet events through Kafka to flag failing units before deployment.</p><b>PROJECTS</b><p>Incident notes generator: summarised 2,000 log lines per incident in plain language.</p><b>SKILLS</b><p>Python, SQL, Airflow, Kafka, dbt</p></div></div>
         </section>
       </div>
     </section>
 
     <!-- ================= Apply ================= -->
     <section data-screen="apply" hidden>
-      <div class="page-head">
-        <p class="label">Automation on · nightly at 2:00 AM</p>
-        <div class="page-head-row">
-          <h1 class="display">Apply</h1>
-          <div class="tools"><span class="chip s-ok"><span class="mk"></span>Browser connected</span><button type="button" class="btn btn-secondary btn-sm">Apply settings</button></div>
-        </div>
-        <p class="lede">Postings from your job sources, each prepared with its own tailored resume.</p>
-      </div>
+      <div class="page-head"><h1 class="display">Apply</h1><span class="state">Automation on · nightly at 2:00 AM</span><div class="tools"><span class="chip s-ok"><span class="mk"></span>Browser connected</span><button type="button" class="btn btn-secondary btn-sm">Apply settings</button></div></div>
       <div class="stack">
         <div class="opbar">
           <div class="opbar-text"><span class="pulse" aria-hidden="true"></span><strong>Finding jobs</strong><span class="muted">3 of 5 sources checked · <span class="mono">37</span> new postings</span></div>
@@ -663,15 +663,7 @@ What you'll need
 
     <!-- ================= Application detail ================= -->
     <section data-screen="detail" hidden>
-      <div class="page-head">
-        <button type="button" class="back" data-go="apply">← Applications</button>
-        <p class="label inline-mk"><span class="chip s-attn"><span class="mk"></span>Verification code needed</span> Workday</p>
-        <div class="page-head-row">
-          <h1 class="display">Meridian Bank · Software Engineer Intern</h1>
-          <div class="tools"><a class="btn btn-secondary btn-sm" href="#" onclick="return false">Posting ↗</a><button type="button" class="btn btn-secondary btn-sm">Open application tab</button><button type="button" class="btn btn-secondary btn-sm">Archive</button></div>
-        </div>
-        <p class="lede">New York, NY · Hybrid · posted Oct 4</p>
-      </div>
+      <div class="page-head"><button type="button" class="back" data-go="apply">← Applications</button><h1 class="display">Meridian Bank · Software Engineer Intern</h1><span class="state"><span class="chip s-attn"><span class="mk"></span>Verification code needed</span> Workday</span><div class="tools"><a class="btn btn-secondary btn-sm" href="#" onclick="return false">Posting ↗</a><button type="button" class="btn btn-secondary btn-sm">Open application tab</button><button type="button" class="btn btn-secondary btn-sm">Archive</button></div></div>
       <div class="utabs" role="tablist" aria-label="Application sections">
         <button type="button" role="tab" data-group="det" data-tab="ov" aria-selected="true">Overview</button>
         <button type="button" role="tab" data-group="det" data-tab="ans" aria-selected="false">Answers</button>
@@ -732,11 +724,7 @@ What you'll need
 
     <!-- ================= Job sources ================= -->
     <section data-screen="sources" hidden>
-      <div class="page-head">
-        <button type="button" class="back" data-go="apply">← Applications</button>
-        <div class="page-head-row"><h1 class="display">Job sources</h1><span class="muted small">Checked nightly at 2:00 AM</span></div>
-        <p class="lede">Where new postings come from. Each source is checked on the nightly run, or now with “Check”.</p>
-      </div>
+      <div class="page-head"><button type="button" class="back" data-go="apply">← Applications</button><h1 class="display">Job sources</h1></div>
       <div class="stack">
         <section class="panel">
           <div class="panel-head"><h2>Recommended for your fields</h2><span class="meta">Software engineering · Data</span></div>
@@ -770,12 +758,8 @@ What you'll need
     </section>
 
     <!-- ================= Profile ================= -->
-    <section data-screen="profile" hidden>
-      <div class="page-head">
-        <p class="label">Profile · Default</p>
-        <h1 class="display">Profile</h1>
-        <p class="lede">Facts about you that go on resumes and into application forms. Nothing here is invented — the AI only uses what you save.</p>
-      </div>
+    <section data-screen="profile" class="flat" hidden>
+      <div class="page-head"><h1 class="display">Profile</h1><span class="state">Profile · Default</span></div>
       <div class="utabs" role="tablist" aria-label="Profile sections">
         <button type="button" role="tab" aria-selected="true">Personal</button>
         <button type="button" role="tab" aria-selected="false" data-go="editor">Resume</button>
@@ -818,12 +802,8 @@ What you'll need
 
     <!-- ================= Resume editor ================= -->
     <section data-screen="editor" hidden>
-      <div class="page-head">
-        <p class="label">Profile · Default</p>
-        <h1 class="display">Profile</h1>
-        <p class="lede">Your master resume. Every tailored resume is built from these entries and nothing else.</p>
-      </div>
-      <div class="utabs" role="tablist" aria-label="Profile sections">
+      <div class="page-head"><h1 class="display">Resume</h1><span class="state">All changes saved</span><div class="tools"><button type="button" class="btn btn-quiet btn-sm">History</button><button type="button" class="btn btn-primary btn-sm">Save</button></div></div>
+      <div class="utabs" role="tablist" aria-label="Profile sections" hidden>
         <button type="button" role="tab" aria-selected="false" data-go="profile">Personal</button>
         <button type="button" role="tab" aria-selected="true">Resume</button>
         <button type="button" role="tab" aria-selected="false">Application</button>
@@ -876,11 +856,7 @@ What you'll need
 
     <!-- ================= Template ================= -->
     <section data-screen="template" hidden>
-      <div class="page-head">
-        <p class="label">Active: Default</p>
-        <h1 class="display">Template</h1>
-        <p class="lede">The Word document every tailored resume is poured into. Only the words change; the look stays yours.</p>
-      </div>
+      <div class="page-head"><h1 class="display">Template</h1><span class="state">Active: Default</span></div>
       <div class="stack">
         <section class="panel">
           <div class="cur">
@@ -940,16 +916,11 @@ What you'll need
 
     <!-- ================= Vocabulary ================= -->
     <section data-screen="vocab" hidden>
-      <div class="page-head">
-        <button type="button" class="back" data-go="settings">← Settings</button>
-        <h1 class="display">Vocabulary</h1>
-        <p class="lede">The words the rewriter may use. Packs add verbs and terms for a field; additions are yours.</p>
-        <div class="summary" style="margin-top:6px">
+      <div class="page-head"><button type="button" class="back" data-go="settings">← Settings</button><h1 class="display">Vocabulary</h1><div class="summary" style="margin-top:6px">
           <div><span class="label">Packs on</span><span class="val mono">3 of 7</span></div>
           <div><span class="label">Your additions</span><span class="val mono">12</span></div>
           <div><span class="label">Suggestions</span><span class="val mono">4</span></div>
-        </div>
-      </div>
+        </div></div>
       <div class="subbar">
         <div class="seg" role="tablist" aria-label="Vocabulary sections">
           <button type="button" role="tab" data-group="voc" data-tab="packs" aria-selected="true">Packs</button>
@@ -979,18 +950,14 @@ What you'll need
     </section>
 
     <!-- ================= Settings ================= -->
-    <section data-screen="settings" hidden>
-      <div class="page-head">
-        <h1 class="display">Settings</h1>
-        <p class="lede">How ResumeTailor runs on this computer.</p>
-      </div>
+    <section data-screen="settings" class="flat" hidden>
+      <div class="page-head"><h1 class="display">Settings</h1></div>
       <div class="with-rail">
         <nav class="rail" aria-label="Settings sections">
           <button type="button" data-rail="set" aria-current="true">AI model</button>
-          <button type="button" data-rail="set">Documents</button>
-          <button type="button" data-rail="set">Data</button>
-          <button type="button" data-rail="set">Advanced</button>
-          <button type="button" data-rail="set">Browser</button>
+          <button type="button" data-rail="set">Data &amp; backups</button>
+          <button type="button" data-rail="set">Browser extension</button>
+          <button type="button" data-rail="set">Appearance</button>
           <button type="button" data-rail="set">About</button>
         </nav>
         <div class="stack">
@@ -1054,11 +1021,7 @@ What you'll need
 
     <!-- ================= Extension ================= -->
     <section data-screen="ext" hidden>
-      <div class="page-head">
-        <p class="label">Browser extension</p>
-        <h1 class="display">Popup &amp; options</h1>
-        <p class="lede">Same tokens, fonts and statuses as the app, bundled locally. The on-page chip uses system fonts because it lives inside other sites.</p>
-      </div>
+      <div class="page-head"><h1 class="display">Popup &amp; options</h1><span class="state">Browser extension</span></div>
       <div class="ext-wrap">
         <div class="popup">
           <div class="popup-top"><span class="mark"><i aria-hidden="true"></i>ResumeTailor</span><span class="mono small muted">Default</span></div>
@@ -1090,12 +1053,17 @@ What you'll need
 
     <!-- ================= Overlays & states ================= -->
     <section data-screen="overlays" hidden>
-      <div class="page-head">
-        <p class="label">Shared components</p>
-        <h1 class="display">Overlays &amp; states</h1>
-        <p class="lede">Modals, menus and toasts carry the only shadow in the app. Everything else is flat.</p>
-      </div>
+      <div class="page-head"><h1 class="display">Overlays &amp; states</h1><span class="state">Shared components</span></div>
       <div class="ov-grid">
+        <div class="stage scrim"><span class="label stage-label" style="color:#ddd">Ctrl+K command list</span>
+          <div class="palette" role="dialog" aria-label="Commands"><input aria-label="Find a page or an action" value="save">
+            <ul role="listbox" style="list-style:none;margin:0;padding:4px 0">
+              <li role="option" aria-selected="true">Save resume PDF…<span class="g">Document</span></li>
+              <li role="option" aria-selected="false">Save resume Word file…<span class="g">Document</span></li>
+              <li role="option" aria-selected="false">Save resume<span class="g">Resume</span><kbd class="mono small">Ctrl S</kbd></li>
+            </ul>
+          </div>
+        </div>
         <div class="stage scrim"><span class="label stage-label" style="color:#ddd">Confirm dialog</span>
           <div class="modal" role="dialog" aria-label="Skip 2 applications?">
             <h3>Skip 2 applications?</h3>
@@ -1147,13 +1115,15 @@ What you'll need
       </section>
     </section>
   </main>
+  <footer class="status"><span>Tailored Northwind Robotics · 1 page</span><span class="lnk">Undo</span><span class="right">Ctrl K · commands</span></footer>
+  </div>
 </div>
 
 <script>
 (function () {
   var root = document.documentElement;
-  var KEY = "rt-redesign-preview-v5";
-  var NAV_OF = { detail: "apply", sources: "apply", editor: "profile", vocab: "settings" };
+  var KEY = "rt-redesign-preview-v6";
+  var NAV_OF = { detail: "apply", sources: "apply", vocab: "settings" };
   var state = { theme: "system", screen: "tailor" };
   try {
     var saved = JSON.parse(localStorage.getItem(KEY) || "null");

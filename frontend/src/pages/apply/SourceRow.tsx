@@ -70,7 +70,7 @@ export function SourceRow({
   return (
     // A click anywhere on the row ticks it, as on the Apply tables; its controls keep theirs.
     <li
-      className="rt-record cursor-pointer py-4 first:pt-0 last:pb-0"
+      className="rt-record cursor-pointer py-3 first:pt-0 last:pb-0"
       data-selected={selected}
       onClick={(e) => {
         if (isRowSelectClick(e, e.currentTarget)) onToggle(e.shiftKey);

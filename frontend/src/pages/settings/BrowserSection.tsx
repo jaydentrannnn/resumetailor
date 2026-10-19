@@ -5,12 +5,11 @@ import {
   revokeExtensionPairing,
   type ExtensionPairing,
 } from "../../api";
-import { Button, Card, Modal } from "../../components/ui";
+import { Button, Card, Modal, SettingRow } from "../../components/ui";
 import { buttonClass } from "../../lib/buttonClass";
 import { describe } from "../../lib/errors";
 import { useToast } from "../../lib/toast";
 import { pairingCountdown, pairingDate, secondsRemaining } from "./browserPairing";
-import { SettingRow } from "./SettingRow";
 
 const RELEASES_URL = "https://github.com/jaydentrannnn/resumetailor/releases/latest";
 /** Chrome Web Store / Edge Add-ons pages, once published (extension/store/SUBMITTING.md). */
@@ -85,7 +84,7 @@ export function BrowserSection() {
 
   const remaining = secondsRemaining(expiresAt, now);
   return (
-    <div className="space-y-4">
+    <div className="space-y-10">
       <Card
         title="Browser extension"
         description="Capture the job you are viewing, save jobs from LinkedIn and Indeed search results, and see what is already in your queue."

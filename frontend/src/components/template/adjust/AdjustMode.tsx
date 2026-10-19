@@ -10,8 +10,8 @@ import { AdjustPreviewPane } from "./AdjustPreviewPane";
 import { AdjustSettings } from "./AdjustSettings";
 
 /**
- * The Resume view while adjusting: the draft rendered on the left (refreshed a moment
- * after each change, nothing installed), the settings on the right in a wider column.
+ * The Resume view while adjusting: the draft rendered on the right (refreshed a moment
+ * after each change, nothing installed), the settings on the left in a wider column.
  * Apply installs the result as "<name> (adjusted)", replacing an earlier one of that
  * name (the original is never touched); Cancel drops the draft. The view switch
  * is replaced by these two so a draft can't be left behind by switching views.

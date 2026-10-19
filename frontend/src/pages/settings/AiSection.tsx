@@ -12,7 +12,7 @@ export function AiSection() {
   const light = useRoleModel("light", secrets);
   const heavy = useRoleModel("heavy", secrets);
   return (
-    <div className="space-y-4">
+    <div className="space-y-10">
       <ModelsCard light={light} heavy={heavy} advanced />
       {settingsLoaded && (
         <ModelKeysCard

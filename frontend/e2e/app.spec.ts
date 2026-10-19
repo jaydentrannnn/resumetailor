@@ -50,11 +50,11 @@ test("profile: one save bar validates, then saves", async ({ page }) => {
     page.getByLabel("Need sponsorship in the future", { exact: true }).locator("option").first(),
   ).toHaveText("Auto from visa: Yes");
   await page.getByLabel("School email").fill("student@gmail.com");
-  await page.getByRole("button", { name: "Save changes" }).click();
+  await page.getByRole("button", { name: "Save profile" }).click();
   await expect(page.getByRole("alert").filter({ hasText: "need" })).toBeVisible();
   await expect(page.getByLabel("School email")).toBeFocused();
   await page.getByLabel("School email").fill("student@school.edu");
-  await page.getByRole("button", { name: "Save changes" }).click();
+  await page.getByRole("button", { name: "Save profile" }).click();
   await expect(page.getByText("All changes saved")).toBeVisible();
   await expect(page.getByLabel("Which office would you prefer?")).toHaveValue("New York");
   await expectAccessible(page);

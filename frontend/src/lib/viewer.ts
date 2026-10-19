@@ -5,6 +5,10 @@
  */
 export type ViewerFit = "width" | "page" | number;
 
+/** A document pane beside a page's controls fills the window below the bars. */
+export const VIEWER_HEIGHT =
+  "h-[calc(100vh-var(--rt-bar-top)-var(--rt-bar-bottom)-5.5rem)] min-h-[28rem]";
+
 export const ZOOM_STEPS = [50, 67, 75, 90, 100, 110, 125, 150, 175, 200];
 
 export function viewerSrc(src: string, fit: ViewerFit): string {

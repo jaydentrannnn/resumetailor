@@ -8,8 +8,8 @@ import { LetterPartsSection } from "./LetterPartsSection";
 import { DOCUMENT_CELL, SWITCH_CELL, TOOLS_CELL, WORKSPACE_GRID } from "./workspaceLayout";
 
 /**
- * Template page › Cover letter view: the sample letter on the left; its design and parts
- * on the right, saved as they change. No look controls here — a generated letter takes
+ * Template page › Cover letter view: the sample letter on the right; its design and parts
+ * on the left, saved as they change. No look controls here — a generated letter takes
  * the resume template's look and an own letter's look is its file.
  */
 export function CoverLetterView({

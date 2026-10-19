@@ -12,6 +12,12 @@ bar shows sub-screens). This file is the written contract behind it. The tokens 
   off by a hairline border.
 - **Flat.** No gradients, no blur, no card shadows. Only overlays (menus, popovers,
   toasts, modals) carry one shadow, the same everywhere.
+- **Tiles for objects, rows for settings.** A tile frames a distinct thing (a run's
+  report, a notice, the template workspace). Settings, Profile, Vocabulary, Job sources
+  and the Apply list are groups of rows: a heading over hairline-separated rows, no box
+  (`TileLayout` "flat" around the same `Tile`s; `SettingRow` for label/control rows).
+- **Controls left, document right.** Tailor, an application's detail and Template put
+  their controls in the left pane and the `DocumentViewer` on the right.
 - **Spacing before boxes.** Inside a tile separate things with space or one hairline
   (`TileSection`). Never nest boxes. Label/value data is separated by spacing, not divider
   cells (`DataList`).

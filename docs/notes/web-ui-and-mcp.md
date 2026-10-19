@@ -897,3 +897,21 @@ the Save dialog in the desktop app.
   entries).
 - Groups rank the open page's actions first, then Go to, Appearance and App. "Reload
   window" is in both builds: the desktop app has no other reload once F5 is locked.
+
+### Density pass (2026-10-19)
+
+- Tiles stay for distinct objects; settings-like pages read as rows. Rather than rewrite
+  every card, `Tile` reads a `TileLayout` context: "flat" drops the box and keeps the
+  heading and its hairline rows. Settings, Profile, Vocabulary, Job sources and the Apply
+  list switch it on, so `ModelsCard` and friends stay boxed inside onboarding.
+- Profile moved its save bar into the command bar (state + Discard + Save, Ctrl+S) and
+  its tabs into a left section list, matching Settings. Save problems show above the
+  content.
+- Apply: the nightly run is a one-line strip with its review items folded; table rows
+  are `py-2`. The selection bar stays on screen at "0 selected" (selecting must not
+  shift rows), contrary to the mockup.
+- An application's detail keeps the tailored documents beside every tab from `lg` up,
+  as on Tailor; the Files tab becomes Extras there. Template flipped to tools left,
+  document right for the same reason.
+- `docs/design/reference.html` (v6) redraws the shell: rail, command bars instead of
+  page heads with intro copy, status bar, the two-pane Tailor and the Ctrl+K list.

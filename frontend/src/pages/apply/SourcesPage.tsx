@@ -1,5 +1,5 @@
 import { Link } from "react-router-dom";
-import { CommandBar, Page } from "../../components/ui";
+import { CommandBar, Page, TileLayout } from "../../components/ui";
 import { useRunState } from "../../state/runState";
 import { useSourcesStatus } from "./sourceHooks";
 import { SourcesTab } from "./SourcesTab";
@@ -23,22 +23,27 @@ export function SourcesPage() {
           </Link>
         }
       />
-      <SourcesTab
-        sources={settings.apply.sources}
-        saveError={settingsSaveError}
-        saveState={settingsSaveState}
-        onFlush={flushSettings}
-        status={status}
-        fields={settings.apply.fields ?? []}
-        onFieldsChange={(fields) =>
-          setSettings({ ...settings, apply: { ...settings.apply, fields } })
-        }
-        onChange={(sources) => setSettings({ ...settings, apply: { ...settings.apply, sources } })}
-        apply={settings.apply}
-        onApplyChange={(patch) =>
-          setSettings({ ...settings, apply: { ...settings.apply, ...patch } })
-        }
-      />
+      {/* Setup, read as groups of rows like Settings. */}
+      <TileLayout.Provider value="flat">
+        <SourcesTab
+          sources={settings.apply.sources}
+          saveError={settingsSaveError}
+          saveState={settingsSaveState}
+          onFlush={flushSettings}
+          status={status}
+          fields={settings.apply.fields ?? []}
+          onFieldsChange={(fields) =>
+            setSettings({ ...settings, apply: { ...settings.apply, fields } })
+          }
+          onChange={(sources) =>
+            setSettings({ ...settings, apply: { ...settings.apply, sources } })
+          }
+          apply={settings.apply}
+          onApplyChange={(patch) =>
+            setSettings({ ...settings, apply: { ...settings.apply, ...patch } })
+          }
+        />
+      </TileLayout.Provider>
     </Page>
   );
 }

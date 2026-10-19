@@ -11,13 +11,12 @@ import {
 } from "../../api";
 import { CopyButton } from "../../components/CopyButton";
 import { SaveFileButton } from "../../components/FileActions";
-import { Button, Card, Modal, StatusChip } from "../../components/ui";
+import { Button, Card, Modal, SettingRow, StatusChip } from "../../components/ui";
 import { describe } from "../../lib/errors";
 import { formatBytes } from "../../lib/format";
 import { useToast } from "../../lib/toast";
 import { useWorkspaceState } from "../../state/workspaceState";
 import { ResetSettingsCard } from "./ResetSettingsCard";
-import { SettingRow } from "./SettingRow";
 
 const PROFILE_ONLY = (
   <StatusChip tone="neutral" mark={false}>
@@ -86,7 +85,7 @@ export function DataSection() {
   }
 
   return (
-    <div className="space-y-4">
+    <div className="space-y-10">
       <Card
         title="Where your data lives"
         description="Everything stays on this computer."

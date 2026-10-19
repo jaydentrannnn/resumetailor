@@ -14,7 +14,7 @@ import { useWorkspaceState } from "../../state/workspaceState";
 import { ApplicationsPanel } from "./ApplicationsPanel";
 import { ApplyHeader } from "./ApplyHeader";
 import { ApplySettingsDrawer } from "./ApplySettingsDrawer";
-import { NightlyRunTile } from "./NightlyRunTile";
+import { NightlyRunStrip } from "./NightlyRunStrip";
 import { OperationBanner } from "./OperationBanner";
 import { FindJobsTools, ProgressBulkActions, ProgressNote } from "./ProgressToolbar";
 import { ReviewToolbar } from "./ReviewToolbar";
@@ -134,7 +134,7 @@ export function ApplyPage() {
           text={`${op.browser.reason || "The browser isn't available."} ${readyCount} application${readyCount === 1 ? " is" : "s are"} ready or waiting on you.`}
         />
       )}
-      <NightlyRunTile daily={op.daily} />
+      <NightlyRunStrip daily={op.daily} />
       {!tabDecided ? (
         <Skeleton className="h-48" />
       ) : (

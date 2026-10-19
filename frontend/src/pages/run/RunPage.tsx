@@ -6,6 +6,7 @@ import { RunCostEstimate } from "../../components/RunCostEstimate";
 import { RunHistoryPanel } from "../../components/RunHistoryPanel";
 import { Tabs } from "../../components/Tabs";
 import { Button, CommandBar, EmptyState, Page } from "../../components/ui";
+import { VIEWER_HEIGHT } from "../../lib/viewer";
 import { useCommands } from "../../state/commandState";
 import { useRunState } from "../../state/runState";
 import { useWorkspaceState } from "../../state/workspaceState";
@@ -23,9 +24,6 @@ const PANES: { id: Pane; label: string; command: string }[] = [
   { id: "bullets", label: "Review bullets", command: "Review bullets" },
   { id: "content", label: "Application content", command: "Show application content" },
 ];
-
-// The viewer fills the window below the bars.
-const VIEWER_HEIGHT = "h-[calc(100vh-var(--rt-bar-top)-var(--rt-bar-bottom)-5.5rem)] min-h-[28rem]";
 
 /**
  * Tailor: the job and options (or, after a run, its report, bullet review and

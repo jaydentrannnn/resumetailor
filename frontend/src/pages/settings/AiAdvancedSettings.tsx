@@ -2,7 +2,7 @@ import { useRunState } from "../../state/runState";
 import { EffortSetting } from "./EffortSetting";
 import { ModelSpeedSetting } from "./ModelSpeedSetting";
 import { SELECT_WIDTH } from "./selectWidth";
-import { SettingRow } from "./SettingRow";
+import { SettingRow } from "../../components/ui";
 
 /** Tuning most people leave alone, shown inside the AI models tile when Advanced is on. */
 export function AiAdvancedSettings() {

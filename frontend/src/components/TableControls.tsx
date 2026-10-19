@@ -226,7 +226,7 @@ export function DataTable<T>({
               className={`border-b border-line last:border-0 hover:bg-sunken ${rowProps(row).className}`}
             >
               {withSelection && (
-                <td className="px-2 py-3 align-middle">
+                <td className="px-2 py-2 align-middle">
                   {/* block: an inline box sits on the text baseline, a few px above centre. */}
                   <input
                     className="block"
@@ -243,7 +243,7 @@ export function DataTable<T>({
                 <td
                   key={col.id}
                   data-row-select={col.noRowSelect ? "off" : undefined}
-                  className={`min-w-0 px-2 py-3 align-middle [overflow-wrap:anywhere] ${col.className ?? ""}`}
+                  className={`min-w-0 px-2 py-2 align-middle [overflow-wrap:anywhere] ${col.className ?? ""}`}
                 >
                   {col.cell(row)}
                 </td>

@@ -145,7 +145,7 @@ export function SourcesTab({
 
   return (
     <EverySourceContext.Provider value={everySource}>
-      <section aria-label="Sources" className="space-y-5">
+      <section aria-label="Sources" className="space-y-8">
         <SourceToolbar
           sources={sources}
           status={status}

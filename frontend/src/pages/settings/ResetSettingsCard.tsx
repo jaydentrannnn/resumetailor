@@ -1,12 +1,11 @@
 import { saveModelQueue } from "../../api";
-import { Button, Card } from "../../components/ui";
+import { Button, Card, SettingRow } from "../../components/ui";
 import { describe } from "../../lib/errors";
 import { settingsFor } from "../../lib/speedPresets";
 import { useToast } from "../../lib/toast";
 import { useConfirm } from "../../state/confirmState";
 import { resetSettings } from "../../state/runDefaults";
 import { useRunState } from "../../state/runState";
-import { SettingRow } from "./SettingRow";
 
 /** The one place that puts tailoring options and advanced AI tuning back to defaults. */
 export function ResetSettingsCard() {

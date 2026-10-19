@@ -3,6 +3,9 @@ import { ResumeQualityNotice } from "../components/ResumeQualityNotice";
 import { Button, Page, Skeleton, Tabs } from "../components/ui";
 import { isTabClosed } from "../lib/applicationRows";
 import { useOpenTabs } from "../lib/useOpenTabs";
+import { DocumentsCard } from "../components/DocumentsCard";
+import { WIDE, useMediaQuery } from "../lib/useMediaQuery";
+import { VIEWER_HEIGHT } from "../lib/viewer";
 import { useWorkspaceState } from "../state/workspaceState";
 import { AnswersPanel } from "./apply/detail/AnswersPanel";
 import { DetailHeader } from "./apply/detail/DetailHeader";
@@ -23,6 +26,7 @@ export function ApplicationDetailPage() {
   const { activeId } = useWorkspaceState();
   const { openTabs } = useOpenTabs();
   const view = useApplicationDetail(applicationId, activeId);
+  const wide = useMediaQuery(WIDE);
   const { app, detail, job, error, busy, tab } = view;
   if (error && !detail)
     return (
@@ -47,6 +51,8 @@ export function ApplicationDetailPage() {
       </Page>
     );
   const tabClosed = isTabClosed(app, openTabs);
+  // Wide windows keep the tailored documents beside every tab, as on Tailor.
+  const beside = wide && !!app.job_id;
   return (
     <Page width="wide">
       <DetailHeader
@@ -70,49 +76,72 @@ export function ApplicationDetailPage() {
           {error}
         </p>
       )}
-      <Tabs
-        label="Application details"
-        items={[
-          { id: "overview", label: "Overview" },
-          { id: "jd", label: "Job description" },
-          { id: "files", label: "Files" },
-          { id: "answers", label: "Answers" },
-          { id: "review", label: "Form review" },
-          { id: "timeline", label: "Timeline" },
-          { id: "notes", label: app.notes ? "Notes •" : "Notes" },
-        ]}
-        value={tab}
-        onChange={view.setTab}
-      />
-      <div role="tabpanel">
-        {tab === "overview" && <OverviewPanel app={app} job={job} />}
-        {tab === "jd" && <JobDescriptionPanel text={detail?.jd_text} />}
-        {tab === "files" && (
-          <FilesPanel
-            app={app}
-            job={job}
-            revision={view.docsRevision}
-            expansionNeeded={detail?.expansion_needed ?? false}
-            onBulletsSaved={() => void view.refreshEditedResume()}
-            onArtifactsChanged={() => void view.refreshEditedResume()}
+      <div
+        className={`grid items-start gap-5 ${beside ? "grid-cols-[minmax(24rem,1fr)_minmax(0,1.15fr)]" : ""}`}
+      >
+        <div className="min-w-0 space-y-4">
+          <Tabs
+            label="Application details"
+            items={[
+              { id: "overview", label: "Overview" },
+              { id: "jd", label: "Job description" },
+              { id: "files", label: beside ? "Extras" : "Files" },
+              { id: "answers", label: "Answers" },
+              { id: "review", label: "Form review" },
+              { id: "timeline", label: "Timeline" },
+              { id: "notes", label: app.notes ? "Notes •" : "Notes" },
+            ]}
+            value={tab}
+            onChange={view.setTab}
           />
-        )}
-        {tab === "answers" && <AnswersPanel app={app} job={job} packet={detail?.packet} />}
-        {tab === "review" && (
-          <ReviewPanel
-            app={app}
-            tabClosed={tabClosed}
-            disabled={busy || !!app.archived_at}
-            error={error}
-            onRefresh={() => void view.refreshReview()}
-            onCorrect={(field, value, ids) => void view.correct(field, value, ids)}
-          />
-        )}
-        {tab === "timeline" && applicationId && (
-          <TimelinePanel app={app} applicationId={applicationId} />
-        )}
-        {tab === "notes" && (
-          <NotesPanel key={app.source_job_id} application={app} onSaved={view.setApplication} />
+          <div role="tabpanel">
+            {tab === "overview" && <OverviewPanel app={app} job={job} />}
+            {tab === "jd" && <JobDescriptionPanel text={detail?.jd_text} />}
+            {tab === "files" && (
+              <FilesPanel
+                app={app}
+                job={job}
+                revision={view.docsRevision}
+                expansionNeeded={detail?.expansion_needed ?? false}
+                onBulletsSaved={() => void view.refreshEditedResume()}
+                onArtifactsChanged={() => void view.refreshEditedResume()}
+                viewerBeside={beside}
+              />
+            )}
+            {tab === "answers" && <AnswersPanel app={app} job={job} packet={detail?.packet} />}
+            {tab === "review" && (
+              <ReviewPanel
+                app={app}
+                tabClosed={tabClosed}
+                disabled={busy || !!app.archived_at}
+                error={error}
+                onRefresh={() => void view.refreshReview()}
+                onCorrect={(field, value, ids) => void view.correct(field, value, ids)}
+              />
+            )}
+            {tab === "timeline" && applicationId && (
+              <TimelinePanel app={app} applicationId={applicationId} />
+            )}
+            {tab === "notes" && (
+              <NotesPanel key={app.source_job_id} application={app} onSaved={view.setApplication} />
+            )}
+          </div>
+        </div>
+        {beside && app.job_id && (
+          <section
+            aria-label="Documents"
+            className="sticky top-[calc(var(--rt-bar-top)+1.25rem)] min-w-0"
+          >
+            <DocumentsCard
+              revision={view.docsRevision}
+              jobId={app.job_id}
+              coverLetter={job?.cover_letter}
+              onCoverRegenerated={() => {}}
+              readOnly
+              coverDetails={false}
+              viewerClassName={VIEWER_HEIGHT}
+            />
+          </section>
         )}
       </div>
     </Page>

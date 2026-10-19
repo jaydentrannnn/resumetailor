@@ -1,5 +1,5 @@
 import { useState } from "react";
-import { Card, Segmented, Switch } from "../../components/ui";
+import { Card, Segmented, SettingRow, Switch } from "../../components/ui";
 import {
   notificationsSupported,
   notifyPreference,
@@ -7,7 +7,6 @@ import {
 } from "../../lib/applyNotify";
 import { useToast } from "../../lib/toast";
 import { type ThemePreference, useTheme } from "../../state/themeState";
-import { SettingRow } from "./SettingRow";
 
 const THEMES: { id: ThemePreference; label: string }[] = [
   { id: "system", label: "System" },
