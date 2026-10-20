@@ -11,7 +11,7 @@ import {
   regenerateCoverLetter,
 } from "../api";
 import { CopyButton } from "./CopyButton";
-import { CoverLetterDetails, letterText } from "./CoverLetterPanel";
+import { CoverLetterDetails, CoverLetterWarnings, letterText } from "./CoverLetterPanel";
 import type { Command } from "../lib/commands";
 import { saveLabel } from "../lib/fileActions";
 import { useCommands } from "../state/commandState";
@@ -28,7 +28,8 @@ type Props = {
   /** Bumped when the cover letter was regenerated elsewhere. */
   coverRevision?: number;
   /** Show the letter's text and regenerate controls under the viewer (the Tailor page
-   * keeps them in its Content tab instead). */
+   * keeps them in its Content tab instead). Without them, the letter's warnings still
+   * show, over the viewer. */
   coverDetails?: boolean;
   /** Height of the document area. */
   viewerClassName?: string;
@@ -160,6 +161,7 @@ export function DocumentsCard({
 
   return (
     <div className="space-y-4">
+      {!coverDetails && coverLetter && <CoverLetterWarnings letter={coverLetter} titled />}
       <DocumentViewer
         label="Documents"
         docs={docs}

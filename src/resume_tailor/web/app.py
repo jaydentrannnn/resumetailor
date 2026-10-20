@@ -147,8 +147,9 @@ class _RequestSizeLimitMiddleware:
 
     Requests to ``POST /api/data/import`` may be up to ``data_transfer.MAX_IMPORT_BYTES``
     (2 GiB) plus a small multipart overhead allowance (1 MiB), allowing large profile
-    imports to proceed without being read into memory. Every other path keeps the
-    existing 10 MB limit (`template_ops._MAX_UPLOAD_BYTES`).
+    imports to proceed without being read into memory. ``POST /api/desktop/save-as``
+    takes up to its own ``MAX_SAVE_BYTES``. Every other path keeps the existing 10 MB
+    limit (`template_ops._MAX_UPLOAD_BYTES`).
 
     A check inside a route handler (e.g. `len(raw) > _MAX_UPLOAD_BYTES` after
     `await file.read()`, as `template_uploads._validate_upload_bytes` does) is too late to
@@ -187,6 +188,11 @@ class _RequestSizeLimitMiddleware:
                 method = scope.get("method")
                 if method == "POST" and path == "/api/data/import":
                     max_bytes = data_transfer.MAX_IMPORT_BYTES + self._MULTIPART_OVERHEAD
+                elif method == "POST" and path == "/api/desktop/save-as":
+                    # The route's own cap: Save as… sends the file's bytes back.
+                    from resume_tailor.web.routes.desktop import MAX_SAVE_BYTES
+
+                    max_bytes = MAX_SAVE_BYTES
                 else:
                     max_bytes = self._MAX_BYTES
                 if length > max_bytes:

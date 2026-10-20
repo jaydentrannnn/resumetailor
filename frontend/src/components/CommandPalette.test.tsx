@@ -81,4 +81,37 @@ describe("CommandPalette", () => {
     expect(screen.queryByRole("dialog")).not.toBeInTheDocument();
     expect(elsewhere).toHaveFocus();
   });
+
+  it("saves the value a buffered field commits when the list opens", () => {
+    vi.useFakeTimers();
+    const onSave = vi.fn();
+    function BufferedPage() {
+      const [year, setYear] = useState("2024");
+      const [draft, setDraft] = useState(year);
+      useCommands((): Command[] => [
+        { id: "save", title: "Save resume", group: "Resume", run: () => onSave(year) },
+      ]);
+      return (
+        <input
+          aria-label="Year"
+          value={draft}
+          onChange={(e) => setDraft(e.target.value)}
+          onBlur={() => setYear(draft)}
+        />
+      );
+    }
+    render(
+      <CommandProvider>
+        <BufferedPage />
+        <CommandPalette />
+      </CommandProvider>,
+    );
+    const field = screen.getByRole("textbox", { name: "Year" });
+    field.focus();
+    fireEvent.change(field, { target: { value: "2026" } });
+    open();
+    fireEvent.click(screen.getByRole("option", { name: /Save resume/ }));
+    act(() => vi.runAllTimers());
+    expect(onSave).toHaveBeenCalledWith("2026");
+  });
 });

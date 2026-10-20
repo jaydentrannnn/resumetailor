@@ -6,6 +6,7 @@ import {
   fetchDataInfo,
   importData,
   resetData,
+  saveDataExport,
   type CacheUsage,
   type DataInfo,
 } from "../../api";
@@ -160,6 +161,7 @@ export function DataSection() {
             url={exportDataUrl(includeOutput)}
             what="profile export"
             fallbackName="resumetailor-profile.zip"
+            desktopSave={() => saveDataExport(includeOutput)}
             variant="primary"
             size="md"
           />

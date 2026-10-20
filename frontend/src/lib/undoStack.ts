@@ -88,3 +88,37 @@ export function describeChange(before: MasterResume, after: MasterResume): strin
     return "Removed an item";
   return "Moved an item";
 }
+
+// A list row's id can repeat across sections; its client-only `_key` cannot.
+const entryKey = (entry: Identified): string | undefined => entry._key ?? entry.id;
+
+/**
+ * Undo / redo's result: `structure`'s sections, entries and bullets in its order, each
+ * one's content taken from `live` wherever it still exists there (matched by id, across
+ * sections, so a moved entry keeps its edits). A text edit made after the structural
+ * change survives undoing it; what the change removed comes back from `structure`.
+ */
+export function restoreStructure(structure: MasterResume, live: MasterResume): MasterResume {
+  const sections = new Map(live.sections.map((section) => [section.id, section]));
+  const entries = new Map<string, Identified>();
+  const bullets = new Map<string, { id: string }>();
+  for (const section of live.sections)
+    for (const entry of section.entries as Identified[]) {
+      const key = entryKey(entry);
+      if (key) entries.set(key, entry);
+      for (const bullet of entry.bullets ?? []) bullets.set(bullet.id, bullet);
+    }
+  const restoreEntry = (entry: Identified): Identified => {
+    const key = entryKey(entry);
+    const current = (key && entries.get(key)) || entry;
+    if (!entry.bullets) return current;
+    return { ...current, bullets: entry.bullets.map((b) => bullets.get(b.id) ?? b) };
+  };
+  return {
+    ...live,
+    sections: structure.sections.map((section) => ({
+      ...(sections.get(section.id) ?? section),
+      entries: (section.entries as Identified[]).map(restoreEntry),
+    })) as MasterResume["sections"],
+  };
+}

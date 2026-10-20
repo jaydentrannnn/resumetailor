@@ -7,6 +7,7 @@ import {
   emptyStack,
   record,
   redo as redoStep,
+  restoreStructure,
   structureKey,
   undo as undoStep,
 } from "../../lib/undoStack";
@@ -20,6 +21,7 @@ type SetResume = (next: MasterResume | ((prev: MasterResume) => MasterResume)) =
  * (import, restore from history, discard) clears the stack, since its steps no longer
  * describe this resume. The last step shows in the status bar with Undo / Redo, and
  * Ctrl+Z / Ctrl+Shift+Z (Ctrl+Y) work outside text fields, which keep their own undo.
+ * A step restores the structure only (`restoreStructure`), never older text.
  */
 export function useResumeUndo(resume: MasterResume | null, setResume: SetResume) {
   const toast = useToast();
@@ -37,7 +39,9 @@ export function useResumeUndo(resume: MasterResume | null, setResume: SetResume)
       if (!result) return;
       stack.current = result.stack;
       source.current = "restore";
-      setResume(result.step.snapshot);
+      // Only the structure goes back: text edited since keeps its newest value.
+      const target = result.step.snapshot;
+      setResume((live) => restoreStructure(target, live));
       const back = direction === "undo" ? "redo" : "undo";
       toast.info(
         direction === "undo" ? `Undid: ${result.step.label}` : result.step.label,

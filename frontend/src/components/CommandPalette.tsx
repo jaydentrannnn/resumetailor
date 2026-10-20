@@ -10,22 +10,29 @@ import { Kbd } from "./ui/Tile";
  * you type. Enter runs the highlighted one; Escape closes and gives focus back.
  */
 export function CommandPalette() {
-  const [commands, setCommands] = useState<Command[] | null>(null);
+  const [open, setOpen] = useState(false);
   const list = useCommandList();
   useEffect(() => {
     function onKey(e: KeyboardEvent) {
       if (shortcutFor(e) !== "commands") return;
       e.preventDefault();
-      setCommands((open) => (open ? null : list()));
+      setOpen((was) => !was);
     }
     document.addEventListener("keydown", onKey);
     return () => document.removeEventListener("keydown", onKey);
-  }, [list]);
-  if (!commands) return null;
-  return <PaletteDialog commands={commands} onClose={() => setCommands(null)} />;
+  }, []);
+  if (!open) return null;
+  return <PaletteDialog list={list} onClose={() => setOpen(false)} />;
 }
 
-function PaletteDialog({ commands, onClose }: { commands: Command[]; onClose: () => void }) {
+function PaletteDialog({ list, onClose }: { list: () => Command[]; onClose: () => void }) {
+  const [commands, setCommands] = useState(list);
+  // Opening moved focus out of the page, so a buffered field has just committed: list
+  // again once the page has re-rendered with it.
+  useEffect(() => {
+    const timer = window.setTimeout(() => setCommands(list()), 0);
+    return () => window.clearTimeout(timer);
+  }, [list]);
   const [query, setQuery] = useState("");
   const [active, setActive] = useState(0);
   const listId = useId();
@@ -44,8 +51,13 @@ function PaletteDialog({ commands, onClose }: { commands: Command[]; onClose: ()
 
   function run(command: Command) {
     onClose();
-    // After the dialog has closed and handed focus back, so a command can move it.
-    window.setTimeout(command.run, 0);
+    // After the dialog has closed and handed focus back, so a command can move it. The
+    // command is looked up again then: the one listed may hold a stale closure (a Save
+    // from before a field committed) or no longer be allowed.
+    window.setTimeout(() => {
+      const fresh = list().find((item) => item.id === command.id);
+      if (fresh && !fresh.disabled) fresh.run();
+    }, 0);
   }
 
   function onKeyDown(e: React.KeyboardEvent) {

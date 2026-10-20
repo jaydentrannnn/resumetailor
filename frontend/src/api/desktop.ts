@@ -22,6 +22,17 @@ export async function saveFileAs(url: string, fallbackName: string): Promise<Des
   });
 }
 
+/**
+ * Save this profile's export where the person chooses (desktop app only). The server
+ * builds the zip and writes it there itself, so a large export never passes through
+ * the page.
+ */
+export function saveDataExport(includeOutput: boolean): Promise<DesktopSaveResult> {
+  return request<DesktopSaveResult>(`/api/data/export/save?include_output=${includeOutput}`, {
+    method: "POST",
+  });
+}
+
 /** Show a run's file selected in Explorer / Finder (desktop app only). */
 export function revealJobFile(jobId: string, kind: JobFileKind): Promise<void> {
   return request(`/api/jobs/${encodeURIComponent(jobId)}/files/${kind}/reveal`, {

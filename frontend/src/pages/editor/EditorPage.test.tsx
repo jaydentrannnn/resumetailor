@@ -404,3 +404,19 @@ it("filters entries by their text and hides sections with no match", async () =>
   expect(filter).toHaveValue("");
   expect(document.getElementById("resume-section-experience")).toBeVisible();
 });
+
+it("undoes a removal without reverting text edited after it", async () => {
+  await editor();
+  fireEvent.click(screen.getByRole("button", { name: "Expand Acme · Engineer" }));
+  const remove = section("projects")
+    .getAllByRole("button", { name: "Remove" })
+    .find((button) => button.closest("[data-entry-actions]"));
+  fireEvent.click(remove!);
+  expect(section("projects").queryByRole("button", { name: /Search Tool/ })).toBeNull();
+  const company = section("experience").getByRole("textbox", { name: "Company" });
+  fireEvent.change(company, { target: { value: "Acme Labs" } });
+  fireEvent.blur(company);
+  fireEvent.click(screen.getByRole("button", { name: "Undo" }));
+  expect(section("projects").getByRole("button", { name: /Search Tool/ })).toBeVisible();
+  expect(section("experience").getByRole("textbox", { name: "Company" })).toHaveValue("Acme Labs");
+});

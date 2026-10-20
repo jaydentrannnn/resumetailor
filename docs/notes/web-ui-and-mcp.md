@@ -969,3 +969,22 @@ A send's time is the first sent-like status in its history, falling back to `sta
 The banner hides until a source has found a posting; its buttons switch Apply tabs rather
 than navigate. Heatmap month labels skip a month with under three columns so short months
 don't run into the next label.
+
+### Review fixes before v1.18.0 (2026-10-19)
+
+- Resume undo restored the whole snapshot, so undoing a removal also reverted text typed
+  after it. A step now restores only the structure: `undoStack.restoreStructure` keeps the
+  snapshot's sections, entries and bullets in its order but takes each one's content from
+  the live resume, matched by `_key` first (list rows can share ids across sections), then
+  id. Applied through a functional update so it reads the newest state.
+- Ctrl+K captured each command's closure when the list opened, but opening it blurs the
+  focused field, whose buffered value commits only then; Save ran with the old value. The
+  palette now lists again after opening and looks the command up again when running it,
+  skipping it if it became disabled.
+- Desktop Save as… re-uploads the file's bytes, which the 10 MB request-size middleware
+  refused for big backups. `/api/desktop/save-as` now gets its own 1 GB cap in the
+  middleware, and the profile export uses `POST /api/data/export/save`, which builds the
+  zip and moves it to the chosen path on the server, never through the page.
+- With the document beside an application's tabs, `coverDetails={false}` hid the cover
+  letter's guard warnings; `DocumentsCard` now shows them (`CoverLetterWarnings`) over the
+  viewer whenever the letter's details are not shown.

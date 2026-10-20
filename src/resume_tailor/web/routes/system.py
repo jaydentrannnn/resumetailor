@@ -3,6 +3,7 @@ and profile data export / import / reset (`data_transfer`)."""
 
 from __future__ import annotations
 
+import shutil
 import tempfile
 import time
 from pathlib import Path
@@ -21,11 +22,12 @@ from resume_tailor.apply.funnel import operations as apply_operations
 from resume_tailor.apply.funnel import store as apply_store
 from resume_tailor.content import data_transfer, libraries
 from resume_tailor.document import convert
-from resume_tailor.infra import llm, usage_spend
+from resume_tailor.infra import desktop_shell, llm, usage_spend
+from resume_tailor.web import state as web_state
 from resume_tailor.web import template_ops
 from resume_tailor.web.job_routing import model_routing, pinned_role
 from resume_tailor.web.jobs import get_queue
-from resume_tailor.web.schemas import JobSettings
+from resume_tailor.web.schemas import DesktopSaveResult, JobSettings
 
 router = APIRouter()
 
@@ -174,21 +176,62 @@ def data_info() -> dict[str, Any]:
     }
 
 
-@router.get("/api/data/export.zip")
-def export_data(include_output: bool = True) -> FileResponse:
-    """Download this profile as a zip (never includes API keys or passwords)."""
+def _export_workspace() -> str:
     workspace_id = config.active_workspace_id()
     if workspace_id is None:
         raise HTTPException(409, "No active profile.")
+    return workspace_id
+
+
+def _export_name(workspace_id: str) -> str:
+    return f"resumetailor-{workspace_id}-{time.strftime('%Y%m%d')}.zip"
+
+
+@router.get("/api/data/export.zip")
+def export_data(include_output: bool = True) -> FileResponse:
+    """Download this profile as a zip (never includes API keys or passwords)."""
+    workspace_id = _export_workspace()
     with template_ops.LOCK:
         path = data_transfer.export_zip(workspace_id, include_output=include_output)
-    stamp = time.strftime("%Y%m%d")
     return FileResponse(
         path=path,
         media_type="application/zip",
-        filename=f"resumetailor-{workspace_id}-{stamp}.zip",
+        filename=_export_name(workspace_id),
         background=BackgroundTask(path.unlink, missing_ok=True),
     )
+
+
+@router.post("/api/data/export/save", response_model=DesktopSaveResult)
+def save_data_export(include_output: bool = True) -> DesktopSaveResult:
+    """Desktop app: write the profile export where the person chooses in the Save dialog.
+
+    The zip is built and moved on the server, so a large export never travels through
+    the page (a download then a re-upload would also meet the 10 MB request cap).
+    """
+    if not web_state.desktop:
+        raise HTTPException(404, "Available in the desktop app only.")
+    workspace_id = _export_workspace()
+    try:
+        chosen = desktop_shell.ask_save_path(_export_name(workspace_id), ".zip")
+    except desktop_shell.ShellUnavailable as exc:
+        raise HTTPException(404, str(exc)) from exc
+    if chosen is None:
+        return DesktopSaveResult(saved=False)
+    target = Path(chosen)
+    if target.suffix.lower() != ".zip":
+        target = target.with_name(target.name + ".zip")
+    with template_ops.LOCK:
+        path = data_transfer.export_zip(workspace_id, include_output=include_output)
+    try:
+        shutil.move(path, target)
+    except OSError as exc:
+        path.unlink(missing_ok=True)
+        raise HTTPException(
+            409,
+            f"Could not save to {target}: {exc.strerror or exc}. "
+            "If the file is open in another program, close it and try again.",
+        ) from exc
+    return DesktopSaveResult(saved=True, path=str(target))
 
 
 @router.post("/api/data/import")

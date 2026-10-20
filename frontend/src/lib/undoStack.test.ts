@@ -6,6 +6,7 @@ import {
   emptyStack,
   record,
   redo,
+  restoreStructure,
   structureKey,
   undo,
 } from "./undoStack";
@@ -78,5 +79,41 @@ describe("structureKey", () => {
     ]);
     expect(describeChange(base, bullet)).toBe("Added a bullet");
     expect(describeChange(added, base)).toBe("Removed an item");
+  });
+});
+
+describe("restoreStructure", () => {
+  const bullet = (id: string, text: string) => ({ id, text, tags: [] });
+  const job = (id: string, title: string, bullets: ReturnType<typeof bullet>[]) => ({
+    id,
+    company: "Acme",
+    title,
+    start: "2024-01",
+    end: "Present",
+    bullets,
+  });
+  const resume = (entries: ReturnType<typeof job>[]) =>
+    ({
+      contact: { name: "A", email: "a@b.c" },
+      sections: [{ id: "exp", kind: "experience", title: "Experience", entries }],
+    }) as unknown as MasterResume;
+
+  it("brings back a deleted entry and keeps text edited after the delete", () => {
+    const before = resume([job("e1", "Engineer", [bullet("b1", "old")]), job("e2", "Intern", [])]);
+    const live = resume([job("e1", "Senior Engineer", [bullet("b1", "new")])]);
+    const restored = restoreStructure(before, live);
+    const entries = restored.sections[0].entries as ReturnType<typeof job>[];
+    expect(entries.map((e) => e.id)).toEqual(["e1", "e2"]);
+    expect(entries[0].title).toBe("Senior Engineer");
+    expect(entries[0].bullets[0].text).toBe("new");
+    expect(entries[1].title).toBe("Intern");
+  });
+
+  it("brings back a deleted bullet inside an entry whose text changed", () => {
+    const before = resume([job("e1", "Engineer", [bullet("b1", "one"), bullet("b2", "two")])]);
+    const live = resume([job("e1", "Lead", [bullet("b2", "two, edited")])]);
+    const entry = restoreStructure(before, live).sections[0].entries[0] as ReturnType<typeof job>;
+    expect(entry.title).toBe("Lead");
+    expect(entry.bullets.map((b) => b.text)).toEqual(["one", "two, edited"]);
   });
 });

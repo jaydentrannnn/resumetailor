@@ -60,3 +60,19 @@ it("desktop app: Save as… goes through the server, with folder and Word action
   expect(screen.getByRole("link", { name: "Open in window" })).toBeTruthy();
   expect(screen.queryByRole("link", { name: "Download PDF" })).toBeNull();
 });
+
+it("desktop app: a file the server writes itself never goes through the page", async () => {
+  host(true);
+  const desktopSave = vi.fn().mockResolvedValue({ saved: true, path: "C:/b.zip" });
+  render(
+    <SaveFileButton
+      url="/api/data/export.zip"
+      what="profile export"
+      fallbackName="p.zip"
+      desktopSave={desktopSave}
+    />,
+  );
+  fireEvent.click(await screen.findByRole("button", { name: "Save profile export…" }));
+  await waitFor(() => expect(desktopSave).toHaveBeenCalledTimes(1));
+  expect(api.saveFileAs).not.toHaveBeenCalled();
+});

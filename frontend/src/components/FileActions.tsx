@@ -1,5 +1,5 @@
 import { useState } from "react";
-import { openJobFile, revealJobFile, saveFileAs } from "../api";
+import { type DesktopSaveResult, openJobFile, revealJobFile, saveFileAs } from "../api";
 import { type ButtonSize, type ButtonVariant, buttonClass } from "../lib/buttonClass";
 import { describe } from "../lib/errors";
 import { type JobFileKind, openLabel, saveLabel } from "../lib/fileActions";
@@ -16,19 +16,28 @@ type SaveProps = {
   variant?: ButtonVariant;
   size?: ButtonSize;
   className?: string;
+  /** Desktop: save some other way than fetching `url` and sending it back (a large
+   * file the server can write itself). */
+  desktopSave?: () => Promise<DesktopSaveResult>;
 };
 
-/** Save a download through the native Save dialog (desktop app), saying how it went. */
-export function useSaveFile(): (url: string, fallbackName: string) => Promise<void> {
+/** Run a desktop save, saying how it went. */
+function useReportSave(): (save: () => Promise<DesktopSaveResult>) => Promise<void> {
   const toast = useToast();
-  return async (url, fallbackName) => {
+  return async (save) => {
     try {
-      const result = await saveFileAs(url, fallbackName);
+      const result = await save();
       if (result.saved) toast.success("Saved", result.path ?? undefined);
     } catch (err) {
       toast.error("Could not save the file", describe(err).detail);
     }
   };
+}
+
+/** Save a download through the native Save dialog (desktop app), saying how it went. */
+export function useSaveFile(): (url: string, fallbackName: string) => Promise<void> {
+  const report = useReportSave();
+  return (url, fallbackName) => report(() => saveFileAs(url, fallbackName));
 }
 
 /**
@@ -63,9 +72,10 @@ export function SaveFileButton({
   variant = "secondary",
   size = "sm",
   className = "",
+  desktopSave,
 }: SaveProps) {
   const desktop = useDesktop();
-  const saveFile = useSaveFile();
+  const report = useReportSave();
   const [busy, setBusy] = useState(false);
   const label = saveLabel(what, desktop);
 
@@ -78,7 +88,7 @@ export function SaveFileButton({
 
   async function save() {
     setBusy(true);
-    await saveFile(url, fallbackName);
+    await report(desktopSave ?? (() => saveFileAs(url, fallbackName)));
     setBusy(false);
   }
 

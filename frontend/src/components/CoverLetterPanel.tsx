@@ -18,6 +18,28 @@ export function letterText(letter: CoverLetter): string {
   return blocks.filter((line, i, arr) => line !== "" || (i > 0 && arr[i - 1] !== "")).join("\n");
 }
 
+/** What the cover-letter guard flagged; nothing when it flagged nothing. */
+export function CoverLetterWarnings({
+  letter,
+  titled = false,
+}: {
+  letter: CoverLetter;
+  /** Say whose warnings they are (shown away from the letter's own details). */
+  titled?: boolean;
+}) {
+  if (!letter.warnings.length) return null;
+  return (
+    <div className="space-y-1">
+      {titled && <p className="text-xs font-medium text-ink-2">Cover letter warnings</p>}
+      <ul className="list-disc space-y-1 pl-5 text-sm text-attn">
+        {letter.warnings.map((warning) => (
+          <li key={warning}>{warning}</li>
+        ))}
+      </ul>
+    </div>
+  );
+}
+
 type DetailsProps = {
   letter: CoverLetter;
   onRegenerate: (instruction: string) => Promise<void>;
@@ -48,13 +70,7 @@ export function CoverLetterDetails({ letter, onRegenerate, readOnly = false }: D
         <span className="font-mono tabular-nums">{letter.word_count}</span> words · model{" "}
         <span className="font-mono">{letter.model || "—"}</span>
       </p>
-      {letter.warnings.length > 0 && (
-        <ul className="list-disc space-y-1 pl-5 text-sm text-attn">
-          {letter.warnings.map((warning) => (
-            <li key={warning}>{warning}</li>
-          ))}
-        </ul>
-      )}
+      <CoverLetterWarnings letter={letter} />
 
       <div className="space-y-4 text-sm leading-relaxed">
         {letter.paragraphs.map((para, index) => (
