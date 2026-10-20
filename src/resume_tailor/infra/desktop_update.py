@@ -54,7 +54,8 @@ _BACKUP_SKIP_DIRS = frozenset({"output"})
 
 _lock = threading.Lock()
 _write_lock = threading.Lock()
-_out: TextIO | None = None  # tests swap this; None means sys.stdout
+#: The shell's pipe (`desktop_main.shell_channel`); tests swap it. None means sys.stdout.
+_out: TextIO | None = None
 _waiter: threading.Thread | None = None
 _state: dict[str, Any] = {
     "state": "idle",
@@ -103,15 +104,33 @@ def request(command: str) -> None:
             _state.update(state="downloading", pct=0, error=None)
         elif command == "apply":
             _state.update(state="installing", waiting_for=None)
-    write_line(f"SHELL {command}")
+    try:
+        write_line(f"SHELL {command}")
+    except ShellGone as exc:
+        with _lock:
+            _state.update(state="error", error=str(exc))
+
+
+class ShellGone(RuntimeError):
+    """The pipe to the shell is closed: nothing written now reaches the window."""
 
 
 def write_line(line: str) -> None:
-    """Write one line to the shell (the server's stdout); one writer at a time."""
+    """Write one line to the shell (the server's stdout); one writer at a time.
+
+    Raises `ShellGone` when the pipe is closed, instead of the OSError a route would
+    turn into a bare 500.
+    """
     out = _out or sys.stdout
     with _write_lock:
-        out.write(f"{line}\n")
-        out.flush()
+        try:
+            out.write(f"{line}\n")
+            out.flush()
+        except (OSError, ValueError) as exc:
+            _log.warning("could not write to the desktop shell: %s", exc)
+            raise ShellGone(
+                "The app window stopped answering. Quit ResumeTailor and open it again."
+            ) from exc
 
 
 def receive(line: str) -> None:

@@ -1024,3 +1024,20 @@ The pipeline over a date range is a cohort by found date (postings found in the 
 far they got), not stage events in the range — otherwise a range could show more sent than
 found. "Not screened yet" in the biggest-drop line uses the live total, so it shows only for
 all time.
+
+### Desktop Save as… / Show in folder fixes (2026-10-20)
+
+Save as… (and the window title, and update checks) failed with a bare 500 in the installed
+app: the shell read the server's stdout with Rust `BufRead::lines()`, which ends at the
+first line that is not UTF-8. Anything printed in the Windows code page (a library's print,
+a "’" in a log line) stopped the reader; its end of the pipe closed while the server kept
+running, so every later `desktop_update.write_line` raised OSError. Fixed on both sides:
+the shell decodes each line lossily (`read_lines_lossy`) and keeps reading; the server keeps
+a private UTF-8 duplicate of stdout for protocol lines (`desktop_main.shell_channel`) and
+points fd 1 at stderr (discarded by the shell) for everything else. A closed pipe is now
+`desktop_update.ShellGone` → "The app window stopped answering. Quit ResumeTailor and open
+it again." instead of a 500.
+
+Show in folder opened Documents: `Popen(["explorer", f"/select,{path}"])` quotes the whole
+argument when the path has spaces, and Explorer ignores a quoted `/select,`. It now passes one
+command line, `explorer /select,"<path>"`.

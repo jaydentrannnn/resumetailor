@@ -17,6 +17,7 @@ writes the bytes there.
 
 from __future__ import annotations
 
+import contextlib
 import json
 import logging
 import threading
@@ -50,7 +51,10 @@ def ask_save_path(name: str, ext: str, timeout: float = DIALOG_TIMEOUT_SECONDS) 
         _pending[request_id] = (done, slot)
     try:
         payload = {"id": request_id, "name": name, "ext": ext.lstrip(".").lower()}
-        desktop_update.write_line(f"SHELL save {json.dumps(payload)}")
+        try:
+            desktop_update.write_line(f"SHELL save {json.dumps(payload)}")
+        except desktop_update.ShellGone as exc:
+            raise ShellUnavailable(str(exc)) from exc
         if not done.wait(timeout):
             return None
         return slot[0]
@@ -60,9 +64,10 @@ def ask_save_path(name: str, ext: str, timeout: float = DIALOG_TIMEOUT_SECONDS) 
 
 
 def set_title(title: str) -> None:
-    """Set the window title; a no-op outside the desktop app."""
+    """Set the window title; a no-op outside the desktop app or once the shell is gone."""
     if ENABLED:
-        desktop_update.write_line(f"SHELL title {json.dumps({'title': title})}")
+        with contextlib.suppress(desktop_update.ShellGone):
+            desktop_update.write_line(f"SHELL title {json.dumps({'title': title})}")
 
 
 def receive(line: str) -> None:

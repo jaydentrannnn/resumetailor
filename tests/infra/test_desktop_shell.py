@@ -71,3 +71,13 @@ def test_browser_build_has_no_shell(monkeypatch):
 def test_title_line(out):
     desktop_shell.set_title("Acme — ResumeTailor")
     assert out.getvalue() == 'SHELL title {"title": "Acme \\u2014 ResumeTailor"}\n'
+
+
+def test_a_closed_pipe_is_a_clear_error_not_a_500(monkeypatch):
+    stream = io.StringIO()
+    stream.close()
+    monkeypatch.setattr(desktop_update, "_out", stream)
+    monkeypatch.setattr(desktop_shell, "ENABLED", True)
+    with pytest.raises(desktop_shell.ShellUnavailable, match="stopped answering"):
+        desktop_shell.ask_save_path("a.pdf", ".pdf", timeout=0.05)
+    desktop_shell.set_title("ignored")  # nothing to tell, so no error either

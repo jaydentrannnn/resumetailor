@@ -53,6 +53,14 @@ def test_request_writes_shell_lines_and_rejects_unknown(_fresh):
         desktop_update.request("rm -rf")
 
 
+def test_a_closed_pipe_shows_as_an_update_error(_fresh):
+    _fresh.close()
+    desktop_update.request("check")
+    status = desktop_update.status()
+    assert status["state"] == "error"
+    assert "stopped answering" in status["error"]
+
+
 def test_request_refuses_outside_the_desktop_app(monkeypatch):
     monkeypatch.setattr(desktop_update, "ENABLED", False)
     with pytest.raises(RuntimeError):

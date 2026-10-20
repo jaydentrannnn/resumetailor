@@ -44,6 +44,7 @@ import sys
 import threading
 from collections.abc import Callable, Iterable, Mapping
 from pathlib import Path
+from typing import TextIO
 
 APP_NAME = "ResumeTailor"
 #: Windows data folder. Not ``%LOCALAPPDATA%\ResumeTailor``: the per-user installer
@@ -173,6 +174,33 @@ def watch_stdin(
     return thread
 
 
+def shell_channel() -> TextIO:
+    """Keep the real stdout for the shell's protocol lines; send everything else away.
+
+    The shell reads stdout line by line as UTF-8. Anything else printed there (a
+    library's print, a stray debug line, text in the Windows code page) once ended its
+    reader, which closed the pipe: every later Save dialog or title request then failed
+    with a bare 500. So the real handle is duplicated into a UTF-8 stream only
+    `desktop_update.write_line` uses, and file descriptor 1 is pointed at stderr (which
+    the shell discards) for whatever else writes to stdout.
+    """
+    sys.stdout.flush()
+    channel = os.fdopen(
+        os.dup(sys.stdout.fileno()), "w", encoding="utf-8", errors="replace", newline="\n"
+    )
+    try:
+        sink = sys.stderr.fileno() if sys.stderr is not None else None
+    except (OSError, ValueError):
+        sink = None
+    if sink is None:
+        sink = os.open(os.devnull, os.O_WRONLY)
+    os.dup2(sink, sys.stdout.fileno())
+    # A print of text the code page cannot encode must not fail whatever printed it.
+    if hasattr(sys.stdout, "reconfigure"):
+        sys.stdout.reconfigure(errors="replace")
+    return channel
+
+
 def _flag_value(args: list[str], flag: str) -> str | None:
     """The value after ``flag`` in ``args`` (``--flag value``), or None."""
     if flag in args:
@@ -199,7 +227,7 @@ def main(argv: list[str] | None = None) -> int:
         async def startup(self, sockets: list[socket.socket] | None = None) -> None:
             await super().startup(sockets=sockets)
             if self.started:
-                print(ready_line(port, token), flush=True)
+                desktop_update.write_line(ready_line(port, token))
 
     from resume_tailor.infra import desktop_shell, desktop_update
 
@@ -207,6 +235,7 @@ def main(argv: list[str] | None = None) -> int:
     server = _Server(uvicorn.Config(app, log_level="warning", access_log=False))
     if "--exit-with-stdin" in args:
         # Launched by the shell: it is on the other end of both pipes.
+        desktop_update._out = shell_channel()
         desktop_update.ENABLED = True
         desktop_shell.ENABLED = True
 

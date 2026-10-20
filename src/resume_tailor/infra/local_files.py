@@ -42,7 +42,9 @@ def open_default(path: Path) -> None:
 def reveal(path: Path) -> None:
     """Show the file selected in Explorer / Finder (Linux: open its folder)."""
     if sys.platform == "win32":
-        subprocess.Popen(["explorer", f"/select,{path}"])  # noqa: S603, S607
+        # One command line, not a list: Popen would quote "/select,C:\a b\c.pdf" whole,
+        # and Explorer then ignores /select and opens a default folder instead.
+        subprocess.Popen(f'explorer /select,"{path.resolve()}"')  # noqa: S603, S607
     elif sys.platform == "darwin":
         subprocess.Popen(["open", "-R", str(path)])  # noqa: S603, S607
     else:

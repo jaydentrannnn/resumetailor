@@ -178,3 +178,21 @@ def test_sidecar_prints_ready_once_it_serves(tmp_path):
     finally:
         proc.terminate()
         proc.wait(timeout=10)
+
+
+def test_only_protocol_lines_reach_the_shell(tmp_path):
+    """Stray output (a library's print, code-page text) never lands in the shell's pipe."""
+    code = r"""
+import os
+from resume_tailor.infra import desktop_main, desktop_update
+desktop_update._out = desktop_main.shell_channel()
+print('stray caf\u00e9', flush=True)
+os.write(1, b'raw \xe9\n')
+desktop_update.write_line('READY 1 caf\u00e9')
+"""
+    result = subprocess.run(
+        [sys.executable, "-c", code], capture_output=True, timeout=60, cwd=tmp_path
+    )
+    assert result.returncode == 0, result.stderr
+    assert result.stdout == "READY 1 café\n".encode()
+    assert b"stray" in result.stderr and b"raw" in result.stderr

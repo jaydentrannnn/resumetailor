@@ -176,8 +176,10 @@ fn start_server(app: &AppHandle) -> Result<(), String> {
     let handle = app.clone();
     std::thread::spawn(move || {
         // Keep reading after READY: the pipe must not fill up, and its end means the
-        // server exited.
-        for line in BufReader::new(stdout).lines().map_while(Result::ok) {
+        // server exited. Lines are decoded leniently: `lines()` stops at the first one
+        // that is not UTF-8, which closed the pipe on a server still running, so every
+        // later Save dialog or title request failed.
+        for line in read_lines_lossy(stdout) {
             if let Some(url) = ready_url(&line) {
                 handle
                     .state::<Sidecar>()
@@ -197,6 +199,22 @@ fn start_server(app: &AppHandle) -> Result<(), String> {
         server_exited(&handle, pid);
     });
     Ok(())
+}
+
+/// Each line of `stream` until it ends or fails, with any bytes that are not UTF-8
+/// replaced rather than ending the stream, and without the line ending.
+fn read_lines_lossy(stream: impl std::io::Read) -> impl Iterator<Item = String> {
+    let mut reader = BufReader::new(stream);
+    std::iter::from_fn(move || {
+        let mut buf = Vec::new();
+        match reader.read_until(b'\n', &mut buf) {
+            Ok(0) | Err(_) => None,
+            Ok(_) => {
+                let text = String::from_utf8_lossy(&buf);
+                Some(text.trim_end_matches(['\r', '\n']).to_owned())
+            }
+        }
+    })
 }
 
 /// `READY <port> <token>` → the URL that signs the window in.
@@ -387,7 +405,15 @@ pub fn run() {
 
 #[cfg(test)]
 mod tests {
-    use super::{lockdown_script, ready_url, theme_script_from_json};
+    use super::{lockdown_script, read_lines_lossy, ready_url, theme_script_from_json};
+
+    #[test]
+    fn server_output_keeps_flowing_past_a_line_that_is_not_utf8() {
+        // "caf\xe9" is "café" in the Windows code page: not UTF-8.
+        let output: &[u8] = b"READY 8000 t\r\ncaf\xe9\nSHELL save {}\n";
+        let lines: Vec<String> = read_lines_lossy(output).collect();
+        assert_eq!(lines, ["READY 8000 t", "caf\u{fffd}", "SHELL save {}"]);
+    }
 
     #[test]
     fn lockdown_script_states_the_build_kind_before_the_lockdown() {
