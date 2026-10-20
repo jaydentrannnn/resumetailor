@@ -2,12 +2,10 @@
 export const VIEWER_HEIGHT = "h-(--rt-viewer-h)";
 
 /**
- * Grid columns for controls beside a document: the document column is one page wide at
- * the window's height (`--rt-doc-w`, never more than 62% of the row) and the controls
- * take the rest, so widening the window gives the controls the room.
+ * Grid columns for controls beside a document: 6:4, so widening the window grows both
+ * the controls and the page.
  */
-export const BESIDE_DOCUMENT = "lg:grid-cols-[minmax(24rem,1fr)_min(var(--rt-doc-w),62%)]";
-export const DOCUMENT_FIRST = "lg:grid-cols-[min(var(--rt-doc-w),62%)_minmax(24rem,1fr)]";
+export const BESIDE_DOCUMENT = "lg:grid-cols-[minmax(0,3fr)_minmax(0,2fr)]";
 
 /**
  * The embedded PDF, framed to the page width. Chromium's PDF viewer (Chrome, Edge,

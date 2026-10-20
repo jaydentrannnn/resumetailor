@@ -325,7 +325,7 @@ export function ApplySettingsDrawer({
           {notify.supported ? (
             <label className="flex items-center gap-2.5">
               <Switch checked={notify.enabled} onChange={notify.onChange} />
-              Notify me when an application needs me or a run finishes
+              Notify me when a tailored resume is ready, an application needs me or a run finishes
             </label>
           ) : (
             <p className="text-xs text-ink-muted">This browser can't show notifications.</p>

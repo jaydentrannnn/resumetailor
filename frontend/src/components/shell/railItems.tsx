@@ -16,6 +16,14 @@ export const RAIL_ITEMS: RailItem[] = [
 export const SETTINGS_ICON =
   "M8 5.8a2.2 2.2 0 1 0 0 4.4a2.2 2.2 0 1 0 0-4.4M8 1.5v2M8 12.5v2M1.5 8h2M12.5 8h2M3.4 3.4l1.4 1.4M11.2 11.2l1.4 1.4M3.4 12.6l1.4-1.4M11.2 4.8l1.4-1.4";
 
+/** Monitor, sun and moon for the theme row: whichever mode is chosen now. */
+export const THEME_ICONS = {
+  system: "M2 3h12v8H2zM5.5 14h5M8 11v3",
+  light:
+    "M8 5.3a2.7 2.7 0 1 0 0 5.4a2.7 2.7 0 1 0 0-5.4M8 1.5v1.3M8 13.2v1.3M1.5 8h1.3M13.2 8h1.3M3.4 3.4l.9.9M11.7 11.7l.9.9M3.4 12.6l.9-.9M11.7 4.3l.9-.9",
+  dark: "M13.2 9.8A5.4 5.4 0 0 1 6.2 2.8a5.4 5.4 0 1 0 7 7Z",
+} as const;
+
 export function RailIcon({ path }: { path: string }) {
   return (
     <svg

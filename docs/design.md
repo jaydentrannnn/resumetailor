@@ -16,14 +16,13 @@ bar shows sub-screens). This file is the written contract behind it. The tokens 
   report, a notice, the template workspace). Settings, Profile, Vocabulary, Job sources
   and the Apply list are groups of rows: a heading over hairline-separated rows, no box
   (`TileLayout` "flat" around the same `Tile`s; `SettingRow` for label/control rows, the
-  label in a fixed left column and the control beside it). Profile and the setup wizard
-  use "ruled": the same, with a hairline under each group.
-- **The document is one page tall.** Tailor and an application's detail put their
-  controls on the left and the `DocumentViewer` on the right; Template is the exception,
-  document left and tools right. The document column is sized to one Letter page at the
-  window's height (`--rt-viewer-h`, `--rt-doc-w`; `lib/viewer.ts` `BESIDE_DOCUMENT` /
-  `DOCUMENT_FIRST`), so a wider window widens the controls, not the PDF. No zoom or fit
-  controls: the page always fits.
+  label in a fixed left column and the control beside it). Profile, Resume and the setup
+  wizard keep boxed tiles, with a section list down the left on Profile and Resume.
+- **Controls and document, 6:4.** Tailor and an application's detail put their controls
+  on the left and the `DocumentViewer` on the right, split 6:4 (`lib/viewer.ts`
+  `BESIDE_DOCUMENT`) so a wider window grows both; the viewer is as tall as the window
+  (`--rt-viewer-h`). No zoom or fit controls. Template is the exception: one tile,
+  document left and tools right, in a centred column.
 - **Spacing before boxes.** Inside a tile separate things with space or one hairline
   (`TileSection`). Never nest boxes. Label/value data is separated by spacing, not divider
   cells (`DataList`).

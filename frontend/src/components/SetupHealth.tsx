@@ -65,7 +65,8 @@ export function SetupHealth() {
     };
   }, [open]);
 
-  if (!status) return null;
+  // Ready needs no reminder: the pill shows only while setup has steps left.
+  if (!status || status.ready) return null;
   return (
     <div ref={ref} className="relative">
       <button

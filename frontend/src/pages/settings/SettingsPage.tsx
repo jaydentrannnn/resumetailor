@@ -3,7 +3,6 @@ import { CommandBar, Page, Tabs, TileLayout } from "../../components/ui";
 import { WIDE, useMediaQuery } from "../../lib/useMediaQuery";
 import { AboutSection } from "./AboutSection";
 import { AiSection } from "./AiSection";
-import { AppearanceSection } from "./AppearanceSection";
 import { BrowserSection } from "./BrowserSection";
 import { DataSection } from "./DataSection";
 
@@ -11,14 +10,18 @@ const TABS = [
   { id: "ai", label: "AI model" },
   { id: "data", label: "Data & backups" },
   { id: "browser", label: "Browser extension" },
-  { id: "appearance", label: "Appearance" },
   { id: "about", label: "About" },
 ] as const;
 
 type TabId = (typeof TABS)[number]["id"];
 
 /** Tabs that were folded into others, so old links still land somewhere sensible. */
-const MOVED: Record<string, TabId> = { models: "ai", advanced: "ai", documents: "about" };
+const MOVED: Record<string, TabId> = {
+  models: "ai",
+  advanced: "ai",
+  documents: "about",
+  appearance: "ai",
+};
 
 function tabFor(requested: string | null): TabId {
   if (requested && requested in MOVED) return MOVED[requested];
@@ -52,7 +55,6 @@ export function SettingsPage() {
             {tab === "ai" && <AiSection />}
             {tab === "data" && <DataSection />}
             {tab === "browser" && <BrowserSection />}
-            {tab === "appearance" && <AppearanceSection />}
             {tab === "about" && <AboutSection />}
           </TileLayout.Provider>
         </div>

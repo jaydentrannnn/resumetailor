@@ -98,7 +98,7 @@ for (const touch of [false, true]) {
       );
       await page.route("**/api/setup-status", (route) =>
         route.fulfill({
-          json: { items: [], ready: true, remaining: 0 },
+          json: { items: [], ready: false, remaining: 1 },
         }),
       );
       await page.route("**/api/automation", (route) =>
@@ -122,16 +122,15 @@ for (const touch of [false, true]) {
       expect(Math.abs(modelBox.height - providerBox.height)).toBeLessThan(1);
 
       const pills = [
-        page.getByRole("button", { name: "Ready", exact: true }),
+        page.getByRole("button", { name: "1 setup step left", exact: true }),
         page.getByRole("link", { name: "Update available" }),
-        page.getByRole("button", { name: "Pause automation", exact: true }),
       ];
       const heights = [];
       for (const pill of pills) {
         await expect(pill).toBeVisible();
         heights.push((await pill.boundingBox())!.height);
       }
-      expect(heights).toEqual([touch ? 44 : 36, touch ? 44 : 36, touch ? 44 : 36]);
+      expect(heights).toEqual([touch ? 44 : 36, touch ? 44 : 36]);
       const fonts = [];
       for (const pill of pills) {
         fonts.push(
@@ -142,7 +141,6 @@ for (const touch of [false, true]) {
         );
       }
       expect(fonts[1]).toEqual(fonts[0]);
-      expect(fonts[2]).toEqual(fonts[0]);
       expect(fonts[0]).toEqual(["12px", "16px", "600"]);
 
       await page.setViewportSize({ width: 390, height: 844 });

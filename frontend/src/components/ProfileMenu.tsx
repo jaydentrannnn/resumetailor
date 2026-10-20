@@ -9,8 +9,7 @@ function modalOpen() {
 
 /**
  * The rail's profile pill: a person icon and the active profile's name, opening the
- * profile switcher and profile management beside the rail. Theme is in Settings ›
- * Appearance.
+ * profile switcher and profile management beside the rail. Theme is its own rail row.
  */
 export function ProfileMenu() {
   const [open, setOpen] = useState(false);

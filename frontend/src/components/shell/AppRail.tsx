@@ -1,12 +1,12 @@
 import { useEffect, useRef, useState } from "react";
 import { NavLink } from "react-router-dom";
 import { useDesktop } from "../../lib/useDesktop";
-import { AutomationSwitch } from "../AutomationSwitch";
 import { LogoMark } from "../LogoMark";
 import { ProfileMenu } from "../ProfileMenu";
 import { SetupHealth } from "../SetupHealth";
 import { UpdateChip } from "../UpdateChip";
-import { RAIL_ITEMS, RailIcon, SETTINGS_ICON } from "./railItems";
+import { type ThemePreference, useTheme } from "../../state/themeState";
+import { RAIL_ITEMS, RailIcon, SETTINGS_ICON, THEME_ICONS } from "./railItems";
 import { useNeedsYouCount } from "./useNeedsYouCount";
 
 // The rail is 184px wide with labels; below 900px it keeps only the icons. Class names
@@ -20,9 +20,9 @@ const rowClass = ({ isActive }: { isActive: boolean }) =>
   }`;
 
 /**
- * The app's left rail: the five work areas, then background state (nightly apply,
- * setup, update), the profile switcher and Settings at the bottom. Shortcut hints show
- * only in the desktop app, where the browser does not keep Ctrl+1…5 for its tabs.
+ * The app's left rail: the five work areas, then the theme, what needs attention (setup
+ * steps left, an update), the profile switcher and Settings at the bottom. Shortcut hints
+ * show only in the desktop app, where the browser does not keep Ctrl+1…5 for its tabs.
  */
 export function AppRail() {
   const desktop = useDesktop();
@@ -56,6 +56,7 @@ export function AppRail() {
         </NavLink>
       ))}
       <div className="min-h-6 flex-1" />
+      <ThemeRow />
       <RailStatus />
       <NavLink to="/settings" className={rowClass} title="Settings">
         <RailIcon path={SETTINGS_ICON} />
@@ -70,7 +71,33 @@ export function AppRail() {
   );
 }
 
-/** Background state and the profile switcher; behind one button while the rail is narrow. */
+const THEME_ORDER: ThemePreference[] = ["system", "light", "dark"];
+const THEME_NAMES: Record<ThemePreference, string> = {
+  system: "System",
+  light: "Light",
+  dark: "Dark",
+};
+
+/** One click moves the theme System → Light → Dark → System. */
+function ThemeRow() {
+  const { preference, setPreference } = useTheme();
+  const next = THEME_ORDER[(THEME_ORDER.indexOf(preference) + 1) % THEME_ORDER.length];
+  const label = `Theme: ${THEME_NAMES[preference]}. Switch to ${THEME_NAMES[next]}`;
+  return (
+    <button
+      type="button"
+      onClick={() => setPreference(next)}
+      aria-label={label}
+      title={label}
+      className={`${rowClass({ isActive: false })} w-full text-left`}
+    >
+      <RailIcon path={THEME_ICONS[preference]} />
+      <span className="hidden flex-1 min-[900px]:inline">Theme: {THEME_NAMES[preference]}</span>
+    </button>
+  );
+}
+
+/** Setup, update and the profile switcher; behind one button while the rail is narrow. */
 function RailStatus() {
   const [open, setOpen] = useState(false);
   const ref = useRef<HTMLDivElement>(null);
@@ -84,7 +111,6 @@ function RailStatus() {
   }, [open]);
   const group = (
     <div className="flex flex-col items-stretch gap-1.5 [&>*]:w-full [&_.rt-header-pill]:w-full [&_.rt-header-pill]:justify-start">
-      <AutomationSwitch />
       <SetupHealth />
       <UpdateChip />
       <ProfileMenu />

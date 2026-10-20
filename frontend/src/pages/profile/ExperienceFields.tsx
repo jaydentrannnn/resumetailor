@@ -19,7 +19,7 @@ export function ExperienceFields({ ctx }: { ctx: FieldContext }) {
   const summary = experienceSummaries?.[basis];
   return (
     <div className="mt-3 space-y-3">
-      <label className="block max-w-md text-sm">
+      <label className="block text-sm">
         <span className="mb-1 block text-ink-muted">Years of experience from</span>
         <select
           className="field"
@@ -35,7 +35,7 @@ export function ExperienceFields({ ctx }: { ctx: FieldContext }) {
         </select>
       </label>
       {basis === "custom" ? (
-        <label className="block max-w-md text-sm">
+        <label className="block text-sm">
           <span className="mb-1 block text-ink-muted">Custom years of experience</span>
           <input
             className="field"

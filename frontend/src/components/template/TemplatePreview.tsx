@@ -1,7 +1,6 @@
 import { Button } from "../ui";
 import { useEffect, useState } from "react";
 import { templatePreviewUrl } from "../../api";
-import { VIEWER_HEIGHT } from "../../lib/viewer";
 import { DocumentViewer } from "../viewer/DocumentViewer";
 
 /** Fetch the exact revision before mounting a PDF; late responses cannot replace it. */
@@ -77,7 +76,7 @@ export function TemplatePreview({
     <DocumentViewer
       label="Template preview"
       docs={[{ id: "template", label: "Template", src: pdf.url }]}
-      className={VIEWER_HEIGHT}
+      className="aspect-[8.5/11]"
     />
   );
 }

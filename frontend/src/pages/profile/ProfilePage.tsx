@@ -1,8 +1,7 @@
 import { useCallback, useEffect, useState } from "react";
 import { Link, useLocation, useNavigate } from "react-router-dom";
 import { getOnboarding } from "../../api";
-import { underlineTabClass } from "../../components/Tabs";
-import { Button, CommandBar, Page, StatusMark, TileLayout } from "../../components/ui";
+import { Button, CommandBar, Page, StatusMark } from "../../components/ui";
 import {
   changedKeys,
   fieldLabel,
@@ -24,6 +23,11 @@ import { useProfileFields } from "./useProfileFields";
 
 type Tab = "personal" | "application" | "tailoring";
 
+/** Underline tabs below `lg`; from `lg` up, the Resume page's section list look. */
+function sectionLinkClass(active: boolean): string {
+  return `rt-control -mb-px block shrink-0 border-b px-3 py-2 text-sm lg:mb-0 lg:rounded-sm lg:border-b-0 lg:border-l-2 ${active ? "border-selected-line font-semibold text-ink lg:border-accent lg:bg-sunken lg:font-normal" : "border-transparent text-ink-muted hover:text-ink lg:hover:bg-sunken"}`;
+}
+
 const TABS: [Tab, string][] = [
   ["personal", "Personal information"],
   ["application", "Application details"],
@@ -31,9 +35,11 @@ const TABS: [Tab, string][] = [
 ];
 
 /**
- * Profile: three sub-tabs over two stores (the master resume and the applicant profile)
+ * Profile: three sections over two stores (the master resume and the applicant profile)
  * with one save bar. Save validates first and jumps to the first problem; otherwise it
- * saves whichever store changed and says which part failed, if one did.
+ * saves whichever store changed and says which part failed, if one did. Laid out like the
+ * Resume page: the sections in a list down the left (tabs across the top below `lg`),
+ * the open section's tiles on the right.
  */
 export function ProfilePage() {
   const { pathname: path, search } = useLocation();
@@ -230,28 +236,29 @@ export function ProfilePage() {
           </>
         }
       />
-      <nav
-        aria-label="Profile sections"
-        className="flex gap-1 overflow-x-auto border-b border-line"
-      >
-        {TABS.map(([id, label]) => (
-          <Link
-            key={id}
-            to={`/profile/${id}`}
-            aria-current={tab === id ? "page" : undefined}
-            className={underlineTabClass(tab === id)}
-          >
-            {label}
-          </Link>
-        ))}
-      </nav>
-      <div className="min-w-0 space-y-8 pt-2">
-        {problems.length > 0 && (
-          <div role="region" aria-label="Save problems" className="flex flex-wrap gap-3">
-            {problems}
-          </div>
-        )}
-        <TileLayout.Provider value="ruled">
+      <div className="lg:grid lg:grid-cols-[11rem_minmax(0,1fr)] lg:items-start lg:gap-5">
+        <nav
+          aria-label="Profile sections"
+          className="mb-5 flex gap-1 overflow-x-auto border-b border-line lg:sticky lg:top-[calc(var(--rt-bar-top)+1rem)] lg:mb-0 lg:block lg:space-y-1 lg:overflow-visible lg:border-b-0"
+        >
+          <p className="rt-eyebrow mb-3 hidden px-3 lg:block">Sections</p>
+          {TABS.map(([id, label]) => (
+            <Link
+              key={id}
+              to={`/profile/${id}`}
+              aria-current={tab === id ? "page" : undefined}
+              className={sectionLinkClass(tab === id)}
+            >
+              {label}
+            </Link>
+          ))}
+        </nav>
+        <div className="min-w-0 space-y-5">
+          {problems.length > 0 && (
+            <div role="region" aria-label="Save problems" className="flex flex-wrap gap-3">
+              {problems}
+            </div>
+          )}
           {tab === "tailoring" && <TailoringTab />}
           {!ctx && (tab === "personal" || tab === "application") && (
             <p className="text-sm text-ink-muted">{applicant.error ?? "Loading your profile…"}</p>
@@ -268,7 +275,7 @@ export function ProfilePage() {
               education={educationSection?.kind === "education" ? educationSection.entries : []}
             />
           )}
-        </TileLayout.Provider>
+        </div>
       </div>
     </Page>
   );

@@ -937,3 +937,19 @@ the Save dialog in the desktop app.
   under the filters with Select all in it.
 - Found on the way: `applicantProfileState.refreshSummaries` was a new function every
   render, so `ExperienceFields` refetched about 16 times a second since bec21b9.
+
+### Second feedback pass (2026-10-19)
+
+- Template went back to v1.17.0's layout verbatim (one tile, switch and Refresh at the
+  top of the tools column, page fit below, centred column); only the slim command bar
+  and the shared `DocumentViewer` (sized `aspect-[8.5/11]`) stayed. The user preferred
+  it to the full-width, unboxed version.
+- One style for Resume and Profile: Profile copies the Resume page (section list down the
+  left, boxed tiles), which also brings back v1.17.0's side-by-side contact tiles. The
+  "ruled" `TileLayout` was removed; the setup wizard is boxed again.
+- Theme is a rail row again (System → Light → Dark), so it is one click away. The
+  Appearance tab went with it; notifications live only in Apply settings, as in v1.17.0.
+- The rail's bottom keeps only what needs attention: the setup pill hides when ready,
+  Pause automation moved to Apply's command bar.
+- Tailor and an application's page split 6:4 (`minmax(0,3fr)_minmax(0,2fr)`); the
+  one-page-wide document column (`--rt-doc-w`) is gone, because only the controls grew.

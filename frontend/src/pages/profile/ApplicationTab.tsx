@@ -91,7 +91,7 @@ export function ApplicationTab({
   const { draft } = ctx;
   const setDraft = (next: Partial<ApplicantProfile>) => applicant.setDraft({ ...draft, ...next });
   return (
-    <div className="space-y-6">
+    <div className="space-y-3">
       <p className="text-sm text-ink-muted">
         Autofill answers application forms from these details. Changes apply from the next fill.
       </p>

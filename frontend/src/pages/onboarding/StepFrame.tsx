@@ -1,5 +1,5 @@
 import { useEffect, useState, type MutableRefObject, type ReactNode } from "react";
-import { Button, TileLayout } from "../../components/ui";
+import { Button } from "../../components/ui";
 import { useConfirm } from "../../state/confirmState";
 
 /** What the wizard hands every step: where Back/Skip/Next go, and the save hook. */
@@ -20,8 +20,7 @@ const saved = () => Promise.resolve(true);
 /**
  * One wizard step: where it sits, its title and intro, the body in a readable column,
  * and the footer bar every step shares (it stays in view at the bottom of the window).
- * Groups inside a step are ruled apart, as on Profile. Back, Skip and Next all save the
- * page first and stay put when the save fails. Next needs the step
+ * Back, Skip and Next all save the page first and stay put when the save fails. Next needs the step
  * complete; Skip is for an incomplete step (greyed once complete) and warns first.
  */
 export function StepFrame({
@@ -82,7 +81,7 @@ export function StepFrame({
           </h2>
           <p className="mt-2 max-w-xl text-sm text-ink-2">{intro}</p>
         </div>
-        <TileLayout.Provider value="ruled">{children}</TileLayout.Provider>
+        {children}
         {error && (
           <p role="alert" className="text-sm text-danger">
             {error}
