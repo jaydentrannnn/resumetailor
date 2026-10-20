@@ -119,8 +119,7 @@ export function ApplyPage() {
         onSettings={() => setDrawerOpen(true)}
       />
       <ProgressBanner
-        kind={settings.apply.progress_banner ?? "goal"}
-        goal={settings.apply.weekly_goal ?? 10}
+        apply={settings.apply}
         workspaceId={workspaceId}
         revision={revision}
         onTab={setTab}

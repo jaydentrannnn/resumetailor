@@ -1004,3 +1004,23 @@ don't run into the next label.
   double-click interval highlights a word, and the text-highlight guard then ignored the
   click. `isRowSelectClick` skips that guard for `detail > 1`, and
   `preventRowHighlight` stops the word highlight on mousedown.
+
+### Progress banner options (2026-10-20)
+
+Each banner has its own options in Apply settings › Progress banner, saved per profile as
+`ApplySettings.goal_banner` / `activity_banner` / `pipeline_banner` (partial objects; the SPA
+merges them over the defaults in `lib/progressOptions.ts`, so an older settings file reads as
+before). Goal: what counts (sent / autofilled / tailored), week start (Monday / Sunday), day
+boxes, nudge line, action buttons, compact. Activity: 4/13/26/52 weeks or a custom from–to
+(drawn by whole weeks, days outside blanked), what counts (adds found), color (green / blue /
+orange / purple via `color-mix`), best/last day, what's waiting, actions, compact sparkline.
+Pipeline: all time / this week / this month / 30 days / custom, 2–5 stages (kept in funnel
+order, never fewer than two), cards / funnel / compact, percentages, biggest drop, actions.
+
+`/api/applications/progress` now also returns `postings`: per posting the time it reached each
+stage (`PostingTimes`; a later stage implies the earlier ones, `_reached_at`). Ranges and
+stage choices are counted in the browser from that list, so changing an option never refetches.
+The pipeline over a date range is a cohort by found date (postings found in the range, and how
+far they got), not stage events in the range — otherwise a range could show more sent than
+found. "Not screened yet" in the biggest-drop line uses the live total, so it shows only for
+all time.

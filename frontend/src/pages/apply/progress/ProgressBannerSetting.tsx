@@ -1,5 +1,9 @@
 import type { ApplySettings, ProgressBanner } from "../../../api";
 import { Segmented } from "../../../components/ui";
+import { activityOptions, goalOptions, pipelineOptions } from "../../../lib/progressOptions";
+import { ActivityOptions } from "./ActivityOptions";
+import { GoalOptions } from "./GoalOptions";
+import { PipelineOptions } from "./PipelineOptions";
 
 const KINDS: { id: ProgressBanner; label: string }[] = [
   { id: "goal", label: "Weekly goal" },
@@ -9,23 +13,28 @@ const KINDS: { id: ProgressBanner; label: string }[] = [
 ];
 
 const NOTES: Record<ProgressBanner, string> = {
-  goal: "This week's applications against your goal, day by day.",
-  activity: "Applications sent each day over the last 13 weeks.",
-  pipeline: "How far every found posting got, and where most of them stop.",
+  goal: "This week against your goal, day by day.",
+  activity: "A day-by-day heatmap of one stage over the dates you pick.",
+  pipeline: "How far the postings found in a date range got, and where most of them stop.",
   off: "No banner over the list.",
 };
 
-/** Apply settings › Progress banner: which banner sits over the list, and the goal. */
+type BannerSettings = Pick<
+  ApplySettings,
+  "progress_banner" | "weekly_goal" | "goal_banner" | "activity_banner" | "pipeline_banner"
+>;
+
+/** Apply settings › Progress banner: which banner sits over the list, and its options. */
 export function ProgressBannerSetting({
   apply,
   patch,
 }: {
-  apply: Pick<ApplySettings, "progress_banner" | "weekly_goal">;
+  apply: BannerSettings;
   patch: (fields: Partial<ApplySettings>) => void;
 }) {
   const kind = apply.progress_banner ?? "goal";
   return (
-    <div className="space-y-3">
+    <div className="space-y-4">
       <Segmented
         label="Progress banner"
         items={KINDS}
@@ -34,19 +43,28 @@ export function ProgressBannerSetting({
       />
       <p className="text-xs text-ink-muted">{NOTES[kind]}</p>
       {kind === "goal" && (
-        <label className="block max-w-56">
-          <span className="mb-1 block">Applications a week</span>
-          <input
-            className="field w-full"
-            type="number"
-            min={1}
-            max={500}
-            value={apply.weekly_goal ?? 10}
-            onChange={(e) =>
-              patch({ weekly_goal: Math.min(500, Math.max(1, Number(e.target.value) || 1)) })
-            }
-          />
-        </label>
+        <GoalOptions
+          goal={apply.weekly_goal ?? 10}
+          options={goalOptions(apply)}
+          onGoal={(weekly_goal) => patch({ weekly_goal })}
+          onChange={(change) => patch({ goal_banner: { ...goalOptions(apply), ...change } })}
+        />
+      )}
+      {kind === "activity" && (
+        <ActivityOptions
+          options={activityOptions(apply)}
+          onChange={(change) =>
+            patch({ activity_banner: { ...activityOptions(apply), ...change } })
+          }
+        />
+      )}
+      {kind === "pipeline" && (
+        <PipelineOptions
+          options={pipelineOptions(apply)}
+          onChange={(change) =>
+            patch({ pipeline_banner: { ...pipelineOptions(apply), ...change } })
+          }
+        />
       )}
     </div>
   );

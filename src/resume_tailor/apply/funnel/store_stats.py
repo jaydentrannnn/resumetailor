@@ -30,9 +30,23 @@ class SentApplication(BaseModel):
     company: str
 
 
+class PostingTimes(BaseModel):
+    """When one posting was found and first reached each later stage (None: never)."""
+
+    company: str
+    found_at: str | None
+    screened_in_at: str | None
+    tailored_at: str | None
+    autofilled_at: str | None
+    sent_at: str | None
+
+
 class ProgressStats(BaseModel):
     #: Every sent application, oldest first, archived ones included.
     sent: list[SentApplication]
+    #: Every posting with its stage times, so the banner can count any stage over any
+    #: dates in the applicant's own time zone (archived ones included).
+    postings: list[PostingTimes] = []
     #: Postings ever found, then how many reached each stage (archived ones included).
     found: int
     screened_in: int
@@ -49,15 +63,25 @@ def _reached(app: store_models.Application, statuses: frozenset[str]) -> bool:
     return app.status in statuses or any(c.status in statuses for c in app.status_history)
 
 
-def _sent_at(app: store_models.Application) -> str | None:
-    """When ``app`` went out: its first sent-like timeline entry, else its status time
-    (`store.status_at`: discovery, for a row with no timeline)."""
+def _reached_at(app: store_models.Application, statuses: frozenset[str]) -> str | None:
+    """When ``app`` first reached one of ``statuses``: its first such timeline entry,
+    else its status time (`store.status_at`: discovery, for a row with no timeline)."""
     for change in app.status_history:
-        if change.status in _SENT_STATUSES:
+        if change.status in statuses:
             return change.at
-    if app.status in _SENT_STATUSES:
+    if app.status in statuses:
         return store.status_at(app) or None
     return None
+
+
+def _sent_at(app: store_models.Application) -> str | None:
+    """When ``app`` went out."""
+    return _reached_at(app, _SENT_STATUSES)
+
+
+def _posting_times(app: store_models.Application) -> PostingTimes:
+    times = {f"{key}_at": _reached_at(app, statuses) for key, statuses in _STAGES}
+    return PostingTimes(company=app.company, found_at=app.discovered_at or None, **times)
 
 
 def progress_stats(apps: Iterable[store_models.Application]) -> ProgressStats:
@@ -73,6 +97,7 @@ def progress_stats(apps: Iterable[store_models.Application]) -> ProgressStats:
     live = [app for app in rows if not app.archived_at]
     return ProgressStats(
         sent=sent,
+        postings=[_posting_times(app) for app in rows],
         found=len(rows),
         screened_in=stages["screened_in"],
         tailored=stages["tailored"],

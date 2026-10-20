@@ -107,9 +107,49 @@ export type ApplySettings = {
   progress_banner?: ProgressBanner;
   /** Applications to send each week, for the "goal" banner. */
   weekly_goal?: number;
+  /** Each banner's own options; missing fields take `lib/progressOptions.ts` defaults. */
+  goal_banner?: Partial<GoalBannerOptions>;
+  activity_banner?: Partial<ActivityBannerOptions>;
+  pipeline_banner?: Partial<PipelineBannerOptions>;
 };
 
 export type ProgressBanner = "goal" | "activity" | "pipeline" | "off";
+/** A stage a posting reaches, in order. */
+export type PipelineStage = "found" | "screened_in" | "tailored" | "autofilled" | "sent";
+
+export type GoalBannerOptions = {
+  counts: "sent" | "autofilled" | "tailored";
+  week_start: "monday" | "sunday";
+  show_days: boolean;
+  show_nudge: boolean;
+  show_actions: boolean;
+  compact: boolean;
+};
+
+export type ActivityBannerOptions = {
+  range: "4w" | "13w" | "26w" | "52w" | "custom";
+  /** `YYYY-MM-DD`, for the custom range. */
+  start: string | null;
+  end: string | null;
+  counts: "sent" | "autofilled" | "tailored" | "found";
+  color: "green" | "blue" | "orange" | "purple";
+  show_stats: boolean;
+  show_waiting: boolean;
+  show_actions: boolean;
+  compact: boolean;
+};
+
+export type PipelineBannerOptions = {
+  /** Which postings count: found in this range. */
+  range: "all" | "week" | "month" | "30d" | "custom";
+  start: string | null;
+  end: string | null;
+  stages: PipelineStage[];
+  style: "cards" | "funnel" | "compact";
+  show_percent: boolean;
+  show_drop: boolean;
+  show_actions: boolean;
+};
 
 export type BrowserId = "edge" | "chrome" | "comet";
 

@@ -367,8 +367,19 @@ export type ApplicationListOptions = {
 
 /** List tracked applications with server-side search, sort, and pagination. */
 /** Send times and stage counts for the Apply page's progress banner. */
+/** When one posting was found and first reached each later stage (null: never). */
+export type PostingTimes = {
+  company: string;
+  found_at: string | null;
+  screened_in_at: string | null;
+  tailored_at: string | null;
+  autofilled_at: string | null;
+  sent_at: string | null;
+};
+
 export type ApplyProgress = {
   sent: { at: string; company: string }[];
+  postings: PostingTimes[];
   found: number;
   screened_in: number;
   tailored: number;

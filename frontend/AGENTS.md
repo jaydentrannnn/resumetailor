@@ -41,8 +41,12 @@ hermetic backend).
   (`components/shell/`: `AppRail`, `StatusBar`) owns navigation, the theme row, the
   window title and only what needs attention (setup steps left, an update); Pause
   automation sits in Apply's command bar. Under it, the progress banner (`pages/apply/progress/`, numbers from
-  `/api/applications/progress` worked out in `lib/applyProgress.ts`) shows the weekly goal, the
-  13-week activity heatmap or the pipeline, chosen per profile in Apply settings › Progress banner. Success/info toasts show in the status bar; errors stay toasts.
+  `/api/applications/progress` worked out in `lib/applyProgress.ts` and `lib/applyPipeline.ts`)
+  shows the weekly goal, the activity heatmap or the pipeline, chosen per profile in Apply
+  settings › Progress banner, where each has its own options (`goal_banner`, `activity_banner`,
+  `pipeline_banner`; defaults and normalising in `lib/progressOptions.ts`): what counts, dates,
+  week start, color, stages, style and parts shown. Stage dates come per posting
+  (`PostingTimes`), so ranges and stages are counted in the browser. Success/info toasts show in the status bar; errors stay toasts.
   Don't hand-roll page widths or title sizes.
 - Polling goes through `lib/adaptivePoll.ts` / `conditionalGet` (in `api/core.ts`); errors through
   `lib/errors.ts`; toasts through `lib/toast.ts`.

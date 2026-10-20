@@ -6,7 +6,7 @@ standing up an ASGI client for every check.
 
 from __future__ import annotations
 
-from typing import Any, Literal
+from typing import Annotated, Any, Literal
 
 from pydantic import BaseModel, Field, PrivateAttr, field_validator, model_validator
 
@@ -183,6 +183,53 @@ class SourceFilters(BaseModel):
     other_countries: bool = True
 
 
+#: A day for a banner's custom date range, ``YYYY-MM-DD`` in the applicant's time zone.
+_BannerDay = Annotated[str, Field(pattern=r"^\d{4}-\d{2}-\d{2}$")]
+_PipelineStage = Literal["found", "screened_in", "tailored", "autofilled", "sent"]
+
+
+class GoalBannerOptions(BaseModel):
+    """The weekly-goal banner: what counts toward the goal and which parts show."""
+
+    counts: Literal["sent", "autofilled", "tailored"] = "sent"
+    week_start: Literal["monday", "sunday"] = "monday"
+    show_days: bool = True
+    show_nudge: bool = True
+    show_actions: bool = True
+    compact: bool = False
+
+
+class ActivityBannerOptions(BaseModel):
+    """The activity heatmap: its dates, what each day counts, its color and parts."""
+
+    range: Literal["4w", "13w", "26w", "52w", "custom"] = "13w"
+    start: _BannerDay | None = None
+    end: _BannerDay | None = None
+    counts: Literal["sent", "autofilled", "tailored", "found"] = "sent"
+    color: Literal["green", "blue", "orange", "purple"] = "green"
+    show_stats: bool = True
+    show_waiting: bool = True
+    show_actions: bool = True
+    compact: bool = False
+
+
+class PipelineBannerOptions(BaseModel):
+    """The pipeline: postings found in which dates, which stages, style and parts."""
+
+    range: Literal["all", "week", "month", "30d", "custom"] = "all"
+    start: _BannerDay | None = None
+    end: _BannerDay | None = None
+    stages: list[_PipelineStage] = Field(
+        default_factory=lambda: ["found", "screened_in", "tailored", "autofilled", "sent"],
+        min_length=2,
+        max_length=5,
+    )
+    style: Literal["cards", "funnel", "compact"] = "cards"
+    show_percent: bool = True
+    show_drop: bool = True
+    show_actions: bool = True
+
+
 class ApplySettings(BaseModel):
     """Daily apply-funnel knobs nested on ``JobSettings`` so they persist with settings."""
 
@@ -259,6 +306,10 @@ class ApplySettings(BaseModel):
     progress_banner: Literal["goal", "activity", "pipeline", "off"] = "goal"
     #: Applications to send each week, for the "goal" banner.
     weekly_goal: int = Field(default=10, ge=1, le=500)
+    #: Each banner's own options (Apply settings › Progress banner). Display only.
+    goal_banner: GoalBannerOptions = Field(default_factory=GoalBannerOptions)
+    activity_banner: ActivityBannerOptions = Field(default_factory=ActivityBannerOptions)
+    pipeline_banner: PipelineBannerOptions = Field(default_factory=PipelineBannerOptions)
 
     @property
     def model_spec(self) -> config.ModelSpec:

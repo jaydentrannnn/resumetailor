@@ -1,100 +1,124 @@
-import type { ApplyProgress } from "../../../api";
+import type { ActivityBannerOptions, ApplyProgress } from "../../../api";
 import { Tile } from "../../../components/ui";
 import type { ApplyTab } from "../../../lib/applyPage";
 import {
   daysAgo,
-  heatLevel,
-  monthLabels,
   shortDate,
+  summarizeProgress,
   waitingLine,
   type ProgressSummary,
 } from "../../../lib/applyProgress";
+import {
+  ACTIVITY_WEEKS,
+  STAGE_ACTIONS,
+  STAGE_WORDS,
+  customRange,
+  heatFill,
+  stageTimes,
+} from "../../../lib/progressOptions";
 import { BannerActions } from "./BannerActions";
+import { Heatmap } from "./Heatmap";
 
-const SHADE = ["bg-sunken", "bg-accent/20", "bg-accent/40", "bg-accent/70", "bg-accent"];
-const WEEKDAY_LABELS = ["Mon", "", "Wed", "", "Fri", "", "Sun"];
+/** "Last 13 weeks", or a custom range's dates. */
+function rangeLabel(options: ActivityBannerOptions, summary: ProgressSummary): string {
+  const range = options.range === "custom" ? customRange(options) : null;
+  if (range) return `${shortDate(range.from)} – ${shortDate(range.to)}`;
+  return `Last ${summary.grid.length} weeks`;
+}
 
-/** Sends per day over the last 13 weeks, with the best day and the last send. */
+/** Postings reaching the chosen stage per day over a range, with the best and last day. */
 export function ActivityBanner({
   progress,
-  summary,
+  options,
+  now,
   onTab,
 }: {
   progress: ApplyProgress;
-  summary: ProgressSummary;
+  options: ActivityBannerOptions;
+  now: Date;
   onTab: (tab: ApplyTab) => void;
 }) {
-  const { grid, bestDay, daysSinceLast } = summary;
-  const waiting = waitingLine(progress);
-  const weeks = grid.length;
-  const months = monthLabels(grid);
+  const range = options.range === "custom" ? customRange(options) : null;
+  const summary = summarizeProgress(stageTimes(progress, options.counts), now, {
+    weeks: options.range === "custom" ? 13 : ACTIVITY_WEEKS[options.range],
+    range,
+  });
+  const word = STAGE_WORDS[options.counts];
+  const { bestDay, daysSinceLast } = summary;
+  const label = rangeLabel(options, summary);
+  const actions = options.show_actions && <BannerActions progress={progress} onTab={onTab} />;
+
+  if (options.compact) {
+    const peak = Math.max(1, ...summary.weekly);
+    return (
+      <Tile aria-label="Your activity">
+        <div className="flex flex-wrap items-center gap-x-6 gap-y-3">
+          <p className="text-sm text-ink">
+            <span className="rt-eyebrow mr-2">{label}</span>
+            <span className="rt-figure font-display text-xl">{summary.inRange}</span> {word}
+          </p>
+          <div
+            role="img"
+            aria-label={`${word} per week: ${summary.weekly.join(", ")}`}
+            className="flex h-7 items-end gap-0.5"
+          >
+            {summary.weekly.map((count, i) => (
+              <span
+                key={i}
+                className="w-1.5 rounded-[1px] bg-sunken"
+                style={{
+                  height: `${Math.max(12, (count / peak) * 100)}%`,
+                  background: count ? heatFill(options.color, 4) : undefined,
+                }}
+              />
+            ))}
+          </div>
+          {options.show_stats && bestDay && (
+            <p className="text-sm text-ink-2">
+              Best day {shortDate(bestDay.key)} · {bestDay.count} {word}
+            </p>
+          )}
+          <div className="ml-auto">{actions}</div>
+        </div>
+      </Tile>
+    );
+  }
+
+  const waiting = options.show_waiting && waitingLine(progress);
   return (
     <Tile aria-label="Your activity">
       <div className="flex flex-col gap-6 lg:flex-row lg:items-start lg:gap-12">
         <div className="min-w-0 flex-1 space-y-2.5">
-          <p className="rt-eyebrow">Last {weeks} weeks</p>
+          <p className="rt-eyebrow">{label}</p>
           <p className="font-display text-3xl leading-tight text-ink">
-            <span className="rt-figure">{summary.inRange}</span> sent
+            <span className="rt-figure">{summary.inRange}</span> {word}
           </p>
-          {bestDay && (
-            <p className="text-sm text-ink-2">
-              Best day <span className="font-medium text-ink">{shortDate(bestDay.key)}</span> ·{" "}
-              {bestDay.count} sent
-            </p>
+          {options.show_stats && (
+            <>
+              {bestDay && (
+                <p className="text-sm text-ink-2">
+                  Best day <span className="font-medium text-ink">{shortDate(bestDay.key)}</span> ·{" "}
+                  {bestDay.count} {word}
+                </p>
+              )}
+              <p className="text-sm text-ink-2">
+                {daysSinceLast === null
+                  ? `Nothing ${word} yet. Your first one starts the chart.`
+                  : daysSinceLast === 0
+                    ? `Some ${word} today. Keep it going.`
+                    : `Last ${word} ${daysAgo(daysSinceLast)}. ${STAGE_ACTIONS[options.counts]} today to start a new run.`}
+              </p>
+            </>
           )}
-          <p className="text-sm text-ink-2">
-            {daysSinceLast === null
-              ? "Nothing sent yet. Your first one starts the chart."
-              : daysSinceLast === 0
-                ? "Sent today. Keep it going."
-                : `Last sent ${daysAgo(daysSinceLast)}. Send one today to start a new run.`}
-          </p>
           {waiting && <p className="text-sm text-ink-2">{waiting}</p>}
-          <div className="pt-1">
-            <BannerActions progress={progress} onTab={onTab} />
-          </div>
+          {actions && <div className="pt-1">{actions}</div>}
         </div>
-        <div className="overflow-x-auto">
-          <div
-            role="img"
-            aria-label={`${summary.inRange} sent in the last ${weeks} weeks${bestDay ? `, most on ${shortDate(bestDay.key)}` : ""}`}
-            className="flex gap-1"
-          >
-            <div aria-hidden className="mr-1 flex flex-col gap-1 pt-[18px]">
-              {WEEKDAY_LABELS.map((label, i) => (
-                <span key={i} className="h-3.5 font-mono text-[10px] leading-[14px] text-ink-muted">
-                  {label}
-                </span>
-              ))}
-            </div>
-            {grid.map((column, w) => (
-              <div key={column[0].key} aria-hidden className="flex flex-col gap-1">
-                <span className="h-3.5 w-3.5 overflow-visible whitespace-nowrap font-mono text-[10px] text-ink-muted">
-                  {months[w]}
-                </span>
-                {column.map((cell) => (
-                  <span
-                    key={cell.key}
-                    title={`${shortDate(cell.key)}: ${cell.count} sent`}
-                    className={`size-3.5 rounded-[3px] ${
-                      cell.future ? "border border-line" : SHADE[heatLevel(cell.count)]
-                    } ${cell.today ? "outline outline-1 outline-ink" : ""}`}
-                  />
-                ))}
-              </div>
-            ))}
-          </div>
-          <div
-            aria-hidden
-            className="mt-2 flex items-center justify-end gap-1 text-[11px] text-ink-muted"
-          >
-            Less
-            {SHADE.map((shade) => (
-              <span key={shade} className={`size-3.5 rounded-[3px] ${shade}`} />
-            ))}
-            More
-          </div>
-        </div>
+        <Heatmap
+          summary={summary}
+          color={options.color}
+          label={`${summary.inRange} ${word}, ${label.toLowerCase()}${bestDay ? `, most on ${shortDate(bestDay.key)}` : ""}`}
+          word={word}
+        />
       </div>
     </Tile>
   );

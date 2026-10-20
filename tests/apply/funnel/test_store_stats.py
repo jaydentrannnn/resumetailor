@@ -65,3 +65,44 @@ def test_apply_settings_banner_defaults_and_bounds():
         ApplySettings(weekly_goal=0)
     with pytest.raises(ValidationError):
         ApplySettings(progress_banner="confetti")
+
+
+def test_each_posting_carries_when_it_was_found_and_reached_each_stage():
+    rows = [
+        _app(
+            "sent",
+            "submitted",
+            (("screened_in", "s"), ("ready", "r"), ("filling", "f"), ("submitted", "x")),
+            discovered_at="d",
+        ),
+        _app("new", "discovered", discovered_at="d2"),
+    ]
+    times = store_stats.progress_stats(rows).postings
+    assert times[0].model_dump() == {
+        "company": "Co sent",
+        "found_at": "d",
+        "screened_in_at": "s",
+        "tailored_at": "r",
+        "autofilled_at": "f",
+        "sent_at": "x",
+    }
+    assert (times[1].found_at, times[1].screened_in_at, times[1].sent_at) == ("d2", None, None)
+
+
+def test_banner_options_default_and_reject_bad_values():
+    apply = ApplySettings()
+    assert apply.goal_banner.counts == "sent" and apply.goal_banner.week_start == "monday"
+    assert apply.activity_banner.range == "13w" and apply.activity_banner.color == "green"
+    assert apply.pipeline_banner.stages == ["found", "screened_in", "tailored", "autofilled", "sent"]
+    custom = ApplySettings(
+        activity_banner={"range": "custom", "start": "2026-09-01", "end": "2026-10-19"}
+    )
+    assert custom.activity_banner.start == "2026-09-01"
+    for bad in (
+        {"activity_banner": {"start": "Sep 1"}},
+        {"pipeline_banner": {"stages": ["sent"]}},
+        {"pipeline_banner": {"style": "pie"}},
+        {"goal_banner": {"counts": "found"}},
+    ):
+        with pytest.raises(ValidationError):
+            ApplySettings(**bad)

@@ -1,29 +1,50 @@
 /**
  * The Apply progress banner's numbers, worked out in the applicant's own time zone from
- * the send times `/api/applications/progress` returns. Weeks start on Monday.
+ * the stage times `/api/applications/progress` returns. Weeks start on Monday unless the
+ * goal banner is set to Sunday. The pipeline's own math is in `lib/applyPipeline.ts`.
  */
 
-export type SentApplication = { at: string; company: string };
+/** One posting's time at the stage a banner counts. */
+export type TimedItem = { at: string; company?: string };
 
-export type DayCell = { key: string; count: number; future: boolean; today: boolean };
+export type DayCell = {
+  key: string;
+  count: number;
+  future: boolean;
+  today: boolean;
+  /** Before or after a custom range, inside the range's first or last week. */
+  outside: boolean;
+};
+
+/** 1: weeks start on Monday; 0: on Sunday. */
+export type WeekStartDay = 0 | 1;
 
 export type ProgressSummary = {
-  /** Sent in the current week, and per day Monday…Sunday. */
+  /** Counted in the current week, and per day from its first day. */
   thisWeek: number;
   thisWeekDays: number[];
-  /** Sent per week, oldest first; the last entry is the current week. */
+  /** Per week, oldest first, over the grid's weeks. */
   weekly: number[];
-  /** `weekly` as a week-by-day grid (columns oldest first, Monday at the top). */
+  /** `weekly` as a week-by-day grid (columns oldest first, the week's first day on top). */
   grid: DayCell[][];
-  /** Within the grid's weeks. */
+  /** Within the grid's weeks (and a custom range's days). */
   inRange: number;
   bestDay: { key: string; count: number } | null;
-  bestWeek: { start: string; count: number } | null;
-  /** Whole days since the last send; null when nothing was ever sent. */
+  /** Whole days since the last one; null when there never was one. */
   daysSinceLast: number | null;
-  companies: number;
   total: number;
 };
+
+export type SummaryOptions = {
+  /** How many weeks the grid covers, ending with the current one. */
+  weeks?: number;
+  weekStartsOn?: WeekStartDay;
+  /** A custom range (`YYYY-MM-DD`, both ends included) instead of `weeks`. */
+  range?: { from: string; to: string } | null;
+};
+
+/** The most weeks a custom range draws; a longer one shows its last weeks. */
+export const MAX_WEEKS = 104;
 
 const DAY_MS = 86_400_000;
 
@@ -33,57 +54,91 @@ export function dayKey(date: Date): string {
   return `${date.getFullYear()}-${pad(date.getMonth() + 1)}-${pad(date.getDate())}`;
 }
 
-/** Local midnight of the Monday on or before `date`. */
-export function weekStart(date: Date): Date {
+/** Local midnight of `YYYY-MM-DD`. */
+export function parseDayKey(key: string): Date {
+  const [y, m, d] = key.split("-").map(Number);
+  return new Date(y, m - 1, d);
+}
+
+/** Local midnight of the week's first day (Monday, or Sunday) on or before `date`. */
+export function weekStart(date: Date, startsOn: WeekStartDay = 1): Date {
   const start = new Date(date.getFullYear(), date.getMonth(), date.getDate());
-  start.setDate(start.getDate() - ((start.getDay() + 6) % 7));
+  start.setDate(start.getDate() - ((start.getDay() - startsOn + 7) % 7));
   return start;
 }
 
-function addDays(date: Date, days: number): Date {
+export function addDays(date: Date, days: number): Date {
   const next = new Date(date);
   next.setDate(next.getDate() + days);
   return next;
 }
 
-export function summarizeProgress(sent: SentApplication[], now: Date, weeks = 13): ProgressSummary {
+/** Day counts per local day, and the latest time. */
+function perDayCounts(items: TimedItem[]): { perDay: Map<string, number>; last: Date | null } {
   const perDay = new Map<string, number>();
   let last: Date | null = null;
-  for (const item of sent) {
+  for (const item of items) {
     const at = new Date(item.at);
     if (Number.isNaN(at.getTime())) continue;
     const key = dayKey(at);
     perDay.set(key, (perDay.get(key) ?? 0) + 1);
     if (!last || at > last) last = at;
   }
+  return { perDay, last };
+}
 
+/** The grid's first week and how many weeks it has. */
+function gridWeeks(now: Date, options: SummaryOptions): { first: Date; weeks: number } {
+  const startsOn = options.weekStartsOn ?? 1;
+  if (options.range) {
+    const first = weekStart(parseDayKey(options.range.from), startsOn);
+    const last = weekStart(parseDayKey(options.range.to), startsOn);
+    const weeks = Math.round((last.getTime() - first.getTime()) / (7 * DAY_MS)) + 1;
+    if (weeks <= MAX_WEEKS) return { first, weeks };
+    return { first: addDays(last, -7 * (MAX_WEEKS - 1)), weeks: MAX_WEEKS };
+  }
+  const weeks = Math.max(1, options.weeks ?? 13);
+  return { first: addDays(weekStart(now, startsOn), -7 * (weeks - 1)), weeks };
+}
+
+export function summarizeProgress(
+  items: TimedItem[],
+  now: Date,
+  options: SummaryOptions = {},
+): ProgressSummary {
+  const { perDay, last } = perDayCounts(items);
+  const startsOn = options.weekStartsOn ?? 1;
   const today = dayKey(now);
-  const current = weekStart(now);
-  const first = addDays(current, -7 * (weeks - 1));
+  const { first, weeks } = gridWeeks(now, options);
+  const from = options.range?.from;
+  const to = options.range?.to;
   const grid: DayCell[][] = [];
   for (let w = 0; w < weeks; w++) {
     const column: DayCell[] = [];
     for (let d = 0; d < 7; d++) {
       const key = dayKey(addDays(first, w * 7 + d));
-      column.push({ key, count: perDay.get(key) ?? 0, future: key > today, today: key === today });
+      const outside = (!!from && key < from) || (!!to && key > to);
+      column.push({
+        key,
+        count: outside ? 0 : (perDay.get(key) ?? 0),
+        future: key > today,
+        today: key === today,
+        outside,
+      });
     }
     grid.push(column);
   }
   const weekly = grid.map((column) => column.reduce((sum, cell) => sum + cell.count, 0));
-  const thisWeekDays = grid[grid.length - 1].map((cell) => cell.count);
+  const current = weekStart(now, startsOn);
+  const thisWeekDays = Array.from(
+    { length: 7 },
+    (_, d) => perDay.get(dayKey(addDays(current, d))) ?? 0,
+  );
 
   let bestDay: ProgressSummary["bestDay"] = null;
-  for (const [key, count] of perDay)
-    if (!bestDay || count > bestDay.count) bestDay = { key, count };
-  const perWeek = new Map<string, number>();
-  for (const [key, count] of perDay) {
-    const [y, m, d] = key.split("-").map(Number);
-    const start = dayKey(weekStart(new Date(y, m - 1, d)));
-    perWeek.set(start, (perWeek.get(start) ?? 0) + count);
-  }
-  let bestWeek: ProgressSummary["bestWeek"] = null;
-  for (const [start, count] of perWeek)
-    if (!bestWeek || count > bestWeek.count) bestWeek = { start, count };
+  for (const cell of grid.flat())
+    if (cell.count > 0 && (!bestDay || cell.count > bestDay.count))
+      bestDay = { key: cell.key, count: cell.count };
 
   const lastDay = last ? new Date(last.getFullYear(), last.getMonth(), last.getDate()) : null;
   const todayStart = new Date(now.getFullYear(), now.getMonth(), now.getDate());
@@ -94,14 +149,12 @@ export function summarizeProgress(sent: SentApplication[], now: Date, weeks = 13
     grid,
     inRange: weekly.reduce((sum, n) => sum + n, 0),
     bestDay,
-    bestWeek,
     daysSinceLast: lastDay ? Math.round((todayStart.getTime() - lastDay.getTime()) / DAY_MS) : null,
-    companies: new Set(sent.map((item) => item.company.trim().toLowerCase())).size,
-    total: sent.length,
+    total: items.length,
   };
 }
 
-/** Heatmap shade 0–4 for a day's sends. */
+/** Heatmap shade 0–4 for a day's count. */
 export function heatLevel(count: number): 0 | 1 | 2 | 3 | 4 {
   if (count <= 0) return 0;
   if (count < 3) return 1;
@@ -110,13 +163,13 @@ export function heatLevel(count: number): 0 | 1 | 2 | 3 | 4 {
   return 4;
 }
 
-/** The weekly-goal banner's one-line nudge. */
-export function goalNudge(sent: number, goal: number): string {
-  if (sent >= goal) return "Goal reached. Anything more this week is a bonus.";
+/** The weekly-goal banner's one-line nudge; `verb` is what counts ("Send", "Tailor"). */
+export function goalNudge(done: number, goal: number, verb = "Send"): string {
+  if (done >= goal) return "Goal reached. Anything more this week is a bonus.";
   const half = Math.ceil(goal / 2);
-  if (sent === 0) return `A fresh week. Send ${half} and you’re halfway there.`;
-  if (sent < half) return `${goal - sent} to go. ${half - sent} more and you’re halfway.`;
-  return `Past halfway. ${goal - sent} to go.`;
+  if (done === 0) return `A fresh week. ${verb} ${half} and you’re halfway there.`;
+  if (done < half) return `${goal - done} to go. ${half - done} more and you’re halfway.`;
+  return `Past halfway. ${goal - done} to go.`;
 }
 
 /** "today", "yesterday", "25 days ago". */
@@ -132,6 +185,12 @@ const MONTHS = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "
 export function shortDate(key: string): string {
   const [, m, d] = key.split("-").map(Number);
   return `${MONTHS[m - 1]} ${d}`;
+}
+
+/** Day names in week order, starting Monday or Sunday. */
+export function weekdayNames(startsOn: WeekStartDay): string[] {
+  const monday = ["Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun"];
+  return startsOn === 1 ? monday : ["Sun", ...monday.slice(0, 6)];
 }
 
 /**
@@ -150,65 +209,6 @@ export function monthLabels(grid: DayCell[][]): string[] {
     labels.push(show ? MONTHS[month] : "");
   });
   return labels;
-}
-
-export type PipelineCounts = {
-  found: number;
-  screened_in: number;
-  tailored: number;
-  autofilled: number;
-  sent_total: number;
-  needs_you: number;
-  unscreened: number;
-};
-
-export type PipelineStep = { label: string; count: number; share: number; rate: string };
-
-/** Found → Screened in → Tailored → Autofilled → Sent, each as a share of Found. */
-export function pipelineSteps(counts: PipelineCounts): PipelineStep[] {
-  const raw: [string, number][] = [
-    ["Found", counts.found],
-    ["Screened in", counts.screened_in],
-    ["Tailored", counts.tailored],
-    ["Autofilled", counts.autofilled],
-    ["Sent", counts.sent_total],
-  ];
-  const pct = (part: number, whole: number) => (whole > 0 ? Math.round((part / whole) * 100) : 0);
-  return raw.map(([label, count], i) => ({
-    label,
-    count,
-    share: pct(count, counts.found),
-    rate:
-      i === 0
-        ? "every posting your sources found"
-        : `${pct(count, raw[i - 1][1])}% of ${raw[i - 1][0].toLowerCase()}`,
-  }));
-}
-
-/** The step that loses the most postings, in words; null before anything was found. */
-export function biggestDrop(counts: PipelineCounts): { title: string; detail: string } | null {
-  const steps = pipelineSteps(counts);
-  let worst = -1;
-  let worstRate = 2;
-  for (let i = 1; i < steps.length; i++) {
-    const before = steps[i - 1].count;
-    if (before === 0) continue;
-    const rate = steps[i].count / before;
-    if (rate < worstRate) {
-      worstRate = rate;
-      worst = i;
-    }
-  }
-  if (worst < 0 || worstRate >= 1) return null;
-  const lost = steps[worst - 1].count - steps[worst].count;
-  const title = `Biggest drop: ${steps[worst - 1].label.toLowerCase()} to ${steps[worst].label.toLowerCase()}.`;
-  const details: Record<number, string> = {
-    1: `${lost} found postings weren't screened in${counts.unscreened ? `; ${counts.unscreened} of them haven't been screened yet` : ""}.`,
-    2: `${lost} screened-in postings aren't tailored yet.`,
-    3: `${lost} tailored postings haven't been autofilled.`,
-    4: `${lost} filled forms weren't sent${counts.needs_you ? `; ${counts.needs_you} are waiting on you` : ""}.`,
-  };
-  return { title, detail: details[worst] };
 }
 
 /** "2 are ready to fill and 21 are waiting on you." — or null when neither. */
