@@ -18,8 +18,8 @@ bar shows sub-screens). This file is the written contract behind it. The tokens 
   (`TileLayout` "flat" around the same `Tile`s; `SettingRow` for label/control rows, the
   label in a fixed left column and the control beside it). Profile, Resume and the setup
   wizard keep boxed tiles, with a section list down the left on Profile and Resume.
-- **Controls and document, 6:4.** Tailor and an application's detail put their controls
-  on the left and the `DocumentViewer` on the right, split 6:4 (`lib/viewer.ts`
+- **Controls and document, 5:5.** Tailor and an application's detail put their controls
+  on the left and the `DocumentViewer` on the right, split 5:5 (`lib/viewer.ts`
   `BESIDE_DOCUMENT`) so a wider window grows both; the viewer is as tall as the window
   (`--rt-viewer-h`). No zoom or fit controls. Template is the exception: one tile,
   document left and tools right, in a centred column.

@@ -2,10 +2,10 @@
 export const VIEWER_HEIGHT = "h-(--rt-viewer-h)";
 
 /**
- * Grid columns for controls beside a document: 6:4, so widening the window grows both
- * the controls and the page.
+ * Grid columns for controls beside a document: half and half, so widening the window
+ * grows both the controls and the page.
  */
-export const BESIDE_DOCUMENT = "lg:grid-cols-[minmax(0,3fr)_minmax(0,2fr)]";
+export const BESIDE_DOCUMENT = "lg:grid-cols-[minmax(0,1fr)_minmax(0,1fr)]";
 
 /**
  * The embedded PDF, framed to the page width. Chromium's PDF viewer (Chrome, Edge,

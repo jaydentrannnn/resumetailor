@@ -953,3 +953,5 @@ the Save dialog in the desktop app.
   Pause automation moved to Apply's command bar.
 - Tailor and an application's page split 6:4 (`minmax(0,3fr)_minmax(0,2fr)`); the
   one-page-wide document column (`--rt-doc-w`) is gone, because only the controls grew.
+- Later the same day the split became 5:5: at 6:4 the user still saw the page as about
+  7:3 beside the controls.
