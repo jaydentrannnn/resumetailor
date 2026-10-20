@@ -254,6 +254,11 @@ class ApplySettings(BaseModel):
     #: Browser the app starts for Fill and JD fetch (`apply.driver.browser_launch`);
     #: ``None`` picks the first installed one, Edge first.
     browser: Literal["edge", "chrome", "comet"] | None = None
+    #: The banner over the Apply list (`frontend/src/pages/apply/progress/`): a weekly
+    #: goal, a sent-per-day heatmap, the stage pipeline, or none. Display only.
+    progress_banner: Literal["goal", "activity", "pipeline", "off"] = "goal"
+    #: Applications to send each week, for the "goal" banner.
+    weekly_goal: int = Field(default=10, ge=1, le=500)
 
     @property
     def model_spec(self) -> config.ModelSpec:

@@ -40,7 +40,9 @@ hermetic backend).
   area has no max width, so wide windows don't leave a blank right side). The shell
   (`components/shell/`: `AppRail`, `StatusBar`) owns navigation, the theme row, the
   window title and only what needs attention (setup steps left, an update); Pause
-  automation sits in Apply's command bar. Success/info toasts show in the status bar; errors stay toasts.
+  automation sits in Apply's command bar. Under it, the progress banner (`pages/apply/progress/`, numbers from
+  `/api/applications/progress` worked out in `lib/applyProgress.ts`) shows the weekly goal, the
+  13-week activity heatmap or the pipeline, chosen per profile in Apply settings › Progress banner. Success/info toasts show in the status bar; errors stay toasts.
   Don't hand-roll page widths or title sizes.
 - Polling goes through `lib/adaptivePoll.ts` / `conditionalGet` (in `api/core.ts`); errors through
   `lib/errors.ts`; toasts through `lib/toast.ts`.

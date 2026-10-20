@@ -955,3 +955,17 @@ the Save dialog in the desktop app.
   one-page-wide document column (`--rt-doc-w`) is gone, because only the controls grew.
 - Later the same day the split became 5:5: at 6:4 the user still saw the page as about
   7:3 beside the controls.
+
+### Apply progress banner (2026-10-19)
+
+The user picked three of five mockups (weekly goal, activity heatmap, pipeline) and asked to
+choose between them in settings. `ApplySettings.progress_banner` (`goal` default, `activity`,
+`pipeline`, `off`) and `weekly_goal` (default 10) live in the per-profile Apply settings, so
+an older app reading them back simply ignores the fields (MINOR, not MAJOR). The server only
+reports raw facts (`apply/funnel/store_stats.py`: each send's time and company, stage counts
+with archived rows left out of the live ones); weeks, streaks and the heatmap are worked out
+in the browser (`lib/applyProgress.ts`) so "this week" follows the user's own time zone.
+A send's time is the first sent-like status in its history, falling back to `status_at`.
+The banner hides until a source has found a posting; its buttons switch Apply tabs rather
+than navigate. Heatmap month labels skip a month with under three columns so short months
+don't run into the next label.

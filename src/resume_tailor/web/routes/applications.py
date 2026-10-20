@@ -27,6 +27,7 @@ from resume_tailor.apply.funnel import (
     packet_fields,
     packet_profile_fields,
     store_models,
+    store_stats,
     store_views,
 )
 from resume_tailor.apply.funnel import operations as apply_operations
@@ -481,6 +482,12 @@ def get_open_application_tabs() -> dict[str, Any]:
     """
     ids = apply_browser.open_target_ids()
     return {"reachable": ids is not None, "target_ids": sorted(ids or ())}
+
+
+@router.get("/api/applications/progress", response_model=store_stats.ProgressStats)
+def get_application_progress() -> store_stats.ProgressStats:
+    """Send times and stage counts for the Apply page's progress banner (read-only)."""
+    return store_stats.progress_stats(apply_store.rows_view().values())
 
 
 @router.get("/api/applications", response_model=ApplicationsListResponse)

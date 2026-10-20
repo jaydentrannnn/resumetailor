@@ -366,6 +366,23 @@ export type ApplicationListOptions = {
 };
 
 /** List tracked applications with server-side search, sort, and pagination. */
+/** Send times and stage counts for the Apply page's progress banner. */
+export type ApplyProgress = {
+  sent: { at: string; company: string }[];
+  found: number;
+  screened_in: number;
+  tailored: number;
+  autofilled: number;
+  sent_total: number;
+  needs_you: number;
+  ready: number;
+  unscreened: number;
+};
+
+export function getApplyProgress(): Promise<ApplyProgress> {
+  return request<ApplyProgress>("/api/applications/progress");
+}
+
 export function listApplications(options: ApplicationListOptions = {}): Promise<ApplicationsList> {
   const params = new URLSearchParams();
   if (options.status) params.set("status", options.status);

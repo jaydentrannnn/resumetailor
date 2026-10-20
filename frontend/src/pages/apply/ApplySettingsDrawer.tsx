@@ -12,6 +12,7 @@ import type { BrowserView } from "../../lib/browserState";
 import { BrowserPicker, ConnectionStatus } from "./BrowserConnection";
 import { CoverLetterSetting } from "./CoverLetterSetting";
 import { AnswerPreferences } from "./AnswerPreferences";
+import { ProgressBannerSetting } from "./progress/ProgressBannerSetting";
 
 /**
  * Platforms that may auto-submit. Workday, LinkedIn, Indeed, Handshake and SmartRecruiters
@@ -319,6 +320,10 @@ export function ApplySettingsDrawer({
             onSelect={(id) => patch({ browser: id })}
             launch={launch}
           />
+        </Section>
+
+        <Section title="Progress banner">
+          <ProgressBannerSetting apply={apply} patch={patch} />
         </Section>
 
         <Section title="Notifications">

@@ -103,7 +103,13 @@ export type ApplySettings = {
   model_selection?: import("../lib/aiModels").ModelSelection | null;
   /** Browser the app starts for Fill and job fetches; null picks the first installed. */
   browser?: BrowserId | null;
+  /** The banner over the Apply list (`pages/apply/progress/`). */
+  progress_banner?: ProgressBanner;
+  /** Applications to send each week, for the "goal" banner. */
+  weekly_goal?: number;
 };
+
+export type ProgressBanner = "goal" | "activity" | "pipeline" | "off";
 
 export type BrowserId = "edge" | "chrome" | "comet";
 

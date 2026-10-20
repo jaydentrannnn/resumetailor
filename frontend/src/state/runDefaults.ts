@@ -139,6 +139,8 @@ export const DEFAULT_SETTINGS: JobSettings = {
     model_provider: "ollama",
     model_name: "nemotron-3-super:cloud",
     browser: null,
+    progress_banner: "goal",
+    weekly_goal: 10,
   },
 };
 

@@ -704,3 +704,18 @@ def test_completed_education_survives_profile_roundtrip(client, qualification):
     loaded["earliest_start"] = "2027-06-01"
     assert c.put("/api/applicant-profile", json={"profile": loaded}).status_code == 200
     assert c.get("/api/applicant-profile").json()["profile"]["highest_education_obtained"] == qualification
+
+
+def test_progress_route_reports_sent_times_and_stage_counts(client):
+    c, _q = client
+    apply_store.save_all({
+        "a": store_models.Application(
+            source="t", source_job_id="a", company="A", role="R", status="submitted",
+            status_history=[store_models.StatusChange(status="submitted", at="2026-10-02T09:00:00+00:00")],
+        ),
+        "b": store_models.Application(source="t", source_job_id="b", company="B", role="R"),
+    })
+
+    body = c.get("/api/applications/progress").json()
+    assert body["sent"] == [{"at": "2026-10-02T09:00:00+00:00", "company": "A"}]
+    assert (body["found"], body["sent_total"], body["unscreened"]) == (2, 1, 1)

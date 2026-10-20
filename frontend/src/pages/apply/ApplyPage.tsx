@@ -16,6 +16,7 @@ import { ApplyHeader } from "./ApplyHeader";
 import { ApplySettingsDrawer } from "./ApplySettingsDrawer";
 import { NightlyRunStrip } from "./NightlyRunStrip";
 import { OperationBanner } from "./OperationBanner";
+import { ProgressBanner } from "./progress/ProgressBanner";
 import { FindJobsTools, ProgressBulkActions, ProgressNote } from "./ProgressToolbar";
 import { ReviewToolbar } from "./ReviewToolbar";
 import { useSourcesStatus } from "./sourceHooks";
@@ -25,7 +26,8 @@ import { useApplyRowActions } from "./useApplyRowActions";
 
 /**
  * Apply: postings found for the student, split into Needs you / In progress / Done,
- * with the current Apply task pinned on top and every setting in a side drawer.
+ * under the progress banner chosen in Apply settings, with the current Apply task
+ * pinned on top and every setting in a side drawer.
  */
 export function ApplyPage() {
   const { settings, setSettings, config } = useRunState();
@@ -114,6 +116,14 @@ export function ApplyPage() {
       <ApplyHeader
         apply={settings.apply}
         browser={op.browser}
+        onSettings={() => setDrawerOpen(true)}
+      />
+      <ProgressBanner
+        kind={settings.apply.progress_banner ?? "goal"}
+        goal={settings.apply.weekly_goal ?? 10}
+        workspaceId={workspaceId}
+        revision={revision}
+        onTab={setTab}
         onSettings={() => setDrawerOpen(true)}
       />
       {op.operation && <OperationBanner operation={op.operation} onControl={op.control} />}
