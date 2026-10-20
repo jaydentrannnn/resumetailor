@@ -30,7 +30,7 @@ function tabFor(requested: string | null): TabId {
 
 /**
  * App-wide settings: the sections in a column down the left, the open section's rows to
- * the right (a readable width, never the whole window). The tab lives in the URL
+ * the right, filling the window (on wide screens the rows' label column grows too). The tab lives in the URL
  * (`?tab=`) so links can open one directly.
  */
 export function SettingsPage() {
@@ -50,7 +50,7 @@ export function SettingsPage() {
             onChange={(id) => setParams({ tab: id }, { replace: true })}
           />
         </div>
-        <div role="tabpanel" className="min-w-0 max-w-[60rem] space-y-10 lg:py-5 lg:pb-12 lg:pl-10">
+        <div role="tabpanel" className="min-w-0 space-y-10 lg:py-5 lg:pb-12 lg:pl-10">
           <TileLayout.Provider value="flat">
             {tab === "ai" && <AiSection />}
             {tab === "data" && <DataSection />}

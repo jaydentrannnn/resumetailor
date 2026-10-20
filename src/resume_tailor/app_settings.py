@@ -1,4 +1,4 @@
-"""App-wide AI settings, shared by every profile.
+"""App-wide AI settings (and the side bar's shortcut hints), shared by every profile.
 
 The model choice, effort, job-description reads and run concurrency describe this
 computer, not one person's resume, so they live in `DATA_ROOT/ai_settings.json`
@@ -34,6 +34,7 @@ TOP_KEYS = (
     "effort",
     "extract_runs",
     "max_concurrent_jobs",
+    "show_shortcut_hints",
 )
 #: `JobSettings.apply` keys that are app-wide (the Heavy task model).
 APPLY_KEYS = ("model_provider", "model_name", "model_selection")

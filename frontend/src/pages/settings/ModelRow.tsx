@@ -52,7 +52,7 @@ export function ModelRow({
         <RowStatus model={model} limit={limitLabel(queue, role)} />
       </div>
       <div className="min-w-0">
-        <div className="grid min-w-0 gap-3 sm:grid-cols-2">
+        <div className="grid min-w-0 max-w-[56rem] gap-3 sm:grid-cols-2">
           <label className="block min-w-0 text-sm font-medium">
             Provider
             <select

@@ -6,14 +6,18 @@ import {
   installUpdate,
   type UpdateStatus,
 } from "../../api";
-import { Button, Card, Kbd, Meter, SettingRow } from "../../components/ui";
+import { Button, Card, Kbd, Meter, SettingRow, Switch } from "../../components/ui";
 import { SaveFileButton } from "../../components/FileActions";
 import { SHORTCUTS } from "../../lib/shortcuts";
 import { UPDATE_IN_PROGRESS, updateStatusLine } from "../../lib/updateStatus";
+import { useDesktop } from "../../lib/useDesktop";
+import { useRunState } from "../../state/runState";
 import { SystemCheckCard } from "./SystemCheckCard";
 
 /** Settings → About: version, updates, diagnostics for support, shortcuts. */
 export function AboutSection() {
+  const desktop = useDesktop();
+  const { settings, setSettings } = useRunState();
   const [version, setVersion] = useState<string | null>(null);
   useEffect(() => {
     fetchHealth()
@@ -55,7 +59,21 @@ export function AboutSection() {
         </SettingRow>
       </Card>
       <Card title="Keyboard shortcuts">
-        <ul className="space-y-2 text-sm">
+        {desktop && (
+          <SettingRow
+            label="Show shortcut hints"
+            layout="action"
+            description="Ctrl 1–5 and Ctrl , beside the pages in the side bar. The shortcuts work either way."
+          >
+            <Switch
+              className="ml-auto"
+              label="Show shortcut hints"
+              checked={settings.show_shortcut_hints !== false}
+              onChange={(on) => setSettings({ ...settings, show_shortcut_hints: on })}
+            />
+          </SettingRow>
+        )}
+        <ul className="grid gap-x-16 gap-y-2 text-sm xl:grid-cols-2">
           {SHORTCUTS.map((s) => (
             <li key={s.action} className="flex items-center justify-between gap-4">
               <span>{s.description}</span>

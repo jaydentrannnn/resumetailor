@@ -46,6 +46,10 @@ describe("isRowSelectClick", () => {
     range.selectNodeContents(r.querySelector("#t")!);
     window.getSelection()!.addRange(range);
     expect(isRowSelectClick(click(r.querySelector("#t")!), r)).toBe(false);
+    // A quick second click (a double-click) still toggles: its word highlight is the
+    // browser's, not a highlight to keep.
+    expect(isRowSelectClick(click(r.querySelector("#t")!, { detail: 2 }), r)).toBe(true);
+    window.getSelection()!.removeAllRanges();
   });
 });
 

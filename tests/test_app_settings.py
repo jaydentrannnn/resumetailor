@@ -40,6 +40,14 @@ def test_model_is_shared_across_profiles(isolated_roots):  # noqa: F811
     assert workspace.load_settings(second.id)["empty"] is False
 
 
+def test_shortcut_hints_choice_is_shared_across_profiles(isolated_roots):  # noqa: F811
+    bootstrap()
+    workspace.save_settings({"pages": 1, "show_shortcut_hints": False})
+    second = workspace.create("Second")
+    assert workspace.load_settings(second.id)["defaults"]["show_shortcut_hints"] is False
+    assert "show_shortcut_hints" not in _profile_file()
+
+
 def test_without_an_app_file_profile_values_are_used(isolated_roots):  # noqa: F811
     path = workspace.settings_path()
     path.parent.mkdir(parents=True, exist_ok=True)

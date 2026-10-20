@@ -1,6 +1,7 @@
 import { useEffect, useRef, useState } from "react";
 import { NavLink } from "react-router-dom";
 import { useDesktop } from "../../lib/useDesktop";
+import { useRunState } from "../../state/runState";
 import { LogoMark } from "../LogoMark";
 import { ProfileMenu } from "../ProfileMenu";
 import { SetupHealth } from "../SetupHealth";
@@ -22,10 +23,12 @@ const rowClass = ({ isActive }: { isActive: boolean }) =>
 /**
  * The app's left rail: the five work areas, then the theme, what needs attention (setup
  * steps left, an update), the profile switcher and Settings at the bottom. Shortcut hints
- * show only in the desktop app, where the browser does not keep Ctrl+1…5 for its tabs.
+ * show only in the desktop app, where the browser does not keep Ctrl+1…5 for its tabs,
+ * and can be hidden in Settings › About.
  */
 export function AppRail() {
-  const desktop = useDesktop();
+  const { settings } = useRunState();
+  const hints = useDesktop() && settings.show_shortcut_hints !== false;
   const needsYou = useNeedsYouCount();
   return (
     <nav
@@ -39,17 +42,17 @@ export function AppRail() {
       {RAIL_ITEMS.map((item, i) => (
         <NavLink key={item.to} to={item.to} end={item.end} className={rowClass} title={item.label}>
           <RailIcon path={item.icon} />
-          <span className="hidden flex-1 min-[900px]:inline">{item.label}</span>
+          <span className="hidden min-w-0 flex-1 truncate min-[900px]:inline">{item.label}</span>
           {item.badge === "apply" && needsYou ? (
             <span
-              className="absolute left-6 top-0.5 rounded-full bg-attn px-1 text-[10px] font-medium text-on-accent min-[900px]:static min-[900px]:px-1.5 min-[900px]:text-[11px]"
+              className="absolute left-6 top-0.5 shrink-0 rounded-full bg-attn px-1 text-[10px] font-medium text-on-accent min-[900px]:static min-[900px]:px-1.5 min-[900px]:text-[11px]"
               aria-label={`${needsYou} need you`}
             >
               {needsYou}
             </span>
           ) : null}
-          {desktop && (
-            <span className="hidden font-mono text-[11px] text-ink-muted min-[900px]:inline">
+          {hints && (
+            <span className="hidden shrink-0 whitespace-nowrap font-mono text-[11px] font-normal text-ink-muted min-[900px]:inline">
               Ctrl {i + 1}
             </span>
           )}
@@ -60,9 +63,9 @@ export function AppRail() {
       <RailStatus />
       <NavLink to="/settings" className={rowClass} title="Settings">
         <RailIcon path={SETTINGS_ICON} />
-        <span className="hidden flex-1 min-[900px]:inline">Settings</span>
-        {desktop && (
-          <span className="hidden font-mono text-[11px] text-ink-muted min-[900px]:inline">
+        <span className="hidden min-w-0 flex-1 truncate min-[900px]:inline">Settings</span>
+        {hints && (
+          <span className="hidden shrink-0 whitespace-nowrap font-mono text-[11px] font-normal text-ink-muted min-[900px]:inline">
             Ctrl ,
           </span>
         )}

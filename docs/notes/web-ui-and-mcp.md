@@ -988,3 +988,19 @@ don't run into the next label.
 - With the document beside an application's tabs, `coverDetails={false}` hid the cover
   letter's guard warnings; `DocumentsCard` now shows them (`CoverLetterWarnings`) over the
   viewer whenever the letter's details are not shown.
+
+### Third feedback pass (2026-10-20)
+
+- The desktop rail's "Ctrl 2" wrapped under Apply's Needs-you count; hints are now
+  `whitespace-nowrap shrink-0` and the label truncates. Settings › About › Keyboard
+  shortcuts has "Show shortcut hints" (`JobSettings.show_shortcut_hints`, an
+  `app_settings.TOP_KEYS` key, so one choice for every profile; desktop only, since the
+  browser build never shows the hints).
+- Settings capped its rows at 60rem and left a blank right side on wide windows. The panel
+  now fills the window; from `2xl` the shared label column is a third of the row,
+  descriptions stop at 80ch, the model pickers at 56rem, and the shortcut list runs in two
+  columns from `xl`.
+- A Sources row (and any table row) sometimes would not untick: a second click inside the
+  double-click interval highlights a word, and the text-highlight guard then ignored the
+  click. `isRowSelectClick` skips that guard for `detail > 1`, and
+  `preventRowHighlight` stops the word highlight on mousedown.

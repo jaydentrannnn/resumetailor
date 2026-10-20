@@ -15,6 +15,8 @@ type ClickLike = {
   ctrlKey: boolean;
   metaKey: boolean;
   altKey: boolean;
+  /** 2 for the second click of a double-click, and so on. */
+  detail?: number;
 };
 
 /** Whether a click on a row should toggle it (not a control, not a text highlight). */
@@ -26,9 +28,23 @@ export function isRowSelectClick(event: ClickLike, row?: Element | null): boolea
   const control = target?.closest?.(OWN_CLICK);
   // A control *around* the row is not the row's own control.
   if (control && (!row || row.contains(control))) return false;
-  // Highlighting text to copy it ends in a click too: leave the selection alone.
+  // Highlighting text to copy it ends in a click too: leave the selection alone. A quick
+  // second click is a double-click, whose word highlight is no highlight of the person's.
+  if ((event.detail ?? 1) > 1) return true;
   const highlighted = typeof window !== "undefined" ? window.getSelection?.()?.toString() : "";
   return !highlighted;
+}
+
+/**
+ * A row's mousedown: Shift-click would highlight the text between the two clicks, and a
+ * quick second click would highlight a word; neither is wanted on a selectable row.
+ */
+export function preventRowHighlight(event: {
+  shiftKey: boolean;
+  detail: number;
+  preventDefault: () => void;
+}): void {
+  if (event.shiftKey || event.detail > 1) event.preventDefault();
 }
 
 /**

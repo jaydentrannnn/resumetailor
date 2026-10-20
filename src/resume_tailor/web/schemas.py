@@ -352,6 +352,8 @@ class JobSettings(BaseModel):
     # Older callers retain their active tuning; fresh UI sessions explicitly use False.
     ai_advanced_enabled: bool = True
     advanced_settings: AdvancedSettings | None = None
+    #: The desktop app's Ctrl+1…5 hints beside the side bar's pages (app-wide).
+    show_shortcut_hints: bool = True
     custom_effort: EffortLevel | dict[EffortStep, EffortLevel] | None = None
     #: Ollama tag for *every* Ollama-routed stage of the chosen profile, overriding the
     #: `OLLAMA_MODEL` env default without an edit-and-restart. Under `hybrid` this leaves

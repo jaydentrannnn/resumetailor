@@ -1,7 +1,12 @@
 import type { ReactNode } from "react";
 
-/** The label column every label-left row shares, so controls line up down a page. */
-export const ROW_LABEL_COLUMN = "sm:grid-cols-[minmax(0,17rem)_minmax(0,1fr)]";
+/**
+ * The label column every label-left row shares, so controls line up down a page. On
+ * wide screens it takes a third of the row, so a stretched window spreads the rows out
+ * instead of leaving the right side empty.
+ */
+export const ROW_LABEL_COLUMN =
+  "sm:grid-cols-[minmax(0,17rem)_minmax(0,1fr)] 2xl:grid-cols-[minmax(17rem,1fr)_minmax(0,2fr)]";
 
 const GRID = {
   // Label/description in a fixed column on the left, the control beside it.
@@ -30,7 +35,9 @@ export function SettingRow({
     >
       <div className="min-w-0">
         <p className="text-sm font-medium">{label}</p>
-        {description && <div className="mt-1 text-xs text-ink-muted">{description}</div>}
+        {description && (
+          <div className="mt-1 max-w-[80ch] text-xs text-ink-muted">{description}</div>
+        )}
       </div>
       <div
         className={

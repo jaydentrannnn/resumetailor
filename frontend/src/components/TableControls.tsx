@@ -6,7 +6,7 @@ import {
   type ReactNode,
 } from "react";
 import { createPortal } from "react-dom";
-import { clickSelect, isRowSelectClick } from "../lib/rowSelection";
+import { clickSelect, isRowSelectClick, preventRowHighlight } from "../lib/rowSelection";
 
 export function Pagination({
   page,
@@ -155,13 +155,9 @@ export function DataTable<T>({
   const rowClick = (row: T) => (event: ReactMouseEvent) => {
     if (isRowSelectClick(event, event.currentTarget)) toggleRow(row, event.shiftKey);
   };
-  // Shift-click would otherwise highlight the text between the two clicks.
-  const rowMouseDown = (event: ReactMouseEvent) => {
-    if (event.shiftKey) event.preventDefault();
-  };
   const rowProps = (row: T) =>
     withSelection && canSelect(row)
-      ? { onClick: rowClick(row), onMouseDown: rowMouseDown, className: "cursor-pointer" }
+      ? { onClick: rowClick(row), onMouseDown: preventRowHighlight, className: "cursor-pointer" }
       : { className: "" };
   // Esc clears the selection, unless a field, menu or dialog wants that key.
   const hasSelection = withSelection && selected.size > 0;

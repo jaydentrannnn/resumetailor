@@ -45,6 +45,8 @@ export type CoverAngles = {
 export type JobSettings = {
   ai_models?: AiModels | null;
   ai_advanced_enabled?: boolean;
+  /** The desktop app's Ctrl+1…5 hints in the side bar (app-wide; default on). */
+  show_shortcut_hints?: boolean;
   advanced_settings?: import("../lib/advancedSettings").AdvancedSettings | null;
   custom_effort?: import("../lib/effortSteps").EffortSetting;
   pages: number;

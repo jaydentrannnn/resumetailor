@@ -12,7 +12,7 @@ import {
   sourceSummary,
 } from "../../lib/sources";
 import { ownFilterCount } from "../../lib/globalFilters";
-import { isRowSelectClick } from "../../lib/rowSelection";
+import { isRowSelectClick, preventRowHighlight } from "../../lib/rowSelection";
 
 const HEALTH_TONE = {
   ok: "text-success",
@@ -75,9 +75,7 @@ export function SourceRow({
       onClick={(e) => {
         if (isRowSelectClick(e, e.currentTarget)) onToggle(e.shiftKey);
       }}
-      onMouseDown={(e) => {
-        if (e.shiftKey) e.preventDefault();
-      }}
+      onMouseDown={preventRowHighlight}
     >
       <div className="flex flex-wrap items-center gap-x-3 gap-y-2">
         <input
