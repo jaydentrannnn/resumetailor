@@ -121,6 +121,25 @@ _INSPECT_PAGE_JS = """
   const invalid = (el) => el.getAttribute('aria-invalid') === 'true' || !!el.closest('[data-automation-id^="formField-"]')
     ?.querySelector('[aria-invalid="true"], [data-automation-id="errorMessage"], [data-automation-id="inputAlert"]');
 
+  // A radio/checkbox group's question when no fieldset or form field names it (Lever puts
+  // it in a div above a list of <label><input> options): the text of the nearest container
+  // holding only this group, less the options' own words.
+  const groupTitle = (group) => {
+    const words = group.map(g => (g.closest('label')?.innerText || g.value || '').trim())
+      .filter(Boolean);
+    let node = group[0].parentElement;
+    for (let depth = 0; node && depth < 8; depth++, node = node.parentElement) {
+      if (!group.every(g => node.contains(g))) continue;
+      const controls = node.querySelectorAll('input:not([type="hidden"]), select, textarea');
+      if (Array.from(controls).some(c => !group.includes(c))) return '';
+      let own = (node.innerText || '').replace(/[\\u2060\\u200b]/g, '');
+      words.forEach(word => { own = own.split(word).join(' '); });
+      own = own.replace(/[✱*]/g, ' ').replace(/\\s+/g, ' ').trim();
+      if (own) return own;
+    }
+    return '';
+  };
+
   const unresolved = [];
   const seenFields = new Set();
 
@@ -169,7 +188,7 @@ _INSPECT_PAGE_JS = """
         const question = r.closest(
           '[data-automation-id^="formField-"], fieldset, [role="radiogroup"]');
         const title = question?.querySelector('legend, label:not([for])');
-        const label = title?.textContent?.trim() || getLabel(r) || r.name;
+        const label = title?.textContent?.trim() || groupTitle(group) || getLabel(r) || r.name;
         const options = group.map(g => getLabel(g) || g.value);
         unresolved.push({
           type: 'radiogroup',
@@ -198,6 +217,23 @@ _INSPECT_PAGE_JS = """
       label: title ? title.innerText.trim() : 'Checkbox group',
       options: boxes.map(b => getLabel(b)),
       invalid: invalid(group)
+    });
+  });
+  // Elsewhere: required checkboxes sharing one name (Lever's "check all that apply").
+  const boxNames = new Set();
+  deepQueryAll(document, 'input[type="checkbox"][name]').forEach(b => {
+    if (boxNames.has(b.name) || b.closest('fieldset[data-automation-id$="-CheckboxGroup"]')) return;
+    boxNames.add(b.name);
+    const boxes = Array.from(
+      rootOf(b).querySelectorAll(`input[type="checkbox"][name="${CSS.escape(b.name)}"]`));
+    if (boxes.length < 2 || boxes.some(x => x.checked) || !boxes.some(isVisible)) return;
+    if (!boxes.some(x => x.required || x.getAttribute('aria-required') === 'true')) return;
+    unresolved.push({
+      type: 'checkboxgroup',
+      selector: `input[type="checkbox"][name="${b.name.replace(/"/g, '\\\\\\"')}"]`,
+      label: groupTitle(boxes) || 'Checkbox group',
+      options: boxes.map(x => (x.closest('label')?.innerText || getLabel(x) || x.value).trim()),
+      invalid: boxes.some(invalid)
     });
   });
 

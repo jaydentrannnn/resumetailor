@@ -502,6 +502,8 @@ def _choose_radio_option(page: Any, radio_selector: str, target_value: str) -> b
                 if lbl.count() > 0:
                     text = lbl.inner_text()
             if not text:
+                text = _wrapping_label(r)
+            if not text:
                 text = r.get_attribute("value") or ""
             if target_lower == _norm(text):
                 clicks.safe_click(r, purpose="select", timeout=3000)
@@ -517,15 +519,29 @@ def checked_values(value: str) -> list[str]:
     """The option texts a check_options action names (joined by ``|``)."""
     return [part.strip() for part in value.split("|") if part.strip()]
 
+def _wrapping_label(box: Any) -> str:
+    """The text of the ``<label>`` an option's input sits in (Lever), else ""."""
+    try:
+        wrap = box.locator("xpath=ancestor::label[1]")
+        return wrap.first.inner_text() if wrap.count() else ""
+    except Exception:  # noqa: BLE001
+        return ""
+
+
 def _check_options(page: Any, group_selector: str, values: list[str]) -> bool:
-    """Tick the checkboxes labelled ``values`` in one group; True when all are ticked."""
+    """Tick the checkboxes labelled ``values`` in one group (a container, or the boxes
+    themselves when they share a name); True when all are ticked."""
     wanted = {_norm(value) for value in values}
     ticked = 0
     try:
-        for box in page.locator(f"{group_selector} input[type='checkbox']").all():
+        boxes = (page.locator(group_selector).all() if "input[type=" in group_selector
+                 else page.locator(f"{group_selector} input[type='checkbox']").all())
+        for box in boxes:
             bid = box.get_attribute("id")
             label = page.locator(f"label[for='{bid}']").first if bid else None
-            if label is None or label.count() == 0 or _norm(label.inner_text()) not in wanted:
+            if label is None or label.count() == 0:
+                label = box.locator("xpath=ancestor::label[1]").first
+            if label.count() == 0 or _norm(label.inner_text()) not in wanted:
                 continue
             if not box.is_checked():
                 clicks.safe_click(label, purpose="select", timeout=3000)

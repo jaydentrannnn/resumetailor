@@ -83,6 +83,17 @@ def test_only_a_fluent_language_answers_a_fluency_question():
                           _field("Writing*", ["Spanish", "French"]), profile=profile)
 
 
+def test_a_language_option_with_its_code_names_that_language():
+    """Lever lists "English (ENG)" (Batch 3, 2026-10-21)."""
+    profile = {"languages": [{"language": "English", "fluent": True}]}
+    field = _field("Language Skill(s) (Check all that apply)",
+                   ["English (ENG)", "Spanish (SPA)"], kind="checkboxgroup")
+    assert _supported(_action("English (ENG)", "profile", "languages", verb="check_options"),
+                      field, profile=profile)
+    assert not _supported(_action("Spanish (SPA)", "profile", "languages", verb="check_options"),
+                          field, profile=profile)
+
+
 @pytest.mark.parametrize(("label", "expected"), [
     ("All offers are contingent on a background check. Do you acknowledge?", True),
     ("I acknowledge that this role is on-site in Chicago.", False),

@@ -314,8 +314,10 @@ def supported(
     if action.basis_kind in {"profile", "packet"} and action.basis_key.strip() == "languages":
         names = _languages(profile, question)
         picked = action.value.split(" | ") if action.action == "check_options" else [action.value]
+        # An option may carry a code: "English (ENG)" (Lever).
         return bool(names) and _about("languages", question) and all(
-            field_matcher.normalize(item) in names for item in picked
+            field_matcher.normalize(re.sub(r"\s*\([^)]*\)\s*$", "", item)) in names
+            for item in picked
         )
     if (action.basis_kind in {"profile", "packet"}
             and action.basis_key.strip() == "auto_accept_routine_acknowledgements"):
