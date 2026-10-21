@@ -196,13 +196,15 @@ class _FillFinish(fill_state._FillState):
         with contextlib.suppress(Exception):
             if "page you are looking for doesn't exist" in page.inner_text("body").casefold():
                 guard_msg = "Posting is unavailable: Workday says this page does not exist"
+            else:
+                guard_msg = fill_page.closed_page(page, self.url or "") or guard_msg
         result = FillResult(
             error=guard_msg,
             status="fill_failed",
             screenshot_path=str(shot) if shot else None,
             browser_target_id=self.target_id,
             browser_url=page.url,
-            handoff_reason="form unavailable",
+            handoff_reason=guard_msg if guard_msg.startswith("Posting closed") else "form unavailable",
         )
         store.set_status(self.app, "fill_failed", note=guard_msg)
         self.app.fill = result

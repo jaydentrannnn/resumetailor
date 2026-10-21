@@ -279,6 +279,9 @@ def test_retained_tab_tells_this_application_from_another_page(page_url, known, 
     ("https://careers.acme.com/job/12345/engineer", "https://careers.acme.com/", True),
     ("https://careers.acme.com/job/12345/engineer", "https://careers.acme.com/en-us/careers/search", True),
     ("https://www.acme.com/careers/job?id=98765", "https://www.acme.com/careers", True),
+    # Greenhouse sends a dead job to its board (Batch 3, 2026-10-21).
+    ("https://job-boards.greenhouse.io/acme/jobs/8204509",
+     "https://job-boards.greenhouse.io/acme?error=true", True),
     # Still on a job, another site, or a posting that never named one.
     ("https://careers.acme.com/job/12345/engineer", "https://careers.acme.com/job/12345/apply", False),
     ("https://careers.acme.com/job/12345", "https://acme.wd5.myworkdayjobs.com/", False),

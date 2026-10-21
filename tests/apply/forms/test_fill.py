@@ -310,7 +310,10 @@ def _stub_greenhouse_form(fill_paths, monkeypatch, **app_fields):
         return {"errors": [], "unresolved": [], "advance_disabled": False}
 
     page.evaluate.side_effect = evaluate_form
-    page.inner_text.side_effect = ["Application form", "Thank you for applying"]
+    # The posting page (closed-banner check), the form before submit, the page after it;
+    # any later read sees the last page.
+    texts = ["Posting", "Application form", "Thank you for applying"]
+    page.inner_text.side_effect = lambda *_a, **_k: texts.pop(0) if len(texts) > 1 else texts[0]
     page.screenshot.side_effect = lambda path, **_: Path(path).write_bytes(b"png")
     page.locator.return_value.first.evaluate.return_value = "Ada Lovelace Resume - Intern.pdf"
 

@@ -26,6 +26,8 @@ _CLOSED_PHRASES = re.compile(
     r"(?:available|open|active)|been (?:filled|closed|removed)|closed|expired)"
     r"|(?:job|position|posting) (?:has )?expired"
     r"|(?:this|the) job (?:you are|you're) looking for (?:is no longer|could not be|was not)"
+    r"|(?:this|the) job you requested (?:is no longer|could not be|was not)"
+    r"|^\s*(?:job|position|posting) not found\b"
     r"|position has been filled"
     r"|applications? (?:are|is) (?:now )?closed"
     r"|we are no longer (?:accepting|hiring)",

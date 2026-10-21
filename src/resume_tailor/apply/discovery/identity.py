@@ -299,15 +299,19 @@ _JOB_ID = re.compile(r"\d{4,}|[0-9a-f]{8}-[0-9a-f]{4}", re.I)
 
 def lost_posting(posting_url: str, landed_url: str) -> bool:
     """Whether a link to one job now lands on its careers site's home or job search: the
-    posting is gone (ITW's links redirect to the careers home page, 2026-10)."""
+    posting is gone (ITW's links redirect to the careers home page, 2026-10). A landing on
+    a parent of the job's own path counts too: Greenhouse sends a dead
+    ``/acme/jobs/123`` to its board ``/acme?error=true`` (Batch 3, 2026-10-21)."""
     if not posting_url or not landed_url or _site(posting_url) != _site(landed_url):
         return False
     posting, landed = urlparse(posting_url), urlparse(landed_url)
     names_a_job = bool(_JOB_ID.search(posting.path + "?" + posting.query))
-    landed_is_root = bool(_CAREERS_ROOT.match(landed.path or "/")) and not _JOB_ID.search(
-        landed.path + "?" + landed.query
-    )
-    return names_a_job and landed_is_root
+    if not names_a_job or _JOB_ID.search(landed.path + "?" + landed.query):
+        return False
+    asked = [part for part in posting.path.casefold().split("/") if part]
+    reached = [part for part in landed.path.casefold().split("/") if part]
+    parent = len(reached) < len(asked) and asked[: len(reached)] == reached
+    return bool(_CAREERS_ROOT.match(landed.path or "/")) or parent
 
 
 def normalize_company(text: str) -> str:

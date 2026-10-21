@@ -143,6 +143,9 @@ class _FillEntry(fill_state._FillState):
         fill_page.wait_for_entry(page, timeout_ms=self._ms_left(10_000))
         if identity.lost_posting(self.url or "", str(page.url)):
             return self._handoff(fill_outcomes.LOST_POSTING_MSG, status="fill_failed")
+        closed = fill_page.closed_page(page, self.url or "")
+        if closed:
+            return self._handoff(closed, status="fill_failed")
         self.progress("locating application form")
         if not self.is_workday:
             self.page = fill_buttons.find_and_click_apply(

@@ -149,6 +149,39 @@ def wait_for_entry(page: Any, *, timeout_ms: float) -> None:
         page.wait_for_load_state("networkidle", timeout=max(min(2000, left_ms), 1))
 
 
+#: A Greenhouse job embedded in a company's own page (``?gh_jid=``) shows this container
+#: or frame; without either, the link landed on the careers page without its job.
+_GREENHOUSE_EMBED_JS = """() => !!document.querySelector(
+  '#grnhse_app, #grnhse_iframe, iframe[src*="greenhouse.io"]')"""
+
+
+def closed_page(page: Any, requested_url: str) -> str | None:
+    """Why the loaded posting page is closed or gone, else None: a closing banner near
+    the top (Ashby's "Job not found"), a redirect to the careers home, or a
+    ``gh_jid`` link whose Greenhouse job never appears (Batch 3, 2026-10-21)."""
+    from . import form_guards  # noqa: PLC0415 - kept beside its only page-level caller
+
+    text: Any = ""
+    with contextlib.suppress(Exception):
+        text = page.inner_text("body", timeout=3000)
+    text = text if isinstance(text, str) else ""
+    landed = getattr(page, "url", "")
+    landed = landed if isinstance(landed, str) else ""
+    reason = form_guards.closed_posting(text, final_url=landed, requested_url=requested_url)
+    if reason:
+        return reason
+    if "gh_jid=" not in requested_url:
+        return None
+    for _ in range(12):  # the embed script can take a moment to add its frame
+        found = None
+        with contextlib.suppress(Exception):
+            found = page.evaluate(_GREENHOUSE_EMBED_JS)
+        if found is not False or any("greenhouse.io" in str(f.url) for f in page.frames):
+            return None
+        page.wait_for_timeout(250)
+    return "Posting closed (the careers page no longer shows this Greenhouse job)"
+
+
 #: What each ATS shows after a successful submit: page selectors, and phrases that
 #: must be new on the page (absent before the click). Any one signal confirms. Generic
 #: markers apply to every ATS; the packet's ``confirmation_text`` hint is added too.

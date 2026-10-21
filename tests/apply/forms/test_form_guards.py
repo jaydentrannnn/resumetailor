@@ -26,6 +26,8 @@ def _fresh_hosts():
         "This posting has expired",
         "The job you are looking for is no longer open.",
         "Applications are now closed.",
+        # Ashby's page for a removed job (Batch 3, 2026-10-21).
+        "Job not found\nThe job you requested was not found.\nView all open positions",
     ],
 )
 def test_closing_banners(text):
