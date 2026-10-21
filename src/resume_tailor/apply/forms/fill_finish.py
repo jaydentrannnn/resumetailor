@@ -204,7 +204,9 @@ class _FillFinish(fill_state._FillState):
             screenshot_path=str(shot) if shot else None,
             browser_target_id=self.target_id,
             browser_url=page.url,
-            handoff_reason=guard_msg if guard_msg.startswith("Posting closed") else "form unavailable",
+            handoff_reason=(
+                guard_msg if guard_msg.startswith("Posting closed") else "form unavailable"
+            ),
         )
         store.set_status(self.app, "fill_failed", note=guard_msg)
         self.app.fill = result
