@@ -2342,3 +2342,29 @@ current probe's counting, not the Batch 1 table's.
   yields `(frame_index, frame)` from `_sync_frames` for frames still attached;
   `_resolve_blockers` (both callers) and `_scan_readiness` (leftovers matched by
   `frame_index`) use it, and a removed frame is skipped rather than reported as unreadable.
+
+### 2026-10-21 — Batch 3 fill probe: 61 live postings, page readback, findings
+
+Method: `scripts/evals/fill_probe.py live` over postings picked from the live app.db
+(`fill_probe_targets.py`, one per ATS site), 3 browsers, made-up applicant, live model
+calls. New in the probe: a screenshot and a readback of every visible control before each
+advance and at the end (`fill_probe_observe.py`, `fill_probe_readback.js`), each answer
+graded against the page and the profile, a `fill_end` category, a submit-shaped request
+refusal in the guard, `submit_click` patched to raise, and a test-account mode for
+Workday/iCIMS/Oracle (`fill_probe_inbox.py`, IMAP; not run yet, no test inbox).
+- **Results (run 1, 61 postings):** 33 reached review; 0 answers on the page contradicted
+  the profile (378 matched); 103 required fields left blank (deduplicated); 0 data leaks,
+  0 submits. A 30-posting repeat matched run 1 exactly (end, blank set, ok count).
+- **Ranked findings:** (1) closed postings reported as fill failures, 7/61: Ashby "Job not
+  found", Greenhouse `/<board>?error=true` (passes `identity.lost_posting`; the fill then
+  treats the board's filters as questions); (2) react-select comboboxes recorded with no
+  options (`filler.js` "Custom dropdown needs an observed selection") and the resolver
+  declining profile-answerable education/sponsorship questions, 38 fields; (3) Lever
+  multiple-choice inputs labelled by their wrapping option `<label>`, 32 fields, 7/8 Lever;
+  (4) Apply entry missed: `wait_for_entry` ready on any input, single-pass
+  `find_and_click_apply`, no "apply without an account", `fill_entry.py` logs "application
+  form opened" without an entry; (5) Jobvite résumé "Select" menu; (6) Ashby fact wordings
+  unrecognised.
+- **Probe artefacts:** SmartRecruiters' own-host résumé upload is blocked by the guard
+  (page shows "Cannot upload resume"), so its 7 stops are not app failures; the readback
+  labels radio groups by option text, so Ashby/Lever answers show as "not seen".

@@ -91,6 +91,8 @@ def test_audit_counts_and_writes_no_query_or_body(tmp_path):
     assert audit.summary() == {
         "counts": {"allow: read": 1, "block: applicant data in body": 1},
         "allowed_with_applicant_data": 0,
+        "account_host_with_data": 0,
+        "submit_refused": 0,
         "allowed_reads_with_answers": 0,
         "allowed_writes": {},
     }

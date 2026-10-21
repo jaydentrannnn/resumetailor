@@ -3,6 +3,14 @@
 Run by `fill_probe.py` in a child process whose environment already points every app path
 at a throwaway sandbox and ``CHROME_CDP_URL`` at the probe's own Chrome.
 
+A test-account target (``PROBE_ACCOUNT_SITE`` set by the parent) signs up as that site's
+inbox alias (`fill_probe_inbox`) with a password kept in ``PROBE_ACCOUNTS_DIR``, may write
+to its own ATS hosts (``PROBE_ATS_HOSTS``, see `fill_probe_guard`), and when the fill
+stops for an email code or link, reads it from the inbox, enters it under the guard and
+continues the fill (at most `_VERIFY_ROUNDS` times). `clicks.submit_click` raises in every
+mode. `fill_probe_observe.Observer` screenshots and reads back the page before each
+advance and at the end.
+
     fill_probe_live.py <out_dir> <tag> <url> [ats]
 """
 
@@ -17,19 +25,25 @@ import time
 import traceback
 from collections import Counter
 from pathlib import Path
+from types import SimpleNamespace
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 
 import capture_form  # noqa: E402
 import fill_probe_data as synth  # noqa: E402
 import fill_probe_guard  # noqa: E402
+import fill_probe_inbox  # noqa: E402
+import fill_probe_observe  # noqa: E402
 
 from resume_tailor import config  # noqa: E402
 from resume_tailor.apply.answers import answer, hybrid_resolver  # noqa: E402
+from resume_tailor.apply.answers import profile as profile_mod  # noqa: E402
+from resume_tailor.apply.ats import workday_auth  # noqa: E402
 from resume_tailor.apply.discovery import fetch_jd  # noqa: E402
-from resume_tailor.apply.driver import browser  # noqa: E402
+from resume_tailor.apply.driver import browser, clicks  # noqa: E402
 from resume_tailor.apply.forms import fill as fill_mod  # noqa: E402
 from resume_tailor.apply.funnel import store, store_models  # noqa: E402
+from resume_tailor.infra import secret_store  # noqa: E402
 from resume_tailor.web.schemas import ApplySettings  # noqa: E402
 
 OUT, TAG, URL = Path(sys.argv[1]), sys.argv[2], sys.argv[3]
@@ -39,6 +53,51 @@ CALLS: Counter[str] = Counter()
 CLIENTS = [0]  # classifier client builds: one per model call
 ASKED: list[dict[str, str]] = []  # controls the resolver put to the model (labels only)
 _STEP = re.compile(r"scanning form step (\d+)")
+OBSERVER = fill_probe_observe.Observer(OUT, TAG)
+SITE = os.environ.get("PROBE_ACCOUNT_SITE", "")
+ATS_HOSTS = tuple(h for h in os.environ.get("PROBE_ATS_HOSTS", "").split(",") if h)
+ACCOUNTS = Path(os.environ.get("PROBE_ACCOUNTS_DIR") or OUT / "accounts")
+_VERIFY_ROUNDS = 2
+_CODE_INPUTS = (
+    "input[data-automation-id='verificationCode'], input[autocomplete='one-time-code'], "
+    "input[name*='code' i]:not([type=hidden]), input[id*='code' i]:not([type=hidden])"
+)
+
+
+def _account() -> tuple[str, str]:
+    """(alias, password) of this site's test account; the password is made once and kept."""
+    user, _ = fill_probe_inbox.credentials()
+    if not user:
+        raise RuntimeError(f"account target without a test inbox ({fill_probe_inbox.ENV_FILE})")
+    ACCOUNTS.mkdir(parents=True, exist_ok=True)
+    path = ACCOUNTS / "passwords.json"
+    known = json.loads(path.read_text(encoding="utf-8")) if path.is_file() else {}
+    if SITE not in known:
+        known[SITE] = workday_auth.generate_compliant_password()
+        path.write_text(json.dumps(known, indent=1), encoding="utf-8")
+    return fill_probe_inbox.alias(user, SITE), known[SITE]
+
+
+ALIAS, PASSWORD = _account() if SITE else ("", "")
+PROFILE = (
+    synth.PROFILE.model_copy(
+        update={"email": ALIAS, "workday_email": ALIAS, "workday_password": PASSWORD}
+    )
+    if SITE
+    else synth.PROFILE
+)
+#: The alias's digest part is the marker: its "+" reads as a space once URL-decoded.
+MARKERS = synth.MARKERS + ((ALIAS.split("+", 1)[1].split("@")[0].encode(),) if SITE else ())
+
+
+def _vault(direction: str) -> None:
+    """Copy this site's Workday vault (account flags) in from, or out to, ``ACCOUNTS``."""
+    kept = ACCOUNTS / "vaults" / f"{re.sub(r'[^A-Za-z0-9.-]+', '_', SITE)}.json"
+    live = config.APPLICATIONS_OUTPUT_DIR / "workday_vault.json"
+    source, target = (kept, live) if direction == "in" else (live, kept)
+    if source.is_file():
+        target.parent.mkdir(parents=True, exist_ok=True)
+        target.write_bytes(source.read_bytes())
 
 
 def _app() -> store_models.Application:
@@ -91,7 +150,7 @@ _original_cdp = browser.cdp_browser
 def _guarded_cdp():
     with _original_cdp() as connected:
         context = connected.contexts[0] if connected.contexts else connected.new_context()
-        fill_probe_guard.install(context, AUDIT, synth.MARKERS, synth.ANSWER_MARKERS)
+        fill_probe_guard.install(context, AUDIT, MARKERS, synth.ANSWER_MARKERS, ATS_HOSTS)
         yield connected
 
 
@@ -129,9 +188,43 @@ def _asked_recorded(fn):
     return wrapper
 
 
+def _no_submit(*_args, **_kwargs):
+    CALLS["submit_click_refused"] += 1
+    raise clicks.SubmitRefused("the fill probe never submits")
+
+
+def _observed_click(fn):
+    """Snapshot the page before each advance click (what this step showed when the fill
+    moved on)."""
+    def wrapper(loc, *args, purpose, **kwargs):
+        if purpose == "advance":
+            with contextlib.suppress(Exception):
+                OBSERVER.snapshot(loc.page, "advance")
+        return fn(loc, *args, purpose=purpose, **kwargs)
+
+    return wrapper
+
+
+_KEPT_SECRETS: dict[str, str] = {}
+#: The Workday vault's and the profile's password store in this process: test-account
+#: passwords never reach the OS keychain, where a sandbox's "profile:default:workday:<site>"
+#: would be the owner's real entry. (Model connections still read the keychain.)
+PROBE_SECRETS = SimpleNamespace(
+    SecretStoreError=secret_store.SecretStoreError,
+    profile_name=secret_store.profile_name,
+    get=_KEPT_SECRETS.get,
+    set=_KEPT_SECRETS.__setitem__,
+    delete=lambda name: _KEPT_SECRETS.pop(name, None),
+)
+
+
 def _patch() -> None:
+    workday_auth.secret_store = PROBE_SECRETS
+    profile_mod.secret_store = PROBE_SECRETS
     browser.cdp_browser = _guarded_cdp
     fill_mod.browser.cdp_browser = _guarded_cdp
+    clicks.submit_click = _no_submit
+    clicks.safe_click = _observed_click(clicks.safe_click)
     answer._classify_client = _client_counted(answer._classify_client)
     answer.classify_questions = _count(
         "classify_questions", answer.classify_questions, via_client=True
@@ -185,44 +278,144 @@ def _progress_log(progress: list[str], started: float):
     return record
 
 
+def _fill_page(connected, result: store_models.FillResult | None):
+    """The fill's own tab, else the last web page open."""
+    context = connected.contexts[0]
+    page = browser.find_target(context, result.browser_target_id) if result else None
+    pages = [p for p in context.pages if not p.is_closed() and p.url.startswith("http")]
+    return page or (pages[-1] if pages else None)
+
+
+def _enter_code(page, code: str) -> bool:
+    """Type ``code`` into the page's code box (or its one-character boxes) and press Enter."""
+    for frame in page.frames:
+        boxes = [b for b in frame.locator(_CODE_INPUTS).all() if b.is_visible()]
+        if not boxes:
+            continue
+        if len(boxes) >= len(code) >= 4:
+            for box, char in zip(boxes, code, strict=False):
+                box.fill(char)
+        else:
+            boxes[0].fill(code)
+        boxes[-1].press("Enter")
+        page.wait_for_timeout(5_000)
+        return True
+    return False
+
+
+def _verify(result: store_models.FillResult, since: float, log) -> str:
+    """Read the email code or link sent to the alias and use it on the fill's tab, under
+    the guard; how it went, for the report."""
+    log(f"probe: waiting for the verification email to the test alias ({SITE})")
+    found = fill_probe_inbox.wait_for(ALIAS, since)
+    if not (found.code or found.link):
+        return "no_email"
+    with _guarded_cdp() as connected:
+        page = _fill_page(connected, result)
+        if page is None:
+            return "no_page"
+        if found.code and _enter_code(page, found.code):
+            log("probe: entered the emailed code")
+            return "code"
+        if found.link:
+            page.goto(found.link, wait_until="domcontentloaded", timeout=30_000)
+            page.wait_for_timeout(5_000)
+            log("probe: opened the emailed verification link")
+            return "link"
+    return "code_without_box"
+
+
+def _fill(app, mode: str, log) -> store_models.FillResult:
+    return fill_mod._FillRun(
+        app,
+        source_job_id=app.source_job_id,
+        settings=_settings(),
+        submit_mode="awaiting_review",
+        fill_mode=mode,
+        should_cancel=None,
+        on_progress=log,
+        applicant_profile=PROFILE,
+    ).run()
+
+
+def _end_of_fill(result: store_models.FillResult | None) -> None:
+    """The last snapshot, the end screenshot and (``PROBE_CAPTURE``) the page as the fill
+    left it; with ``PROBE_HOLD``, keep the guarded connection open until
+    ``<tag>.release`` appears (30 minutes at most) for a read-only look."""
+    with contextlib.suppress(Exception), _guarded_cdp() as connected:
+        page = _fill_page(connected, result)
+        if page is None:
+            return
+        OBSERVER.snapshot(page, "end")
+        page.screenshot(path=str(OUT / f"{TAG}.png"), full_page=True)
+        if os.environ.get("PROBE_CAPTURE"):
+            for index, frame in enumerate(page.frames):
+                with contextlib.suppress(Exception):
+                    name = "end" if index == 0 else f"end.frame{index}"
+                    capture_form.capture(frame, OUT / "captures" / f"{TAG}.{name}.html")
+        if os.environ.get("PROBE_HOLD"):
+            release = OUT / f"{TAG}.release"
+            stop = time.monotonic() + 1800
+            print(json.dumps({"held": TAG, "release": str(release)}), flush=True)
+            while not release.exists() and time.monotonic() < stop:
+                page.wait_for_timeout(2_000)
+
+
 def main() -> int:
     _patch()
     progress: list[str] = []
     started = time.monotonic()
     result, error = None, ""
+    verification: list[str] = []
     try:
         app = _app()
-        run = fill_mod._FillRun(
-            app,
-            source_job_id=app.source_job_id,
-            settings=_settings(),
-            submit_mode="awaiting_review",
-            fill_mode="initial",
-            should_cancel=None,
-            on_progress=_progress_log(progress, started),
-            applicant_profile=synth.PROFILE,
-        )
-        result = run.run()
-        with contextlib.suppress(Exception), _original_cdp() as connected:
-            for page in connected.contexts[0].pages:
-                if page.url.startswith("http"):
-                    page.screenshot(path=str(OUT / f"{TAG}.png"), full_page=True)
-                    if os.environ.get("PROBE_CAPTURE"):  # the page as the fill left it
-                        for index, frame in enumerate(page.frames):
-                            with contextlib.suppress(Exception):
-                                name = "end" if index == 0 else f"end.frame{index}"
-                                capture_form.capture(frame, OUT / "captures" / f"{TAG}.{name}.html")
+        log = _progress_log(progress, started)
+        if SITE:
+            _vault("in")
+        since = time.time()
+        result = _fill(app, "initial", log)
+        while SITE and result.status == "awaiting_otp" and len(verification) < _VERIFY_ROUNDS:
+            verification.append(_verify(result, since, log))
+            if verification[-1] in {"no_email", "no_page", "code_without_box"}:
+                break
+            since = time.time()
+            result = _fill(store.get(app.source_job_id), "continue", log)
+        _end_of_fill(result)
     except Exception:  # noqa: BLE001
         error = traceback.format_exc()[-2000:]
+    finally:
+        if SITE:
+            with contextlib.suppress(Exception):
+                _vault("out")
     AUDIT.close()
+    measured = measures(result, progress)
     report = {
         "tag": TAG,
         "url": URL,
+        "ats": ATS or fetch_jd.detect_ats(URL),
+        "account": bool(SITE),
+        "verification": verification,
         "seconds": round(time.monotonic() - started, 1),
         "calls": dict(CALLS),
         "resolver_asked": ASKED,
         "error": error,
-        "measures": measures(result, progress),
+        "measures": measured,
+        "fill_end": fill_probe_observe.fill_end(measured, error=error),
+        "grades": fill_probe_observe.grade(
+            [o for o in (result.field_outcomes if result else []) if isinstance(o, dict)],
+            OBSERVER.snapshots,
+            PROFILE,
+            leftovers=[i for i in (result.leftovers if result else []) if isinstance(i, dict)],
+            required_empty=list(result.required_empty) if result else [],
+        ),
+        "observed": OBSERVER.report(),
+        # The made-up applicant's fill record, kept whole so the grade can be re-run offline.
+        "raw": {
+            "field_outcomes": list(result.field_outcomes) if result else [],
+            "leftovers": list(result.leftovers) if result else [],
+            "required_empty": list(result.required_empty) if result else [],
+        },
+        "diagnostics": (result.diagnostics if result else None) or {},
         "audit": AUDIT.summary(),
         "progress": progress,
         "labels": [
@@ -240,7 +433,11 @@ def main() -> int:
                 "status": m.get("status"),
                 "filled": m.get("filled"),
                 "committed": m.get("committed"),
+                "end": report["fill_end"],
+                "grades": report["grades"]["counts"],
+                "verification": verification,
                 "leaks": report["audit"]["allowed_with_applicant_data"],
+                "submit_refused": report["audit"]["submit_refused"],
                 "error": error.splitlines()[-1][:150] if error else "",
             }
         )
