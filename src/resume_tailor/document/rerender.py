@@ -360,6 +360,13 @@ def rerender(
             run.snapshot.get("fill_target") is not None
             and run.snapshot.get("lines_per_page") is not None
         )
+        if not estimated:
+            from resume_tailor.document import pdf_text_check
+
+            quality.pdf_text = pdf_text_check.check(
+                out_dir / "tailored.pdf", out_dir / "tailored.docx",
+                resume=run.resume, bullets=bullets, layout=run.snapshot["layout"],
+            )
         resume_quality.save(out_dir, quality)
         funnel = _refresh_coverage(run, bullets)
         return {

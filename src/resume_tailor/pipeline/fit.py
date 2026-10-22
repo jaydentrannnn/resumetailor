@@ -224,8 +224,6 @@ class _FitRun(fit_topup._FitTopUp):
         )
 
     def _finish(self, fill_ratio: float, underfull: bool, grow_limit: int) -> fit_types.FitResult:
-        from resume_tailor.document.template_profile import active_layout
-        from resume_tailor.pipeline import resume_quality
         topup_reason: str | None = None
         if underfull:
             topup_reason = self.top_up()
@@ -273,12 +271,26 @@ class _FitRun(fit_topup._FitTopUp):
             trace=self.trace,
             fill_ratio=fill_ratio,
             fill_target=self.underflow,
-            quality=resume_quality.assess(
-                self.resume, self.rewritten, active_layout(), fill_ratio=fill_ratio,
-                fill_target=self.underflow, estimated=self.pages_are_estimated,
-                fill_tolerance=config.FILL_TOLERANCE_LINES / self.capacity,
-            ).model_dump(),
+            quality=self._quality(fill_ratio).model_dump(),
         )
+
+    def _quality(self, fill_ratio: float):
+        from resume_tailor.document import pdf_text_check
+        from resume_tailor.document.template_profile import active_layout
+        from resume_tailor.pipeline import resume_quality
+
+        layout = active_layout()
+        quality = resume_quality.assess(
+            self.resume, self.rewritten, layout, fill_ratio=fill_ratio,
+            fill_target=self.underflow, estimated=self.pages_are_estimated,
+            fill_tolerance=config.FILL_TOLERANCE_LINES / self.capacity,
+        )
+        if not self.pages_are_estimated:
+            quality.pdf_text = pdf_text_check.check(
+                self.doc_path.with_suffix(".pdf"), self.doc_path,
+                resume=self.resume, bullets=self.rewritten, layout=layout,
+            )
+        return quality
 
     def _underfull_reason(self, topup_reason: str | None, grow_limit: int) -> str:
         if topup_reason:

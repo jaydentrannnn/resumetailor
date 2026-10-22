@@ -46,3 +46,24 @@ it("allows the review dialog only when acknowledgement is the only blocker", () 
     }),
   ).toBe(false);
 });
+it("counts PDF text issues as warnings but not its advisories", () => {
+  const base = {
+    fill_ratio: 0.95,
+    fill_target: 0.93,
+    estimated: false,
+    verified: true,
+    missing_sections: [],
+  };
+  expect(
+    qualityWarnings({
+      ...base,
+      pdf_text: { status: "issues", issues: ["Email missing."], advisories: ["Note."] },
+    }),
+  ).toEqual(["Email missing."]);
+  expect(
+    qualityWarnings({
+      ...base,
+      pdf_text: { status: "unverified", issues: [], advisories: ["Note."] },
+    }),
+  ).toEqual([]);
+});

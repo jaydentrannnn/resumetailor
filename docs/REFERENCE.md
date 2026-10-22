@@ -1090,6 +1090,20 @@ The panel is a mode of the Resume view with a live draft preview:
   header, so `CHARS_PER_LINE` alone let ~5% of headers wrap. The last fit step,
   `fit_shrink.header_pass`, matches each header in the PDF and drops its weakest tech tag
   until none wrap (one render per round; warns if a header wraps with no tags left).
+- **The final PDF's text is read back** (`document/pdf_text_check.py`, stored as
+  `quality.json` `pdf_text`). pypdf extracts the text layer and it is compared with the
+  docx's own text (body, tables, headers, link text), both folded to letters and digits
+  (NFKC, case, soft hyphens), so wraps and ligatures never differ. Issues, which join
+  `ResumeQuality.warnings` and so need acknowledgement before Fill: no text at all;
+  `(cid:` or U+FFFD; the email or phone the docx shows missing from the PDF text (phone
+  by digits; a detail only in a link target is not required); an on-page item
+  (`render.visible_text`, 12+ folded characters, present in the docx) not found as one
+  contiguous run, which catches interleaved table columns. Coverage's on-page must-haves
+  come from those same items, so they need no separate check. A missing or unreadable
+  PDF is `unverified` with an advisory, never a pass and never a hold; an estimated run
+  has no check. `fit._quality` runs it on the final PDF and `rerender` re-runs it, each
+  verdict carrying `pdf_sha256`. Section-heading order and en-dash dates are not checked
+  (see `docs/notes/fit-and-calibration.md`).
 
 ---
 

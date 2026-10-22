@@ -1,3 +1,13 @@
+/** The exported PDF's text read back (`document/pdf_text_check.py`). */
+export type PdfTextCheck = {
+  status: "verified" | "issues" | "unverified";
+  /** Need review before Fill; also counted in `qualityWarnings`. */
+  issues: string[];
+  /** Informational only, e.g. the PDF could not be read. */
+  advisories: string[];
+  checked_items?: number;
+};
+
 export type ResumeQuality = {
   fill_ratio: number | null;
   fill_target: number | null;
@@ -6,6 +16,8 @@ export type ResumeQuality = {
   estimated: boolean;
   verified: boolean;
   missing_sections: { id: string; title: string; reason: string }[];
+  /** Absent on runs from before the check and when the page count was estimated. */
+  pdf_text?: PdfTextCheck | null;
 };
 
 export function qualityWarnings(quality?: ResumeQuality | null): string[] {
@@ -27,5 +39,6 @@ export function qualityWarnings(quality?: ResumeQuality | null): string[] {
       "Page count is estimated (PDF measurement was unavailable), so the page fit isn't verified.",
     );
   warnings.push(...quality.missing_sections.map((s) => `${s.title} is missing: ${s.reason}.`));
+  warnings.push(...(quality.pdf_text?.issues ?? []));
   return warnings;
 }

@@ -440,3 +440,27 @@ Two code-only changes:
   bullets, and the one resume-specific check (render anchors) keeps its own `resume_sha256`.
   Files measured under the old digest are accepted when it still matches the current inputs
   and rewritten in place (`upgrade_legacy`), so existing users don't have to re-tune.
+
+## 2026-10-22 — PDF text read-back (`document/pdf_text_check.py`)
+
+An application site parses the PDF's text layer, not the picture, so the final PDF's
+text is now read back and compared with the docx's own text. Measured before shipping on
+457 real runs (`%LOCALAPPDATA%\ResumeTailorData\output` + `output/jobs`, all paragraph
+layouts): every run verified, 17,415 items checked, 0 false issues; email and phone were
+in the text layer of all of them, no `(cid:`/U+FFFD.
+
+Choices:
+- **Compared against the docx, not the master resume.** An email shown only as an
+  "Email" link target is not on the page, so it is not required; the docx gate makes
+  every check "what Word shows survives the export".
+- **Item contiguity instead of heading order.** Templates reorder sections, so master
+  section order is not the page order (a first probe "found" 159 order failures that
+  were all template order). A visible item that fails to read back as one run is what
+  interleaved columns actually produce, and it needs no order model.
+- **No must-have phrase check.** Coverage's page funnel is computed over the same
+  `render.visible_text` items, so item survival already covers them.
+- **No en-dash date advisory.** Typographic dashes are common in real templates; a
+  warning on most resumes with no evidence of parser harm would be noise.
+- **Unverified never holds.** A missing or unreadable PDF is reported as an advisory;
+  the estimated-page warning already covers runs without a PDF engine, and the user's
+  rule is self-heal over review items.

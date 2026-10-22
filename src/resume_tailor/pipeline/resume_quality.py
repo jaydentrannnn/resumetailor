@@ -9,6 +9,7 @@ from pydantic import BaseModel, Field
 
 from resume_tailor import config
 from resume_tailor.content.data import MasterResume
+from resume_tailor.document.pdf_text_check import PdfTextCheck
 from resume_tailor.infra import atomic
 
 #: Shown whenever the page count came from the text estimate, even at full fill: the
@@ -34,6 +35,9 @@ class ResumeQuality(BaseModel):
     estimated: bool = False
     missing_sections: list[MissingSection] = Field(default_factory=list)
     verified: bool = True
+    #: The exported PDF's text read back (`pdf_text_check`); None on runs from before
+    #: the check and when only an estimate exists, neither of which is held for it.
+    pdf_text: PdfTextCheck | None = None
 
     @property
     def warnings(self) -> list[str]:
@@ -53,6 +57,8 @@ class ResumeQuality(BaseModel):
             result.append(ESTIMATED_WARNING)
         for section in self.missing_sections:
             result.append(f"{section.title} is missing: {section.reason}.")
+        if self.pdf_text is not None:
+            result.extend(self.pdf_text.issues)
         return result
 
 
