@@ -821,3 +821,16 @@ with a stored funnel they moved the page figure by +0.8 points. Re-canonicalised
 the resume figure 2.3 points, and the master resume showed false positives ("live agents"
 -> agents, "research agent" -> research). Soft skills are now covered by `demonstrated`,
 and the canonical-on-page check catches the literal ones.
+
+## Dropped: asking the rewrite to name tagged must-haves (2026-10-22)
+
+`tag_only` technical must-haves, where a bullet's own Extra skill backs a requirement its
+text never names, were the remaining funnel loss. A trial gave the rewrite a per-bullet
+`<required_skills_shown>` (the user's own tags matching a technical must-have) and told it
+to name them when the sentence stays true. Tested e2e on 20 postings (`EVAL_NAME=name-tagged`,
+Gemini 3.8 Flash): on-page coverage went 44.9% -> 50.2% and every gate passed (judge 7/7/6).
+A second base arm moved it 44.9% -> 47.7%, though, so the effect beyond noise is about 2.5
+points. In a blind read of 12 changed bullets, base was better in 7, the trial in none, and 5
+were ties: the trial wedged tags in ("...via Python", "using Python", "citation from LLM
+agents"), the padding the rewrite rules forbid. Not shipped. `eval_experiments.py` keeps
+the generic `cases` (e2e-only sample) and `e2e-coverage` commands.

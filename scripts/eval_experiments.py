@@ -18,6 +18,12 @@ End to end (process-isolated workers; baseline first so caches are shared):
     python scripts\\eval_experiments.py e2e --arm ship --clause --limit 20
     python scripts\\eval_experiments.py e2e-judge --arm ship
     python scripts\\eval_experiments.py e2e-report --arm ship
+
+An e2e-only eval (no frozen drafts) samples its cases first; any arm can also be compared
+with base on must-have coverage (a second base arm gives the old-vs-old noise):
+
+    python scripts\\eval_experiments.py cases --limit 20
+    python scripts\\eval_experiments.py e2e-coverage --arm ship --limit 20
 """
 
 from __future__ import annotations
@@ -223,6 +229,55 @@ def _e2e_cases(replay: Replay, limit: int) -> list:
     return _cases(replay, _meta())[:limit]
 
 
+def cmd_cases(args, replay: Replay) -> None:
+    """Draw the case sample into `meta.json` with no model call (an e2e-only eval)."""
+    if _meta():
+        print("meta.json already exists; keeping its cases")
+        return
+    eligible = [c for c in corpus.load_saved(sandbox.live_jobs_dir("default"), "default")
+                if replay.can_rewrite(c)]
+    chosen = corpus.sample(eligible, args.limit, seed=args.seed)
+    commit = subprocess.run(["git", "rev-parse", "HEAD"], cwd=ROOT, capture_output=True,
+                            text=True, check=True).stdout.strip()
+    _save_meta({"commit": commit, "seed": args.seed, "model": _model(replay.light_spec),
+                "spec": replay.light_spec, "judge_model": JUDGE_MODEL,
+                "cases": [c.case_id for c in chosen], "look1": len(chosen)})
+    print(f"{len(chosen)} case(s) of {len(eligible)} eligible on {_model(replay.light_spec)}")
+
+
+def cmd_e2e_coverage(args, replay: Replay) -> None:
+    """Must-have coverage of each arm's final bullets (`coverage.funnel`, claimed
+    requirements), against the base arm. Page text is the master resume rendered with the
+    run's bullets, pre-facets: the same approximation for both arms."""
+    from statistics import mean
+
+    from resume_tailor.document import render
+    from resume_tailor.pipeline import coverage
+
+    base, cand = e2e.load(E2E_DIR, "base"), e2e.load(E2E_DIR, args.arm)
+    rows = []
+    for case in _e2e_cases(replay, args.limit):
+        a, b = base.get(case.case_id), cand.get(case.case_id)
+        if not a or not b or "bullets" not in a or "bullets" not in b:
+            continue
+        reqs = replay._requirements(case).as_claimed()
+        out = []
+        for rec in (a, b):
+            f = coverage.funnel(reqs, replay.resume, replay.resume, rec["bullets"],
+                                render.visible_text(replay.resume, rec["bullets"]))
+            out.append((f.on_page / f.total if f.total else 0.0,
+                        sum(k.page == "tag_only" for k in f.keywords)))
+        rows.append(out)
+    if not rows:
+        print("no case ran in both arms")
+        return
+    print(f"cases {len(rows)}: on-page {mean(r[0][0] for r in rows):.1%} -> "
+          f"{mean(r[1][0] for r in rows):.1%}; technical tag_only per case "
+          f"{mean(r[0][1] for r in rows):.2f} -> {mean(r[1][1] for r in rows):.2f}; "
+          f"cases up/down {sum(r[1][0] > r[0][0] for r in rows)}/"
+          f"{sum(r[1][0] < r[0][0] for r in rows)}")
+
+
 def cmd_e2e(args, _replay=None) -> None:
     env = {variants.CLAUSE_ENV: "1" if args.clause else "0"}
     meta = _meta()
@@ -291,7 +346,8 @@ def cmd_survey_report(args, _replay=None) -> None:
     print(text)
 
 
-COMMANDS = {"rescore": cmd_rescore, "drafts": cmd_drafts, "polish": cmd_polish,
+COMMANDS = {"cases": cmd_cases, "e2e-coverage": cmd_e2e_coverage,
+            "rescore": cmd_rescore, "drafts": cmd_drafts, "polish": cmd_polish,
             "clause": cmd_clause, "judge": cmd_judge, "report": cmd_report, "e2e": cmd_e2e,
             "e2e-worker": cmd_e2e_worker, "e2e-judge": cmd_e2e_judge,
             "e2e-report": cmd_e2e_report, "polish-report": cmd_polish_report,
