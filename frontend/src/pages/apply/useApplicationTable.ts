@@ -3,6 +3,7 @@ import { useNavigate, useSearchParams } from "react-router-dom";
 import { listApplications, type ApplicationRow, type ApplicationsList } from "../../api";
 import { recallApplyParams, rememberApplyParams } from "../../lib/applicationNavigation";
 import { SOURCES_PATH } from "../../lib/applyPage";
+import { useRunState } from "../../state/runState";
 
 /** Which list a table shows: "review" = Needs you, "queue" = In progress, "archive" = Done. */
 export type Scope = "queue" | "review" | "archive";
@@ -37,7 +38,25 @@ export function useApplicationTable(
   );
   const sequence = useRef(0);
   const visible = useRef({ sig: "", ids: new Set<string>() });
-  const status = params.get(key("status")) ?? "";
+  const { settings, setSettings } = useRunState();
+  const savedStatus = settings.apply.table_prefs?.[scope]?.status ?? "";
+  // URL wins when set; otherwise the remembered filter for this tab.
+  const status = params.has(key("status"))
+    ? (params.get(key("status")) ?? "")
+    : savedStatus;
+  const statusSeeded = useRef(false);
+  useEffect(() => {
+    if (statusSeeded.current || params.has(key("status")) || !savedStatus) return;
+    statusSeeded.current = true;
+    setParams(
+      (previous) => {
+        const next = new URLSearchParams(previous);
+        next.set(key("status"), savedStatus);
+        return next;
+      },
+      { replace: true },
+    );
+  }, [key, params, savedStatus, setParams]);
   const page = Math.max(0, (Number(params.get(key("page"))) || 1) - 1);
   const size = [25, 50, 100].includes(Number(params.get(key("size"))))
     ? Number(params.get(key("size")))
@@ -79,6 +98,17 @@ export function useApplicationTable(
     sequence.current++;
     // Paging and resizing keep the selection; anything that changes which rows match drops it.
     if (["status", "sort", "direction"].some((field) => field in values)) clearSelection();
+    if ("status" in values) {
+      const prefs = settings.apply.table_prefs ?? {};
+      const tab = prefs[scope] ?? { columns: [], status: "" };
+      setSettings({
+        ...settings,
+        apply: {
+          ...settings.apply,
+          table_prefs: { ...prefs, [scope]: { ...tab, status: values.status ?? "" } },
+        },
+      });
+    }
     setParams(
       (previous) => {
         const next = new URLSearchParams(previous);

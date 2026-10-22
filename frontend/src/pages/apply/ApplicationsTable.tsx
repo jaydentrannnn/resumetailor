@@ -1,10 +1,11 @@
-import { useState, type ReactNode } from "react";
+import { useCallback, type ReactNode } from "react";
 import { useNavigate, type To } from "react-router-dom";
 import type { ApplicationRow } from "../../api";
 import { DataTable, Pagination } from "../../components/TableControls";
 import { Button, SelectionBar } from "../../components/ui";
 import type { OpenTabs } from "../../lib/applicationRows";
 import { TERMINAL_STATUSES } from "../../lib/applyPage";
+import { useRunState } from "../../state/runState";
 import { applicationColumns } from "./applicationColumns";
 import { TableFilters } from "./TableFilters";
 import type { ApplicationTableState, Scope } from "./useApplicationTable";
@@ -80,12 +81,21 @@ export function ApplicationsTable({
   onClearSearch: () => void;
 }) {
   const navigate = useNavigate();
+  const { settings, setSettings } = useRunState();
   const { busy, active } = actions;
-  // Optional columns are per tab (the archive has its own), as when each tab had a table.
-  const [extraByScope, setExtraByScope] = useState<Partial<Record<Scope, string[]>>>({});
-  const extraColumns = extraByScope[scope] ?? [];
-  const setExtraColumns = (next: string[]) =>
-    setExtraByScope((prev) => ({ ...prev, [scope]: next }));
+  // Optional columns are per tab, remembered in Apply settings for this profile.
+  const prefs = settings.apply.table_prefs ?? {};
+  const extraColumns = prefs[scope]?.columns ?? [];
+  const setExtraColumns = useCallback(
+    (next: string[]) => {
+      const table_prefs = {
+        ...prefs,
+        [scope]: { columns: next, status: prefs[scope]?.status ?? "" },
+      };
+      setSettings({ ...settings, apply: { ...settings.apply, table_prefs } });
+    },
+    [prefs, scope, setSettings, settings],
+  );
   const archived = scope === "archive";
   const rows = state.data?.applications ?? [];
   const selectedIds = state.selectedRows.map((row) => row.source_job_id);

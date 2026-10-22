@@ -6,6 +6,13 @@ import type { ApplicationRow } from "../../api";
 import { ApplicationsTable, type TableActions } from "./ApplicationsTable";
 import type { ApplicationTableState } from "./useApplicationTable";
 
+// Table columns, filters and the rail layout are read from the profile's settings.
+vi.mock("../../state/runState", async () => {
+  const { DEFAULT_SETTINGS } = await import("../../state/runDefaults");
+  const setSettings = () => {};
+  return { useRunState: () => ({ settings: DEFAULT_SETTINGS, setSettings }) };
+});
+
 afterEach(() => {
   cleanup();
   vi.restoreAllMocks();

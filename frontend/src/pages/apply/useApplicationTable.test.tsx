@@ -5,6 +5,13 @@ import type { ApplicationRow } from "../../api";
 import { useApplicationTable } from "./useApplicationTable";
 import { listApplications } from "../../api";
 
+// Table columns, filters and the rail layout are read from the profile's settings.
+vi.mock("../../state/runState", async () => {
+  const { DEFAULT_SETTINGS } = await import("../../state/runDefaults");
+  const setSettings = () => {};
+  return { useRunState: () => ({ settings: DEFAULT_SETTINGS, setSettings }) };
+});
+
 vi.mock("../../api", () => ({
   listApplications: vi.fn(() => Promise.resolve({ applications: [], counts: {}, total: 0 })),
 }));
