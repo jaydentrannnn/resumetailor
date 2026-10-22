@@ -63,6 +63,7 @@
   "#helper": "Highest degree",
   "#exclude": "Highest degree"
  },
+ "dayforce_guest_entry.html": {},
  "doordash_pg_controls.html": {
   "#country": "Country",
   "#phone-number": "Phone number",
@@ -209,6 +210,9 @@
   "select[name=\"eeo[race]\"]": "Race",
   "select[name=\"eeo[veteran]\"]": "Veteran status",
   "input[name=\"cards[a69a985a-eae9-4c14-90fb-b5a4b891523e][field0]\"]": "Language Skill(s) (Check all that apply)✱"
+ },
+ "meta_apply_aria_hidden.html": {
+  "html > body > div:nth-of-type(2) > input": "Ask a question"
  },
  "oracle_cx_address.html": {
   "#firstName-20": "First Name",

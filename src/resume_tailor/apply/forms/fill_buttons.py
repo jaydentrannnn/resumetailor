@@ -81,20 +81,26 @@ def find_and_click_apply(page: Any, ats: str, context: Any = None) -> Any:
     # 2. Semantic role-based button/link discovery ("Apply", SmartRecruiters' "I'm
     # interested", ...). SmartRecruiters' entry hint lands on the form itself, where a
     # second "apply" search could only find the form's own final button.
-    for role in ("button", "link"):
-        if entered and ats.lower() in _HINT_ENTERS_FORM:
+    # Meta (2026-10) marks its own posting aria-hidden, which hides its visible "Apply
+    # now" from role queries; those are looked for once nothing else matched.
+    role_entered = False
+    passes = ((False, "button"), (False, "link"), (True, "button"), (True, "link"))
+    for include_hidden, role in passes:
+        if role_entered or (entered and ats.lower() in _HINT_ENTERS_FORM):
             break
         try:
-            loc = _entry_control(
-                current_page.get_by_role(role, name=ats_hints.APPLY_ENTRY_PATTERN)
-            )
+            loc = _entry_control(current_page.get_by_role(
+                role, name=ats_hints.APPLY_ENTRY_PATTERN, include_hidden=include_hidden,
+            ))
             if loc is not None:
                 before = _entry_state(current_page)
                 current_page = _enter(current_page, context, loc)
                 _settle_after_entry(current_page, before, 1000)
-                break
+                entered = role_entered = True
         except Exception:  # noqa: BLE001
             pass
+    if entered:
+        current_page = _guest_route(current_page, context)
 
     # 3. Workday "Apply Manually" modal handling
     try:
@@ -185,6 +191,24 @@ def _enter(page: Any, context: Any, loc: Any) -> Any:
             # The link needs the page's own script (a session) and bounced to the home
             # page: hand over the posting, not the home page.
             page.goto(before, wait_until="domcontentloaded", timeout=30_000)
+    return page
+
+
+def _guest_route(page: Any, context: Any) -> Any:
+    """After an entry click that landed on a chooser with no form controls, its route
+    without an account (Dayforce's "Apply without an Account", 2026-10). Sign-in and
+    account routes stay with `form_routes`."""
+    _url, count = _entry_state(page)
+    if count != 0:
+        return page
+    with contextlib.suppress(Exception):
+        for role in ("button", "link"):
+            loc = _entry_control(page.get_by_role(role, name=ats_hints.GUEST_ENTRY_PATTERN))
+            if loc is not None:
+                before = _entry_state(page)
+                landed = _enter(page, context, loc)
+                _settle_after_entry(landed, before, 1000)
+                return landed
     return page
 
 

@@ -1,0 +1,26 @@
+<!doctype html>
+<!-- Dayforce candidate portal posting (Batch 3 probe, 2026-10-21), trimmed from the
+     capture: "Apply" leads to a flow chooser whose only route without signing in is
+     "Apply without an Account". The chooser is drawn by script, as on the live page. -->
+<html lang="en"><head><meta charset="utf-8"><title>Software Engineering Internships | Dayforce Jobs</title></head>
+<body>
+<main id="posting">
+  <h1>Software Engineering Internships</h1>
+  <button type="button" aria-label="Apply for Software Engineering Internships"
+          onclick="showChooser()"><span>Apply</span></button>
+</main>
+<script>
+function showChooser() {
+  history.pushState({}, "", location.pathname + "/apply?flowSelection=true");
+  document.title = "Apply | Dayforce Jobs";
+  document.getElementById("posting").innerHTML =
+    '<button type="button" class="ant-btn">Sign in</button>' +
+    '<button type="button" test-id="apply-without-account" class="ant-btn job-application-flow-selection-button"' +
+    ' onclick="showForm()"><span>Apply without an Account</span></button>';
+}
+function showForm() {
+  document.getElementById("posting").innerHTML =
+    '<h1>Form</h1><label for="first">First Name</label><input id="first" type="text">';
+}
+</script>
+</body></html>

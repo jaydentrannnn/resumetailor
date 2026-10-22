@@ -378,6 +378,13 @@ ATS_PRE_FILL_CLICKS: dict[str, list[str]] = {
 #: "Apply", "Apply now", "Apply for this job", "Apply manually", SmartRecruiters' "I'm
 #: interested" (straight or curly apostrophe), "Apply online", "Start application".
 #: Never a submit label (`clicks.SUBMIT_TEXT`).
+#: A chooser's route that applies without signing in ("Apply without an Account",
+#: "Continue as Guest", "Apply as a guest").
+GUEST_ENTRY_PATTERN = re.compile(
+    r"\b(?:apply|continue)\s+(?:without\s+(?:an?\s+)?account|as\s+(?:an?\s+)?guest)\b"
+    r"|\bguest\s+(?:apply|application|checkout)\b",
+    re.IGNORECASE,
+)
 APPLY_ENTRY_PATTERN = re.compile(
     r"\bapply(?:\s+now|\s+for\s+this\s+(?:job|position|role)|\s+manually|\s+online)?\b"
     r"|\bi['’]?\s?a?m\s+interested\b|\bstart\s+(?:your\s+)?application\b",

@@ -147,6 +147,10 @@ def test_a_refused_entry_click_is_never_bypassed_by_its_link(monkeypatch):
         ({"filled": [{"label": "First Name"}],
           "leftovers": [{"label": "Save job", "reason": "Unrecognized field"}]}, False),
         ({"leftovers": []}, False),
+        # PACCAR (Batch 3): the job-alert box held "7" already and was only kept.
+        ({"filled": [{"key": "existing", "label": "Select how often (in days) to receive an alert:",
+                      "preserved": True}],
+          "leftovers": [{"label": "Search by Keyword", "reason": "Unrecognized field"}]}, True),
     ],
 )
 def test_only_unrecognized_controls_is_a_careers_page(merged, expected):
@@ -321,3 +325,58 @@ def test_captured_careers_pages_reach_their_form(fixture, posting, form):
             assert landed.locator("h1").inner_text() == "Form"
         finally:
             launched.close()
+
+
+META = "https://www.metacareers.com/profile/job_details/1851348099357899/"
+DAYFORCE = "https://jobs.dayforcehcm.com/en-US/yss/candidateportal/jobs/4395"
+
+
+@pytest.mark.browser
+def test_an_apply_control_the_page_hides_from_assistive_tech_is_still_entered():
+    from playwright.sync_api import sync_playwright
+
+    html = (_FORMS / "meta_apply_aria_hidden.html").read_text(encoding="utf-8")
+    form = "https://www.metacareers.com/profile/create_application/1851348099357899/"
+    with sync_playwright() as playwright:
+        launched = _browser(playwright)
+        try:
+            page = launched.new_page()
+            page.route(META, lambda route: route.fulfill(body=html, content_type="text/html"))
+            page.route(form, lambda route: route.fulfill(body="<h1>Form</h1>", content_type="text/html"))
+            page.goto(META)
+            landed = fill_buttons.find_and_click_apply(page, "other")
+            assert landed.url == form
+        finally:
+            launched.close()
+
+
+@pytest.mark.browser
+def test_a_chooser_after_apply_takes_the_route_without_an_account():
+    from playwright.sync_api import sync_playwright
+
+    html = (_FORMS / "dayforce_guest_entry.html").read_text(encoding="utf-8")
+    with sync_playwright() as playwright:
+        launched = _browser(playwright)
+        try:
+            page = launched.new_page()
+            page.route(DAYFORCE, lambda route: route.fulfill(body=html, content_type="text/html"))
+            page.goto(DAYFORCE)
+            landed = fill_buttons.find_and_click_apply(page, "other")
+            assert landed.locator("h1").inner_text() == "Form"
+            assert landed.locator("#first").count() == 1
+        finally:
+            launched.close()
+
+
+@pytest.mark.parametrize(("text", "guest"), [
+    ("Apply without an Account", True),
+    ("Continue as Guest", True),
+    ("Apply as a guest", True),
+    ("Sign in", False),
+    ("Apply with LinkedIn", False),
+    ("Create an account", False),
+])
+def test_guest_routes(text, guest):
+    from resume_tailor.apply.ats import ats_hints
+
+    assert bool(ats_hints.GUEST_ENTRY_PATTERN.search(text)) is guest

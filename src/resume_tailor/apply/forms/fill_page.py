@@ -63,8 +63,12 @@ def _form_questions(merged: dict[str, Any]) -> list[dict[str, Any]]:
 
 def _only_unrecognized(merged: dict[str, Any]) -> bool:
     """Nothing filled or written and every control seen unrecognised: a careers page's own
-    "Search by Keyword" box or "Save job" button (Capgemini, Qualtrics 2026-10), not a form."""
-    if merged.get("filled") or merged.get("long_text"):
+    "Search by Keyword" box or "Save job" button (Capgemini, Qualtrics 2026-10), not a form.
+    A value the page held already and the fill only kept (PACCAR's job-alert "7 days",
+    Batch 3) is not something filled."""
+    written = [item for item in merged.get("filled") or []
+               if not (isinstance(item, dict) and item.get("preserved"))]
+    if written or merged.get("long_text"):
         return False
     left = [item for item in merged.get("leftovers") or [] if isinstance(item, dict)]
     return bool(left) and all(item.get("reason") == "Unrecognized field" for item in left)
