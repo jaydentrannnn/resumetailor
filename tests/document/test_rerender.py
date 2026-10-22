@@ -246,8 +246,57 @@ def test_an_edit_refreshes_page_coverage(run_dir, measure):
                                confirmed=[])
     assert result["status"] == "saved" and result["page_coverage_matched"] == 0
     assert coverage.read(run_dir).on_page == 0
-    assert run_lookup._page_coverage(run_dir, {"page_coverage_matched": 1}) == 0
+    assert run_lookup._coverage_figures(run_dir, {"page_coverage_matched": 1})[
+        "page_coverage_matched"] == 0
     stale = RunReportOut.model_construct(page_coverage_matched=1, coverage_funnel=None)
     fresh = run_lookup._quality_report(stale, run_dir)
     assert fresh.page_coverage_matched == 0
     assert [k.page for k in fresh.coverage_funnel.keywords] == ["not_selected"]
+
+
+def test_startup_rescores_a_run_scored_under_the_old_rules(run_dir, monkeypatch):
+    """No model call: the saved page and requirements score again, once, and every
+    reader (history, report, Apply rows) prefers the new figures."""
+    from resume_tailor.apply.funnel import daily_rows
+    from resume_tailor.content import data
+    from resume_tailor.pipeline import coverage
+    from resume_tailor.pipeline.jd import JobRequirements, Keyword
+    from resume_tailor.web import coverage_rescore, skill_refresh
+    from resume_tailor.web.routes import run_lookup
+    from resume_tailor.web.schemas import RunReportOut
+
+    reqs = JobRequirements(title="Engineer", seniority="entry", keywords=[
+        Keyword(phrase="embeddings", canonical="embeddings", importance="must_have"),
+        Keyword(phrase="Kubernetes", canonical="kubernetes", importance="must_have"),
+    ])
+    (run_dir / "requirements.json").write_text(reqs.model_dump_json(), "utf-8")
+    # What an old run saved: no main-resume figure, a page figure from the old rules.
+    old = {"total": 3, "in_resume": 3, "on_page": 0, "keywords": [], "unsupported_additions": []}
+    report = {"coverage_matched": 3, "coverage_total": 3, "page_coverage_matched": 0,
+              "coverage_funnel": old}
+    (run_dir / "run.json").write_text(json.dumps({"report": report}), "utf-8")
+    monkeypatch.setattr(config, "OUTPUT_DIR", run_dir.parent.parent)
+    monkeypatch.setattr(data, "load", _resume_with_second_bullet)
+    monkeypatch.setattr(skill_refresh, "cached_inference", lambda resume: {})
+
+    assert coverage_rescore._stale(run_dir)
+    assert coverage_rescore.run() == 1
+    funnel = coverage.read(run_dir)
+    assert (funnel.total, funnel.on_page) == (2, 1)
+    assert funnel.in_resume_text is not None
+    assert coverage_rescore.run() == 0  # scored under the current rules: left alone
+
+    figures = run_lookup._coverage_figures(run_dir, report)
+    assert (figures["page_coverage_matched"], figures["coverage_total"]) == (1, 2)
+    fresh = run_lookup._quality_report(RunReportOut.model_construct(**report), run_dir)
+    assert (fresh.page_coverage_matched, fresh.coverage_total) == (1, 2)
+    assert "Kubernetes" in fresh.missing_must_haves
+    assert daily_rows.run_coverage(run_dir.name) == (funnel.in_resume, 2, 1)
+
+
+def test_a_run_without_a_snapshot_is_not_rescored(run_dir):
+    from resume_tailor.web import coverage_rescore
+
+    (run_dir / rerender.SNAPSHOT).unlink()
+    assert not coverage_rescore._stale(run_dir)
+    assert rerender.rescore_coverage(run_dir, _resume_with_second_bullet()) is None

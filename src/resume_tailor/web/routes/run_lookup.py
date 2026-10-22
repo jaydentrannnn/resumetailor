@@ -54,15 +54,27 @@ def _job_status_response(job: Job) -> JobStatusResponse:
     )
 
 
-def _page_coverage(out_dir: Path, report: dict) -> int | None:
-    """The history row's page figure: re-measured after a bullet edit, else the run's."""
+def _coverage_figures(out_dir: Path, report: dict) -> dict[str, Any]:
+    """The history row's must-have figures: re-scored or re-measured after a bullet edit
+    (`coverage.json`), else the run report's."""
     if (out_dir / coverage.COVERAGE_FILE).exists() and (funnel := coverage.read(out_dir)):
-        return funnel.on_page
-    return report.get("page_coverage_matched")
+        return {
+            "coverage_matched": funnel.in_resume,
+            "coverage_total": funnel.total,
+            "page_coverage_matched": funnel.on_page,
+            "in_resume_text": funnel.in_resume_text,
+        }
+    return {
+        "coverage_matched": report.get("coverage_matched"),
+        "coverage_total": report.get("coverage_total"),
+        "page_coverage_matched": report.get("page_coverage_matched"),
+        "in_resume_text": (report.get("coverage_funnel") or {}).get("in_resume_text"),
+    }
 
 
 def _quality_report(value: RunReportOut | None, out_dir: Path | None) -> RunReportOut | None:
-    """The report with what a bullet edit re-measured: quality and page coverage."""
+    """The report with what was measured since: quality, and coverage re-measured after
+    a bullet edit or re-scored under the current rules (`coverage_rescore`)."""
     if value is None or out_dir is None:
         return value
     update: dict[str, Any] = {}
@@ -70,6 +82,9 @@ def _quality_report(value: RunReportOut | None, out_dir: Path | None) -> RunRepo
         update["quality"] = resume_quality.read(out_dir).model_dump()
     if (out_dir / coverage.COVERAGE_FILE).exists() and (funnel := coverage.read(out_dir)):
         update["page_coverage_matched"] = funnel.on_page
+        update["coverage_matched"] = funnel.in_resume
+        update["coverage_total"] = funnel.total
+        update["missing_must_haves"] = [k.phrase for k in funnel.keywords if k.resume is None]
         update["coverage_funnel"] = job_outputs._to_funnel_out(funnel)
     return value.model_copy(update=update) if update else value
 
@@ -226,10 +241,7 @@ def _scan_run_history() -> list[RunHistoryEntryOut]:
                 company=str((raw.get("metadata") or {}).get("company") or ""),
                 error=raw.get("error"),
                 pages=report.get("pages"),
-                coverage_matched=report.get("coverage_matched"),
-                coverage_total=report.get("coverage_total"),
-                page_coverage_matched=_page_coverage(child, report),
-                in_resume_text=(report.get("coverage_funnel") or {}).get("in_resume_text"),
+                **_coverage_figures(child, report),
                 has_pdf=(child / "tailored.pdf").exists(),
                 has_docx=(child / "tailored.docx").exists(),
             )
@@ -257,17 +269,7 @@ def _scan_run_history() -> list[RunHistoryEntryOut]:
             company=job.metadata.company if job.metadata else "",
             error=job.error,
             pages=job.report.pages if job.report else None,
-            coverage_matched=job.report.coverage_matched if job.report else None,
-            coverage_total=job.report.coverage_total if job.report else None,
-            page_coverage_matched=(
-                _page_coverage(out_dir, {"page_coverage_matched":
-                                         job.report.page_coverage_matched})
-                if job.report else None
-            ),
-            in_resume_text=(
-                job.report.coverage_funnel.in_resume_text
-                if job.report and job.report.coverage_funnel else None
-            ),
+            **(_coverage_figures(out_dir, job.report.model_dump()) if job.report else {}),
             has_pdf=(out_dir / "tailored.pdf").exists(),
             has_docx=(out_dir / "tailored.docx").exists(),
         )

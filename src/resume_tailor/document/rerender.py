@@ -49,6 +49,38 @@ class NoSnapshot(RerenderError):
     """The run predates re-render support."""
 
 
+def rescore_coverage(out_dir: Path, master: MasterResume):
+    """Score the run's saved page again under the current coverage rules and save it
+    (`coverage.json`); None when the run lacks a snapshot, bullets or requirements.
+
+    Deterministic, no model call: the page is the snapshot's resume with the saved (and
+    any edited) bullets, exactly as rendered. The resume side is `master`, the main resume
+    as it is now: a run folder does not keep the one it started from. The caller binds
+    the match-tag context (`bullet_tags.annotate`), as a run does.
+    """
+    from resume_tailor.pipeline import coverage
+    from resume_tailor.pipeline.jd import JobRequirements
+
+    try:
+        snapshot = json.loads((out_dir / SNAPSHOT).read_text("utf-8"))
+        bullets = json.loads((out_dir / "bullets.json").read_text("utf-8"))
+        requirements = JobRequirements.model_validate_json(
+            (out_dir / "requirements.json").read_text("utf-8")
+        )
+        page = MasterResume.model_validate(snapshot["resume"])
+    except (OSError, ValueError, KeyError):
+        return None
+    layout = snapshot.get("layout")
+    funnel = coverage.funnel(
+        requirements.as_claimed(), master, page, bullets,
+        render.visible_text(page, bullets, layout=layout),
+        merges=[(m["survivor"], tuple(m["members"])) for m in snapshot.get("merges", [])],
+        page_ids=render.page_bullet_ids(page, bullets, layout=layout),
+    )
+    coverage.save(out_dir, funnel)
+    return funnel
+
+
 def save_snapshot(
     out_dir: Path,
     resume: MasterResume,

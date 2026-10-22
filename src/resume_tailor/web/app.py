@@ -30,7 +30,13 @@ from resume_tailor.apply.funnel import operations as apply_operations
 from resume_tailor.apply.funnel import scheduler as apply_scheduler
 from resume_tailor.content import data, data_transfer
 from resume_tailor.infra import appearance, fake_llm, housekeeping, logs
-from resume_tailor.web import security, skill_refresh, template_migration, template_ops
+from resume_tailor.web import (
+    coverage_rescore,
+    security,
+    skill_refresh,
+    template_migration,
+    template_ops,
+)
 from resume_tailor.web import state as web_state
 from resume_tailor.web.schemas import (
     JobSettings,
@@ -99,6 +105,14 @@ async def lifespan(app: FastAPI):
     else:
         if recovered:
             _log.info("marked %d orphaned tailoring row(s) tailor_failed", recovered)
+    try:
+        # Before the row sync below, so Apply rows pick up the re-scored figures.
+        rescored = coverage_rescore.run()
+    except Exception:  # noqa: BLE001 — a display backfill must not block startup
+        _log.exception("could not re-score saved runs' coverage")
+    else:
+        if rescored:
+            _log.info("re-scored skill coverage for %d saved run(s)", rescored)
     try:
         apply_daily.sync_run_coverage()
     except Exception:  # noqa: BLE001 — a display backfill must not block startup

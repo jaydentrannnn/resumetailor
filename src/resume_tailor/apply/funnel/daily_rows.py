@@ -151,12 +151,17 @@ def _link_reused_packet(app: store_models.Application, prior_job_id: str) -> Non
 
 
 def run_coverage(job_id: str) -> tuple[int, int, int | None] | None:
-    """``(matched, total, on_page)`` must-haves from a finished run's saved report, if any.
+    """``(matched, total, on_page)`` must-haves from a finished run, if any.
 
-    ``on_page`` is the tailored page's figure, re-measured after a bullet edit
-    (`coverage.read`); None for a run saved before it was measured.
+    The run's latest funnel decides (`coverage.read`: re-scored or re-measured after a
+    bullet edit, else the report's); a run saved before funnels uses its report, with
+    ``on_page`` None.
     """
     out_dir = config.OUTPUT_DIR / "jobs" / job_id
+    if not (out_dir / "run.json").is_file():
+        return None
+    if (funnel := coverage_mod.read(out_dir)) is not None:
+        return funnel.in_resume, funnel.total, funnel.on_page
     try:
         raw = json.loads((out_dir / "run.json").read_text("utf-8"))
     except (OSError, ValueError):
@@ -166,8 +171,7 @@ def run_coverage(job_id: str) -> tuple[int, int, int | None] | None:
     total = report.get("coverage_total") if isinstance(report, dict) else None
     if not (isinstance(matched, int) and isinstance(total, int)):
         return None
-    funnel = coverage_mod.read(out_dir)
-    page = funnel.on_page if funnel else report.get("page_coverage_matched")
+    page = report.get("page_coverage_matched")
     return matched, total, page if isinstance(page, int) else None
 
 
