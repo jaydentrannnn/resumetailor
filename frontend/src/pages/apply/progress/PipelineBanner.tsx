@@ -9,7 +9,7 @@ import {
   stageCounts,
   type PipelineStep,
 } from "../../../lib/applyPipeline";
-import { BannerActions } from "./BannerActions";
+import { BannerActions, CustomizeLink } from "./BannerActions";
 import { PipelineFunnel, PipelineStrip } from "./PipelineViews";
 
 /** How far the postings found in a date range got, stage by stage, as cards, a funnel or a line. */
@@ -18,11 +18,13 @@ export function PipelineBanner({
   options,
   now,
   onTab,
+  onSettings,
 }: {
   progress: ApplyProgress;
   options: PipelineBannerOptions;
   now: Date;
   onTab: (tab: ApplyTab) => void;
+  onSettings?: () => void;
 }) {
   const dates = pipelineWindow(options, now);
   const steps = pipelineSteps(stageCounts(progress, dates), options.stages);
@@ -57,7 +59,7 @@ export function PipelineBanner({
       ) : (
         <PipelineCards steps={steps} showPercent={options.show_percent} />
       )}
-      {(drop || actions) && (
+      {(drop || actions || onSettings) && (
         <div className="mt-5 flex flex-wrap items-center gap-4 border-t border-line pt-4">
           {drop && (
             <p className="min-w-80 flex-1 text-sm text-ink-2">
@@ -65,6 +67,7 @@ export function PipelineBanner({
             </p>
           )}
           {actions}
+          {onSettings && <CustomizeLink onSettings={onSettings} />}
         </div>
       )}
     </Tile>

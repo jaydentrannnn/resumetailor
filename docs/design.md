@@ -20,9 +20,10 @@ bar shows sub-screens). This file is the written contract behind it. The tokens 
   wizard keep boxed tiles, with a section list down the left on Profile and Resume.
 - **Controls and document, 5:5.** Tailor and an application's detail put their controls
   on the left and the `DocumentViewer` on the right, split 5:5 (`lib/viewer.ts`
-  `BESIDE_DOCUMENT`) so a wider window grows both; the viewer is as tall as the window
-  (`--rt-viewer-h`). No zoom or fit controls. Template is the exception: one tile,
-  document left and tools right, in a centred column.
+  `BESIDE_DOCUMENT`) so a wider window grows both; the viewer is Letter-shaped and
+  capped at the window height (`aspect-[8.5/11] max-h-(--rt-viewer-h)`), so a narrow
+  column does not leave empty space under the page. No zoom or fit controls. Template is
+  the exception: one tile, document left and tools right, in a centred column.
 - **Spacing before boxes.** Inside a tile separate things with space or one hairline
   (`TileSection`). Never nest boxes. Label/value data is separated by spacing, not divider
   cells (`DataList`).
@@ -49,7 +50,7 @@ Use the Tailwind classes (`bg-panel`, `text-ink-muted`, `border-line`), never ra
 | `line` / `line-hover` | `#e2e2df` / `#c8c8c4` | `#2a2a2a` / `#3d3d3d` | hairline / control border |
 | `ink` / `ink-2` / `ink-muted` | `#0b0b0b` / `#3a3a38` / `#6b6b68` | `#f5f5f4` / `#d4d4d2` / `#8f8f8c` | text |
 | `primary` / `on-primary` | `#0b0b0b` / `#fff` | `#ffffff` / `#0b0b0b` | primary button |
-| `accent` | `#1f6b4a` | `#6fbf98` | progress, ticks, focus, active rail row |
+| `accent` | `#1f6b4a` | `#6fbf98` | progress, ticks, focus, active rail row; custom accent via `data-accent` + `--rt-accent-base` (relative-color derivation; success stays green) |
 | `accent-soft` | 6% accent | 12% accent | quiet green wash |
 | `selected` / `on-selected` / `selected-line` | `#1f6b4a` / `#fff` / `#1f6b4a` | 12% mint / `#6fbf98` / `#6fbf98` | selected segment, tab, filter |
 | `selected-row` | 9% accent | 12% mint | selected table row wash |

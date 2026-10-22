@@ -35,6 +35,7 @@ import { LogoMark } from "./components/LogoMark";
 import { CommandProvider } from "./state/commandState";
 import { ShellContext, type ShellSlots } from "./lib/shell";
 import { useWindowTitle } from "./lib/useWindowTitle";
+import { useStartPage } from "./lib/useStartPage";
 import { ResumePage } from "./pages/resume/ResumePage";
 
 /** Profile and Resume share unsaved-edit protection: leaving both asks first. */
@@ -125,6 +126,7 @@ function WorkspaceScope() {
  */
 function Shell() {
   const settingUp = useOnboardingGate();
+  useStartPage(settingUp);
   const [commandBar, setCommandBar] = useState<HTMLElement | null>(null);
   const [pageTitle, setPageTitle] = useState<string | null>(null);
   const slots = useMemo<ShellSlots>(() => ({ commandBar, setPageTitle }), [commandBar]);

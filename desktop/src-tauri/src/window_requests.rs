@@ -3,7 +3,8 @@
 //! - `SHELL save {"id", "name", "ext"}` opens the native Save dialog over the main
 //!   window and answers `DIALOG {"id", "path"}` on the server's stdin (`path` is null
 //!   when the person cancels);
-//! - `SHELL title {"title"}` sets the main window's title.
+//! - `SHELL title {"title"}` sets the main window's title;
+//! - `SHELL zoom {"scale"}` sets the webview zoom factor.
 //!
 //! The web UI has no Tauri IPC, so dialogs only ever open from here. `rfd` directly
 //! rather than tauri-plugin-dialog: every plugin release that fits needs a newer tauri
@@ -12,7 +13,7 @@
 use serde_json::{json, Value};
 use tauri::{AppHandle, Manager};
 
-#[derive(Debug, PartialEq, Eq)]
+#[derive(Debug, PartialEq)]
 pub enum Request {
     Save {
         id: String,
@@ -20,9 +21,10 @@ pub enum Request {
         ext: String,
     },
     Title(String),
+    Zoom(f64),
 }
 
-/// `SHELL save {...}` / `SHELL title {...}` from the server's stdout.
+/// `SHELL save {...}` / `SHELL title {...}` / `SHELL zoom {...}` from the server's stdout.
 pub fn parse(line: &str) -> Option<Request> {
     let rest = line.strip_prefix("SHELL ")?;
     let (command, payload) = rest.split_once(' ')?;
@@ -35,6 +37,10 @@ pub fn parse(line: &str) -> Option<Request> {
             ext: text("ext").unwrap_or_default(),
         }),
         "title" => Some(Request::Title(text("title")?)),
+        "zoom" => {
+            let scale = value.get("scale")?.as_f64()?;
+            Some(Request::Zoom(scale))
+        }
         _ => None,
     }
 }
@@ -62,6 +68,11 @@ pub fn handle(app: &AppHandle, request: Request) {
         Request::Title(title) => {
             if let Some(window) = app.get_webview_window("main") {
                 let _ = window.set_title(&title);
+            }
+        }
+        Request::Zoom(scale) => {
+            if let Some(window) = app.get_webview_window("main") {
+                let _ = window.set_zoom(scale);
             }
         }
         Request::Save { id, name, ext } => {
@@ -103,6 +114,10 @@ mod tests {
         assert_eq!(
             parse(r#"SHELL title {"title":"Acme — ResumeTailor"}"#),
             Some(Request::Title("Acme — ResumeTailor".into()))
+        );
+        assert_eq!(
+            parse(r#"SHELL zoom {"scale":1.25}"#),
+            Some(Request::Zoom(1.25))
         );
     }
 

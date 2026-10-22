@@ -3,11 +3,13 @@ import { CommandBar, Page, Tabs, TileLayout } from "../../components/ui";
 import { WIDE, useMediaQuery } from "../../lib/useMediaQuery";
 import { AboutSection } from "./AboutSection";
 import { AiSection } from "./AiSection";
+import { AppearanceSection } from "./AppearanceSection";
 import { BrowserSection } from "./BrowserSection";
 import { DataSection } from "./DataSection";
 
 const TABS = [
   { id: "ai", label: "AI model" },
+  { id: "appearance", label: "Appearance" },
   { id: "data", label: "Data & backups" },
   { id: "browser", label: "Browser extension" },
   { id: "about", label: "About" },
@@ -20,7 +22,6 @@ const MOVED: Record<string, TabId> = {
   models: "ai",
   advanced: "ai",
   documents: "about",
-  appearance: "ai",
 };
 
 function tabFor(requested: string | null): TabId {
@@ -53,6 +54,7 @@ export function SettingsPage() {
         <div role="tabpanel" className="min-w-0 space-y-10 lg:py-5 lg:pb-12 lg:pl-10">
           <TileLayout.Provider value="flat">
             {tab === "ai" && <AiSection />}
+            {tab === "appearance" && <AppearanceSection />}
             {tab === "data" && <DataSection />}
             {tab === "browser" && <BrowserSection />}
             {tab === "about" && <AboutSection />}

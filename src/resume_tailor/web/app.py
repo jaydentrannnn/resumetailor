@@ -316,9 +316,13 @@ class _SPAStaticFiles(StaticFiles):
         # Seed the saved preference before the app's theme script paints anything.
         if web_state.desktop and Path(getattr(response, "path", "")).name == "index.html":
             html = Path(response.path).read_text("utf-8")
-            seed = json.dumps(appearance.load_theme())
+            theme = json.dumps(appearance.load_theme())
+            accent = json.dumps(appearance.load_accent())
             html = html.replace(
-                "<head>", f"<head><script>window.__RT_DESKTOP_THEME__={seed};</script>", 1
+                "<head>",
+                f"<head><script>window.__RT_DESKTOP_THEME__={theme};"
+                f"window.__RT_DESKTOP_ACCENT__={accent};</script>",
+                1,
             )
             return HTMLResponse(html, headers={"Cache-Control": "no-store"})
         return response

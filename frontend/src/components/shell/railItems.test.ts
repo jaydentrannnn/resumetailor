@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import { windowTitle } from "../../lib/shell";
-import { railTarget } from "./railItems";
+import { railTarget, visibleRailItems } from "./railItems";
 
 const key = (k: string, extra: Partial<KeyboardEvent> = {}) =>
   ({
@@ -27,6 +27,33 @@ describe("railTarget", () => {
     expect(railTarget(key("1", { ctrlKey: false }))).toBeNull();
     expect(railTarget(key("1", { shiftKey: true }))).toBeNull();
     expect(railTarget(key("1", { altKey: true }))).toBeNull();
+  });
+
+  it("follows a custom visible order", () => {
+    const items = visibleRailItems({
+      order: ["/profile", "/"],
+      hidden: ["/applications", "/resume", "/template"],
+    });
+    expect(items.map((i) => i.to)).toEqual(["/profile", "/"]);
+    expect(railTarget(key("1"), items)).toBe("/profile");
+    expect(railTarget(key("2"), items)).toBe("/");
+  });
+});
+
+describe("visibleRailItems", () => {
+  it("hides optional pages until pinned and never empties the rail", () => {
+    expect(visibleRailItems().map((i) => i.to)).not.toContain("/vocabulary");
+    const pinned = visibleRailItems({
+      order: ["/", "/vocabulary"],
+      hidden: ["/applications", "/resume", "/template", "/profile"],
+    });
+    expect(pinned.map((i) => i.to)).toEqual(["/", "/vocabulary"]);
+    expect(
+      visibleRailItems({
+        order: [],
+        hidden: ["/", "/applications", "/resume", "/template", "/profile"],
+      }).length,
+    ).toBeGreaterThan(0);
   });
 });
 

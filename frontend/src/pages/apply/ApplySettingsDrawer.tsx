@@ -12,7 +12,6 @@ import type { BrowserView } from "../../lib/browserState";
 import { BrowserPicker, ConnectionStatus } from "./BrowserConnection";
 import { CoverLetterSetting } from "./CoverLetterSetting";
 import { AnswerPreferences } from "./AnswerPreferences";
-import { ProgressBannerSetting } from "./progress/ProgressBannerSetting";
 
 /**
  * Platforms that may auto-submit. Workday, LinkedIn, Indeed, Handshake and SmartRecruiters
@@ -29,8 +28,9 @@ const AUTO_SUBMIT_ATS: { id: string; label: string }[] = [
 /**
  * Apply settings in a right-hand drawer: the nightly run first (on/off, time, how much
  * it finds), then what to search, cover letters, whether and where to auto-submit, the Autofill model,
- * the browser to start for Fill and desktop notifications. Every change autosaves through
- * `runState`. One-off search options ("this search only") live beside Find jobs.
+ * the browser to start for Fill and desktop notifications. Progress banner options live in
+ * Settings › Appearance. Every change autosaves through `runState`. One-off search options
+ * ("this search only") live beside Find jobs.
  */
 export function ApplySettingsDrawer({
   settings,
@@ -320,10 +320,6 @@ export function ApplySettingsDrawer({
             onSelect={(id) => patch({ browser: id })}
             launch={launch}
           />
-        </Section>
-
-        <Section title="Progress banner">
-          <ProgressBannerSetting apply={apply} patch={patch} />
         </Section>
 
         <Section title="Notifications">

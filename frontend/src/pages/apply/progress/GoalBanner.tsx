@@ -12,7 +12,7 @@ import {
   weekdayNames,
 } from "../../../lib/applyProgress";
 import { STAGE_WORDS, stageTimes } from "../../../lib/progressOptions";
-import { BannerActions } from "./BannerActions";
+import { BannerActions, CustomizeLink } from "./BannerActions";
 
 const NUDGE_VERB: Record<GoalBannerOptions["counts"], string> = {
   sent: "Send",
@@ -77,7 +77,7 @@ export function GoalBanner({
   const todayIndex = (now.getDay() - startsOn + 7) % 7;
   return (
     <Tile aria-label="Weekly goal">
-      <div className="grid gap-6 lg:grid-cols-[minmax(0,1.4fr)_minmax(0,1fr)] lg:items-center lg:gap-10">
+      <div className="grid gap-6 lg:grid-cols-[minmax(0,1.4fr)_minmax(0,1fr)] lg:gap-10">
         <div>
           <p className="rt-eyebrow">This week · {range}</p>
           <p className="mt-2 font-display text-3xl leading-tight text-ink">
@@ -107,20 +107,17 @@ export function GoalBanner({
             </ol>
           )}
         </div>
-        <div className="space-y-3">
+        <div className="flex flex-col gap-3">
           {options.show_nudge && (
             <p className="text-[15px] font-medium text-ink">
               {goalNudge(done, goal, NUDGE_VERB[options.counts])}
             </p>
           )}
           {options.show_actions && waiting && <p className="text-sm text-ink-2">{waiting}</p>}
-          {actions}
-          <p className="text-xs text-ink-muted">
-            Goal: {goal} {word} a week ·{" "}
-            <button type="button" className="rt-link" onClick={onSettings}>
-              Change
-            </button>
-          </p>
+          <div className="mt-auto flex flex-wrap items-center gap-4">
+            {actions}
+            <CustomizeLink onSettings={onSettings} />
+          </div>
         </div>
       </div>
     </Tile>

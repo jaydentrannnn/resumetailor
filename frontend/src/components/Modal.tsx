@@ -29,12 +29,15 @@ export function Modal({
   title: string;
   onClose: () => void;
   children: ReactNode;
-  /** Wider panel for pack editors and similar dense content. */
+  /** Wider panel for pack editors (`size="lg"`). Prefer `size`. */
   wide?: boolean;
   /** "right" renders a full-height side drawer (Apply settings). */
   placement?: "center" | "right";
-  /** Width of a right-hand drawer; centered dialogs keep using `wide`. */
-  size?: "md" | "lg";
+  /**
+   * Panel width. Centered: md ≈ 32rem, lg ≈ 42rem, xl ≈ 64rem (banner-width previews).
+   * Right drawer: md ≈ 28rem, lg ≈ 42rem (xl treated as lg).
+   */
+  size?: "md" | "lg" | "xl";
 }) {
   const titleId = useId();
   const dialogRef = useRef<HTMLDivElement>(null);
@@ -105,9 +108,15 @@ export function Modal({
         tabIndex={-1}
         className={
           placement === "right"
-            ? `h-full w-full overflow-y-auto bg-chrome p-5 shadow-lg outline-none ${size === "lg" ? "max-w-2xl" : "max-w-md"}`
+            ? `h-full w-full overflow-y-auto bg-chrome p-5 shadow-lg outline-none ${
+                size === "lg" || size === "xl" ? "max-w-2xl" : "max-w-md"
+              }`
             : `w-full rounded-sm bg-chrome p-5 shadow-lg outline-none sm:px-6 sm:py-[22px] ${
-                wide ? "max-w-2xl" : "max-w-lg"
+                size === "xl"
+                  ? "max-w-5xl"
+                  : size === "lg" || wide
+                    ? "max-w-2xl"
+                    : "max-w-lg"
               }`
         }
         onClick={(e) => e.stopPropagation()}

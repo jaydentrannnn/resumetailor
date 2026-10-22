@@ -35,6 +35,8 @@ TOP_KEYS = (
     "extract_runs",
     "max_concurrent_jobs",
     "show_shortcut_hints",
+    "start_page",
+    "rail_layout",
 )
 #: `JobSettings.apply` keys that are app-wide (the Heavy task model).
 APPLY_KEYS = ("model_provider", "model_name", "model_selection")

@@ -1041,3 +1041,21 @@ it again." instead of a 500.
 Show in folder opened Documents: `Popen(["explorer", f"/select,{path}"])` quotes the whole
 argument when the path has spaces, and Explorer ignores a quoted `/select,`. It now passes one
 command line, `explorer /select,"<path>"`.
+
+## 2026-10-21 — Appearance tab: accent, banner dialog, sidebar, autostart
+
+**What:** Settings › Appearance (theme, accent, UI scale, opening page, sidebar layout, progress-banner live preview, start-with-computer). Banner options stay per-profile; accent/scale/theme live in theme.json (seeded pre-paint). PDF viewer is Letter-aspect capped at window height. Apply table columns/status persist in `table_prefs`.
+**Why:** Cosmetic customization without a second Appearance dead-end; desktop port changes invalidate localStorage for durable prefs.
+**Impact:** MINOR release. Autostart does not clean up on uninstall. Heatmap "green" = theme accent; custom heatmap hex lifts in dark mode.
+
+## 2026-10-21 — Banner customize dialog width + column options
+
+**What:** Centered Modal gained `size="xl"` (`max-w-5xl`); BannerCustomizeDialog uses it so the live preview matches Apply banner width. Goal/Activity/Pipeline options take `columns` and lay out as a 2–3 column grid under the preview (drawer stays stacked).
+**Why:** `size="lg"` was ignored as meaningfully wider for banner previews; stacked controls under a wide preview wasted horizontal space.
+**Impact:** Customize popup is ~64rem; Apply settings drawer unchanged (no `columns`).
+
+## 2026-10-21 - Progress banner: accent-only heatmap, option columns, customize link placement
+
+**What:** Heatmap always draws in the app accent; the Activity color picker and the unreleased custom-hex support are gone (`heatFill(level)`). `ActivityBannerOptions.color` stays in the schema (shipped presets only) so saved settings still validate, but nothing reads it. Customize dialog options use `OptionColumns`/`OptionGroup` (three columns, Show always third); long date ranges (Activity Dates, Pipeline Postings found) are dropdowns (`OptionSelect`) since the Segmented wrapped unevenly. "Customize banner" sits at the right end of each full banner's action row; the Goal banner's "Goal: N a week - Change" line was replaced by it. Heatmap cells are fixed tracks (max 14px) packed at the top right instead of stretching.
+**Why:** User feedback on the dialog layout and banner balance; one accent setting instead of a second per-banner color.
+**Impact:** Compact banner styles still have no Customize link (unchanged). Appearance Theme card shows the picker directly (no "Appearance" row label).

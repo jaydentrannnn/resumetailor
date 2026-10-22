@@ -1,5 +1,8 @@
-/** A document pane beside a page's controls fills the window below the bars. */
-export const VIEWER_HEIGHT = "h-(--rt-viewer-h)";
+/**
+ * A document pane beside a page's controls: Letter aspect, capped at the window
+ * height so a narrow column does not leave empty space under the page.
+ */
+export const VIEWER_HEIGHT = "aspect-[8.5/11] max-h-(--rt-viewer-h) w-full";
 
 /**
  * Grid columns for controls beside a document: half and half, so widening the window

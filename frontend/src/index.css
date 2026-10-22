@@ -140,6 +140,28 @@
   --rt-overlay: 0 0 0 1px var(--color-line-hover);
 }
 
+/* Custom accent: derive light/dark shades from one hue so selected tabs stay readable.
+   Success stays green. Unsupported webviews keep the default tokens above. */
+@supports (color: oklch(from red l c h)) {
+  :root[data-accent] {
+    --color-accent: oklch(from var(--rt-accent-base) 0.47 min(c, 0.16) h);
+    --color-accent-soft: color-mix(in srgb, var(--color-accent) 6%, transparent);
+    --color-selected: var(--color-accent);
+    --color-on-selected: #ffffff;
+    --color-selected-line: var(--color-accent);
+    --color-selected-row: color-mix(in srgb, var(--color-accent) 9%, transparent);
+  }
+  :root[data-theme="dark"][data-accent] {
+    --color-accent: oklch(from var(--rt-accent-base) 0.72 min(c, 0.14) h);
+    --color-accent-soft: color-mix(in srgb, var(--color-accent) 12%, transparent);
+    --color-on-accent: #0a0a0a;
+    --color-selected: color-mix(in srgb, var(--color-accent) 12%, transparent);
+    --color-on-selected: var(--color-accent);
+    --color-selected-line: var(--color-accent);
+    --color-selected-row: color-mix(in srgb, var(--color-accent) 12%, transparent);
+  }
+}
+
 /* App shell bars: the command bar above the work area and the status bar below it.
    Sticky page parts offset by these so they never slide under a bar.
    A document pane beside a page's controls is as tall as the window allows

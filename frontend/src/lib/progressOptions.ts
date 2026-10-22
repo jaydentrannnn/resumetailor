@@ -125,17 +125,20 @@ export function stageTimes(progress: ApplyProgress, stage: PipelineStage): Timed
   });
 }
 
-/** The heatmap's colors; green is the app's accent. */
-export const HEAT_COLORS: Record<ActivityBannerOptions["color"], string> = {
-  green: "var(--color-accent)",
-  blue: "#3b82f6",
-  orange: "#f97316",
-  purple: "#8b5cf6",
-};
-
 const HEAT_MIX = [0, 25, 45, 70, 100];
 
-/** A heatmap cell's fill at shade 1–4 (shade 0 is the plain `bg-sunken` cell). */
-export function heatFill(color: ActivityBannerOptions["color"], level: number): string {
-  return `color-mix(in srgb, ${HEAT_COLORS[color]} ${HEAT_MIX[level]}%, transparent)`;
+/**
+ * A heatmap cell's fill at shade 1–4 (shade 0 is the plain `bg-sunken` cell), always in
+ * the app's accent color (the saved `activity_banner.color` is ignored).
+ */
+export function heatFill(level: number): string {
+  return `color-mix(in srgb, var(--color-accent) ${HEAT_MIX[level]}%, transparent)`;
+}
+
+/**
+ * Whether the heatmap should transpose (weekdays across, weeks down) so the long
+ * edge is horizontal. Used when there are fewer than 7 weeks.
+ */
+export function heatmapAxes(weeks: number): { transpose: boolean } {
+  return { transpose: weeks > 0 && weeks < 7 };
 }

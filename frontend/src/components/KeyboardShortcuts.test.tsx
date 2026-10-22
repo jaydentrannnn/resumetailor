@@ -5,6 +5,13 @@ import { MemoryRouter } from "react-router-dom";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { KeyboardShortcuts } from "./KeyboardShortcuts";
 
+// Table columns, filters and the rail layout are read from the profile's settings.
+vi.mock("../state/runState", async () => {
+  const { DEFAULT_SETTINGS } = await import("../state/runDefaults");
+  const setSettings = () => {};
+  return { useRunState: () => ({ settings: DEFAULT_SETTINGS, setSettings }) };
+});
+
 const desktop = vi.hoisted(() => ({ value: false }));
 vi.mock("../lib/useDesktop", () => ({ useDesktop: () => desktop.value }));
 

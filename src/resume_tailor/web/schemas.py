@@ -200,17 +200,40 @@ class GoalBannerOptions(BaseModel):
 
 
 class ActivityBannerOptions(BaseModel):
-    """The activity heatmap: its dates, what each day counts, its color and parts."""
+    """The activity heatmap: its dates, what each day counts, and which parts show."""
 
     range: Literal["4w", "13w", "26w", "52w", "custom"] = "13w"
     start: _BannerDay | None = None
     end: _BannerDay | None = None
     counts: Literal["sent", "autofilled", "tailored", "found"] = "sent"
+    #: Unused: the heatmap always draws in the app accent. Kept so saved settings validate.
     color: Literal["green", "blue", "orange", "purple"] = "green"
     show_stats: bool = True
     show_waiting: bool = True
     show_actions: bool = True
     compact: bool = False
+
+
+class TableTabPrefs(BaseModel):
+    """Remembered columns and status filter for one Apply table tab."""
+
+    columns: list[str] = Field(default_factory=list)
+    status: str = ""
+
+
+class TablePrefs(BaseModel):
+    """Per-tab Apply list preferences (columns and status filter), per profile."""
+
+    queue: TableTabPrefs = Field(default_factory=TableTabPrefs)
+    review: TableTabPrefs = Field(default_factory=TableTabPrefs)
+    archive: TableTabPrefs = Field(default_factory=TableTabPrefs)
+
+
+class RailLayout(BaseModel):
+    """Which rail pages show and in what order (app-wide). Empty = shipped defaults."""
+
+    order: list[str] = Field(default_factory=list)
+    hidden: list[str] = Field(default_factory=list)
 
 
 class PipelineBannerOptions(BaseModel):
@@ -306,10 +329,12 @@ class ApplySettings(BaseModel):
     progress_banner: Literal["goal", "activity", "pipeline", "off"] = "goal"
     #: Applications to send each week, for the "goal" banner.
     weekly_goal: int = Field(default=10, ge=1, le=500)
-    #: Each banner's own options (Apply settings › Progress banner). Display only.
+    #: Each banner's own options (Settings › Appearance › Progress banner). Display only.
     goal_banner: GoalBannerOptions = Field(default_factory=GoalBannerOptions)
     activity_banner: ActivityBannerOptions = Field(default_factory=ActivityBannerOptions)
     pipeline_banner: PipelineBannerOptions = Field(default_factory=PipelineBannerOptions)
+    #: Remembered columns and status filter per Apply tab (Needs you / In progress / Done).
+    table_prefs: TablePrefs = Field(default_factory=TablePrefs)
 
     @property
     def model_spec(self) -> config.ModelSpec:
@@ -405,6 +430,10 @@ class JobSettings(BaseModel):
     advanced_settings: AdvancedSettings | None = None
     #: The desktop app's Ctrl+1…5 hints beside the side bar's pages (app-wide).
     show_shortcut_hints: bool = True
+    #: Page to open on launch (app-wide); ``"/"`` is Tailor.
+    start_page: str = "/"
+    #: Side bar page order and hidden pages (app-wide); empty = shipped defaults.
+    rail_layout: RailLayout = Field(default_factory=RailLayout)
     custom_effort: EffortLevel | dict[EffortStep, EffortLevel] | None = None
     #: Ollama tag for *every* Ollama-routed stage of the chosen profile, overriding the
     #: `OLLAMA_MODEL` env default without an edit-and-restart. Under `hybrid` this leaves

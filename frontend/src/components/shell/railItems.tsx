@@ -1,6 +1,18 @@
-/** The rail's pages, in Ctrl+1…5 order, with their 16px line icons. */
-export type RailItem = { to: string; label: string; end?: boolean; icon: string; badge?: "apply" };
+/** The rail's pages, with their 16px line icons. Settings is separate and never hideable. */
 
+export type RailItem = {
+  to: string;
+  label: string;
+  end?: boolean;
+  icon: string;
+  badge?: "apply";
+  /** When true, hidden until the user pins it in Appearance › Sidebar. */
+  optional?: boolean;
+};
+
+export type RailLayout = { order: string[]; hidden: string[] };
+
+/** Shipped pages in Ctrl+1…5 order; optional pages are off until pinned. */
 export const RAIL_ITEMS: RailItem[] = [
   { to: "/", label: "Tailor", end: true, icon: "M3 2h7l3 3v9H3zM6 8h4M6 11h4" },
   { to: "/applications", label: "Apply", icon: "M2 4h12v9H2zM6 4V2.5h4V4", badge: "apply" },
@@ -10,6 +22,18 @@ export const RAIL_ITEMS: RailItem[] = [
     to: "/profile",
     label: "Profile",
     icon: "M5.5 5.5a2.5 2.5 0 1 0 5 0a2.5 2.5 0 1 0-5 0M3 14c.6-2.8 2.6-4 5-4s4.4 1.2 5 4",
+  },
+  {
+    to: "/vocabulary",
+    label: "Vocabulary",
+    icon: "M3 3h10v10H3zM5 6h6M5 9h4",
+    optional: true,
+  },
+  {
+    to: "/applications/sources",
+    label: "Job sources",
+    icon: "M2 4h12M4 4v9M12 4v9M6 8h4",
+    optional: true,
   },
 ];
 
@@ -41,14 +65,37 @@ export function RailIcon({ path }: { path: string }) {
   );
 }
 
-/** Ctrl+1…5 opens the rail's pages, Ctrl+, opens Settings. */
+/**
+ * Pages shown in the rail, in the saved order. Optional pages stay hidden until listed
+ * in `order` and not in `hidden`. At least one page always remains.
+ */
+export function visibleRailItems(layout?: RailLayout | null): RailItem[] {
+  const byPath = new Map(RAIL_ITEMS.map((item) => [item.to, item]));
+  const hidden = new Set(layout?.hidden ?? []);
+  const ordered = (layout?.order?.length ? layout.order : RAIL_ITEMS.filter((i) => !i.optional).map((i) => i.to))
+    .map((to) => byPath.get(to))
+    .filter((item): item is RailItem => !!item && !hidden.has(item.to));
+  // Optional pages not named in order stay out; required pages missing from a bad
+  // saved order are appended so the rail never empties.
+  const seen = new Set(ordered.map((i) => i.to));
+  for (const item of RAIL_ITEMS) {
+    if (item.optional || seen.has(item.to) || hidden.has(item.to)) continue;
+    ordered.push(item);
+    seen.add(item.to);
+  }
+  if (ordered.length === 0) {
+    return RAIL_ITEMS.filter((i) => !i.optional);
+  }
+  return ordered;
+}
+
+/** Ctrl+1…n opens the visible rail pages, Ctrl+, opens Settings. */
 export function railTarget(
   e: Pick<KeyboardEvent, "key" | "ctrlKey" | "metaKey" | "altKey" | "shiftKey">,
+  items: RailItem[] = visibleRailItems(),
 ): string | null {
   if (!(e.ctrlKey || e.metaKey) || e.altKey || e.shiftKey) return null;
   if (e.key === ",") return "/settings";
   const index = Number(e.key) - 1;
-  return Number.isInteger(index) && index >= 0 && index < RAIL_ITEMS.length
-    ? RAIL_ITEMS[index].to
-    : null;
+  return Number.isInteger(index) && index >= 0 && index < items.length ? items[index].to : null;
 }

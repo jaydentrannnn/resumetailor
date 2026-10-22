@@ -1,6 +1,21 @@
 import type { ReactNode } from "react";
 import { Segmented } from "../../../components/ui";
 
+/**
+ * A banner's option groups: three columns side by side in the customize dialog
+ * (`columns`), stacked otherwise. Each child is one `OptionGroup`.
+ */
+export function OptionColumns({ columns, children }: { columns: boolean; children: ReactNode }) {
+  return (
+    <div className={columns ? "grid gap-x-8 gap-y-5 md:grid-cols-3" : "space-y-4"}>{children}</div>
+  );
+}
+
+/** One column of options, stacked top to bottom. */
+export function OptionGroup({ children }: { children: ReactNode }) {
+  return <div className="min-w-0 space-y-4">{children}</div>;
+}
+
 /** One labelled option in Apply settings › Progress banner. */
 export function OptionField({ label, children }: { label: string; children: ReactNode }) {
   return (
@@ -30,6 +45,36 @@ export function OptionChoice<T extends string>({
   );
 }
 
+/** A labelled dropdown, for choices too many or too long for a Segmented. */
+export function OptionSelect<T extends string>({
+  label,
+  items,
+  value,
+  onChange,
+}: {
+  label: string;
+  items: { id: T; label: string }[];
+  value: T;
+  onChange: (id: T) => void;
+}) {
+  return (
+    <OptionField label={label}>
+      <select
+        aria-label={label}
+        className="field w-full max-w-60"
+        value={value}
+        onChange={(e) => onChange(e.target.value as T)}
+      >
+        {items.map((item) => (
+          <option key={item.id} value={item.id}>
+            {item.label}
+          </option>
+        ))}
+      </select>
+    </OptionField>
+  );
+}
+
 /** Checkboxes for the parts a banner shows; a disabled one has no effect in this style. */
 export function ShowParts({
   items,
@@ -38,7 +83,7 @@ export function ShowParts({
 }) {
   return (
     <OptionField label="Show">
-      <div className="flex flex-wrap gap-x-5 gap-y-2">
+      <div className="flex flex-col gap-2">
         {items.map((item) => (
           <label
             key={item.label}

@@ -17,7 +17,9 @@ from fastapi import APIRouter, HTTPException, Request
 from fastapi.concurrency import run_in_threadpool
 from fastapi.responses import Response
 
-from resume_tailor.infra import desktop_shell, local_files
+from pydantic import BaseModel
+
+from resume_tailor.infra import autostart, desktop_shell, local_files
 from resume_tailor.web import state as web_state
 from resume_tailor.web.routes import run_lookup
 from resume_tailor.web.schemas import DesktopSaveResult, DesktopTitleRequest
@@ -107,3 +109,25 @@ def window_title(body: DesktopTitleRequest) -> Response:
     _desktop_only()
     desktop_shell.set_title(body.title)
     return Response(status_code=204)
+
+
+class AutostartUpdate(BaseModel):
+    enabled: bool
+
+
+@router.get("/api/desktop/autostart")
+def get_autostart() -> dict:
+    """Whether the app launches when the computer starts (desktop only)."""
+    _desktop_only()
+    return {"enabled": autostart.is_enabled(), "supported": autostart.shell_exe() is not None}
+
+
+@router.put("/api/desktop/autostart")
+def put_autostart(body: AutostartUpdate) -> dict:
+    """Enable or disable launch at login (desktop only)."""
+    _desktop_only()
+    try:
+        enabled = autostart.set_enabled(body.enabled)
+    except RuntimeError as exc:
+        raise HTTPException(status_code=409, detail=str(exc)) from exc
+    return {"enabled": enabled, "supported": True}

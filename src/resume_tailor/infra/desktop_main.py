@@ -238,6 +238,9 @@ def main(argv: list[str] | None = None) -> int:
         desktop_update._out = shell_channel()
         desktop_update.ENABLED = True
         desktop_shell.ENABLED = True
+        from resume_tailor.infra import autostart
+
+        autostart.refresh_if_enabled()
 
         def _parent_gone() -> None:
             server.should_exit = True

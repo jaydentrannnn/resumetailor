@@ -35,10 +35,51 @@ class ThemeUpdate(BaseModel):
     preference: appearance.ThemePreference
 
 
+class AppearanceUpdate(BaseModel):
+    """Partial update for accent and/or UI scale (theme preference uses PUT /api/theme).
+
+    Omit a field to leave it unchanged; send ``accent: null`` to clear a custom color.
+    """
+
+    accent: str | None = None
+    scale: float | None = None
+
+
 @router.put("/api/theme")
 def put_theme(body: ThemeUpdate) -> dict:
     appearance.save_theme(body.preference)
     return {"preference": body.preference}
+
+
+@router.get("/api/appearance")
+def get_appearance() -> dict:
+    """Current theme preference, accent hex (or null), and UI scale."""
+    return {
+        "preference": appearance.load_theme(),
+        "accent": appearance.load_accent(),
+        "scale": appearance.load_scale(),
+    }
+
+
+@router.put("/api/appearance")
+def put_appearance(body: AppearanceUpdate) -> dict:
+    """Merge accent and/or scale into theme.json; apply zoom on the desktop shell."""
+    from fastapi import HTTPException
+
+    from resume_tailor.infra import desktop_shell
+
+    kwargs: dict = {}
+    if "accent" in body.model_fields_set:
+        kwargs["accent"] = body.accent
+    if "scale" in body.model_fields_set:
+        kwargs["scale"] = body.scale
+    try:
+        appearance.save(**kwargs)
+    except ValueError as exc:
+        raise HTTPException(status_code=422, detail=str(exc)) from exc
+    if body.scale is not None and desktop_shell.ENABLED:
+        desktop_shell.set_zoom(body.scale)
+    return get_appearance()
 
 
 @router.get("/api/model-queue")

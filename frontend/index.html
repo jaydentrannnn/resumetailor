@@ -5,7 +5,7 @@
     <link rel="icon" href="/src/assets/logo-mark-black.svg" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <title>ResumeTailor</title>
-    <!-- Apply data-theme before paint so a stored Light override doesn't flash OS-dark tokens. -->
+    <!-- Apply data-theme and accent before paint so stored overrides do not flash. -->
     <script>
       (function () {
         try {
@@ -17,6 +17,14 @@
           var theme = dark ? "dark" : "light";
           document.documentElement.setAttribute("data-theme", theme);
           document.documentElement.style.colorScheme = theme;
+          var accent =
+            typeof window.__RT_DESKTOP_ACCENT__ === "string"
+              ? window.__RT_DESKTOP_ACCENT__
+              : localStorage.getItem("resume-tailor-accent");
+          if (accent && /^#[0-9a-fA-F]{6}$/.test(accent)) {
+            document.documentElement.setAttribute("data-accent", "");
+            document.documentElement.style.setProperty("--rt-accent-base", accent);
+          }
         } catch (e) {}
       })();
     </script>

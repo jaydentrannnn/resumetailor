@@ -1,6 +1,19 @@
 import { expect, test } from "@playwright/test";
 import { readFile } from "node:fs/promises";
 
+test("saved accent applies before paint", async ({ page }) => {
+  await page.addInitScript(() => {
+    localStorage.setItem("resume-tailor-theme", "light");
+    localStorage.setItem("resume-tailor-accent", "#2563eb");
+  });
+  await page.goto("/");
+  await expect(page.locator("html")).toHaveAttribute("data-accent", "");
+  const accent = await page.locator("html").evaluate((el) =>
+    (el as HTMLElement).style.getPropertyValue("--rt-accent-base").trim(),
+  );
+  expect(accent).toBe("#2563eb");
+});
+
 for (const theme of ["light", "dark"] as const) {
   test(`saved ${theme} theme overrides the OS during app loading and startup`, async ({ page }) => {
     await page.emulateMedia({ colorScheme: theme === "light" ? "dark" : "light" });

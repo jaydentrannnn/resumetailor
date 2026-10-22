@@ -3,6 +3,7 @@ import { Segmented } from "../../../components/ui";
 import { activityOptions, goalOptions, pipelineOptions } from "../../../lib/progressOptions";
 import { ActivityOptions } from "./ActivityOptions";
 import { GoalOptions } from "./GoalOptions";
+import { OptionField } from "./OptionControls";
 import { PipelineOptions } from "./PipelineOptions";
 
 const KINDS: { id: ProgressBanner; label: string }[] = [
@@ -24,30 +25,41 @@ type BannerSettings = Pick<
   "progress_banner" | "weekly_goal" | "goal_banner" | "activity_banner" | "pipeline_banner"
 >;
 
-/** Apply settings › Progress banner: which banner sits over the list, and its options. */
+/**
+ * Which banner sits over the Apply list, and its options. Pass `columns` in the
+ * customize dialog so controls fill the wider panel in a grid.
+ */
 export function ProgressBannerSetting({
   apply,
   patch,
+  columns = false,
 }: {
   apply: BannerSettings;
   patch: (fields: Partial<ApplySettings>) => void;
+  /** Spread option controls across columns (banner customize dialog). */
+  columns?: boolean;
 }) {
   const kind = apply.progress_banner ?? "goal";
   return (
     <div className="space-y-4">
-      <Segmented
-        label="Progress banner"
-        items={KINDS}
-        value={kind}
-        onChange={(id) => patch({ progress_banner: id as ProgressBanner })}
-      />
-      <p className="text-xs text-ink-muted">{NOTES[kind]}</p>
+      <div className="space-y-2">
+        <OptionField label="Banner type">
+          <Segmented
+            label="Progress banner"
+            items={KINDS}
+            value={kind}
+            onChange={(id) => patch({ progress_banner: id as ProgressBanner })}
+          />
+        </OptionField>
+        <p className="text-xs text-ink-muted">{NOTES[kind]}</p>
+      </div>
       {kind === "goal" && (
         <GoalOptions
           goal={apply.weekly_goal ?? 10}
           options={goalOptions(apply)}
           onGoal={(weekly_goal) => patch({ weekly_goal })}
           onChange={(change) => patch({ goal_banner: { ...goalOptions(apply), ...change } })}
+          columns={columns}
         />
       )}
       {kind === "activity" && (
@@ -56,6 +68,7 @@ export function ProgressBannerSetting({
           onChange={(change) =>
             patch({ activity_banner: { ...activityOptions(apply), ...change } })
           }
+          columns={columns}
         />
       )}
       {kind === "pipeline" && (
@@ -64,6 +77,7 @@ export function ProgressBannerSetting({
           onChange={(change) =>
             patch({ pipeline_banner: { ...pipelineOptions(apply), ...change } })
           }
+          columns={columns}
         />
       )}
     </div>

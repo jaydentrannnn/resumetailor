@@ -7,6 +7,35 @@ import type { TemplateInfo } from "./templates";
 export const saveTheme = (preference: "system" | "light" | "dark") =>
   request("/api/theme", { method: "PUT", body: JSON.stringify({ preference }) });
 
+export type AppearanceState = {
+  preference: "system" | "light" | "dark" | null;
+  accent: string | null;
+  scale: number;
+};
+
+/** Merge accent and/or UI scale into theme.json (desktop also applies zoom). */
+export function saveAppearance(patch: {
+  accent?: string | null;
+  scale?: number;
+}): Promise<AppearanceState> {
+  return request("/api/appearance", { method: "PUT", body: JSON.stringify(patch) });
+}
+
+export function fetchAppearance(): Promise<AppearanceState> {
+  return request("/api/appearance");
+}
+
+export function fetchAutostart(): Promise<{ enabled: boolean; supported: boolean }> {
+  return request("/api/desktop/autostart");
+}
+
+export function saveAutostart(enabled: boolean): Promise<{ enabled: boolean; supported: boolean }> {
+  return request("/api/desktop/autostart", {
+    method: "PUT",
+    body: JSON.stringify({ enabled }),
+  });
+}
+
 export type AppConfig = {
   pages: number;
   experience: number;

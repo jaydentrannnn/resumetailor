@@ -111,6 +111,8 @@ export type ApplySettings = {
   goal_banner?: Partial<GoalBannerOptions>;
   activity_banner?: Partial<ActivityBannerOptions>;
   pipeline_banner?: Partial<PipelineBannerOptions>;
+  /** Remembered columns and status filter per Apply tab. */
+  table_prefs?: TablePrefs;
 };
 
 export type ProgressBanner = "goal" | "activity" | "pipeline" | "off";
@@ -132,11 +134,21 @@ export type ActivityBannerOptions = {
   start: string | null;
   end: string | null;
   counts: "sent" | "autofilled" | "tailored" | "found";
+  /** Unused: the heatmap always draws in the app accent. */
   color: "green" | "blue" | "orange" | "purple";
   show_stats: boolean;
   show_waiting: boolean;
   show_actions: boolean;
   compact: boolean;
+};
+
+/** Remembered columns and status filter for one Apply table tab. */
+export type TableTabPrefs = { columns: string[]; status: string };
+
+export type TablePrefs = {
+  queue?: TableTabPrefs;
+  review?: TableTabPrefs;
+  archive?: TableTabPrefs;
 };
 
 export type PipelineBannerOptions = {

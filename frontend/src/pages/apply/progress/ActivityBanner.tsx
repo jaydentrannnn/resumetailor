@@ -16,7 +16,7 @@ import {
   heatFill,
   stageTimes,
 } from "../../../lib/progressOptions";
-import { BannerActions } from "./BannerActions";
+import { BannerActions, CustomizeLink } from "./BannerActions";
 import { Heatmap } from "./Heatmap";
 
 /** "Last 13 weeks", or a custom range's dates. */
@@ -32,11 +32,13 @@ export function ActivityBanner({
   options,
   now,
   onTab,
+  onSettings,
 }: {
   progress: ApplyProgress;
   options: ActivityBannerOptions;
   now: Date;
   onTab: (tab: ApplyTab) => void;
+  onSettings?: () => void;
 }) {
   const range = options.range === "custom" ? customRange(options) : null;
   const summary = summarizeProgress(stageTimes(progress, options.counts), now, {
@@ -68,7 +70,7 @@ export function ActivityBanner({
                 className="w-1.5 rounded-[1px] bg-sunken"
                 style={{
                   height: `${Math.max(12, (count / peak) * 100)}%`,
-                  background: count ? heatFill(options.color, 4) : undefined,
+                  background: count ? heatFill(4) : undefined,
                 }}
               />
             ))}
@@ -88,7 +90,7 @@ export function ActivityBanner({
   return (
     <Tile aria-label="Your activity">
       <div className="flex flex-col gap-6 lg:flex-row lg:items-start lg:gap-12">
-        <div className="min-w-0 flex-1 space-y-2.5">
+        <div className="min-w-0 flex-1 space-y-2.5 lg:min-w-64">
           <p className="rt-eyebrow">{label}</p>
           <p className="font-display text-3xl leading-tight text-ink">
             <span className="rt-figure">{summary.inRange}</span> {word}
@@ -111,15 +113,19 @@ export function ActivityBanner({
             </>
           )}
           {waiting && <p className="text-sm text-ink-2">{waiting}</p>}
-          {actions && <div className="pt-1">{actions}</div>}
         </div>
         <Heatmap
           summary={summary}
-          color={options.color}
           label={`${summary.inRange} ${word}, ${label.toLowerCase()}${bestDay ? `, most on ${shortDate(bestDay.key)}` : ""}`}
           word={word}
         />
       </div>
+      {(actions || onSettings) && (
+        <div className="mt-5 flex flex-wrap items-center gap-4">
+          {actions}
+          {onSettings && <CustomizeLink onSettings={onSettings} />}
+        </div>
+      )}
     </Tile>
   );
 }

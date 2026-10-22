@@ -8,13 +8,14 @@ import {
   useState,
   type ReactNode,
 } from "react";
-import { saveTheme } from "../api";
+import { saveAppearance, saveTheme } from "../api";
 import logoMarkBlack from "../assets/logo-mark-black.svg";
 import logoMarkWhite from "../assets/logo-mark-white.svg";
 
 declare global {
   interface Window {
     __RT_DESKTOP_THEME__?: ThemePreference | null;
+    __RT_DESKTOP_ACCENT__?: string | null;
   }
 }
 
@@ -25,6 +26,8 @@ export type ThemePreference = "system" | "light" | "dark";
 export type ResolvedTheme = "light" | "dark";
 
 const STORAGE_KEY = "resume-tailor-theme";
+const ACCENT_KEY = "resume-tailor-accent";
+const HEX = /^#[0-9a-fA-F]{6}$/;
 
 type ThemeContextValue = {
   preference: ThemePreference;
@@ -32,6 +35,9 @@ type ThemeContextValue = {
   setPreference: (next: ThemePreference) => void;
   /** Cycle system → light → dark → system. */
   cyclePreference: () => void;
+  /** Custom accent hex, or null for the default green. */
+  accent: string | null;
+  setAccent: (next: string | null) => void;
 };
 
 const ThemeContext = createContext<ThemeContextValue | null>(null);
@@ -49,6 +55,23 @@ function readStoredPreference(): ThemePreference {
     /* private mode / blocked storage — fall through */
   }
   return "system";
+}
+
+/**
+ * Read a stored accent hex, or null for the default green.
+ */
+function readStoredAccent(): string | null {
+  const desktop = window.__RT_DESKTOP_ACCENT__;
+  if (typeof desktop === "string" && HEX.test(desktop)) return desktop;
+  if (desktop === null) return null;
+  try {
+    const raw = localStorage.getItem(ACCENT_KEY);
+    if (raw === "" || raw === "null") return null;
+    if (raw && HEX.test(raw)) return raw;
+  } catch {
+    /* blocked storage */
+  }
+  return null;
 }
 
 /**
@@ -70,12 +93,28 @@ function applyResolved(resolved: ResolvedTheme): void {
 }
 
 /**
+ * Apply or clear a custom accent on `<html>` (`data-accent` + `--rt-accent-base`).
+ */
+export function applyAccent(accent: string | null): void {
+  const root = document.documentElement;
+  if (accent && HEX.test(accent)) {
+    root.setAttribute("data-accent", "");
+    root.style.setProperty("--rt-accent-base", accent);
+  } else {
+    root.removeAttribute("data-accent");
+    root.style.removeProperty("--rt-accent-base");
+  }
+}
+
+/**
  * Theme preference lives on `<html>` via `data-theme`, persisted in localStorage.
  * Mount above the router so the header toggle works on every page.
  */
 export function ThemeProvider({ children }: { children: ReactNode }) {
   const themeWrite = useRef<Promise<unknown>>(Promise.resolve());
+  const accentWrite = useRef<Promise<unknown>>(Promise.resolve());
   const [preference, setPreferenceState] = useState<ThemePreference>(readStoredPreference);
+  const [accent, setAccentState] = useState<string | null>(readStoredAccent);
   const [resolved, setResolved] = useState<ResolvedTheme>(() =>
     resolveTheme(readStoredPreference()),
   );
@@ -90,6 +129,25 @@ export function ThemeProvider({ children }: { children: ReactNode }) {
     const nextResolved = resolveTheme(next);
     setResolved(nextResolved);
     applyResolved(nextResolved);
+  }, []);
+
+  const setAccent = useCallback((next: string | null) => {
+    const value = next && HEX.test(next) ? next : null;
+    setAccentState(value);
+    try {
+      if (value) localStorage.setItem(ACCENT_KEY, value);
+      else localStorage.removeItem(ACCENT_KEY);
+    } catch {
+      /* blocked storage */
+    }
+    applyAccent(value);
+    if (window.__RT_DESKTOP_THEME__ !== undefined) {
+      window.__RT_DESKTOP_ACCENT__ = value;
+      accentWrite.current = accentWrite.current
+        .catch(() => undefined)
+        .then(() => saveAppearance({ accent: value }));
+      void accentWrite.current.catch(() => undefined);
+    }
   }, []);
 
   const cyclePreference = useCallback(() => {
@@ -126,9 +184,13 @@ export function ThemeProvider({ children }: { children: ReactNode }) {
     return () => mq.removeEventListener("change", onChange);
   }, [preference]);
 
+  useEffect(() => {
+    applyAccent(accent);
+  }, [accent]);
+
   const value = useMemo(
-    () => ({ preference, resolved, setPreference, cyclePreference }),
-    [preference, resolved, setPreference, cyclePreference],
+    () => ({ preference, resolved, setPreference, cyclePreference, accent, setAccent }),
+    [preference, resolved, setPreference, cyclePreference, accent, setAccent],
   );
 
   return <ThemeContext.Provider value={value}>{children}</ThemeContext.Provider>;

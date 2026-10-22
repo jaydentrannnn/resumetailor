@@ -29,3 +29,12 @@ export function BannerActions({
     </div>
   );
 }
+
+/** "Customize banner", pushed to the right end of the banner's bottom (actions) row. */
+export function CustomizeLink({ onSettings }: { onSettings: () => void }) {
+  return (
+    <button type="button" className="rt-link ml-auto text-xs" onClick={onSettings}>
+      Customize banner
+    </button>
+  );
+}

@@ -47,6 +47,10 @@ export type JobSettings = {
   ai_advanced_enabled?: boolean;
   /** The desktop app's Ctrl+1…5 hints in the side bar (app-wide; default on). */
   show_shortcut_hints?: boolean;
+  /** Page to open on launch (app-wide); "/" is Tailor. */
+  start_page?: string;
+  /** Side bar page order and hidden pages (app-wide). */
+  rail_layout?: { order: string[]; hidden: string[] };
   advanced_settings?: import("../lib/advancedSettings").AdvancedSettings | null;
   custom_effort?: import("../lib/effortSteps").EffortSetting;
   pages: number;

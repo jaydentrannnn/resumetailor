@@ -63,7 +63,7 @@ describe("ProgressBanner", () => {
     fireEvent.click(screen.getByRole("button", { name: "Open Needs you (21)" }));
     fireEvent.click(screen.getByRole("button", { name: "See 2 ready to fill" }));
     expect(onTab.mock.calls).toEqual([["needs"], ["progress"]]);
-    fireEvent.click(screen.getByRole("button", { name: "Change" }));
+    fireEvent.click(screen.getByRole("button", { name: "Customize banner" }));
     expect(onSettings).toHaveBeenCalled();
   });
 
@@ -132,7 +132,9 @@ describe("ProgressBannerSetting", () => {
       "autofilled",
       "sent",
     ]);
-    fireEvent.click(screen.getByRole("radio", { name: "Custom" }));
+    fireEvent.change(screen.getByRole("combobox", { name: "Postings found" }), {
+      target: { value: "custom" },
+    });
     expect(patch.mock.calls[2][0].pipeline_banner.range).toBe("custom");
   });
 

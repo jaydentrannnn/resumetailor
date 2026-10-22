@@ -5,7 +5,8 @@ The web UI runs from a 127.0.0.1 origin and gets no Tauri IPC (see
 it asks the server, and the server asks the shell over its pipes:
 
 - stdout, server → shell: ``SHELL save {"id", "name", "ext"}`` opens the native Save
-  dialog; ``SHELL title {"title"}`` sets the window title.
+  dialog; ``SHELL title {"title"}`` sets the window title; ``SHELL zoom {"scale"}``
+  sets the webview zoom factor.
 - stdin, shell → server: ``DIALOG {"id", "path"}`` — the chosen path, or ``null`` when
   the person cancelled.
 
@@ -68,6 +69,13 @@ def set_title(title: str) -> None:
     if ENABLED:
         with contextlib.suppress(desktop_update.ShellGone):
             desktop_update.write_line(f"SHELL title {json.dumps({'title': title})}")
+
+
+def set_zoom(scale: float) -> None:
+    """Set the webview zoom factor; a no-op outside the desktop app or once the shell is gone."""
+    if ENABLED:
+        with contextlib.suppress(desktop_update.ShellGone):
+            desktop_update.write_line(f"SHELL zoom {json.dumps({'scale': scale})}")
 
 
 def receive(line: str) -> None:

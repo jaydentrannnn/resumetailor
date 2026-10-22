@@ -7,7 +7,7 @@ import { ProfileMenu } from "../ProfileMenu";
 import { SetupHealth } from "../SetupHealth";
 import { UpdateChip } from "../UpdateChip";
 import { type ThemePreference, useTheme } from "../../state/themeState";
-import { RAIL_ITEMS, RailIcon, SETTINGS_ICON, THEME_ICONS } from "./railItems";
+import { RailIcon, SETTINGS_ICON, THEME_ICONS, visibleRailItems } from "./railItems";
 import { useNeedsYouCount } from "./useNeedsYouCount";
 
 // The rail is 184px wide with labels; below 900px it keeps only the icons. Class names
@@ -21,15 +21,16 @@ const rowClass = ({ isActive }: { isActive: boolean }) =>
   }`;
 
 /**
- * The app's left rail: the five work areas, then the theme, what needs attention (setup
+ * The app's left rail: the work areas, then the theme, what needs attention (setup
  * steps left, an update), the profile switcher and Settings at the bottom. Shortcut hints
  * show only in the desktop app, where the browser does not keep Ctrl+1…5 for its tabs,
- * and can be hidden in Settings › About.
+ * and can be hidden in Settings › Appearance.
  */
 export function AppRail() {
   const { settings } = useRunState();
   const hints = useDesktop() && settings.show_shortcut_hints !== false;
   const needsYou = useNeedsYouCount();
+  const items = visibleRailItems(settings.rail_layout);
   return (
     <nav
       aria-label="Main"
@@ -39,7 +40,7 @@ export function AppRail() {
         <LogoMark className="h-4 w-3.5" />
         <span className="hidden min-[900px]:inline">ResumeTailor</span>
       </p>
-      {RAIL_ITEMS.map((item, i) => (
+      {items.map((item, i) => (
         <NavLink key={item.to} to={item.to} end={item.end} className={rowClass} title={item.label}>
           <RailIcon path={item.icon} />
           <span className="hidden min-w-0 flex-1 truncate min-[900px]:inline">{item.label}</span>

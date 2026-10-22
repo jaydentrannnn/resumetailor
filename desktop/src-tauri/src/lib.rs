@@ -115,25 +115,46 @@ fn theme_path() -> PathBuf {
 }
 
 fn theme_script_from_json(text: &str) -> String {
-    let preference = serde_json::from_str::<serde_json::Value>(text)
-        .ok()
-        .and_then(|value| {
-            value
-                .get("preference")
-                .and_then(|p| p.as_str())
-                .map(str::to_owned)
-        })
-        .filter(|p| matches!(p.as_str(), "light" | "dark" | "system"))
-        .unwrap_or_else(|| "system".to_owned());
+    let value = serde_json::from_str::<serde_json::Value>(text).ok();
+    let preference = value
+        .as_ref()
+        .and_then(|v| v.get("preference").and_then(|p| p.as_str()))
+        .filter(|p| matches!(*p, "light" | "dark" | "system"))
+        .unwrap_or("system");
+    let accent = value
+        .as_ref()
+        .and_then(|v| v.get("accent").and_then(|a| a.as_str()))
+        .filter(|a| {
+            a.len() == 7
+                && a.starts_with('#')
+                && a.chars().skip(1).all(|c| c.is_ascii_hexdigit())
+        });
     format!(
-        "window.__RT_DESKTOP_THEME__={};",
-        serde_json::to_string(&preference).unwrap()
+        "window.__RT_DESKTOP_THEME__={};window.__RT_DESKTOP_ACCENT__={};",
+        serde_json::to_string(&preference).unwrap(),
+        serde_json::to_string(&accent).unwrap()
     )
 }
 
 /// Seed the bundled startup page before paint, from the app's last saved preference.
 fn theme_script() -> String {
     theme_script_from_json(&std::fs::read_to_string(theme_path()).unwrap_or_default())
+}
+
+/// UI scale from theme.json (1.0 when missing or invalid).
+fn scale_from_theme() -> f64 {
+    let allowed = [0.9, 1.0, 1.1, 1.25, 1.5];
+    std::fs::read_to_string(theme_path())
+        .ok()
+        .and_then(|text| serde_json::from_str::<serde_json::Value>(&text).ok())
+        .and_then(|value| value.get("scale").and_then(|s| s.as_f64()))
+        .filter(|s| allowed.contains(s))
+        .unwrap_or(1.0)
+}
+
+/// True when launched with ``--hidden`` (start with computer: tray only).
+fn start_hidden() -> bool {
+    std::env::args().any(|arg| arg == "--hidden")
 }
 
 /// `lockdown.js`, told whether this is a debug build (which keeps the DevTools keys).
@@ -152,6 +173,10 @@ fn start_server(app: &AppHandle) -> Result<(), String> {
     // when the shell is killed rather than quit.
     command
         .env("RESUME_TAILOR_THEME_PATH", theme_path())
+        .env(
+            "RESUME_TAILOR_SHELL_EXE",
+            std::env::current_exe().unwrap_or_default(),
+        )
         .arg("--exit-with-stdin")
         .arg("--app-version")
         .arg(app.package_info().version.to_string())
@@ -308,9 +333,13 @@ fn main_window(app: &AppHandle) -> tauri::Result<tauri::WebviewWindow> {
         .expect("tauri.conf.json defines the main window");
     let navigation = app.clone();
     let popup = app.clone();
-    let window = WebviewWindowBuilder::from_config(app, &config)?
+    let mut builder = WebviewWindowBuilder::from_config(app, &config)?
         .initialization_script(theme_script())
-        .initialization_script(lockdown_script())
+        .initialization_script(lockdown_script());
+    if start_hidden() {
+        builder = builder.visible(false);
+    }
+    let window = builder
         .on_navigation(move |url| {
             // A link followed in the window itself.
             let server = navigation
@@ -343,6 +372,10 @@ fn main_window(app: &AppHandle) -> tauri::Result<tauri::WebviewWindow> {
         })
         .build()?;
     webview_settings::lock(&window);
+    let scale = scale_from_theme();
+    if (scale - 1.0).abs() > f64::EPSILON {
+        let _ = window.set_zoom(scale);
+    }
     Ok(window)
 }
 
@@ -405,7 +438,9 @@ pub fn run() {
 
 #[cfg(test)]
 mod tests {
-    use super::{lockdown_script, read_lines_lossy, ready_url, theme_script_from_json};
+    use super::{
+        lockdown_script, read_lines_lossy, ready_url, scale_from_theme, theme_script_from_json,
+    };
 
     #[test]
     fn server_output_keeps_flowing_past_a_line_that_is_not_utf8() {
@@ -429,15 +464,28 @@ mod tests {
             let text = format!(r#"{{"preference":"{preference}"}}"#);
             assert_eq!(
                 theme_script_from_json(&text),
-                format!("window.__RT_DESKTOP_THEME__=\"{preference}\";")
+                format!(
+                    "window.__RT_DESKTOP_THEME__=\"{preference}\";window.__RT_DESKTOP_ACCENT__=null;"
+                )
             );
         }
+        let with_accent = r##"{"preference":"dark","accent":"#3b82f6"}"##;
+        assert_eq!(
+            theme_script_from_json(with_accent),
+            "window.__RT_DESKTOP_THEME__=\"dark\";window.__RT_DESKTOP_ACCENT__=\"#3b82f6\";"
+        );
         for text in ["", "null", "{}", r#"{"preference":"invalid"}"#] {
             assert_eq!(
                 theme_script_from_json(text),
-                "window.__RT_DESKTOP_THEME__=\"system\";"
+                "window.__RT_DESKTOP_THEME__=\"system\";window.__RT_DESKTOP_ACCENT__=null;"
             );
         }
+    }
+
+    #[test]
+    fn scale_from_theme_reads_allowed_values_only() {
+        // scale_from_theme reads theme_path(); without a file it is 1.0.
+        assert!((scale_from_theme() - 1.0).abs() < f64::EPSILON);
     }
 
     #[test]

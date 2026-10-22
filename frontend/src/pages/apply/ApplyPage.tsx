@@ -16,6 +16,7 @@ import { ApplyHeader } from "./ApplyHeader";
 import { ApplySettingsDrawer } from "./ApplySettingsDrawer";
 import { NightlyRunStrip } from "./NightlyRunStrip";
 import { OperationBanner } from "./OperationBanner";
+import { BannerCustomizeDialog } from "./progress/BannerCustomizeDialog";
 import { ProgressBanner } from "./progress/ProgressBanner";
 import { FindJobsTools, ProgressBulkActions, ProgressNote } from "./ProgressToolbar";
 import { ReviewToolbar } from "./ReviewToolbar";
@@ -26,7 +27,7 @@ import { useApplyRowActions } from "./useApplyRowActions";
 
 /**
  * Apply: postings found for the student, split into Needs you / In progress / Done,
- * under the progress banner chosen in Apply settings, with the current Apply task
+ * under the progress banner (Settings › Appearance), with the current Apply task
  * pinned on top and every setting in a side drawer.
  */
 export function ApplyPage() {
@@ -44,6 +45,7 @@ export function ApplyPage() {
   const [archiveTotal, setArchiveTotal] = useState(0);
   const [revision, setRevision] = useState(0);
   const [drawerOpen, setDrawerOpen] = useState(params.get("settings") === "1");
+  const [bannerOpen, setBannerOpen] = useState(false);
   const { openTabs, reachable: tabsReachable, recheck: recheckTabs } = useOpenTabs();
   const showError = useCallback(
     (title: string, reason: unknown) => toast.error(title, describe(reason).detail),
@@ -123,7 +125,7 @@ export function ApplyPage() {
         workspaceId={workspaceId}
         revision={revision}
         onTab={setTab}
-        onSettings={() => setDrawerOpen(true)}
+        onSettings={() => setBannerOpen(true)}
       />
       {op.operation && <OperationBanner operation={op.operation} onControl={op.control} />}
       <ProfileGapsNotice gaps={profileGaps} />
@@ -210,6 +212,7 @@ export function ApplyPage() {
           notify={op.notify}
         />
       )}
+      {bannerOpen && <BannerCustomizeDialog onClose={() => setBannerOpen(false)} />}
     </Page>
   );
 }

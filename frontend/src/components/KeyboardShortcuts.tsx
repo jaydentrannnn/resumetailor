@@ -4,7 +4,8 @@ import { currentPrintTarget, printDocument } from "../lib/printTarget";
 import { SHORTCUTS, shortcutFor } from "../lib/shortcuts";
 import { useDesktop } from "../lib/useDesktop";
 import { useCommands } from "../state/commandState";
-import { railTarget } from "./shell/railItems";
+import { useRunState } from "../state/runState";
+import { railTarget, visibleRailItems } from "./shell/railItems";
 import { Kbd } from "./ui/Tile";
 import { Modal } from "./Modal";
 
@@ -20,6 +21,8 @@ export function KeyboardShortcuts() {
   const [helpOpen, setHelpOpen] = useState(false);
   const navigate = useNavigate();
   const desktop = useDesktop();
+  const { settings } = useRunState();
+  const railItems = visibleRailItems(settings.rail_layout);
   useCommands(() => [
     {
       id: "app-shortcuts",
@@ -32,7 +35,7 @@ export function KeyboardShortcuts() {
   ]);
   useEffect(() => {
     function onKey(e: KeyboardEvent) {
-      const page = railTarget(e);
+      const page = railTarget(e, railItems);
       if (page) {
         e.preventDefault();
         navigate(page);
@@ -73,7 +76,7 @@ export function KeyboardShortcuts() {
     }
     document.addEventListener("keydown", onKey);
     return () => document.removeEventListener("keydown", onKey);
-  }, [navigate, desktop]);
+  }, [navigate, desktop, railItems]);
   if (!helpOpen) return null;
   return (
     <Modal title="Keyboard shortcuts" onClose={() => setHelpOpen(false)}>
