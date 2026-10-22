@@ -159,6 +159,10 @@ _GREENHOUSE_EMBED_JS = """() => !!document.querySelector(
   '#grnhse_app, #grnhse_iframe, iframe[src*="greenhouse.io"]')"""
 
 
+_VISIBLE_CONTROLS_JS = """() => Array.from(document.querySelectorAll(
+  'input:not([type="hidden"]), select, textarea')).filter(el => el.getClientRects().length).length"""
+
+
 def closed_page(page: Any, requested_url: str) -> str | None:
     """Why the loaded posting page is closed or gone, else None: a closing banner near
     the top (Ashby's "Job not found"), a redirect to the careers home, or a
@@ -175,6 +179,12 @@ def closed_page(page: Any, requested_url: str) -> str | None:
     if reason:
         return reason
     if "gh_jid=" not in requested_url:
+        return None
+    controls = None
+    with contextlib.suppress(Exception):
+        controls = page.evaluate(_VISIBLE_CONTROLS_JS)
+    if not isinstance(controls, int) or controls > 0:
+        # Duolingo draws its own form from Greenhouse's API, with no embed (Batch 3 rerun).
         return None
     for _ in range(12):  # the embed script can take a moment to add its frame
         found = None

@@ -69,3 +69,15 @@ def test_a_gh_jid_link_without_its_greenhouse_job_is_closed(browser):
         assert fill_page.closed_page(page, "https://careers.acme.com/?gh_jid=4421632009") is None
     finally:
         page.close()
+
+
+def test_a_gh_jid_page_with_its_own_form_is_not_closed(browser):
+    # Duolingo draws its application form from Greenhouse's API, with no embed frame.
+    own_form = ("<h1>Software Engineer</h1><form><label for='fn'>First Name</label>"
+                "<input id='fn'><textarea aria-label='Cover letter'></textarea></form>")
+    page = _page(browser, own_form)
+    try:
+        assert fill_page.closed_page(
+            page, "https://careers.acme.com/jobs/8888721002?gh_jid=8888721002") is None
+    finally:
+        page.close()
