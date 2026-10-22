@@ -414,3 +414,15 @@ async def mark_application(
 ) -> dict[str, Any]:
     """Update one application's funnel status."""
     return await client.mark_application(source_job_id, status, note=note)
+
+
+async def record_outcome(
+    client: BackendClient,
+    source_job_id: str,
+    outcome: str,
+    *,
+    occurred_on: str | None = None,
+    note: str = "",
+) -> dict[str, Any]:
+    """Record what happened after an application went out."""
+    return await client.record_outcome(source_job_id, outcome, occurred_on=occurred_on, note=note)

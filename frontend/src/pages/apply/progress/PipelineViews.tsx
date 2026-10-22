@@ -1,4 +1,5 @@
 import type { ReactNode } from "react";
+import type { OutcomeCohort } from "../../../api";
 import type { PipelineStep } from "../../../lib/applyPipeline";
 
 /** The pipeline as a funnel: one bar per stage, as wide as its share of the first. */
@@ -69,5 +70,26 @@ export function PipelineStrip({
       )}
       <div className="ml-auto">{actions}</div>
     </div>
+  );
+}
+
+/** "Of 14 sent 3+ weeks ago: 5 replied · 2 interviews · 1 offer", every count over the
+ * same applications, so a fresh week of sending never dilutes the rate. */
+export function OutcomeRates({ cohort }: { cohort?: OutcomeCohort }) {
+  if (!cohort?.sent) return null;
+  const weeks = Math.round(cohort.window_days / 7);
+  const parts = [
+    `${cohort.responded} replied`,
+    `${cohort.interviewed} ${cohort.interviewed === 1 ? "interview" : "interviews"}`,
+    ...(cohort.offers ? [`${cohort.offers} ${cohort.offers === 1 ? "offer" : "offers"}`] : []),
+    `${cohort.no_reply} no reply yet`,
+  ];
+  return (
+    <p className="text-sm text-ink-2">
+      <span className="font-medium text-ink">
+        Of {cohort.sent} sent {weeks}+ weeks ago:
+      </span>{" "}
+      {parts.join(" · ")}
+    </p>
   );
 }

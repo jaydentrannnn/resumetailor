@@ -307,6 +307,32 @@ async def mark_application(
         return {"error": _tool_error(exc)}
 
 
+@mcp.tool()
+async def record_outcome(
+    source_job_id: str,
+    outcome: str,
+    occurred_on: str = "",
+    note: str = "",
+) -> dict[str, Any]:
+    """Record what happened after an application was sent; works on archived rows.
+
+    ``outcome`` is one of: assessment, interview_invited, interview_scheduled,
+    interview_completed, offer, hired, offer_declined, rejected, withdrawn, ghosted,
+    employer_timeline, followup_drafted, followup_sent. ``occurred_on`` is an ISO date
+    (YYYY-MM-DD) when known. The status stays "submitted"; the hiring stage is derived.
+    """
+    try:
+        return await tools.record_outcome(
+            _get_client(),
+            source_job_id,
+            outcome,
+            occurred_on=occurred_on or None,
+            note=note,
+        )
+    except Exception as exc:
+        return {"error": _tool_error(exc)}
+
+
 def main() -> None:
     """Run the MCP server over stdio. Never spawns the ResumeTailor web process."""
     # Sync probe only — do not asyncio.run() here; that would open (and close) a

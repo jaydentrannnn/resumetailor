@@ -24,6 +24,7 @@ export type Detail = {
 };
 export const DETAIL_TABS = [
   "overview",
+  "outcome",
   "jd",
   "files",
   "answers",

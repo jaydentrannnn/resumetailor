@@ -100,6 +100,22 @@ describe("ProgressBanner", () => {
     expect(screen.getByText("50% sent")).toBeTruthy();
   });
 
+  it("reports replies and interviews over applications old enough to hear back", async () => {
+    const outcomes = {
+      window_days: 21,
+      sent: 14,
+      responded: 5,
+      interviewed: 2,
+      offers: 0,
+      rejected: 2,
+      no_reply: 9,
+    };
+    vi.mocked(getApplyProgress).mockResolvedValue(progress({ outcomes }));
+    show({ progress_banner: "pipeline" });
+    expect(await screen.findByText("Of 14 sent 3+ weeks ago:")).toBeTruthy();
+    expect(screen.getByText(/5 replied · 2 interviews · 9 no reply yet/)).toBeTruthy();
+  });
+
   it("stays hidden when switched off or before anything was found", async () => {
     const { container } = show({ progress_banner: "off" });
     await waitFor(() => expect(getApplyProgress).toHaveBeenCalled());

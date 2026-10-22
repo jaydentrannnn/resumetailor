@@ -680,7 +680,31 @@ but cannot be prepared, filled, retried, or corrected until restored. The regist
 uses nonblocking Apply/daily worker gates plus the workspace lock and returns 409 if busy.
 MCP tools:
 `list_applications`, `get_application_packet`, `answer_application_question`,
-`mark_application`.
+`mark_application`, `record_outcome`.
+
+**What was sent, and what happened next.** `store.set_status` calls
+`apply/funnel/attempts.on_status`: a row moving into `submitted`/`submit_unconfirmed`
+from a status that was not already sent gets a `SubmissionAttempt`, a read-only copy of
+the resume and cover letter (PDF and Word), `packet.json`, `bullets.json`,
+`requirements.json`, `coverage.json`, `jd.txt` and `fill.json` under
+`APPLICATIONS_OUTPUT_DIR/<source_job_id>/attempts/<n>/`, each SHA-256 hashed. The method
+comes from the status note (`auto_submit` → auto, `attempts.MONITOR_NOTE` → monitor, else
+manual); `confirmed` is True only when the app itself sent the files and saw the
+confirmation, so a manual mark records the prepared files with the upload unconfirmed. A
+later confirmation of a `submit_unconfirmed` row updates the same attempt; undoing a
+submitted mark voids it (files kept). A copy failure is recorded on the attempt and never
+blocks the status change. Outcome events (`store_models.OutcomeEvent`, routes in
+`web/routes/outcomes.py`) are recorded on archived rows too; a correction adds a
+replacing event and voids the old one, and nothing is deleted. `outcomes.hiring_progress`
+derives `stage` (furthest of applied → assessment → interview → offer → hired),
+`closed` (latest of rejected/withdrawn/ghosted/offer_declined, cleared by a later step)
+and `responded` from live events plus legacy `interview`/`rejected`/`ghosted` statuses,
+so old rows are never rewritten and the operational status stays `submitted`. The list
+route's `hiring=` filter (the Done tab's "What happened" options, sent as `hiring:<key>`
+through the status filter) and the CSV (`hiring_stage`, `hiring_closed`, `<step>_on`)
+read it. `store_stats.outcome_cohort` counts only applications sent at least
+`COHORT_DAYS` (21) ago, so every rate in the pipeline banner has the same denominator,
+and keeps silence (`no_reply`) apart from rejection.
 
 For postings stuck in `needs_browser` (HTTP + CDP could not extract enough JD text), the
 Claude Desktop skill in `docs/skills/apply-from-queue/` is the manual fallback — it opens

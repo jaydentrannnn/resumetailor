@@ -567,6 +567,10 @@ def undo_terminal(app: store_models.Application, note: str) -> bool:
          if change.status not in store_models.TERMINAL_STATUSES),
         "ready" if app.job_id else "jd_fetched",
     )
+    if app.status == "submitted":
+        from resume_tailor.apply.funnel import attempts
+
+        attempts.void_latest(app)
     app.status = {"filling": "ready", "tailoring": "tailor_failed"}.get(previous, previous)
     app.status_history.append(
         store_models.StatusChange(status=app.status, at=store_models._now_iso(), note=note)
@@ -583,7 +587,8 @@ def set_status(
     """Append a status change and enforce terminal-state guards.
 
     `undo_terminal` is the one sanctioned bypass of this guard for mistaken
-    submitted/skipped marks.
+    submitted/skipped marks. A move into ``submitted``/``submit_unconfirmed`` records
+    what was sent (`attempts.on_status`).
 
     Raises:
         ValueError: When ``app.status`` is terminal and ``new_status`` is pre-ready.
@@ -610,6 +615,9 @@ def set_status(
     # A failed recheck can set screened_out on a restored screened_out row again.
     if new_status == "screened_out" and not app.archived_at:
         app.archived_at = at
+    from resume_tailor.apply.funnel import attempts
+
+    attempts.on_status(app, app.status, new_status, note)
     app.status = new_status
     app.status_history.append(
         store_models.StatusChange(status=new_status, at=at, note=note)

@@ -278,6 +278,7 @@ from resume_tailor.web.routes import (  # noqa: E402, I001
     jobs as _jobs_routes,
     libraries as _libraries_routes,
     onboarding as _onboarding_routes,
+    outcomes as _outcomes_routes,
     reference as _reference_routes,
     resume as _resume_routes,
     search_presets as _search_presets_routes,
@@ -294,7 +295,7 @@ from resume_tailor.web.routes import (  # noqa: E402, I001
 # Registration order is route-matching order: keep it the order these areas had in
 # the single-file app (config, jobs, applications, resume, template, libraries, profiles).
 for _router in (
-    _config_routes, _jobs_routes, _applications_routes, _resume_routes,
+    _config_routes, _jobs_routes, _applications_routes, _outcomes_routes, _resume_routes,
     _template_routes, _libraries_routes, _workspaces_routes, _diagnostics_routes,
     _secrets_routes, _setup_routes, _system_routes, _onboarding_routes,
     _jd_routes, _answers_routes, _automation_routes, _discovery_routes,

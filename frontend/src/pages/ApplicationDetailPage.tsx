@@ -10,14 +10,16 @@ import { useWorkspaceState } from "../state/workspaceState";
 import { AnswersPanel } from "./apply/detail/AnswersPanel";
 import { DetailHeader } from "./apply/detail/DetailHeader";
 import { NotesPanel } from "./apply/detail/NotesPanel";
+import { OutcomePanel } from "./apply/detail/OutcomePanel";
 import { JobDescriptionPanel, OverviewPanel } from "./apply/detail/OverviewPanel";
 import { FilesPanel, ReviewPanel } from "./apply/detail/ReviewPanel";
 import { TimelinePanel } from "./apply/detail/TimelinePanel";
 import { useApplicationDetail } from "./apply/detail/useApplicationDetail";
 
 /**
- * One application: header with its status and actions, then Overview / Job description
- * / Files / Answers / Form review / Timeline / Notes, each panel its own tiles. App.tsx
+ * One application: header with its status and actions, then Overview / Outcome (once
+ * sent) / Job description / Files / Answers / Form review / Timeline / Notes, each panel
+ * its own tiles. App.tsx
  * lazy-imports this module, so it stays at this path.
  */
 export function ApplicationDetailPage() {
@@ -82,6 +84,8 @@ export function ApplicationDetailPage() {
             label="Application details"
             items={[
               { id: "overview", label: "Overview" },
+              // Only once it was sent: what happened next is recorded here.
+              ...(app.hiring?.stage ? [{ id: "outcome", label: "Outcome" }] : []),
               { id: "jd", label: "Job description" },
               { id: "files", label: beside ? "Extras" : "Files" },
               { id: "answers", label: "Answers" },
@@ -94,6 +98,7 @@ export function ApplicationDetailPage() {
           />
           <div role="tabpanel">
             {tab === "overview" && <OverviewPanel app={app} job={job} />}
+            {tab === "outcome" && <OutcomePanel app={app} onSaved={view.setApplication} />}
             {tab === "jd" && <JobDescriptionPanel text={detail?.jd_text} />}
             {tab === "files" && (
               <FilesPanel

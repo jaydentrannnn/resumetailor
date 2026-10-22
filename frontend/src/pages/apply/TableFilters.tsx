@@ -1,6 +1,7 @@
 import type { ReactNode } from "react";
 import { Button } from "../../components/ui";
-import { applicationStatusLabel } from "../../lib/applicationStatus";
+import { HIRING_FILTER } from "../../api";
+import { applicationStatusLabel, HIRING_OPTIONS } from "../../lib/applicationStatus";
 import { REVIEW_STATUSES } from "../../lib/applyPage";
 import type { ApplicationTableState, Scope } from "./useApplicationTable";
 
@@ -84,6 +85,15 @@ export function TableFilters({
                 {applicationStatusLabel(value)} ({state.data?.counts[value] ?? 0})
               </option>
             ))}
+          {archived && (
+            <optgroup label="What happened">
+              {HIRING_OPTIONS.map(([key, label]) => (
+                <option value={HIRING_FILTER + key} key={key}>
+                  {label}
+                </option>
+              ))}
+            </optgroup>
+          )}
         </select>
         <details className="relative">
           <summary className="rt-control inline-flex cursor-pointer list-none items-center rounded-sm bg-plain font-medium text-ink hover:bg-plain-hover px-3 text-[13px]">

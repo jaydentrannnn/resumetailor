@@ -114,6 +114,11 @@ def _application_out(
     from resume_tailor.pipeline import posting_guard
 
     payload["posting_warnings"] = posting_guard.warnings(app.posting_guard)
+    from resume_tailor.apply.funnel import outcomes
+
+    payload["hiring"] = outcomes.hiring_progress(app).model_dump()
+    if list_row:  # the table reads `hiring`; the detail view loads the full record
+        payload["outcome_events"], payload["attempts"] = [], []
     out = ApplicationOut.model_validate(payload)
     if slim_fill is not None:
         # Assigned after validation: validated, the dict would parse back into a full
@@ -504,12 +509,15 @@ def list_applications(
     sort: Literal["posted_at", "status_at", "discovered_at", "archived_at", "company", "role", "location", "status", "coverage", "salary", "ats", "sources"] = "discovered_at",
     direction: Literal["asc", "desc"] = "desc",
     group: Literal["review", "working"] | None = None,
+    hiring: str | None = None,
 ) -> ApplicationsListResponse:
     """Search, sort, and page applications within one archive scope.
 
     ``group`` splits the working list into the rows waiting on the applicant
     (``review``) and everything else (``working``); a row with a task running stays in
-    the group it ran from (`store_models.list_group`). Counts cover the chosen group.
+    the group it ran from (`store_models.list_group`). ``hiring`` keeps rows whose
+    hiring progress shows that label key: a closing outcome (``rejected``) else the
+    furthest stage (``interview``). Counts cover the chosen group.
     """
     q = q.strip()
     if len(q) > 200:
@@ -522,6 +530,14 @@ def list_applications(
     )
     if group is not None:
         matched = [row for row in matched if store_models.list_group(row) == group]
+    if hiring:
+        from resume_tailor.apply.funnel import outcomes
+
+        matched = [
+            row for row in matched
+            if (progress := outcomes.hiring_progress(row)).closed == hiring
+            or (progress.closed is None and progress.stage == hiring)
+        ]
     counts: dict[str, int] = {}
     for item in matched:
         counts[item.status] = counts.get(item.status, 0) + 1

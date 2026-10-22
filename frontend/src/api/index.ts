@@ -11,6 +11,7 @@ export * from "./templates";
 export * from "./libraries";
 export * from "./applySettings";
 export * from "./applications";
+export * from "./outcomes";
 export * from "./sources";
 export * from "./modelQueue";
 export * from "./coverLetter";

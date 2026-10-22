@@ -7,10 +7,11 @@ applicant's own days and weeks; only the counts are worked out here.
 from __future__ import annotations
 
 from collections.abc import Iterable
+from datetime import date, timedelta
 
 from pydantic import BaseModel
 
-from . import store, store_models
+from . import outcomes, store, store_models
 
 #: An outcome after sending implies the application was sent, even when the timeline
 #: has no ``submitted`` entry (marked by hand straight to Interview, say).
@@ -41,6 +42,24 @@ class PostingTimes(BaseModel):
     sent_at: str | None
 
 
+#: Days an application has had to hear back before it counts toward reply rates.
+COHORT_DAYS = 21
+
+
+class OutcomeCohort(BaseModel):
+    """What happened to applications sent at least ``window_days`` ago. Every rate is
+    a count over ``sent``; silence (``no_reply``) is kept apart from rejection."""
+
+    window_days: int = COHORT_DAYS
+    sent: int = 0
+    responded: int = 0
+    #: Reached an interview or further, whatever happened next.
+    interviewed: int = 0
+    offers: int = 0
+    rejected: int = 0
+    no_reply: int = 0
+
+
 class ProgressStats(BaseModel):
     #: Every sent application, oldest first, archived ones included.
     sent: list[SentApplication]
@@ -57,6 +76,7 @@ class ProgressStats(BaseModel):
     needs_you: int
     ready: int
     unscreened: int
+    outcomes: OutcomeCohort = OutcomeCohort()
 
 
 def _reached(app: store_models.Application, statuses: frozenset[str]) -> bool:
@@ -84,7 +104,29 @@ def _posting_times(app: store_models.Application) -> PostingTimes:
     return PostingTimes(company=app.company, found_at=app.discovered_at or None, **times)
 
 
-def progress_stats(apps: Iterable[store_models.Application]) -> ProgressStats:
+def outcome_cohort(
+    apps: Iterable[store_models.Application], *, today: date | None = None
+) -> OutcomeCohort:
+    cutoff = ((today or date.today()) - timedelta(days=COHORT_DAYS)).isoformat()
+    cohort = OutcomeCohort()
+    for app in apps:
+        sent = outcomes.sent_on(app)
+        if not sent or sent > cutoff:
+            continue
+        progress = outcomes.hiring_progress(app)
+        rank = outcomes.STAGES.index(progress.stage or "applied")
+        cohort.sent += 1
+        cohort.responded += progress.responded
+        cohort.interviewed += rank >= outcomes.STAGES.index("interview")
+        cohort.offers += rank >= outcomes.STAGES.index("offer")
+        cohort.rejected += progress.closed == "rejected"
+        cohort.no_reply += not progress.responded
+    return cohort
+
+
+def progress_stats(
+    apps: Iterable[store_models.Application], *, today: date | None = None
+) -> ProgressStats:
     """Count the registry for the progress banner."""
     rows = list(apps)
     stages = {key: sum(_reached(app, statuses) for app in rows) for key, statuses in _STAGES}
@@ -106,4 +148,5 @@ def progress_stats(apps: Iterable[store_models.Application]) -> ProgressStats:
         needs_you=sum(store_models.list_group(app) == "review" for app in live),
         ready=sum(app.status == "ready" for app in live),
         unscreened=sum(app.status in ("discovered", "jd_fetched") for app in live),
+        outcomes=outcome_cohort(rows, today=today),
     )

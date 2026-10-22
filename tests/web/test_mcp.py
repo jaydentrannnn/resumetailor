@@ -318,3 +318,20 @@ async def test_get_application_packet_after_run(mcp_client):
     packet = await tools.get_application_packet(mcp_client, job_id)
     assert packet["job_id"] == job_id
     assert "fields" in packet
+
+
+@pytest.mark.asyncio
+async def test_record_outcome_on_a_done_row(mcp_client, tmp_path, monkeypatch):
+    """record_outcome records an mcp-sourced event even after submitting archived the row."""
+    from resume_tailor.apply.funnel import store as apply_store
+    from resume_tailor.apply.funnel import store_models
+
+    monkeypatch.setattr(config, "APPLICATIONS_PATH", tmp_path / "applications.json")
+    row = store_models.Application(source="t", source_job_id="a", company="Acme", role="Analyst")
+    apply_store.set_status(row, "submitted", note="")
+    apply_store.save_all({"a": row})
+    result = await tools.record_outcome(mcp_client, "a", "interview_invited", occurred_on="2026-10-20")
+    assert result["hiring"]["stage"] == "interview"
+    assert result["outcome_events"][0]["source"] == "mcp"
+    with pytest.raises(BackendError):
+        await tools.record_outcome(mcp_client, "a", "party")

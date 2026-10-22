@@ -3,7 +3,11 @@ import { Link, type NavigateFunction } from "react-router-dom";
 import type { ApplicationRow } from "../../api";
 import { RowActionsMenu, type MenuItem, type TableColumn } from "../../components/TableControls";
 import { buttonClass, StatusChip, TruncatedText, type ButtonVariant } from "../../components/ui";
-import { applicationStatusLabel, applicationStatusTone } from "../../lib/applicationStatus";
+import {
+  applicationStatusLabel,
+  applicationStatusTone,
+  hiringTone,
+} from "../../lib/applicationStatus";
 import {
   canContinueFill,
   canFillAfterReview,
@@ -252,10 +256,14 @@ function SkillMatch({ row }: { row: ApplicationRow }) {
   );
 }
 
-/** The row's status; a ready row the server won't fill reads "Check resume" (attention). */
+/** The row's status; a ready row the server won't fill reads "Check resume" (attention),
+ * and a Done row with news after sending shows its hiring progress ("Interviewing"). */
 const statusChip = (row: ApplicationRow, archived = false, withError = false) => {
   const blocked = archived ? null : readyBlockLabel(row);
-  return blocked ? (
+  const hiring = row.hiring;
+  return archived && hiring?.stage && (hiring.stage !== "applied" || hiring.closed) ? (
+    <StatusChip tone={hiringTone(hiring)}>{hiring.label}</StatusChip>
+  ) : blocked ? (
     <StatusChip tone="attention">{blocked}</StatusChip>
   ) : withError && row.error ? (
     // The error rides on the chip (hover, focus or tap): beside it, the narrow Status

@@ -127,6 +127,12 @@ export type ApplicationRow = {
   } | null;
   /** The check's alarms as sentences; empty for a clean posting. */
   posting_warnings?: string[];
+  /** Hiring progress after sending; `stage` is null for a row never sent. */
+  hiring?: import("./outcomes").HiringProgress;
+  /** Recorded outcomes, voided ones included (empty on list rows). */
+  outcome_events?: import("./outcomes").OutcomeEvent[];
+  /** What was sent each time (empty on list rows). */
+  attempts?: import("./outcomes").SubmissionAttempt[];
   screen: {
     passed: boolean;
     coverage: number;
@@ -402,15 +408,36 @@ export type ApplyProgress = {
   needs_you: number;
   ready: number;
   unscreened: number;
+  /** Applications sent at least `window_days` ago and what happened to them. */
+  outcomes?: OutcomeCohort;
+};
+
+/** Reply and interview counts over applications old enough to have heard back. */
+export type OutcomeCohort = {
+  window_days: number;
+  sent: number;
+  responded: number;
+  interviewed: number;
+  offers: number;
+  rejected: number;
+  no_reply: number;
 };
 
 export function getApplyProgress(): Promise<ApplyProgress> {
   return request<ApplyProgress>("/api/applications/progress");
 }
 
+/** Prefix of a status-filter value that filters by hiring outcome instead. */
+export const HIRING_FILTER = "hiring:";
+
 export function listApplications(options: ApplicationListOptions = {}): Promise<ApplicationsList> {
   const params = new URLSearchParams();
-  if (options.status) params.set("status", options.status);
+  // The status filter also carries hiring outcomes on the Done tab ("hiring:interview").
+  const hiring = options.status?.startsWith(HIRING_FILTER)
+    ? options.status.slice(HIRING_FILTER.length)
+    : "";
+  if (hiring) params.set("hiring", hiring);
+  else if (options.status) params.set("status", options.status);
   if (options.q) params.set("q", options.q);
   if (options.archive) params.set("archive", options.archive);
   if (options.group) params.set("group", options.group);

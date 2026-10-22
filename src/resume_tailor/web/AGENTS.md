@@ -42,7 +42,8 @@ same text (`tests/tooling/test_agent_docs.py` enforces it).
 - `schemas.py` — request/response models (keep in sync with `frontend/src/api/`).
 - `routes/` — one router module per area; `routes/run_lookup.py` is the shared run/artifact
   lookup (helpers, no router) used by `jobs` and `applications`. Routers: `jobs`,
-  `applications`, `extension`, `resume`,
+  `applications`, `outcomes` (what happened after sending; works on archived rows),
+  `extension`, `resume`,
   `template`, `libraries`, `config`, `workspaces`, `system`, `setup`, `answers`,
   `automation`, `discovery`, `jd`, `onboarding`, `secrets`, `diagnostics`, `update`, `reference`
   (static Profile-page option lists), `desktop` (desktop app only, 404 elsewhere: Save as

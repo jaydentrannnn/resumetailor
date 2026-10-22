@@ -9,7 +9,7 @@ from urllib.parse import urlsplit
 
 from resume_tailor import config
 from resume_tailor.apply.discovery import identity
-from resume_tailor.apply.funnel import store, store_models
+from resume_tailor.apply.funnel import attempts, store, store_models
 
 ROWS_JS = "() => [...document.querySelectorAll('tr, [role=row]')].map(row => row.innerText || '')"
 _SUBMITTED_DATE = re.compile(
@@ -119,9 +119,7 @@ def record(
             }
         )
         current.fill, current.error = result, None
-        store.set_status(
-            current, "submitted", note="Manual submission confirmed in the recorded application tab"
-        )
+        store.set_status(current, "submitted", note=attempts.MONITOR_NOTE)
 
     with template_ops.LOCK:
         if workspace_path is not None and workspace_path != config.APPLICATIONS_PATH:

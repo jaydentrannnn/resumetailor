@@ -113,6 +113,13 @@ _CSV_COLUMNS: tuple[str, ...] = (
     "duplicate_of",
     "archived_at",
     "flags",
+    "hiring_stage",
+    "hiring_closed",
+    "applied_on",
+    "assessment_on",
+    "interview_on",
+    "offer_on",
+    "hired_on",
 )
 
 def export_csv() -> str:
@@ -123,7 +130,10 @@ def export_csv() -> str:
     buffer = io.StringIO()
     writer = csv.writer(buffer)
     writer.writerow(_CSV_COLUMNS)
+    from resume_tailor.apply.funnel import outcomes
+
     for app in list_applications():
+        progress = outcomes.hiring_progress(app)
         source_ids = (
             ";".join(ref.source for ref in app.source_refs)
             if app.source_refs
@@ -153,6 +163,9 @@ def export_csv() -> str:
                 app.duplicate_of or "",
                 app.archived_at or "",
                 ";".join(app.eligibility_flags),
+                progress.stage or "",
+                progress.closed or "",
+                *(progress.stage_dates.get(step, "") for step in outcomes.STAGES),
             ]
         )
     return buffer.getvalue()

@@ -14,8 +14,17 @@ from .. import config
 from ..apply.answers.profile import ApplicantProfile
 from ..apply.funnel.attention import AttentionItem
 from ..apply.funnel.eligibility import EligibilitySettings
+from ..apply.funnel.outcomes import HiringProgress
 from ..apply.funnel.screen import ScreenResult, ScreenSettings
-from ..apply.funnel.store_models import ApplicationStatus, AtsKind, FillResult, StatusChange
+from ..apply.funnel.store_models import (
+    ApplicationStatus,
+    AtsKind,
+    FillResult,
+    OutcomeEvent,
+    OutcomeType,
+    StatusChange,
+    SubmissionAttempt,
+)
 from ..content import industries
 from ..document.cover_settings import CoverSettings
 from ..document.template_adjust import CurrentLayout
@@ -1580,6 +1589,31 @@ class ApplicationOut(BaseModel):
     posting_guard: GuardFindings | None = None
     #: Its alarms as sentences (`posting_guard.warnings`); empty for a clean posting.
     posting_warnings: list[str] = Field(default_factory=list)
+    #: What happened after sending, voided events included (`outcomes`).
+    outcome_events: list[OutcomeEvent] = Field(default_factory=list)
+    #: What was sent each time (`attempts`), voided ones included.
+    attempts: list[SubmissionAttempt] = Field(default_factory=list)
+    #: Derived from the events and legacy statuses (`outcomes.hiring_progress`).
+    hiring: HiringProgress = Field(default_factory=HiringProgress)
+
+
+class OutcomeRequest(BaseModel):
+    """Record what happened after an application went out."""
+
+    type: OutcomeType
+    occurred_on: str | None = Field(default=None, max_length=10)
+    note: str = Field(default="", max_length=2000)
+    #: Who recorded it: the student in the app, or an assistant over MCP.
+    source: Literal["manual", "mcp"] = "manual"
+
+
+class OutcomeCorrection(BaseModel):
+    """Correct an event (a replacement is recorded) or remove it (``void``)."""
+
+    type: OutcomeType | None = None
+    occurred_on: str | None = Field(default=None, max_length=10)
+    note: str | None = Field(default=None, max_length=2000)
+    void: bool = False
 
 
 class ApplicationsListResponse(BaseModel):

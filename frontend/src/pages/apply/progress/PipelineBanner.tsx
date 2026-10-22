@@ -10,7 +10,7 @@ import {
   type PipelineStep,
 } from "../../../lib/applyPipeline";
 import { BannerActions, CustomizeLink } from "./BannerActions";
-import { PipelineFunnel, PipelineStrip } from "./PipelineViews";
+import { OutcomeRates, PipelineFunnel, PipelineStrip } from "./PipelineViews";
 
 /** How far the postings found in a date range got, stage by stage, as cards, a funnel or a line. */
 export function PipelineBanner({
@@ -59,8 +59,9 @@ export function PipelineBanner({
       ) : (
         <PipelineCards steps={steps} showPercent={options.show_percent} />
       )}
-      {(drop || actions || onSettings) && (
+      {(drop || actions || onSettings || !!progress.outcomes?.sent) && (
         <div className="mt-5 flex flex-wrap items-center gap-4 border-t border-line pt-4">
+          <OutcomeRates cohort={progress.outcomes} />
           {drop && (
             <p className="min-w-80 flex-1 text-sm text-ink-2">
               <span className="font-semibold text-ink">{drop.title}</span> {drop.detail}

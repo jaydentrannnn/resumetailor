@@ -2449,3 +2449,28 @@ gh_jid fix). Run 1 vs its 30-posting rerun had zero noise, but live sites drift.
   universities). 44 of 2,686 saved `jd.txt` files are such JSON blobs (Boston
   Scientific). They now read as a JS shell over HTTP and go to the browser read. An
   Eightfold-specific API parser is the follow-up if that costs rows.
+
+## 2026-10-22 — Submission attempts and outcome events
+
+"Submitted" archives a row, and the status route refuses archived rows, so nothing could
+record an interview afterwards; the status list also mixed operational state with hiring
+facts. Outcomes are now events on the row, recorded on archived rows too, and the hiring
+stage is derived (`outcomes.hiring_progress`) from those events plus the legacy
+`interview`/`rejected`/`ghosted` statuses. Nothing was migrated: old rows read correctly
+as they are.
+
+Choices:
+- **Snapshot in `store.set_status`.** It is the one place every path that submits passes
+  through (fill finish, `_failed_after_submit`, the submission monitor, the status
+  route), so no caller can forget it. The method is read from the status note, which
+  those callers already set; `attempts.MONITOR_NOTE` replaced the monitor's literal.
+- **`confirmed` means the app sent these exact files.** A manual mark copies the
+  prepared files but cannot know what was uploaded; interview prep must say so.
+- **Corrections never delete.** An edit adds a replacing event and voids the old one, so
+  the timeline is auditable and a mistaken "rejected" can be undone without losing it.
+- **Cohort rates.** Reply/interview counts cover applications sent 21+ days ago only, so
+  a busy week of sending does not dilute the rate; silence stays separate from
+  rejection. Shown in the pipeline banner's footer, not as a new banner stage (stage
+  dates are counted per posting in the browser, and outcomes have their own dates).
+- **List rows drop events and attempts** (the table reads `hiring` only); the detail
+  view returns the full record.

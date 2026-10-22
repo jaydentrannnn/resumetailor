@@ -126,6 +126,62 @@ class FillResult(BaseModel):
     #: corrections: [{label, key}]} (`forms.fill_diagnostics`, `answer_harvest`).
     diagnostics: dict[str, Any] = Field(default_factory=dict)
 
+#: What happened after an application went out. Hiring progress is derived from these
+#: (`outcomes.hiring_progress`); the row's operational ``status`` stays ``submitted``.
+OutcomeType = Literal[
+    "assessment",
+    "interview_invited",
+    "interview_scheduled",
+    "interview_completed",
+    "offer",
+    "hired",
+    "offer_declined",
+    "rejected",
+    "withdrawn",
+    "ghosted",
+    "employer_timeline",
+    "followup_drafted",
+    "followup_sent",
+]
+
+
+class OutcomeEvent(BaseModel):
+    """One recorded fact about a sent application. Never deleted: a correction adds a
+    new event naming the one it ``replaces``, and both a corrected and a voided event
+    keep their text with ``voided_at`` set."""
+
+    id: str
+    type: OutcomeType
+    #: The date it happened (ISO date), when the student knows it.
+    occurred_on: str | None = None
+    recorded_at: str
+    source: Literal["manual", "mcp", "monitor"] = "manual"
+    note: str = ""
+    replaces: str | None = None
+    voided_at: str | None = None
+
+
+class SubmissionAttempt(BaseModel):
+    """What was sent: an immutable copy of the files at the moment the row became
+    submitted (`attempts.record`). ``confirmed`` is True only when the app itself
+    uploaded and sent these files; a manual mark records the prepared files, whose
+    upload is unconfirmed."""
+
+    id: str
+    number: int
+    submitted_at: str
+    method: Literal["auto", "manual", "monitor"]
+    confirmed: bool = False
+    snapshot_dir: str = ""
+    #: File name in ``snapshot_dir`` -> SHA-256.
+    files: dict[str, str] = Field(default_factory=dict)
+    packet_digest: str = ""
+    jd_sha256: str = ""
+    voided_at: str | None = None
+    #: Why the copy is incomplete, when it is (the status change still stands).
+    error: str = ""
+
+
 class SourceRef(BaseModel):
     """One discovery sighting of a posting (Simplify UUID, speedyapply hash, …)."""
 
@@ -183,6 +239,8 @@ class Application(BaseModel):
     #: What `posting_guard` removed from or flagged in the saved JD (`daily_rows.save_jd`);
     #: None for a row saved before the guard, which `submit_guard` scans on demand.
     posting_guard: GuardFindings | None = None
+    outcome_events: list[OutcomeEvent] = Field(default_factory=list)
+    attempts: list[SubmissionAttempt] = Field(default_factory=list)
 
     #: The stored version this object was read from (never mutated), or None for a
     #: row built in memory. `upsert` diffs against it; see the module docstring.

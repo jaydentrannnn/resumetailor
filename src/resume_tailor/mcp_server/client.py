@@ -221,6 +221,21 @@ class BackendClient:
             json={"status": status, "note": note},
         )
 
+    async def record_outcome(
+        self,
+        source_job_id: str,
+        outcome: str,
+        *,
+        occurred_on: str | None = None,
+        note: str = "",
+    ) -> dict[str, Any]:
+        """POST /api/applications/{source_job_id}/outcomes."""
+        return await self._request(
+            "POST",
+            f"/api/applications/{source_job_id}/outcomes",
+            json={"type": outcome, "occurred_on": occurred_on, "note": note, "source": "mcp"},
+        )
+
     async def download_bytes(self, path: str) -> bytes:
         """GET a download route and return raw bytes."""
         result = await self._request("GET", path)
