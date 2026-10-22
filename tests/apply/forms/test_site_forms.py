@@ -496,3 +496,27 @@ def test_an_entry_click_settles_when_the_form_appears(page):
     page.click("#go")
     _none, took = _timed(lambda: fill_buttons._settle_after_entry(page, before, 1500))  # noqa: SLF001
     assert took < 1.2 and page.locator("#first").count() == 1
+
+
+def test_jobvite_attachment_menus_are_named_by_their_buttons(page):
+    # Jobvite's "Select" menus hold file inputs labelled only "File" (Batch 3, 2026-10-21).
+    result = _run(page, "jobvite_attachment_menu.html", scan=True)
+    labels = {item["selector"]: item["label"] for item in result["file_inputs"]}
+    assert labels == {"#file-input-0": "Resume", "#file-input-1": "Cover Letter"}
+    assert fill_widgets._attachment_purpose(labels["#file-input-0"], "#file-input-0", {}) == (  # noqa: SLF001
+        "resume")
+
+
+def test_a_required_preferred_name_takes_the_first_name(page):
+    result = _run(page, "jobvite_attachment_menu.html", {"first_name": "Zyxta", "last_name": "Quorvel"})
+    filled = {item["key"]: item for item in result["filled"]}
+    assert filled["preferred_name"]["value"] == "Zyxta"
+
+
+def test_jobvite_sponsorship_options_take_the_never_option(page):
+    scanned = _run(page, "jobvite_attachment_menu.html", scan=True)["questions"]
+    facts = questions.facts_for({"requires_sponsorship_any": "No"},
+                                today=date(2026, 10, 21))
+    plan = questions.plan_for(scanned, facts)
+    assert {entry["key"]: entry["value"] for entry in plan.values()}["requires_sponsorship_any"] == (
+        "No (will never require sponsorship or Visa in the future)")

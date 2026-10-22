@@ -1008,10 +1008,21 @@
     return [label, section].some((text) => /[*✱][\s⁠:]*$|\(required\)/i.test(text || ""));
   }
 
+  /** Jobvite's "Select" menus sit at the end of the body, one per attachment button in
+   * page order, each with a file input labelled only "File": the button names it. */
+  function attachmentMenuLabel(fileEl) {
+    const menu = fileEl.closest('[id="attachmentDropdown"]');
+    if (!menu) return "";
+    const menus = [...document.querySelectorAll('[id="attachmentDropdown"]')];
+    const owners = [...document.querySelectorAll("[jv-add-attachment][attachment-label]")];
+    if (owners.length !== menus.length) return "";
+    return owners[menus.indexOf(menu)].getAttribute("attachment-label") || "";
+  }
+
   for (const fileEl of deepQueryAll(document, 'input[type="file"]')) {
     const fileSel = selectorFor(fileEl);
     const section = sectionHeading(fileEl);
-    const fileLbl = textOf(fileEl.closest('.file-upload')?.querySelector('.upload-label, .file-upload__label')) || labelFor(fileEl) || section;
+    const fileLbl = attachmentMenuLabel(fileEl) || textOf(fileEl.closest('.file-upload')?.querySelector('.upload-label, .file-upload__label')) || labelFor(fileEl) || section;
     if (!file_inputs.some((f) => f.selector === fileSel)) {
       // Workday labels its resume input "Upload a file (5MB max)"; the hint and the
       // "Resume/CV" heading say what it is for.
@@ -1355,7 +1366,11 @@
       continue;
     }
 
-    const value = planned && planned.value === null ? "" : planned && planned.value ? planned.value : valueForKey(key);
+    let value = planned && planned.value === null ? "" : planned && planned.value ? planned.value : valueForKey(key);
+    // A required preferred name with none set is the first name (Jobvite, Batch 3).
+    if (key === "preferred_name" && required && !String(value || "").trim()) {
+      value = valueForKey("first_name");
+    }
     if (value === undefined || value === null || String(value).trim() === "") {
       // A recognised question whose profile fact is blank: the fill result names the
       // profile field to set (`packet.missing_profile`).

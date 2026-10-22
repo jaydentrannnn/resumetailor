@@ -140,6 +140,25 @@
   "#jv-field-a6": "State*",
   "#jv-field-a7": "Zip Code*"
  },
+ "jobvite_attachment_menu.html": {
+  "#jv-edit-resume-textarea0": "Type or paste your Resume here",
+  "#jv-field-ySTWYfwp": "First Name*",
+  "#jv-field-yPTWYfwm": "Last Name*",
+  "#jv-field-yDn70fwR": "Preferred Name*",
+  "#jv-field-yTTWYfwq": "Email*",
+  "#jv-field-yRTWYfwo": "Phone*",
+  "#jv-field-yEn70fwS": "Address*",
+  "#jv-field-yFn70fwT": "Address2",
+  "#jv-field-yGn70fwU": "City*",
+  "#jv-field-yHn70fwV": "State*",
+  "#jv-field-yIn70fwW": "Zip*",
+  "#jv-field-yJn70fwX": "Country*",
+  "#jv-field-yVTWYfws": "Desired Annual Base Salary*",
+  "#jv-field-yQTWYfwn-0": "Will you now or in the future require the Company to sponsor you for or support you with any U.S. immigration benefit application (such as H-1B, OPT, STEM OPT, CPT, TN, J-1, etc.) so that you may remain authorized to work for the Company in the U.S?*",
+  "#g-recaptcha-response": "g-recaptcha-response",
+  "#jv-paste-resume-textarea0": "Type or paste your Resume here",
+  "#jv-paste-resume-textarea1": "Type or paste your Cover Letter here"
+ },
  "jobvite_location_gate.html": {
   "#jv-country-select": "Location of Residence and Language:"
  },
