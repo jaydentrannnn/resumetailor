@@ -91,7 +91,7 @@ def browser():
 
 
 def _open(browser, form: str = "form_resultant.html", *, replace: dict[str, str] | None = None,
-          arrow_limit: int = 0):
+          arrow_limit: int = 0, upload_failures: int = 0):
     """The form served at a one-click URL (declarative shadow roots need a real parse)."""
     body = _fixture(form)
     for section, html in (replace or {}).items():
@@ -104,7 +104,8 @@ def _open(browser, form: str = "form_resultant.html", *, replace: dict[str, str]
         "education": _entry(_fixture("education_editor.html"), "oc-education-entry"),
     }
     state = {"catalog": _CATALOG, "locations": _LOCATIONS, "editors": editors,
-             "selects": json.loads(_fixture("screening_options.json")), "arrowLimit": arrow_limit}
+             "selects": json.loads(_fixture("screening_options.json")), "arrowLimit": arrow_limit,
+             "uploadFailures": upload_failures}
     page = browser.new_page()
     html = (f"<!doctype html><html><body><main>{body}</main>"
             f"<script>window.__sr = {json.dumps(state)};</script>"
@@ -385,6 +386,27 @@ def test_a_listed_resume_is_kept(browser, tmp_path):
     assert review == []
     assert filled == [{"label": "Resume", "value": "resume.pdf", "state": "preserved"}]
     assert page.evaluate("window.__sr.uploads") == []
+
+
+def test_a_refused_resume_upload_is_closed_and_tried_again(browser, tmp_path):
+    resume = tmp_path / "Applicant_Resume.pdf"
+    resume.write_bytes(b"%PDF-1.4\n")
+    page = _open(browser, upload_failures=1)
+    filled, review = sr.fill_resume(page, str(resume))
+    assert review == []
+    assert filled == [{"label": "Resume", "value": "Applicant_Resume.pdf"}]
+    assert page.evaluate("window.__sr.uploads") == ["resume-upload:Applicant_Resume.pdf"] * 2
+    assert page.locator("spl-dialog").count() == 0
+
+
+def test_a_resume_upload_refused_twice_is_left_for_review(browser, tmp_path):
+    resume = tmp_path / "Applicant_Resume.pdf"
+    resume.write_bytes(b"%PDF-1.4\n")
+    page = _open(browser, upload_failures=2)
+    filled, review = sr.fill_resume(page, str(resume))
+    assert filled == []
+    assert review and "could not upload Applicant_Resume.pdf" in review[0]
+    assert page.locator("spl-dialog").count() == 0  # the form is not left covered
 
 
 def test_a_missing_resume_file_is_left_for_review(browser, tmp_path):

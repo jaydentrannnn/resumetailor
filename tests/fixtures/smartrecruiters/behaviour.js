@@ -6,7 +6,8 @@
 // - Add opens an inline editor; Save keeps it open unless the required fields are set,
 //   otherwise renders a saved entry; Cancel removes it;
 // - a month picker takes typed "MM/YYYY" + Enter;
-// - a dropzone lists the chosen file's name in its shadow root.
+// - a dropzone lists the chosen file's name in its shadow root, unless
+//   `uploadFailures` asks for the upload error dialog first.
 // window.__sr = {catalog: {dataTest: [[value, text]]}, locations: {value: object},
 //                editors: {experience: html, education: html}} is set by the test.
 (() => {
@@ -31,6 +32,22 @@
         const zone = input.getRootNode().host;
         const name = input.files[0] ? input.files[0].name : "";
         sr.uploads.push(`${zone.getAttribute("data-test")}:${name}`);
+        if (sr.uploadFailures > 0) {
+          // The upload service refusing the file (Batch 3, 2026-10-21): an error dialog
+          // in a body-level container, closed by its "Close" button.
+          sr.uploadFailures -= 1;
+          input.value = "";
+          const box = document.createElement("div");
+          box.className = "spl-dialog-base-container";
+          box.innerHTML = '<div class="spl-dialog-container"><spl-dialog width="600px" open="" ' +
+            'title="Cannot upload resume. Please try again in a while."><spl-button type="primary">' +
+            ' Close </spl-button></spl-dialog></div>';
+          const close = box.querySelector("spl-button");
+          close.attachShadow({mode: "open"}).innerHTML = '<button type="button"><slot></slot></button>';
+          close.addEventListener("click", () => box.remove());
+          document.body.appendChild(box);
+          return;
+        }
         let list = zone.shadowRoot.querySelector("ul.c-spl-file-list");
         if (!list) {
           list = document.createElement("ul");
