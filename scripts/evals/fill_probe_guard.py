@@ -15,6 +15,11 @@ made-up resume upload included, to its own ATS host, so a Workday/iCIMS/Oracle f
 create its account and save each step as a draft. Other hosts keep every rule above, and
 a submit-shaped request (`submit_shaped`) is refused in every mode, on every host.
 
+A SmartRecruiters target (``upload``: its host and the made-up resume's bytes) may send
+that resume, and nothing else, to its own host's attachment endpoint: a multipart body
+whose only part is a file equal to the made-up resume (`_only_the_resume`), so its
+one-click form can be measured past the resume step (Batch 3, 2026-10-21).
+
 `Audit` writes one JSON line per request (method, host, path without query, size,
 decision, reason) and checks every request again, whatever the decision, for the identity
 and answer markers (`check`), so a run's claim "nothing carrying the applicant left" does
@@ -82,6 +87,9 @@ _BASE64_RUN = re.compile(rb"[A-Za-z0-9+/_-]{12,}={0,2}")
 #: A request that would send the application: a submit/finalize path, or a GraphQL
 #: mutation or JSON action named that way.
 _SUBMIT_PATH = re.compile(r"submit|finali[sz]e|/apply/complete\b", re.I)
+#: Where an own-host upload may go (SmartRecruiters' one-click resume attachment).
+_UPLOAD_PATH = re.compile(r"/attachment/resume/?$", re.I)
+_BOUNDARY = re.compile(r'boundary="?([^";]+)"?', re.I)
 _SUBMIT_BODY = re.compile(
     rb"\bmutation\s+\w*(?:submit|finali[sz]e)|"
     rb'"(?:action|operationName|operation)"\s*:\s*"\w*(?:submit|finali[sz]e)',
@@ -122,6 +130,24 @@ def submit_shaped(method: str, path: str, body: bytes) -> bool:
     return bool(_SUBMIT_PATH.search(path) or _SUBMIT_BODY.search(body))
 
 
+def _only_the_resume(content_type: str, body: bytes, resume: bytes) -> bool:
+    """A multipart body whose one and only part is a file equal to ``resume``: no form
+    field rides along, so no answer can."""
+    found = _BOUNDARY.search(content_type)
+    if not found or not resume:
+        return False
+    delimiter = b"--" + found.group(1).encode("latin-1")
+    files = []
+    for part in body.split(delimiter)[1:]:
+        if not part.strip(b"\r\n-"):
+            continue  # the closing delimiter
+        head, sep, content = part.partition(b"\r\n\r\n")
+        if not sep or b"filename=" not in head.lower():
+            return False
+        files.append(content[:-2] if content.endswith(b"\r\n") else content)
+    return files == [resume]
+
+
 def on_host(host: str, ats_hosts: tuple[str, ...]) -> bool:
     host = host.lower()
     return any(host == h or host.endswith("." + h) for h in ats_hosts if h)
@@ -135,6 +161,7 @@ def decide(
     markers: tuple[bytes, ...],
     answers: tuple[bytes, ...] = (),
     ats_hosts: tuple[str, ...] = (),
+    upload: tuple[str, bytes] | None = None,
 ) -> Decision:
     method = method.upper()
     parts = urlsplit(url)
@@ -151,6 +178,11 @@ def decide(
         return Decision(False, "applicant data in url", marked=True)
     if method in _READS and not body:
         return Decision(True, "read")
+    if (upload and method == "POST" and host == upload[0] and _UPLOAD_PATH.search(parts.path)
+            and _only_the_resume(next((str(v) for k, v in (headers or {}).items()
+                                       if str(k).lower() == "content-type"), ""),
+                                 body, upload[1])):
+        return Decision(True, "own-host upload")
     if "multipart" in ctype or "pdf" in ctype or "octet-stream" in ctype or body[:5] == b"%PDF-":
         return Decision(False, "upload")
     if lowered.get("content-encoding") or (
@@ -283,6 +315,7 @@ def install(
     markers: tuple[bytes, ...],
     answers: tuple[bytes, ...] = (),
     ats_hosts: tuple[str, ...] = (),
+    upload: tuple[str, bytes] | None = None,
 ) -> None:
     """Route every request and WebSocket of ``context`` through the guard."""
 
@@ -296,7 +329,7 @@ def install(
         except Exception:  # noqa: BLE001
             headers = {}
         decision = decide(
-            request.method, request.url, headers, body, markers, answers, ats_hosts
+            request.method, request.url, headers, body, markers, answers, ats_hosts, upload
         )
         identity, answered = check(request.url, body, markers, answers)
         audit.record(

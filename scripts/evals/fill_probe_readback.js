@@ -81,6 +81,23 @@
 
   const rows = [];
   const seenGroups = new Set();
+  // A group's question where no fieldset names it (Lever, Ashby): the nearest container
+  // holding only this group, less its options' words. Mirrors `page_blockers.groupTitle`.
+  function groupTitle(group) {
+    const words = group.map((g) => (g.closest("label")?.innerText || g.value || "").trim()).filter(Boolean);
+    let node = group[0].parentElement;
+    for (let depth = 0; node && depth < 8; depth++, node = node.parentElement) {
+      if (!group.every((g) => node.contains(g))) continue;
+      const others = node.querySelectorAll('input:not([type="hidden"]), select, textarea');
+      if (Array.from(others).some((c) => !group.includes(c))) return "";
+      let own = (node.innerText || "").replace(/[⁠​]/g, "");
+      words.forEach((word) => { own = own.split(word).join(" "); });
+      own = own.replace(/[✱*]/g, " ").replace(/\s+/g, " ").trim();
+      if (own) return own;
+    }
+    return "";
+  }
+
   const controls = deepQueryAll(document, "input, select, textarea, [role='combobox'], button[aria-haspopup='listbox']");
   for (const el of controls) {
     const type = (el.getAttribute("type") || "").toLowerCase();
@@ -97,7 +114,9 @@
       if (name) seenGroups.add(key);
       const checked = group.filter((input) => input.checked).map((input) => labelFor(input));
       const groupBox = el.closest("fieldset, [role='radiogroup'], [role='group'], [data-automation-id^='formField']");
-      const label = group.length > 1 ? text(groupBox?.querySelector("legend, label:not([for]), [data-automation-id*='label']")) || labelFor(el) : labelFor(el);
+      const label = group.length > 1
+        ? text(groupBox?.querySelector("legend, label:not([for]), [data-automation-id*='label']")) || groupTitle(group) || labelFor(el)
+        : labelFor(el);
       rows.push({ label: label.slice(0, 160), kind: type, required, shown: checked.join("; ").slice(0, 200), invalid, message: message(el) });
       continue;
     }

@@ -74,6 +74,40 @@ def test_named_page_loads_pass_unless_they_carry_the_applicant():
     assert not _decide("POST", "https://www.metacareers.com/ajax/other/", b"{}").allow
 
 
+SR_UPLOAD = "https://jobs.smartrecruiters.com/oneclick-ui/api/company/abc123/attachment/resume"
+RESUME = b"%PDF-1.4 made-up resume"
+
+
+def _multipart(*parts: tuple[str, bytes]) -> tuple[dict[str, str], bytes]:
+    body = b""
+    for head, content in parts:
+        body += b"--XyZ\r\n" + head.encode() + b"\r\n\r\n" + content + b"\r\n"
+    return {"Content-Type": "multipart/form-data; boundary=XyZ"}, body + b"--XyZ--\r\n"
+
+
+def _upload_decision(url, headers, body):
+    return fill_probe_guard.decide("POST", url, headers, body, MARKERS, (), (),
+                                   ("jobs.smartrecruiters.com", RESUME))
+
+
+def test_a_smartrecruiters_target_uploads_only_the_made_up_resume_to_its_own_host():
+    file_part = ('Content-Disposition: form-data; name="file"; filename="r.pdf"', RESUME)
+    headers, body = _multipart(file_part)
+    assert _upload_decision(SR_UPLOAD, headers, body) == fill_probe_guard.Decision(
+        True, "own-host upload")
+    # Another file, a form field riding along, another host or path: refused.
+    _, other = _multipart(('Content-Disposition: form-data; name="file"; filename="r.pdf"',
+                           b"%PDF-1.4 something else"))
+    assert not _upload_decision(SR_UPLOAD, headers, other).allow
+    _, extra = _multipart(file_part, ('Content-Disposition: form-data; name="q1"', b"Yes"))
+    assert not _upload_decision(SR_UPLOAD, headers, extra).allow
+    assert not _upload_decision("https://evil.example/attachment/resume", headers, body).allow
+    assert not _upload_decision(SR_UPLOAD.replace("attachment/resume", "application"),
+                                headers, body).allow
+    # Without the upload allowance the same request stays refused.
+    assert _decide("POST", SR_UPLOAD, body, headers=headers).reason == "upload"
+
+
 def test_session_recorders_stay_blocked_on_account_targets():
     assert not _decide("POST", "https://rs.fullstory.com/rec", b"{}", TENANT).allow
 

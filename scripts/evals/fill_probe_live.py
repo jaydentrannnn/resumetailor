@@ -26,6 +26,7 @@ import traceback
 from collections import Counter
 from pathlib import Path
 from types import SimpleNamespace
+from urllib.parse import urlsplit
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 
@@ -36,7 +37,7 @@ import fill_probe_inbox  # noqa: E402
 import fill_probe_observe  # noqa: E402
 
 from resume_tailor import config  # noqa: E402
-from resume_tailor.apply.answers import answer, hybrid_resolver  # noqa: E402
+from resume_tailor.apply.answers import answer, hybrid_resolver, resolver_basis  # noqa: E402
 from resume_tailor.apply.answers import profile as profile_mod  # noqa: E402
 from resume_tailor.apply.ats import workday_auth  # noqa: E402
 from resume_tailor.apply.discovery import fetch_jd  # noqa: E402
@@ -52,6 +53,7 @@ AUDIT = fill_probe_guard.Audit(OUT / f"{TAG}.requests.jsonl")
 CALLS: Counter[str] = Counter()
 CLIENTS = [0]  # classifier client builds: one per model call
 ASKED: list[dict[str, str]] = []  # controls the resolver put to the model (labels only)
+BASIS: list[dict] = []  # each basis check of a model answer (`_basis_recorded`)
 _STEP = re.compile(r"scanning form step (\d+)")
 OBSERVER = fill_probe_observe.Observer(OUT, TAG)
 SITE = os.environ.get("PROBE_ACCOUNT_SITE", "")
@@ -143,6 +145,16 @@ def _app() -> store_models.Application:
     return store.get(app.source_job_id)
 
 
+def _upload() -> tuple[str, bytes] | None:
+    """SmartRecruiters' own host and the made-up resume it may receive (the user allowed
+    this upload, 2026-10-21); None for every other platform."""
+    if (ATS or fetch_jd.detect_ats(URL)).lower() != "smartrecruiters":
+        return None
+    resume = config.OUTPUT_DIR / "jobs" / f"probe-{TAG}" / "tailored.pdf"
+    host = (urlsplit(URL).hostname or "").lower()
+    return (host, resume.read_bytes()) if host and resume.is_file() else None
+
+
 _original_cdp = browser.cdp_browser
 
 
@@ -150,7 +162,8 @@ _original_cdp = browser.cdp_browser
 def _guarded_cdp():
     with _original_cdp() as connected:
         context = connected.contexts[0] if connected.contexts else connected.new_context()
-        fill_probe_guard.install(context, AUDIT, MARKERS, synth.ANSWER_MARKERS, ATS_HOSTS)
+        fill_probe_guard.install(context, AUDIT, MARKERS, synth.ANSWER_MARKERS, ATS_HOSTS,
+                                 _upload())
         yield connected
 
 
@@ -184,6 +197,34 @@ def _asked_recorded(fn):
             for f in to_ask if isinstance(f, dict)
         )
         return fn(self, to_ask, *args, **kwargs)
+
+    return wrapper
+
+
+def _basis_recorded(fn):
+    """Keep each basis check of a model answer: the question, the option picked, the
+    basis it cited, the verdict, and which of the checks held. The applicant is made up,
+    so the cited fact may be recorded."""
+    def wrapper(action, field, *, profile, packet_fields, skills):
+        verdict = fn(action, field, profile=profile, packet_fields=packet_fields, skills=skills)
+        entry = {
+            "label": str(field.get("label") or "")[:160], "type": str(field.get("type") or ""),
+            "options": [str(o)[:60] for o in (field.get("options") or [])][:40],
+            "action": action.action, "value": str(action.value)[:120],
+            "basis_kind": action.basis_kind, "basis_key": action.basis_key, "supported": verdict,
+        }
+        with contextlib.suppress(Exception):
+            question = resolver_basis._question(field)
+            entry["as_worded"] = resolver_basis._as_worded(question)
+            if action.basis_kind in {"profile", "packet"}:
+                key, fact, _custom = resolver_basis._fact(
+                    action, question, profile=profile, packet_fields=packet_fields
+                )
+                entry.update(fact_key=key, fact=str(fact)[:120],
+                             about=resolver_basis._about(key, question),
+                             says=resolver_basis._says(action, question, key, fact))
+        BASIS.append(entry)
+        return verdict
 
     return wrapper
 
@@ -236,6 +277,7 @@ def _patch() -> None:
     hybrid_resolver._StepResolver._call_model = _count(
         "resolver", _asked_recorded(hybrid_resolver._StepResolver._call_model)
     )
+    resolver_basis.supported = _basis_recorded(resolver_basis.supported)
 
 
 def _settings() -> ApplySettings:
@@ -398,6 +440,7 @@ def main() -> int:
         "seconds": round(time.monotonic() - started, 1),
         "calls": dict(CALLS),
         "resolver_asked": ASKED,
+        "basis": BASIS,
         "error": error,
         "measures": measured,
         "fill_end": fill_probe_observe.fill_end(measured, error=error),
