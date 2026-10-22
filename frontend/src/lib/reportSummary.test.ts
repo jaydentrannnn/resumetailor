@@ -39,6 +39,9 @@ describe("report summary", () => {
       "couldn't be measured",
     );
     expect(reportHeadline(report({ coverage_total: 0 }))).toContain("No required skills");
+    expect(reportHeadline(report({ page_coverage_matched: 6 }))).toBe(
+      "6 of 10 required skills on the page · 1 page",
+    );
   });
 
   it("explains where evidence was found", () => {

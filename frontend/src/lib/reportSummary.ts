@@ -1,11 +1,14 @@
 import type { KeywordGap, RunReport } from "../api";
 
-/** "Matched 8 of 10 required skills · 1 page", or the reason matching can't be read. */
+/** "6 of 10 required skills on the page · 1 page" ("Matched 8 of 10 required skills" on a run
+ * saved before page coverage), or the reason matching can't be read. */
 export function reportHeadline(report: RunReport): string {
   const pages = `${report.pages} page${report.pages === 1 ? "" : "s"}${report.pages_are_estimated ? " (estimated)" : ""}`;
   if (report.extraction_diagnosis)
     return `Skill match couldn't be measured for this posting · ${pages}`;
   if (report.coverage_total === 0) return `No required skills were listed · ${pages}`;
+  if (report.page_coverage_matched != null)
+    return `${report.page_coverage_matched} of ${report.coverage_total} required skills on the page · ${pages}`;
   return `Matched ${report.coverage_matched} of ${report.coverage_total} required skills · ${pages}`;
 }
 

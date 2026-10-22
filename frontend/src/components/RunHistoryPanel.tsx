@@ -179,17 +179,20 @@ export function RunHistoryPanel({ onOpened }: { onOpened?: () => void }) {
       cell: (run) =>
         run.coverage_total != null && run.coverage_total > 0 ? (
           <span className="inline-flex items-center gap-2">
+            {/* Leads with the tailored page, like the run report; older runs only
+                measured the resume. */}
             <SkillMatchMeter
-              matched={run.coverage_matched ?? 0}
+              matched={run.page_coverage_matched ?? run.coverage_matched ?? 0}
               total={run.coverage_total}
               label={`Skill match for ${run.title || "this run"}`}
+              where={run.page_coverage_matched != null ? "on the tailored page" : "in your resume"}
             />
-            {run.page_coverage_matched != null && (
+            {run.page_coverage_matched != null && run.coverage_matched != null && (
               <span
                 className="whitespace-nowrap text-xs text-ink-muted"
-                title={`${run.page_coverage_matched} of ${run.coverage_total} required skills named on the tailored page`}
+                title={`${run.coverage_matched} of ${run.coverage_total} required skills in your resume`}
               >
-                {run.page_coverage_matched}/{run.coverage_total} on page
+                {run.coverage_matched}/{run.coverage_total} in resume
               </span>
             )}
           </span>

@@ -63,14 +63,17 @@ describe("RunHistoryPanel", () => {
     );
   });
 
-  it("shows the on-page count beside the resume match, and only when the run has one", () => {
+  it("leads with the page match and shows the resume count beside it, when the run has one", () => {
     render(<RunHistoryPanel />);
     // Each row may render in more than one layout; count per run, not in total.
     const withPage = screen.getAllByRole("progressbar", { name: "Skill match for Analyst" });
     expect(screen.getAllByRole("progressbar", { name: "Skill match for Older" })).toHaveLength(
       withPage.length,
     );
-    expect(screen.getAllByText(/on page$/)).toHaveLength(withPage.length);
-    expect(screen.getAllByText("3/5 on page")).toHaveLength(withPage.length);
+    expect(withPage[0].getAttribute("aria-valuetext")).toBe(
+      "3 of 5 required skills on the tailored page",
+    );
+    expect(screen.getAllByText(/in resume$/)).toHaveLength(withPage.length);
+    expect(screen.getAllByText("4/5 in resume")).toHaveLength(withPage.length);
   });
 });
