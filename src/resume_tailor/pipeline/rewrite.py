@@ -227,8 +227,8 @@ def keyword_coverage(
     """Return (matched, total) must-have keywords present anywhere in the master resume.
 
     Reported by the CLI so an obviously poor-fit posting is visible before applying.
+    Counts distinct canonicals (`JobRequirements.must_have_canonicals`).
     """
-    must = requirements.by_importance("must_have")
+    must = requirements.must_have_canonicals()
     available = set(bullet_tags.known_terms(resume))
-    matched = sum(1 for kw in must if kw.canonical in available)
-    return matched, len(must)
+    return sum(1 for canonical in must if canonical in available), len(must)

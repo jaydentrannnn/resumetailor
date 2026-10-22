@@ -394,6 +394,8 @@ def report_data(
     that predates this parameter) keeps working unchanged.
     """
     master = master or resume
+    # Coverage and gaps read what each phrase claims (`JobRequirements.as_claimed`).
+    requirements = requirements.as_claimed()
     matched, total = keyword_coverage(requirements, master)
     funnel = coverage.for_run(requirements, master, resume, result)
     return RunReport(
@@ -459,6 +461,7 @@ def format_report(
     to `resume` so every existing 3-argument call site keeps working unchanged.
     """
     master = master or resume
+    requirements = requirements.as_claimed()  # as in `report_data`
     matched, total = keyword_coverage(requirements, master)
     diagnosis = extraction_diagnosis(requirements)
     if diagnosis is None:

@@ -670,14 +670,18 @@ class KeywordCoverageOut(BaseModel):
 
     canonical: str
     phrase: str
-    resume: Literal["stated", "inferred"] | None = None
-    page: Literal["expressed", "tag_only", "inferred_only", "not_selected"] | None = None
+    resume: Literal["stated", "tagged", "inferred"] | None = None
+    page: Literal[
+        "expressed", "demonstrated", "tag_only", "inferred_only", "not_selected"
+    ] | None = None
 
 
 class CoverageFunnelOut(BaseModel):
     total: int
     in_resume: int
     on_page: int
+    #: Must-haves the master resume's own text names; None on an older run.
+    in_resume_text: int | None = None
     keywords: list[KeywordCoverageOut] = Field(default_factory=list)
     #: `[bullet id, canonical skill]` pairs a final bullet names beyond its source.
     unsupported_additions: list[list[str]] = Field(default_factory=list)

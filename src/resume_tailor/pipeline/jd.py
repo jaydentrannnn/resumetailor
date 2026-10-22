@@ -25,7 +25,7 @@ from typing import Literal
 from pydantic import BaseModel, Field, PrivateAttr
 
 from .. import config
-from ..content import industries
+from ..content import bullet_tags, industries
 from ..infra import llm, telemetry
 from . import events
 
@@ -111,6 +111,31 @@ class JobRequirements(BaseModel):
     def by_importance(self, importance: Importance) -> list[Keyword]:
         """Return keywords with the given importance."""
         return [k for k in self.keywords if k.importance == importance]
+
+    def must_have_canonicals(self) -> list[str]:
+        """Distinct must-have canonicals in posting order: the unit every coverage figure
+        counts, so a skill the posting names twice ("communication", "technical
+        documentation" -> `communication`) is one requirement, not two."""
+        return list(dict.fromkeys(k.canonical for k in self.by_importance("must_have")))
+
+    def as_claimed(self) -> JobRequirements:
+        """A copy whose canonicals name the skill each phrase claims, for coverage and gaps.
+
+        Extraction may file a distinct skill under a broader one the resume has
+        ("TensorFlow" -> `deep learning`, "R" -> `data analysis`). Selection keeps that: the
+        deep-learning bullets are the right ones to show for a TensorFlow posting, and
+        anchoring selection too swapped 397 bullets across 106 saved runs for +0.02 real
+        must-haves shown. Reporting it as "in your resume" claims a skill the candidate
+        never listed, so when the whole phrase is itself a dictionary skill the canonical
+        does not name, the copy uses that skill.
+        """
+        copy = self.model_copy(deep=True)
+        for kw in copy.keywords:
+            hits = bullet_tags.detect(kw.phrase)
+            whole = [c for c, surface in hits if _norm_phrase(surface) == _norm_phrase(kw.phrase)]
+            if whole and kw.canonical not in {c for c, _ in hits}:
+                kw.canonical = whole[0]
+        return copy
 
 
 _SYSTEM = """\

@@ -15,6 +15,7 @@ const funnel: CoverageFunnel = {
     { canonical: "tableau", phrase: "Tableau", resume: "stated", page: "tag_only" },
     { canonical: "kubernetes", phrase: "Kubernetes", resume: "inferred", page: "inferred_only" },
     { canonical: "sql", phrase: "SQL", resume: "stated", page: "not_selected" },
+    { canonical: "teamwork", phrase: "teamwork", resume: "tagged", page: "demonstrated" },
     { canonical: "go", phrase: "Go", resume: null, page: null },
   ],
   unsupported_additions: [
@@ -31,6 +32,9 @@ it("names where each unexpressed skill stopped, and additions once each", () => 
   );
   expect(screen.getByText("Only inferred on this page").nextSibling?.textContent).toBe(
     "Kubernetes",
+  );
+  expect(screen.getByText("Soft skills shown by the work").nextSibling?.textContent).toBe(
+    "teamwork",
   );
   expect(screen.getByText("Potentially unsupported additions").nextSibling?.textContent).toBe(
     "docker",

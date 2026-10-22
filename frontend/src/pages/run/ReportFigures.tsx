@@ -22,10 +22,12 @@ function Term({ term }: { term: GlossaryKey }) {
  */
 export function ReportFigures({ report }: { report: RunReport }) {
   const diagnosis = report.extraction_diagnosis;
-  const pct =
-    diagnosis == null && report.coverage_total > 0
-      ? Math.round((100 * report.coverage_matched) / report.coverage_total)
-      : null;
+  const total = report.coverage_total;
+  // The headline is what the tailored page shows; a run saved before that was
+  // measured falls back to the resume figure.
+  const headline = report.page_coverage_matched ?? report.coverage_matched;
+  const pct = diagnosis == null && total > 0 ? Math.round((100 * headline) / total) : null;
+  const named = report.coverage_funnel?.in_resume_text;
   const figures: { value: string; label: ReactNode }[] = [
     {
       value: String(report.pages),
@@ -36,15 +38,24 @@ export function ReportFigures({ report }: { report: RunReport }) {
       label: (
         <>
           <Term term="mustHaves" />
-          <span className="block font-mono tabular-nums">
-            {diagnosis
-              ? "couldn't be measured"
-              : `${report.coverage_matched} of ${report.coverage_total} in your resume`}
-          </span>
-          {!diagnosis && report.page_coverage_matched != null && (
-            <span className="block font-mono tabular-nums">
-              {`${report.page_coverage_matched} of ${report.coverage_total} on this page`}
-            </span>
+          {diagnosis ? (
+            <span className="block font-mono tabular-nums">couldn't be measured</span>
+          ) : (
+            <>
+              {report.page_coverage_matched != null && (
+                <span className="block font-mono tabular-nums">
+                  {`${report.page_coverage_matched} of ${total} on this page`}
+                </span>
+              )}
+              <span className="block font-mono tabular-nums">
+                {`${report.coverage_matched} of ${total} in your resume`}
+              </span>
+              {named != null && (
+                <span className="block font-mono tabular-nums">
+                  {`${named} of ${total} named in your resume`}
+                </span>
+              )}
+            </>
           )}
         </>
       ),

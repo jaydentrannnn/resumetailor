@@ -155,16 +155,19 @@ export type KeywordGap = {
 export type KeywordCoverage = {
   canonical: string;
   phrase: string;
-  /** How the master resume supports it; null when it doesn't. */
-  resume: "stated" | "inferred" | null;
+  /** How the master resume supports it (its text, only an Extra skill, only inferred);
+   * null when it doesn't. */
+  resume: "stated" | "tagged" | "inferred" | null;
   /** Where it ends on the page; null when neither resume nor page has it. */
-  page: "expressed" | "tag_only" | "inferred_only" | "not_selected" | null;
+  page: "expressed" | "demonstrated" | "tag_only" | "inferred_only" | "not_selected" | null;
 };
 
 export type CoverageFunnel = {
   total: number;
   in_resume: number;
   on_page: number;
+  /** Must-haves the master resume's own text names; absent/null on older runs. */
+  in_resume_text?: number | null;
   keywords: KeywordCoverage[];
   /** [bullet id, skill] pairs a final bullet names beyond its source. */
   unsupported_additions: string[][];

@@ -765,3 +765,59 @@ engine found three gaps, all fixed:
   now lists known resume verbs only (`config.verb_family`) and asks for a different
   opener only when an equally accurate one exists ("accuracy comes first"). Top-up
   prompts only; first drafts are unchanged.
+
+## Coverage funnel: soft skills, canonical names, one row per skill, "named in your resume" (2026-10-22)
+
+Supersedes the page rules of the two 2026-10-16 funnel entries. Across 164 desktop runs,
+"in your resume" averaged 70% and "on this page" 44%, which read as a large drop. About 90%
+of that gap was measurement: 98% of `tag_only` rows were backed by an Extra skill that the
+source wording never named, 72% of the misses (communication, teamwork, troubleshooting,
+testing, api, agents) are not dictionary terms, and the rewrite is told never to name soft
+skills. Only about 6% of misses were real (`not_selected`). `pipeline/coverage.py` now:
+
+- counts a must-have as `expressed` when the page names its **canonical**, not only the
+  posting's phrase ("problem-solving" filed as `troubleshooting`, and the page says
+  "troubleshooting");
+- gives soft must-haves backed by an on-page item (own tag or a
+  `config.SOFT_SKILL_RELATED_TAGS` one) the new status `demonstrated`, which counts toward
+  `on_page`;
+- counts **distinct canonicals**: `JobRequirements.must_have_canonicals()` is shared by
+  `rewrite.keyword_coverage`, `apply/funnel/screen._coverage` and the funnel, which keeps
+  each canonical's best-covered phrase. This removed 380 duplicate rows across 481 saved
+  runs;
+- splits the resume side into `stated` (the master resume's text names it), `tagged`
+  (only an Extra skill does) and `inferred`, and reports `in_resume_text`, the count of
+  `stated`. A funnel saved earlier loads with `in_resume_text = None` and keeps None
+  through `refresh`, because its "stated" still includes Extra-skill-only support.
+
+The run report's headline % is now the page figure (falling back to the resume figure on
+older runs), with "in your resume" and "named in your resume" under it. Replaying the 174
+runs that have a stored funnel through the old and new code, on the same inputs (current
+master, no facets, no inferred skills, so absolute values sit about 11 points under the
+stored ones): the page went from 32.6% to 49.7%, the resume figure stayed at 71%, and
+"named" came out at 22%. Most of the resume figure is Extra-skill tags.
+
+## Coverage reads what each phrase claims; selection keeps the extraction; no new soft dictionary terms (2026-10-22)
+
+Follows the entry above. JD extraction files some distinct skills under a broader one
+the resume has ("TensorFlow" -> `deep learning`, "R"/"Excel" -> `data analysis`, "C#" ->
+`backend development`), so "in your resume" credited skills the candidate never listed.
+`JobRequirements.as_claimed()` returns a copy in which a phrase that is itself, as a
+whole, a dictionary skill the canonical does not name gets that skill. "GitHub Copilot",
+"C++11" and "hands-on TensorFlow work" are left alone. `report.report_data`/`format_report`
+(coverage, missing must-haves, unmatched, gaps), `coverage.refresh` and
+`apply/funnel/screen._coverage` read the copy.
+
+**Selection does not.** Replaying 536 saved runs through `scripts/eval_selection.py`'s
+selection with anchored requirements, judged by the anchored keywords, gave 3.13 -> 3.15
+real technical must-haves shown, 12 runs gaining and 7 losing, at the cost of 397 bullet
+swaps across 106 runs. The broader canonical is the right ranking signal (deep-learning
+bullets for a TensorFlow posting); it is only wrong as a claim. So `jd.extract`, its cache
+and `_PROMPT_VERSION` are unchanged.
+
+**Dropped: dictionary terms for communication, teamwork, troubleshooting (+ debugging),
+testing, api, agents, optimization, automation, research and reporting.** On the 174 runs
+with a stored funnel they moved the page figure by +0.8 points. Re-canonicalised tags cost
+the resume figure 2.3 points, and the master resume showed false positives ("live agents"
+-> agents, "research agent" -> research). Soft skills are now covered by `demonstrated`,
+and the canonical-on-page check catches the literal ones.

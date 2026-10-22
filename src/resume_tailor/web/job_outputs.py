@@ -218,6 +218,7 @@ def _to_funnel_out(funnel: coverage.CoverageFunnel | None) -> CoverageFunnelOut 
         total=funnel.total,
         in_resume=funnel.in_resume,
         on_page=funnel.on_page,
+        in_resume_text=funnel.in_resume_text,
         keywords=[
             KeywordCoverageOut(canonical=k.canonical, phrase=k.phrase, resume=k.resume, page=k.page)
             for k in funnel.keywords

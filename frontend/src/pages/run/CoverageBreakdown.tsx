@@ -5,11 +5,13 @@ const GROUPS: { page: KeywordCoverage["page"]; label: string }[] = [
   { page: "not_selected", label: "In your resume, not on this page" },
   { page: "tag_only", label: "Backed on this page, never named" },
   { page: "inferred_only", label: "Only inferred on this page" },
+  { page: "demonstrated", label: "Soft skills shown by the work" },
 ];
 
 /**
  * Where the required skills the page doesn't name were lost: never selected, backed by
- * an on-page bullet that doesn't name them, or backed only by inferred skills. Then
+ * an on-page bullet that doesn't name them, or backed only by inferred skills. Soft
+ * skills the page shows without naming (counted as covered) are listed apart. Then
  * skills a rewrite named that its source bullet never stated or tagged.
  */
 export function CoverageBreakdown({ funnel }: { funnel?: CoverageFunnel | null }) {

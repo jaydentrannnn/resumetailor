@@ -76,11 +76,11 @@ def _coverage(requirements: JobRequirements, known_tags: Iterable[str]) -> _Cove
     The same rule as the tailor report's `rewrite.keyword_coverage`, so the Apply row and
     the run report agree whenever they read the same extraction.
     """
-    must = [k for k in requirements.keywords if k.importance == "must_have"]
+    must = requirements.as_claimed().must_have_canonicals()
     if not must:
         return _Coverage(matched=0, total=0, ratio=1.0)
     known = set(known_tags)
-    matched = sum(1 for kw in must if kw.canonical in known)
+    matched = sum(1 for canonical in must if canonical in known)
     return _Coverage(matched=matched, total=len(must), ratio=matched / len(must))
 
 
