@@ -147,7 +147,7 @@ def classify(field: FieldObservation) -> tuple[Classification, str]:
         return "known", "city"
     if "school" in label:
         return "known", "school"
-    if "degree" in label:
+    if "degree" in label and not re.search(r"degree\s*(?:discipline|subject|major)", label):
         return "known", "degree_level"
     if "discipline" in label or "major" in label or "field of study" in label:
         return "known", "major"

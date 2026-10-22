@@ -325,3 +325,36 @@ def test_other_tabs_wait_until_the_pick_is_saved(page):
     assert page.in_flight_seen == [True]  # still in flight while it was applied
     assert len(page.saved) == 1
     assert hybrid_resolver._IN_FLIGHT == {}  # noqa: SLF001
+
+
+GH = "combobox"
+
+
+@pytest.mark.parametrize(("label", "options", "action", "packet", "expected"), [
+    # Greenhouse dropdowns the guard turned down in the Batch 3 probe (2026-10-21).
+    ("What degree are you currently pursuing?*", ["Undergraduate", "Masters", "PhD"],
+     _action("Undergraduate", "packet", "degree_level", "select_combobox"),
+     {"degree_level": "Bachelor of Science"}, True),
+    ("What degree are you currently pursuing?*", ["Undergraduate", "Masters", "PhD"],
+     _action("Masters", "packet", "degree_level", "select_combobox"),
+     {"degree_level": "Bachelor of Science"}, False),
+    ("Please select the gender which most accurately describes how you identify yourself",
+     ["Female", "Male", "Non-Binary", "Not Declared", "Prefer to self-describe:"],
+     _action("Not Declared", "profile", "gender", "select_combobox"), {"gender": "decline"}, True),
+    ("What is your Degree discipline? *", ["Accounting", "Computer Science", "Discipline Unknown"],
+     _action("Computer Science", "packet", "major", "select_combobox"),
+     {"major": "Computer Science"}, True),
+    ("Where did you hear about us?*", ["Company Website", "Job Board (Indeed, LinkedIn, etc.)"],
+     _action("Company Website", "no_effect", "", "select_combobox"), {}, True),
+    # "Now, or in the future" cited by its future half holds only when neither needs it.
+    ("Will you now, or might you in the future, require sponsorship to legally work in the "
+     "country specified for this position?", YES_NO,
+     _action("No", "profile", "requires_sponsorship_future", "select_combobox"),
+     {"requires_sponsorship_future": "No", "requires_sponsorship_any": "No"}, True),
+    ("Will you now, or might you in the future, require sponsorship to legally work in the "
+     "country specified for this position?", YES_NO,
+     _action("No", "profile", "requires_sponsorship_future", "select_combobox"),
+     {"requires_sponsorship_future": "No", "requires_sponsorship_any": "Yes"}, False),
+])
+def test_greenhouse_dropdowns_read_by_their_profile_fact(label, options, action, packet, expected):
+    assert _supported(action, _field(label, options, GH), packet=packet) is expected

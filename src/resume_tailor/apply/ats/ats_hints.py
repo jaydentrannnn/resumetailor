@@ -157,6 +157,12 @@ SYNONYMS: list[tuple[str, str]] = [
     (r"country\s*(?:/|or)?\s*(?:dial(?:ling|ing)?\s*)?code|dial(?:ling|ing)?\s*code|calling\s*code|tel-country-code", "phone_country_code"),
     # "Phone Extension" is its own (optional) field; no profile fact feeds it.
     (r"\bextension\b|\bext\.?$", "phone_extension"),
+    # "Contact number" (Ashby), not an emergency contact's or a reference's.
+    (
+        r"^(?![\s\S]*\b(?:emergency|referen|referee))[\s\S]*"
+        r"\bcontact\s*(?:phone\s*|mobile\s*)?number\b",
+        "phone",
+    ),
     (r"phone|mobile|telephone|cell", "phone"),
     (r"linkedin", "linkedin_url"),
     (r"github", "github_url"),
@@ -167,7 +173,7 @@ SYNONYMS: list[tuple[str, str]] = [
     (r"graduation|expected graduation", "graduation_month"),
     # "If other, how did you hear about us? Please specify" is the free-text follow-up.
     (r"(?:hear|source|referr).{0,40}specify|specify.{0,40}(?:hear|source|referr)", "how_heard_detail"),
-    (r"how\s*(?:did|'d)\s*you\s*(?:first\s*)?(?:hear|learn|find\s*out)\b", "how_heard"),
+    (r"(?:how|where)\s*(?:did|'d)\s*you\s*(?:first\s*)?(?:hear|learn|find\s*out)\b", "how_heard"),
     # A box labelled only "Source" / "Referral source".
     (r"^\W*(?:referral\s*|application\s*|candidate\s*)?source\W*$", "how_heard"),
     (r"sexual\s*orientation", "sexual_orientation"),
@@ -201,6 +207,11 @@ SYNONYMS: list[tuple[str, str]] = [
         "salary_expectation",
     ),
     (r"relocat", "willing_to_relocate"),
+    # "Where have you most recently worked?", "Candidate's Company" (Ashby).
+    (
+        r"most\s*recent(?:ly)?\s*(?:worked|employer|company)|candidate\W{0,3}s?\s*company",
+        "current_company",
+    ),
     (r"current company|employer", "current_company"),
     (r"current title|job title", "current_title"),
     (r"pronouns", "pronouns"),
@@ -228,6 +239,12 @@ SYNONYMS: list[tuple[str, str]] = [
     (r"^\W*(?:home\s*|mailing\s*)?address\W*$", "address_line1"),
     (r"address[\s_-]*(?:line[\s_-]*)?(?:2|two)\b|apt|suite", "address_line2"),
     # Whole words: "capacity" is not a city, "statement" is not a state.
+    # "Current place of residence" (Ashby), "Where are you currently based?"
+    (
+        r"current\s*(?:place\s*of\s*)?residence|place\s*of\s*residence"
+        r"|where\s*(?:do|are)\s*you\s*(?:currently\s*)?(?:live|living|reside|based|located)",
+        "city",
+    ),
     (r"\bcity\b", "city"),
     (r"\bstate\b|province", "state"),
     (r"zip|postal|post\s*code", "postal_code"),
@@ -239,7 +256,14 @@ SYNONYMS: list[tuple[str, str]] = [
     (education.HIGHEST_PATTERN, education.KEY),
     (education.COMPLETED_PATTERN, education.KEY),
     (education.PURSUING_PATTERN, "degree_level"),
+    # "What is your Degree discipline?" (Greenhouse) names the degree but asks the subject.
+    (r"degree\s*(?:discipline|subject|major)", "major"),
     (r"degree", "degree_level"),
+    # "What course are you studying right now?" (Ashby; the UK word for a major).
+    (
+        r"(?:course|subject|programme)\s*(?:are\s*you\s*|you\s*are\s*)?(?:currently\s*)?studying",
+        "major",
+    ),
     (r"major|field of study|discipline", "major"),
     (r"school|university|college", "school"),
     (r"gpa", "gpa"),

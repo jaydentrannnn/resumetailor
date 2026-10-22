@@ -316,7 +316,7 @@ _FOLLOW_UP = re.compile(
 
 #: "Location" / "Where are you located?": the applicant's city, as a place search.
 _LOCATION = re.compile(
-    r"^(?:current |your )?location$"
+    r"^(?:current |your )?location$|^(?:current |your )?(?:place of )?residence$"
     r"|^where (?:are you|do you) (?:currently )?(?:located|based|live)\b"
     r"|^(?:current )?(?:city|location),? (?:state|region)",
 )
@@ -384,7 +384,7 @@ def classify(question: Question) -> Match | None:
         return Match(edu_key)
     if _FOLLOW_UP.search(low):
         return None
-    if _LOCATION.search(low.rstrip("?*: ")) and question.kind in {"text", "typeahead"}:
+    if _LOCATION.search(low.rstrip("?*:✱ ")) and question.kind in {"text", "typeahead"}:
         return Match("location")
     option_key = _option_shaped_key(low, question)
     if option_key:

@@ -82,6 +82,12 @@ def _answer(question: Question, facts: q.Facts = FACTS) -> tuple[str | None, str
          "authorized_to_work", "Yes"),
         ("Will you now or in the future require sponsorship for employment visa status?",
          YES_NO, "requires_sponsorship_any", "No"),
+        # Greenhouse dropdowns (Batch 3 probe): a level with only stages to pick from, and
+        # a "Degree discipline" that asks the subject.
+        ("What degree are you currently pursuing?*", ("Undergraduate", "Masters", "PhD"),
+         "degree_level", "Undergraduate"),
+        ("What is your Degree discipline? *", ("Accounting", "Computer Science", "Economics"),
+         "major", "Computer Science"),
     ],
 )
 def test_questions_from_real_forms(text, options, key, answer):
@@ -353,3 +359,36 @@ def test_a_non_compete_question_mentioning_a_current_or_former_employer_is_nonco
 def test_a_current_or_former_employee_question_is_still_previous_worker(text):
     match = q.classify(Question(text, kind="choice", options=YES_NO))
     assert match is not None and match.key == "previous_worker"
+
+
+@pytest.mark.parametrize(
+    ("text", "key"),
+    [
+        # Ashby wordings the fill left as "Unrecognized field" (Batch 3, 2026-10-21).
+        ("Contact number", "phone"),
+        ("Where have you most recently worked?", "current_company"),
+        ("Candidate's\xa0 Company", "current_company"),
+        ("Current place of residence", "location"),
+        ("What course are you studying right now?", "major"),
+        # Lever marks a required question with "✱".
+        ("Current location ✱", "location"),
+    ],
+)
+def test_profile_facts_in_other_words(text, key):
+    match = q.classify(Question(text, kind="text"))
+    assert match is not None and match.key == key
+
+
+@pytest.mark.parametrize(
+    "text", ["Emergency contact number", "Reference contact number", "Which course did you enjoy most?"]
+)
+def test_other_peoples_numbers_and_course_opinions_are_not_profile_facts(text):
+    match = q.classify(Question(text, kind="text"))
+    assert match is None or match.key not in {"phone", "major"}
+
+
+def test_where_did_you_hear_is_the_how_heard_question():
+    question = Question("Where did you hear about us?*", kind="choice",
+                        options=("Company Website", "Job Board"))
+    match = q.classify(question)
+    assert match is not None and match.key == "how_heard"

@@ -281,7 +281,7 @@ EEO_KEYS = frozenset({
 })
 #: Declining to self-identify, as forms word it (patterns run on ``normalize``d text).
 _DECLINE = (r"\bdecline\b|\b(?:do not|don t) (?:want|wish) to\b|\bprefer not\b|\bchoose not\b"
-            r"|\bnot (?:to )?(?:disclose|answer|self identify)\b")
+            r"|\bnot (?:to )?(?:disclose|answer|self identify)\b|^not declared$")
 _YES = frozenset({"yes", "y", "true"})
 _NO = frozenset({"no", "n", "false"})
 _EEO_RULES: dict[str, dict[str, str]] = {
@@ -430,6 +430,24 @@ _DEGREE_LEVELS = {
 }
 
 
+#: The stage a degree level belongs to, for options that name only the stage
+#: ("Undergraduate", "Masters", "PhD" for a Bachelor of Science).
+_DEGREE_STAGES = {
+    "associate": "undergraduate", "bachelor": "undergraduate",
+    "master": "graduate", "doctor": "graduate",
+}
+_STAGE_OPTION = re.compile(
+    r"^(undergraduate|(?:post ?)?graduate)(?: (?:degree|student|studies|programs?|programmes?))?$"
+)
+
+
+def _stage_of(label: str) -> str:
+    found = _STAGE_OPTION.match(normalize(label))
+    return "" if found is None else "undergraduate" if found.group(1) == "undergraduate" else (
+        "graduate"
+    )
+
+
 def _degree_part(text: str) -> tuple[str, str] | None:
     wanted = re.sub(r"\s+degree$", "", normalize(text))
     if wanted in _DEGREES:
@@ -479,6 +497,8 @@ def _match_degree(available: list[ObservedOption], target: str) -> OptionMatch:
     tiers = [[option for option, degree in parsed if degree == wanted]]
     if wanted[1]:
         tiers.append([option for option, degree in parsed if degree == (wanted[0], "")])
+    stage = _DEGREE_STAGES.get(wanted[0])
+    tiers.append([option for option in available if stage and _stage_of(option.label) == stage])
     for matches in tiers:
         if len(matches) == 1:
             return OptionMatch(status="matched", option_id=matches[0].option_id, method="alias")

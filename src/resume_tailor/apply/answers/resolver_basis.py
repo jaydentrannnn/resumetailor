@@ -26,7 +26,7 @@ _LABELS = {
     "degree_level": r"\b(?:degree|qualification|education level)\b",
     "major": r"\b(?:major|discipline|field of study)\b",
     "phone_device_type": r"\b(?:phone type|device type|mobile or landline)\b",
-    "how_heard": r"how did you (?:hear|find|learn)|\bsource\b",
+    "how_heard": r"(?:how|where) did you (?:hear|find|learn)|\bsource\b",
     "authorized_to_work": r"authori[sz]|eligib|legally|permit|right to work",
     "work_authorization": r"authori[sz]|eligib|legally|permit|right to work|visa|status",
     "requires_sponsorship": r"sponsor",
@@ -63,7 +63,15 @@ _LABELS = {
 }
 #: Fields the decision layer may key a question to where the model cites the other: the
 #: chosen option must still say what the cited field says (`_says`).
-_RELATED = ({"authorized_to_work", "work_authorization"},)
+_RELATED = (
+    {"authorized_to_work", "work_authorization"},
+    {"requires_sponsorship", "requires_sponsorship_future", "requires_sponsorship_any"},
+)
+#: Of those, fields that answer one yes/no in the same words: the field the decision layer
+#: keys the question to must say the same as the cited one ("now, or in the future?" is
+#: "No" only when neither needs sponsorship).
+_SAME_ANSWER = frozenset({"requires_sponsorship", "requires_sponsorship_future",
+                          "requires_sponsorship_any"})
 #: Profile keys whose form-ready answer (`packet_fields`) has another name; the packet
 #: value is read for them, so both sources say the same thing in the same words.
 _PACKET_FIELD = {
@@ -343,5 +351,22 @@ def supported(
             said = "No" if re.search(r"\bnot\b|\bnon\b", action.value, re.I) else "Yes"
             if _value(packet_fields.get("hispanic_latino")) != said:
                 return False
-        return _about(key, question) and _says(action, question, key, value)
+        return _about(key, question) and _says(action, question, key, value) and _keyed_agrees(
+            action, question, key, profile=profile, packet_fields=packet_fields,
+        )
     return False
+
+
+def _keyed_agrees(
+    action: resolver_types.FieldAction, question: questions.Question, key: str, *,
+    profile: Mapping[str, Any], packet_fields: Mapping[str, Any],
+) -> bool:
+    """Whether the field the decision layer keys ``question`` to, where it is a
+    `_SAME_ANSWER` sibling of the cited ``key``, says the same thing."""
+    match = questions.classify(question)
+    keyed = match.key if match else ""
+    if keyed in {"", key} or not {keyed, key} <= _SAME_ANSWER:
+        return True
+    sibling = action.model_copy(update={"basis_key": keyed})
+    field, value, _custom = _fact(sibling, question, profile=profile, packet_fields=packet_fields)
+    return bool(value) and _says(action, question, field, value)
