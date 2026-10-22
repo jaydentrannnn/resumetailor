@@ -36,7 +36,14 @@ it("leads with the page figure, then the resume and its own wording", () => {
   const report = {
     ...base,
     page_coverage_matched: 9,
-    coverage_funnel: { total: 14, in_resume: 12, on_page: 9, in_resume_text: 7, keywords: [], unsupported_additions: [] },
+    coverage_funnel: {
+      total: 14,
+      in_resume: 12,
+      on_page: 9,
+      in_resume_text: 7,
+      keywords: [],
+      unsupported_additions: [],
+    },
   } as RunReport;
   render(<ReportFigures report={report} />);
   expect(screen.getByText("64%")).toBeTruthy();

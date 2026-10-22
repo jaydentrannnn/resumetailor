@@ -125,9 +125,7 @@ fn theme_script_from_json(text: &str) -> String {
         .as_ref()
         .and_then(|v| v.get("accent").and_then(|a| a.as_str()))
         .filter(|a| {
-            a.len() == 7
-                && a.starts_with('#')
-                && a.chars().skip(1).all(|c| c.is_ascii_hexdigit())
+            a.len() == 7 && a.starts_with('#') && a.chars().skip(1).all(|c| c.is_ascii_hexdigit())
         });
     format!(
         "window.__RT_DESKTOP_THEME__={};window.__RT_DESKTOP_ACCENT__={};",

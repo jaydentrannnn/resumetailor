@@ -1,11 +1,5 @@
 import type { GoalBannerOptions } from "../../../api";
-import {
-  OptionChoice,
-  OptionColumns,
-  OptionField,
-  OptionGroup,
-  ShowParts,
-} from "./OptionControls";
+import { OptionChoice, OptionColumns, OptionField, OptionGroup, ShowParts } from "./OptionControls";
 
 /**
  * The weekly-goal banner's options: the goal and what counts, the week and style, then

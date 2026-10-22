@@ -50,11 +50,7 @@ export function Heatmap({
     return (
       <div className={ROOT} style={{ maxWidth: maxWidth(7, LABELS.transposed) }}>
         <div role="img" aria-label={label} className="flex flex-col gap-1">
-          <div
-            aria-hidden
-            className="grid gap-1 pl-8"
-            style={{ gridTemplateColumns: tracks(7) }}
-          >
+          <div aria-hidden className="grid gap-1 pl-8" style={{ gridTemplateColumns: tracks(7) }}>
             {WEEKDAY_LABELS.map((day, i) => (
               <span key={i} className="text-center font-mono text-[10px] text-ink-muted">
                 {day}
@@ -63,9 +59,7 @@ export function Heatmap({
           </div>
           {summary.grid.map((column, w) => (
             <div key={column[0].key} className="flex items-center gap-1">
-              <span className="w-7 shrink-0 font-mono text-[10px] text-ink-muted">
-                {months[w]}
-              </span>
+              <span className="w-7 shrink-0 font-mono text-[10px] text-ink-muted">{months[w]}</span>
               <div className="grid min-w-0 flex-1 gap-1" style={{ gridTemplateColumns: tracks(7) }}>
                 {column.map((cell) => {
                   const level = heatLevel(cell.count);

@@ -8,9 +8,9 @@ test("saved accent applies before paint", async ({ page }) => {
   });
   await page.goto("/");
   await expect(page.locator("html")).toHaveAttribute("data-accent", "");
-  const accent = await page.locator("html").evaluate((el) =>
-    (el as HTMLElement).style.getPropertyValue("--rt-accent-base").trim(),
-  );
+  const accent = await page
+    .locator("html")
+    .evaluate((el) => (el as HTMLElement).style.getPropertyValue("--rt-accent-base").trim());
   expect(accent).toBe("#2563eb");
 });
 

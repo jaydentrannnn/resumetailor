@@ -1,10 +1,5 @@
 import { useCallback, useEffect, useState } from "react";
-import {
-  fetchAppearance,
-  fetchAutostart,
-  saveAppearance,
-  saveAutostart,
-} from "../../api";
+import { fetchAppearance, fetchAutostart, saveAppearance, saveAutostart } from "../../api";
 import { Button, Card, Segmented, SettingRow, Switch } from "../../components/ui";
 import { RAIL_ITEMS, visibleRailItems, type RailLayout } from "../../components/shell/railItems";
 import { buttonClass } from "../../lib/buttonClass";
@@ -48,9 +43,7 @@ export function AppearanceSection() {
   const [bannerOpen, setBannerOpen] = useState(false);
   const custom = !!accent && !ACCENT_SWATCHES.some((s) => s.hex === accent.toLowerCase());
   const [scale, setScale] = useState(1.0);
-  const [autostart, setAutostart] = useState<{ enabled: boolean; supported: boolean } | null>(
-    null,
-  );
+  const [autostart, setAutostart] = useState<{ enabled: boolean; supported: boolean } | null>(null);
 
   useEffect(() => {
     if (!desktop) return;
@@ -62,19 +55,15 @@ export function AppearanceSection() {
       .catch(() => setAutostart(null));
   }, [desktop]);
 
-  const patchScale = useCallback(
-    (next: number) => {
-      setScale(next);
-      void saveAppearance({ scale: next }).catch(() => undefined);
-    },
-    [],
-  );
+  const patchScale = useCallback((next: number) => {
+    setScale(next);
+    void saveAppearance({ scale: next }).catch(() => undefined);
+  }, []);
 
   const layout: RailLayout = settings.rail_layout ?? { order: [], hidden: [] };
   const visible = visibleRailItems(layout);
 
-  const setLayout = (next: RailLayout) =>
-    setSettings({ ...settings, rail_layout: next });
+  const setLayout = (next: RailLayout) => setSettings({ ...settings, rail_layout: next });
 
   const moveRail = (index: number, to: number) => {
     const order = visible.map((i) => i.to);
@@ -258,11 +247,7 @@ export function AppearanceSection() {
           </p>
         )}
         <div className="mt-3">
-          <Button
-            variant="plain"
-            size="sm"
-            onClick={() => setLayout({ order: [], hidden: [] })}
-          >
+          <Button variant="plain" size="sm" onClick={() => setLayout({ order: [], hidden: [] })}>
             Reset sidebar
           </Button>
         </div>

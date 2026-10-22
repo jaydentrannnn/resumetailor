@@ -72,7 +72,9 @@ export function RailIcon({ path }: { path: string }) {
 export function visibleRailItems(layout?: RailLayout | null): RailItem[] {
   const byPath = new Map(RAIL_ITEMS.map((item) => [item.to, item]));
   const hidden = new Set(layout?.hidden ?? []);
-  const ordered = (layout?.order?.length ? layout.order : RAIL_ITEMS.filter((i) => !i.optional).map((i) => i.to))
+  const ordered = (
+    layout?.order?.length ? layout.order : RAIL_ITEMS.filter((i) => !i.optional).map((i) => i.to)
+  )
     .map((to) => byPath.get(to))
     .filter((item): item is RailItem => !!item && !hidden.has(item.to));
   // Optional pages not named in order stay out; required pages missing from a bad

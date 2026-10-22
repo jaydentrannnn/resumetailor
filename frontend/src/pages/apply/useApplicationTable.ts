@@ -41,9 +41,7 @@ export function useApplicationTable(
   const { settings, setSettings } = useRunState();
   const savedStatus = settings.apply.table_prefs?.[scope]?.status ?? "";
   // URL wins when set; otherwise the remembered filter for this tab.
-  const status = params.has(key("status"))
-    ? (params.get(key("status")) ?? "")
-    : savedStatus;
+  const status = params.has(key("status")) ? (params.get(key("status")) ?? "") : savedStatus;
   const statusSeeded = useRef(false);
   useEffect(() => {
     if (statusSeeded.current || params.has(key("status")) || !savedStatus) return;

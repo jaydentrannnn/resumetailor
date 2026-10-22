@@ -112,11 +112,7 @@ export function Modal({
                 size === "lg" || size === "xl" ? "max-w-2xl" : "max-w-md"
               }`
             : `w-full rounded-sm bg-chrome p-5 shadow-lg outline-none sm:px-6 sm:py-[22px] ${
-                size === "xl"
-                  ? "max-w-5xl"
-                  : size === "lg" || wide
-                    ? "max-w-2xl"
-                    : "max-w-lg"
+                size === "xl" ? "max-w-5xl" : size === "lg" || wide ? "max-w-2xl" : "max-w-lg"
               }`
         }
         onClick={(e) => e.stopPropagation()}
