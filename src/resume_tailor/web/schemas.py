@@ -863,6 +863,8 @@ class RunHistoryEntryOut(BaseModel):
     coverage_matched: int | None = None
     coverage_total: int | None = None
     page_coverage_matched: int | None = None
+    #: Must-haves the master resume's own wording names (`CoverageFunnel.in_resume_text`).
+    in_resume_text: int | None = None
     has_pdf: bool = False
     has_docx: bool = False
 

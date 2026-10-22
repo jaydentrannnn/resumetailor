@@ -32,7 +32,7 @@ const base = {
   out_path: "",
 } as unknown as RunReport;
 
-it("leads with the page figure, then the resume and its own wording", () => {
+it("shows two figures: the tailored page and the main resume as written", () => {
   const report = {
     ...base,
     page_coverage_matched: 9,
@@ -47,14 +47,23 @@ it("leads with the page figure, then the resume and its own wording", () => {
   } as RunReport;
   render(<ReportFigures report={report} />);
   expect(screen.getByText("64%")).toBeTruthy();
-  expect(screen.getByText("9 of 14 on this page")).toBeTruthy();
-  expect(screen.getByText("12 of 14 in your resume")).toBeTruthy();
-  expect(screen.getByText("7 of 14 named in your resume")).toBeTruthy();
+  expect(screen.getByText("9 of 14 on the tailored page")).toBeTruthy();
+  expect(screen.getByText("7 of 14 mentioned in your main resume")).toBeTruthy();
+  // The tag-backed resume figure is no longer a third line.
+  expect(screen.queryByText("12 of 14 in your resume")).toBeNull();
+});
+
+it("shows only the page figure on a run saved before the main-resume figure", () => {
+  render(<ReportFigures report={{ ...base, page_coverage_matched: 9 } as RunReport} />);
+  expect(screen.getByText("9 of 14 on the tailored page")).toBeTruthy();
+  expect(screen.queryByText("12 of 14 in your resume")).toBeNull();
+  expect(screen.queryByText(/main resume/)).toBeNull();
 });
 
 it("falls back to the resume figure on a run saved before page coverage", () => {
   render(<ReportFigures report={base} />);
   expect(screen.getByText("86%")).toBeTruthy();
-  expect(screen.queryByText(/on this page/)).toBeNull();
-  expect(screen.queryByText(/named in your resume/)).toBeNull();
+  expect(screen.getByText("12 of 14 in your resume")).toBeTruthy();
+  expect(screen.queryByText(/on the tailored page/)).toBeNull();
+  expect(screen.queryByText(/main resume/)).toBeNull();
 });

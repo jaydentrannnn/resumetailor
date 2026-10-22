@@ -2,9 +2,9 @@ import type { CoverageFunnel, KeywordCoverage } from "../../api";
 import { DataList, type DataItem } from "../../components/ui";
 
 const GROUPS: { page: KeywordCoverage["page"]; label: string }[] = [
-  { page: "not_selected", label: "In your resume, not on this page" },
-  { page: "tag_only", label: "Backed on this page, never named" },
-  { page: "inferred_only", label: "Only inferred on this page" },
+  { page: "not_selected", label: "In your resume, not on the tailored page" },
+  { page: "tag_only", label: "Backed on the tailored page, never named" },
+  { page: "inferred_only", label: "Only inferred on the tailored page" },
   { page: "demonstrated", label: "Soft skills shown by the work" },
 ];
 

@@ -15,6 +15,7 @@ from resume_tailor.apply.funnel import eligibility as eligibility_mod
 from resume_tailor.apply.funnel import screen as screen_mod
 from resume_tailor.apply.funnel import store, store_models
 from resume_tailor.apply.funnel.screen import ScreenResult
+from resume_tailor.pipeline import coverage as coverage_mod
 from resume_tailor.web.schemas import ApplySettings, JobSettings
 
 _LOG_LOCK = threading.Lock()
@@ -149,37 +150,48 @@ def _link_reused_packet(app: store_models.Application, prior_job_id: str) -> Non
     store.set_status(app, "ready", note=f"reused tailoring from {prior_job_id}")
 
 
-def run_coverage(job_id: str) -> tuple[int, int] | None:
-    """``(matched, total)`` must-haves from a finished run's saved report, if any."""
+def run_coverage(job_id: str) -> tuple[int, int, int | None] | None:
+    """``(matched, total, on_page)`` must-haves from a finished run's saved report, if any.
+
+    ``on_page`` is the tailored page's figure, re-measured after a bullet edit
+    (`coverage.read`); None for a run saved before it was measured.
+    """
+    out_dir = config.OUTPUT_DIR / "jobs" / job_id
     try:
-        raw = json.loads((config.OUTPUT_DIR / "jobs" / job_id / "run.json").read_text("utf-8"))
+        raw = json.loads((out_dir / "run.json").read_text("utf-8"))
     except (OSError, ValueError):
         return None
     report = raw.get("report") if isinstance(raw, dict) else None
     matched = report.get("coverage_matched") if isinstance(report, dict) else None
     total = report.get("coverage_total") if isinstance(report, dict) else None
-    if isinstance(matched, int) and isinstance(total, int):
-        return matched, total
-    return None
+    if not (isinstance(matched, int) and isinstance(total, int)):
+        return None
+    funnel = coverage_mod.read(out_dir)
+    page = funnel.on_page if funnel else report.get("page_coverage_matched")
+    return matched, total, page if isinstance(page, int) else None
 
 
 def adopt_run_coverage(
-    app: store_models.Application, coverage: tuple[int, int] | None
+    app: store_models.Application, coverage: tuple[int, int, int | None] | None
 ) -> bool:
-    """Show the tailor run's must-have count on the row; True when the row changed.
+    """Show the tailor run's must-have counts on the row; True when the row changed.
 
     Once a row has a run, the run report is the figure of record: the row and the
     report then always agree, including rows screened before screening and tailoring
-    shared one JD extraction.
+    shared one JD extraction. The page figure is what the Apply table shows.
     """
     if app.screen is None or coverage is None:
         return False
-    matched, total = coverage
-    if (app.screen.coverage_matched, app.screen.coverage_total) == (matched, total):
+    matched, total, page = coverage
+    screen = app.screen
+    if (screen.coverage_matched, screen.coverage_total, screen.page_coverage_matched) == (
+        matched, total, page
+    ):
         return False
-    app.screen.coverage_matched = matched
-    app.screen.coverage_total = total
-    app.screen.coverage = matched / total if total else 1.0
+    screen.coverage_matched = matched
+    screen.coverage_total = total
+    screen.coverage = matched / total if total else 1.0
+    screen.page_coverage_matched = page
     return True
 
 def _job_settings(

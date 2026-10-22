@@ -29,9 +29,11 @@ const tailored: RunHistoryEntry = {
   coverage_matched: 4,
   coverage_total: 5,
   page_coverage_matched: 3,
+  in_resume_text: 2,
 };
 const older: RunHistoryEntry = { ...tailored, job_id: "run-3", title: "Older" };
 delete older.page_coverage_matched;
+delete older.in_resume_text;
 
 vi.mock("../state/runState", () => ({
   useRunState: () => ({
@@ -63,7 +65,7 @@ describe("RunHistoryPanel", () => {
     );
   });
 
-  it("leads with the page match and shows the resume count beside it, when the run has one", () => {
+  it("leads with the page match and shows the main resume count beside it, when the run has one", () => {
     render(<RunHistoryPanel />);
     // Each row may render in more than one layout; count per run, not in total.
     const withPage = screen.getAllByRole("progressbar", { name: "Skill match for Analyst" });
@@ -73,7 +75,7 @@ describe("RunHistoryPanel", () => {
     expect(withPage[0].getAttribute("aria-valuetext")).toBe(
       "3 of 5 required skills on the tailored page",
     );
-    expect(screen.getAllByText(/in resume$/)).toHaveLength(withPage.length);
-    expect(screen.getAllByText("4/5 in resume")).toHaveLength(withPage.length);
+    expect(screen.getAllByText(/in main resume$/)).toHaveLength(withPage.length);
+    expect(screen.getAllByText("2/5 in main resume")).toHaveLength(withPage.length);
   });
 });

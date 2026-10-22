@@ -8,8 +8,14 @@ import { PostedDate } from "../PostedDate";
 /** Overview: the application's facts, why it was screened out, and the tailor report. */
 export function OverviewPanel({ app, job }: { app: ApplicationRow; job: JobStatus | null }) {
   const screen = app.screen;
-  const coverage = screen?.coverage_total
-    ? `${screen.coverage_matched}/${screen.coverage_total} (${Math.round((screen.coverage_matched / screen.coverage_total) * 100)}%)`
+  const report = job?.report;
+  // The tailored page's figure once there is one (the loaded report is the freshest),
+  // the screen's resume figure before tailoring.
+  const page = report?.page_coverage_matched ?? screen?.page_coverage_matched;
+  const total = page != null && report ? report.coverage_total : screen?.coverage_total;
+  const matched = page ?? screen?.coverage_matched ?? 0;
+  const coverage = total
+    ? `${matched}/${total} (${Math.round((matched / total) * 100)}%) ${page != null ? "on the tailored page" : "in your resume, before tailoring"}`
     : "Not assessed";
   const sources = [...new Set(app.sources)];
   return (
@@ -23,11 +29,7 @@ export function OverviewPanel({ app, job }: { app: ApplicationRow; job: JobStatu
             },
             {
               label: "Coverage",
-              value: screen?.coverage_total ? (
-                <span className="font-mono text-[13px]">{coverage}</span>
-              ) : (
-                coverage
-              ),
+              value: total ? <span className="font-mono text-[13px]">{coverage}</span> : coverage,
             },
             ...(app.ats ? [{ label: "Platform", value: siteName(app.ats) }] : []),
             {

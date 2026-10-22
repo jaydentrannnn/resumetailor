@@ -51,7 +51,11 @@ def list_applications(
         if sort == "coverage":
             screen = row.screen
             total = screen.coverage_total if screen else 0
-            return screen.coverage_matched / total if screen and total > 0 else None
+            if not screen or total <= 0:
+                return None
+            # The figure the table shows: the tailored page's once the row has a run.
+            matched = screen.page_coverage_matched
+            return (screen.coverage_matched if matched is None else matched) / total
         if sort == "sources":
             return ", ".join(sorted({ref.source for ref in row.source_refs})).casefold() if row.source_refs else row.source.casefold()
         raw = getattr(row, sort, None)

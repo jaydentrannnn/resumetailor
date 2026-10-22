@@ -229,6 +229,7 @@ def _scan_run_history() -> list[RunHistoryEntryOut]:
                 coverage_matched=report.get("coverage_matched"),
                 coverage_total=report.get("coverage_total"),
                 page_coverage_matched=_page_coverage(child, report),
+                in_resume_text=(report.get("coverage_funnel") or {}).get("in_resume_text"),
                 has_pdf=(child / "tailored.pdf").exists(),
                 has_docx=(child / "tailored.docx").exists(),
             )
@@ -262,6 +263,10 @@ def _scan_run_history() -> list[RunHistoryEntryOut]:
                 _page_coverage(out_dir, {"page_coverage_matched":
                                          job.report.page_coverage_matched})
                 if job.report else None
+            ),
+            in_resume_text=(
+                job.report.coverage_funnel.in_resume_text
+                if job.report and job.report.coverage_funnel else None
             ),
             has_pdf=(out_dir / "tailored.pdf").exists(),
             has_docx=(out_dir / "tailored.docx").exists(),

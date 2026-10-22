@@ -187,12 +187,12 @@ export function RunHistoryPanel({ onOpened }: { onOpened?: () => void }) {
               label={`Skill match for ${run.title || "this run"}`}
               where={run.page_coverage_matched != null ? "on the tailored page" : "in your resume"}
             />
-            {run.page_coverage_matched != null && run.coverage_matched != null && (
+            {run.page_coverage_matched != null && run.in_resume_text != null && (
               <span
                 className="whitespace-nowrap text-xs text-ink-muted"
-                title={`${run.coverage_matched} of ${run.coverage_total} required skills in your resume`}
+                title={`${run.in_resume_text} of ${run.coverage_total} required skills mentioned in your main resume`}
               >
-                {run.coverage_matched}/{run.coverage_total} in resume
+                {run.in_resume_text}/{run.coverage_total} in main resume
               </span>
             )}
           </span>

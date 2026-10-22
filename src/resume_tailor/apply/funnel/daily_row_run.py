@@ -534,7 +534,9 @@ class _RowRun:
             report = finished.report
             if report is not None:
                 daily_rows.adopt_run_coverage(
-                    app, (report.coverage_matched, report.coverage_total)
+                    app,
+                    (report.coverage_matched, report.coverage_total,
+                     report.page_coverage_matched),
                 )
             store.set_status(app, "ready", note=f"tailored as {job.job_id}")
             store.upsert(app)

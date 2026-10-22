@@ -292,6 +292,8 @@ export type RunHistoryEntry = {
   coverage_total: number | null;
   /** Must-haves the tailored page names; absent on older runs. */
   page_coverage_matched?: number | null;
+  /** Must-haves the master resume's own wording names; absent on older runs. */
+  in_resume_text?: number | null;
   has_pdf: boolean;
   has_docx: boolean;
 };

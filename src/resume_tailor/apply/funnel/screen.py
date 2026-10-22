@@ -56,6 +56,9 @@ class ScreenResult(BaseModel):
     coverage: float = 0.0
     coverage_matched: int = 0
     coverage_total: int = 0
+    #: Must-haves the tailored page shows, out of `coverage_total`; set once the row has
+    #: a finished tailor run (`daily_rows.adopt_run_coverage`), None before then.
+    page_coverage_matched: int | None = None
     seniority: str = ""
     #: The JD sentence behind each work-restriction reason, trimmed for display.
     evidence: list[str] = Field(default_factory=list)

@@ -50,7 +50,8 @@ def test_rows_show_their_tailor_run_coverage(apply_paths):
     run_dir = config.OUTPUT_DIR / "jobs" / "run-1"
     run_dir.mkdir(parents=True)
     (run_dir / "run.json").write_text(
-        json.dumps({"report": {"coverage_matched": 6, "coverage_total": 9}}), encoding="utf-8"
+        json.dumps({"report": {"coverage_matched": 6, "coverage_total": 9,
+                               "page_coverage_matched": 4}}), encoding="utf-8"
     )
     app = store_models.Application(
         source="test", source_job_id="one", company="Acme", role="Engineer", job_id="run-1",
@@ -61,4 +62,5 @@ def test_rows_show_their_tailor_run_coverage(apply_paths):
     assert daily.sync_run_coverage() == 1
     screen = store.get(app.source_job_id).screen
     assert (screen.coverage_matched, screen.coverage_total) == (6, 9)
+    assert screen.page_coverage_matched == 4  # what the Apply table shows
     assert daily.sync_run_coverage() == 0

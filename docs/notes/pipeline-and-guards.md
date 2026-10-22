@@ -834,3 +834,15 @@ points. In a blind read of 12 changed bullets, base was better in 7, the trial i
 were ties: the trial wedged tags in ("...via Python", "using Python", "citation from LLM
 agents"), the padding the rewrite rules forbid. Not shipped. `eval_experiments.py` keeps
 the generic `cases` (e2e-only sample) and `e2e-coverage` commands.
+
+### Two coverage figures, and the Apply row shows the page (2026-10-22)
+The report shows two must-have figures, not three: "on the tailored page" (`on_page`)
+and "mentioned in your main resume" (`in_resume_text`, the master resume's wording
+only). The tag-backed `coverage_matched` stays in the data (Apply screening ranks on it)
+but is no longer a report line. A run saved before `in_resume_text` existed shows the page
+line alone; recomputing it from today's master would not match the run's own total.
+Apply rows carry `ScreenResult.page_coverage_matched`, which is set by `adopt_run_coverage`
+when a run finishes and backfilled at startup by `sync_run_coverage`. It reads `coverage.read`,
+so a bullet edit's re-measure shows after the next startup. The table meter, the detail
+overview and the coverage sort use it, falling back to the screen's resume figure before
+tailoring.

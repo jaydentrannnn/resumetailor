@@ -28,6 +28,16 @@ export function ReportFigures({ report }: { report: RunReport }) {
   const headline = report.page_coverage_matched ?? report.coverage_matched;
   const pct = diagnosis == null && total > 0 ? Math.round((100 * headline) / total) : null;
   const named = report.coverage_funnel?.in_resume_text;
+  // Two figures: the tailored page, and the main resume as written. A run saved before
+  // the second was measured shows the page alone (its resume figure counted Extra-skills
+  // tags); one saved before page coverage shows the resume figure it has.
+  const lines =
+    report.page_coverage_matched == null
+      ? [`${report.coverage_matched} of ${total} in your resume`]
+      : [
+          `${report.page_coverage_matched} of ${total} on the tailored page`,
+          ...(named != null ? [`${named} of ${total} mentioned in your main resume`] : []),
+        ];
   const figures: { value: string; label: ReactNode }[] = [
     {
       value: String(report.pages),
@@ -41,21 +51,11 @@ export function ReportFigures({ report }: { report: RunReport }) {
           {diagnosis ? (
             <span className="block font-mono tabular-nums">couldn't be measured</span>
           ) : (
-            <>
-              {report.page_coverage_matched != null && (
-                <span className="block font-mono tabular-nums">
-                  {`${report.page_coverage_matched} of ${total} on this page`}
-                </span>
-              )}
-              <span className="block font-mono tabular-nums">
-                {`${report.coverage_matched} of ${total} in your resume`}
+            lines.map((line) => (
+              <span key={line} className="block font-mono tabular-nums">
+                {line}
               </span>
-              {named != null && (
-                <span className="block font-mono tabular-nums">
-                  {`${named} of ${total} named in your resume`}
-                </span>
-              )}
-            </>
+            ))
           )}
         </>
       ),

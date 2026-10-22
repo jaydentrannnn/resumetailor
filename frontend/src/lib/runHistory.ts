@@ -12,7 +12,9 @@ export type RunSort = "started" | "title" | "company" | "status" | "coverage" | 
 export type RunStatusFilter = "" | "succeeded" | "failed" | "cancelled" | "active";
 
 function coverageRatio(run: RunHistoryEntry): number {
-  return run.coverage_total ? (run.coverage_matched ?? 0) / run.coverage_total : -1;
+  return run.coverage_total
+    ? (run.page_coverage_matched ?? run.coverage_matched ?? 0) / run.coverage_total
+    : -1;
 }
 
 /** Runs matching the search words and the status filter ("active" = queued or running). */

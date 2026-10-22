@@ -120,6 +120,8 @@ export type ApplicationRow = {
     coverage: number;
     coverage_matched: number;
     coverage_total: number;
+    /** Must-haves the tailored page shows; null until the row has a tailor run. */
+    page_coverage_matched?: number | null;
     reasons: string[];
     flags: string[];
     /** JD sentence behind each work-restriction reason. */

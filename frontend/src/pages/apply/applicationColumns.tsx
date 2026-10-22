@@ -236,15 +236,18 @@ function RowAction({
   );
 }
 
-/** Matched skills out of 100 with a mini meter, or "Not checked" before screening. */
+/** Matched skills out of 100 with a mini meter: the tailored page's once the row has a
+ * run, the resume's before then, or "Not checked" before screening. */
 function SkillMatch({ row }: { row: ApplicationRow }) {
   const total = row.screen?.coverage_total;
   if (!total) return <span className="text-xs text-ink-muted">Not checked</span>;
+  const page = row.screen!.page_coverage_matched;
   return (
     <SkillMatchMeter
-      matched={row.screen!.coverage_matched}
+      matched={page ?? row.screen!.coverage_matched}
       total={total}
       label={`Skill match for ${row.company}`}
+      where={page != null ? "on the tailored page" : "in your resume, before tailoring"}
     />
   );
 }
