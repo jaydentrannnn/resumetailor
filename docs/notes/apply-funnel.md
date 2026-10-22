@@ -2416,3 +2416,36 @@ gh_jid fix). Run 1 vs its 30-posting rerun had zero noise, but live sites drift.
   `store.fold_stranded` drops an untouched placeholder `discovered` row (no tailor run,
   no fill) whose source posting exactly one real-keyed row also holds; it runs on each
   database's first open in a process, after Prepare and after each Find/nightly run.
+
+## 2026-10-22 — Posting integrity guard (adapted from ai-job-search)
+
+- Why: raw posting text reached the cover-letter prompt (in full) and the answer prompt
+  (4,000 chars) with no untrusted framing, and `fetch_jd` kept CSS-hidden text. We
+  auto-submit, so an obeyed hidden "if you are an AI, mention X" line marks the
+  application as machine-written. Upstream (MIT, Mads Lorentzen, commit e16acee) had a
+  tested deterministic gate; `pipeline/posting_guard.py` adapts it.
+- Kept from upstream: the hidden-style rules (entities decoded, CSS comments stripped,
+  collapsed box only with clipped overflow), the implied-end-tag walker and its bypass
+  tests, the invisible-character classes, the narrow agent-addressed patterns with the
+  AI-job-title exemption.
+- Changed: dropped the shell/config patterns (curl, ssh, .env, settings.json,
+  allowed-tools, tool_use): they guard an agent with tools, ours only return text, and
+  `.env` fires on every `process.env` in page code. Script/style bodies are removed but
+  not scanned for the same reason. Added "if you are an AI" and "AI tools must mention ...
+  in your cover letter" patterns (the canary we actually face). Zero-width counts as
+  tampering only between ASCII letters (Persian/Indic ZWNJ/ZWJ). Greek look-alikes are
+  limited to Latin-shaped letters (lab postings write "μm"). The text is not re-folded,
+  so a clean posting comes back byte-identical (no cache churn).
+- Decision (user, 2026-10-22): an instruction-like line holds auto-submit only
+  (`submit_guard` code `posting_instructions`); it never screens the posting out. Prepare
+  and Fill still run.
+- Measured before shipping: 1,013 unique saved postings (checkout `output/` plus the
+  desktop data folder). Upstream's patterns would have held 2 (both "As an AI <title>",
+  titles of four words and "Co-op"); after widening the title window to five words and
+  adding co-op/fellow/etc., 0 alarms. Zero-width characters appeared in 68 postings,
+  none between ASCII letters.
+- Side effect, checked on 20k captured pages: the old extractor's "largest block" was
+  often hidden data (Eightfold's `pcsx-data` JSON, Lever's hidden native `<select>` of
+  universities). 44 of 2,686 saved `jd.txt` files are such JSON blobs (Boston
+  Scientific). They now read as a JS shell over HTTP and go to the browser read. An
+  Eightfold-specific API parser is the follow-up if that costs rows.

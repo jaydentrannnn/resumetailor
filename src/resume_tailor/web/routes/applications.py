@@ -111,6 +111,9 @@ def _application_out(
 
         payload["screen_label"] = screen_label(app.screen.reasons)
     payload["review_summary"] = store_views.review_summary(app)
+    from resume_tailor.pipeline import posting_guard
+
+    payload["posting_warnings"] = posting_guard.warnings(app.posting_guard)
     out = ApplicationOut.model_validate(payload)
     if slim_fill is not None:
         # Assigned after validation: validated, the dict would parse back into a full

@@ -16,6 +16,7 @@ from resume_tailor.apply.funnel import screen as screen_mod
 from resume_tailor.apply.funnel import store, store_models
 from resume_tailor.apply.funnel.screen import ScreenResult
 from resume_tailor.pipeline import coverage as coverage_mod
+from resume_tailor.pipeline.posting_guard import GuardFindings
 from resume_tailor.web.schemas import ApplySettings, JobSettings
 
 _LOG_LOCK = threading.Lock()
@@ -110,6 +111,18 @@ def _save_jd(source_job_id: str, text: str) -> str:
     path = out_dir / "jd.txt"
     path.write_text(text, encoding="utf-8")
     return str(path)
+
+def save_jd(
+    app: store_models.Application, text: str, found: GuardFindings | None
+) -> None:
+    """Save the row's JD with what the posting guard found on the way in.
+
+    ``found`` is None for text read back from this row's own saved file (a captured
+    page), whose findings were recorded when it was first saved.
+    """
+    app.jd_text_path = _save_jd(app.source_job_id, text)
+    if found is not None:
+        app.posting_guard = found
 
 def _captured_jd(app: store_models.Application) -> fetch_jd.FetchResult | None:
     """The text the browser extension sent for this row, instead of fetching it again.

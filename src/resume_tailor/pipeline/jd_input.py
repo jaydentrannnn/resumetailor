@@ -14,6 +14,7 @@ from pathlib import PurePath
 from urllib.parse import urlparse
 
 from resume_tailor.apply.discovery import fetch_jd, identity
+from resume_tailor.pipeline import posting_guard
 
 #: Same cap as `JobCreateRequest.jd_text`; longer text is cut with a visible warning.
 MAX_CHARS = 50_000
@@ -48,6 +49,8 @@ class JdText:
     ats: str = ""
     final_url: str = ""
     warnings: list[str] = field(default_factory=list)
+    #: What `posting_guard` removed or flagged; its alarms are also in ``warnings``.
+    guard: posting_guard.GuardFindings | None = None
 
 
 def _login_site(host: str) -> str | None:
@@ -57,8 +60,18 @@ def _login_site(host: str) -> str | None:
     return None
 
 
-def _finish(text: str, result: JdText) -> JdText:
-    """Normalise, then apply the length checks and warnings both paths share."""
+def _finish(
+    text: str, result: JdText, *, found: posting_guard.GuardFindings | None = None
+) -> JdText:
+    """Guard, normalise, then apply the length checks and warnings every path shares.
+
+    ``found`` is the guard's result when the text was guarded on the way in (a fetched
+    page, an uploaded HTML file); otherwise the text is guarded here.
+    """
+    if found is None:
+        text, found = posting_guard.guard(text)
+    result.guard = found
+    result.warnings.extend(posting_guard.warnings(found))
     lines = [re.sub(r"[ \t ]+", " ", line).strip() for line in text.splitlines()]
     text = re.sub(r"\n{3,}", "\n\n", "\n".join(lines)).strip()
     if len(text) < MIN_CHARS:
@@ -122,6 +135,7 @@ def from_url(url: str, *, allow_browser: bool = True) -> JdText:
     return _finish(
         fetched.text,
         JdText(text="", source="url", ats=fetched.ats, final_url=fetched.final_url),
+        found=fetched.guard,
     )
 
 
@@ -188,7 +202,10 @@ def from_file(filename: str, raw: bytes) -> JdText:
     elif suffix == ".docx":
         text = _docx_text(raw)
     elif suffix in (".html", ".htm"):
-        text = fetch_jd.extract_text(_decode(raw))
+        with fetch_jd.collect_hidden() as hidden:
+            text = fetch_jd.extract_text(_decode(raw))
+        text, found = posting_guard.guard(text, hidden=hidden)
+        return _finish(text, JdText(text="", source=suffix.lstrip(".")), found=found)
     else:
         text = _decode(raw)
     return _finish(text, JdText(text="", source=suffix.lstrip(".")))

@@ -2,12 +2,18 @@
 
 Tries plain HTTP first; falls back to the host browser over CDP when the page is
 a JS shell. Never invents content — empty extraction becomes ``needs_browser``.
+
+Every path drops what a reader cannot see (`posting_guard`): hidden elements before the
+HTML is read, hidden-by-style elements in the browser, invisible characters at the end.
 """
 
 from __future__ import annotations
 
 import re
 import time
+from collections.abc import Iterator
+from contextlib import contextmanager
+from contextvars import ContextVar
 from dataclasses import dataclass
 from html.parser import HTMLParser
 from typing import Literal, get_args
@@ -18,6 +24,7 @@ import httpx
 from resume_tailor.apply.ats import ats_fingerprint
 from resume_tailor.apply.driver.browser import cdp_browser
 from resume_tailor.apply.forms import form_guards
+from resume_tailor.pipeline import posting_guard
 
 #: Minimum extracted characters before we trust an HTTP response as a real JD.
 _MIN_JD_CHARS = 400
@@ -58,6 +65,29 @@ class FetchResult:
     error: str = ""
     #: Why the posting looks closed (`form_guards.closed_posting`), or "" when open.
     closed: str = ""
+    #: What `posting_guard` removed or flagged; None for text read back from disk.
+    guard: posting_guard.GuardFindings | None = None
+
+
+#: What `strip_hidden` removed during the current `collect_hidden` block.
+_removed: ContextVar[list[posting_guard.Stripped] | None] = ContextVar(
+    "fetch_jd_removed", default=None
+)
+
+
+@contextmanager
+def collect_hidden() -> Iterator[list[posting_guard.Stripped]]:
+    """Gather what every extraction inside the block removed, for `posting_guard.guard`.
+
+    Extraction runs deep inside the ATS API helpers too; a context variable reaches them
+    without threading a return value through each one.
+    """
+    found: list[posting_guard.Stripped] = []
+    token = _removed.set(found)
+    try:
+        yield found
+    finally:
+        _removed.reset(token)
 
 
 class _TextExtractor(HTMLParser):
@@ -114,9 +144,12 @@ class _TextExtractor(HTMLParser):
 
 
 def _extract(html: str, *, largest_block_only: bool) -> str:
+    stripped = posting_guard.strip_hidden(html)
+    if (found := _removed.get()) is not None:
+        found.append(stripped)
     parser = _TextExtractor()
     try:
-        parser.feed(html)
+        parser.feed(stripped.markup)
         parser.close()
     except Exception:  # noqa: BLE001 - malformed HTML still yields partial text
         pass
@@ -246,8 +279,41 @@ def _looks_like_js_shell(html: str, text: str) -> bool:
     )
 
 
+#: ``innerText`` already skips ``display:none``/``visibility:hidden``; this removes what it
+#: keeps but a reader cannot see (zero opacity or font size, transparent text that is not
+#: a gradient fill, off-screen or clipped boxes) and returns the removed text for
+#: scanning. Outermost hidden element only; page code is never walked.
+_VISIBLE_TEXT_JS = """() => {
+  const skip = new Set(['SCRIPT', 'STYLE', 'NOSCRIPT', 'TEMPLATE', 'SVG']);
+  const hidden = [];
+  const isHidden = (el) => {
+    const s = getComputedStyle(el);
+    if (s.display === 'none' || s.visibility === 'hidden') return true;
+    if (parseFloat(s.opacity) === 0 || parseFloat(s.fontSize) === 0) return true;
+    const clear = s.color === 'transparent' || s.color === 'rgba(0, 0, 0, 0)';
+    const gradient = s.backgroundClip === 'text' || s.webkitBackgroundClip === 'text';
+    if (clear && !gradient) return true;
+    if ((s.clipPath || '').startsWith('inset(100%')) return true;
+    const r = el.getBoundingClientRect();
+    if (r.right < -999 || r.bottom < -999) return true;
+    return (r.width === 0 || r.height === 0) && s.overflow === 'hidden';
+  };
+  const walk = (el) => {
+    for (const child of Array.from(el.children)) {
+      if (skip.has(child.tagName.toUpperCase())) continue;
+      if (isHidden(child)) hidden.push(child); else walk(child);
+    }
+  };
+  if (!document.body) return {text: '', hidden: []};
+  walk(document.body);
+  const texts = hidden.map((el) => (el.textContent || '').trim()).filter(Boolean);
+  for (const el of hidden) el.remove();
+  return {text: document.body.innerText, hidden: texts};
+}"""
+
+
 def _fetch_via_browser(url: str) -> FetchResult:
-    """Open ``url`` in the CDP browser and read ``document.body.innerText``.
+    """Open ``url`` in the CDP browser and read the visible text (`_VISIBLE_TEXT_JS`).
 
     Some ATS pages (Workday among them) report "loaded" before the description
     text arrives, so the read is retried for a few seconds rather than taken once.
@@ -260,13 +326,19 @@ def _fetch_via_browser(url: str) -> FetchResult:
             page.wait_for_load_state("networkidle", timeout=30_000)
             final_url = page.url
             text = ""
+            hidden: list[str] = []
             deadline = time.monotonic() + 10.0
             while True:
-                text = page.evaluate("() => document.body ? document.body.innerText : ''")
-                text = (text or "").strip()
+                read = page.evaluate(_VISIBLE_TEXT_JS) or {}
+                text = str(read.get("text") or "").strip()
+                hidden += [str(t) for t in read.get("hidden") or []]
                 if len(text) >= _MIN_JD_CHARS or time.monotonic() >= deadline:
                     break
                 page.wait_for_timeout(500)
+            if (found := _removed.get()) is not None and hidden:
+                found.append(posting_guard.Stripped(
+                    "", "\n".join(hidden), [t[:120] for t in hidden]
+                ))
             ats = detect_ats(final_url)
             if len(text) < _MIN_JD_CHARS:
                 return FetchResult(
@@ -289,7 +361,18 @@ def fetch_jd(
     allow_browser: bool = True,
     canonical_key: str | None = None,
 ) -> FetchResult:
-    """Fetch JD text: ATS JSON API first (keyed, or Workday by URL), then HTTP, then CDP."""
+    """Fetch JD text: ATS JSON API first (keyed, or Workday by URL), then HTTP, then CDP.
+
+    The text comes back without hidden content or invisible characters, with what was
+    removed or flagged in ``guard``.
+    """
+    with collect_hidden() as hidden:
+        result = _fetch(url, allow_browser=allow_browser, canonical_key=canonical_key)
+    result.text, result.guard = posting_guard.guard(result.text, hidden=hidden)
+    return result
+
+
+def _fetch(url: str, *, allow_browser: bool, canonical_key: str | None) -> FetchResult:
     if canonical_key:
         try:
             from resume_tailor.apply.discovery import ats_api

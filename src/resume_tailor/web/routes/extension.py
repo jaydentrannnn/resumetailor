@@ -410,7 +410,7 @@ def _attach_apply_url(app: store_models.Application, target: str, now: str) -> N
 def _describe(
     app: store_models.Application,
     body: CaptureRequest,
-    text: str,
+    cleaned: jd_input.JdText,
     settings: ApplySettings | None,
     *,
     note: str,
@@ -421,9 +421,9 @@ def _describe(
     app.role = body.role.strip() or app.role
     app.location = body.location.strip() or app.location
     app.group_key = identity.group_key(app.company, app.role)
-    app.jd_text_path = daily_rows._save_jd(app.source_job_id, text)
+    daily_rows.save_jd(app, cleaned.text, cleaned.guard)
     store.set_status(app, "jd_fetched", note=note)
-    _screen(app, text, settings)
+    _screen(app, cleaned.text, settings)
 
 
 def _merge_candidate(group: str, index: store_models.Index) -> store_models.Application | None:
@@ -463,7 +463,7 @@ def capture(body: CaptureRequest) -> CaptureResponse:
                 _attach_apply_url(app, target, now)
             elif board and body.apply_kind != "unknown":
                 app.apply_kind = body.apply_kind
-            _describe(app, body, cleaned.text, settings, note="description captured when the job was opened")
+            _describe(app, body, cleaned, settings, note="description captured when the job was opened")
 
         done = store.update(_app_id(existing), complete)
         return CaptureResponse(
@@ -489,7 +489,7 @@ def capture(body: CaptureRequest) -> CaptureResponse:
         def merge(app: store_models.Application) -> None:
             _attach_apply_url(app, target, now)
             if app.capture_stub:
-                _describe(app, body, cleaned.text, settings, note="description captured from the employer's page")
+                _describe(app, body, cleaned, settings, note="description captured from the employer's page")
 
         merged = store.update(_app_id(candidate), merge)
         return CaptureResponse(
@@ -527,7 +527,7 @@ def capture(body: CaptureRequest) -> CaptureResponse:
             )
         ],
     )
-    app.jd_text_path = daily_rows._save_jd(source_job_id, cleaned.text)
+    daily_rows.save_jd(app, cleaned.text, cleaned.guard)
     store.set_status(app, "jd_fetched", note="captured by the browser extension")
     _screen(app, cleaned.text, settings)
     store.upsert(app)

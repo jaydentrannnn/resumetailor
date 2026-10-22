@@ -137,7 +137,7 @@ def retry_application(source_job_id: str) -> store_models.Application:
             app.error = None
             return store.upsert(app)
         if len(result.text.strip()) >= daily_rows._MIN_USABLE_JD_CHARS:
-            app.jd_text_path = daily_rows._save_jd(app.source_job_id, result.text)
+            daily_rows.save_jd(app, result.text, result.guard)
             store.set_status(app, "jd_fetched", note=f"retry via {result.method}")
             app.error = None
             return store.upsert(app)

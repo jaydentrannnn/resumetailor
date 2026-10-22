@@ -389,7 +389,7 @@ class _RowRun:
             self._count("processed")
             return None
 
-        app.jd_text_path = daily_rows._save_jd(app.source_job_id, fetch.text)
+        daily_rows.save_jd(app, fetch.text, fetch.guard)
         # A prior fetch attempt (nightly run or a per-row retry) may have left `error` set
         # (e.g. "Browser extraction too short (0 chars)"); this fetch succeeded, so that
         # error no longer describes the row's state and must not linger in the UI.

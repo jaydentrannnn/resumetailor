@@ -99,3 +99,6 @@ def test_notices_list_bundled_licenses(tmp_path):
     # The copyleft-ish dependencies whose licenses require attribution.
     assert "docxtpl" in text and "LGPL" in text
     assert "certifi" in text
+    # Code adapted from another project carries that project's notice too.
+    assert "== Adapted source" in text and "ai-job-search e16acee: MIT" in text
+    assert "Copyright (c) 2026 Mads Lorentzen" in text

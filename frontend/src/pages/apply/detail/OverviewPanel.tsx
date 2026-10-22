@@ -1,5 +1,5 @@
 import type { ApplicationRow, JobStatus } from "../../../api";
-import { DataList, Tile } from "../../../components/ui";
+import { DataList, StatusChip, Tile } from "../../../components/ui";
 import { applicationStatusLabel } from "../../../lib/applicationStatus";
 import { ReportCard } from "../../run/ReportCard";
 import { siteName } from "../../CapturedStubs";
@@ -60,9 +60,41 @@ export function OverviewPanel({ app, job }: { app: ApplicationRow; job: JobStatu
             ))}
           </div>
         )}
+        <PostingCheck app={app} />
         {app.error && <p className="mt-4 text-sm text-danger">{app.error}</p>}
       </Tile>
       {job?.report && <ReportCard report={job.report} />}
+    </div>
+  );
+}
+
+/**
+ * What the posting check flagged: text addressed to AI tools (which holds an automatic
+ * submit), invisible characters, look-alike letters. Nothing for a clean posting.
+ */
+function PostingCheck({ app }: { app: ApplicationRow }) {
+  const warnings = app.posting_warnings ?? [];
+  if (!warnings.length) return null;
+  // The first line is already quoted in its warning; list any others under it.
+  const more = app.posting_guard?.instruction_like.slice(1) ?? [];
+  return (
+    <div className="mt-5 border-t border-line pt-4 text-sm">
+      <div className="flex items-center gap-2">
+        <p className="font-semibold text-ink">Check this posting</p>
+        {app.posting_guard?.instruction_like.length ? (
+          <StatusChip tone="attention">Won't auto-submit</StatusChip>
+        ) : null}
+      </div>
+      <ul className="mt-1 list-disc space-y-1 pl-5 text-ink-muted">
+        {warnings.map((warning) => (
+          <li key={warning}>{warning}</li>
+        ))}
+      </ul>
+      {more.map((line) => (
+        <blockquote className="mt-2 border-l-2 border-line pl-3 text-ink-muted" key={line}>
+          “{line}”
+        </blockquote>
+      ))}
     </div>
   );
 }

@@ -1,6 +1,10 @@
 """Write THIRD-PARTY-NOTICES.txt: every component the desktop installer bundles.
 
-Three sources, each read from what is installed rather than a hand-kept list:
+Four sources, each read from what is installed or committed rather than a hand-kept list:
+
+- **Adapted source**: code adapted into ResumeTailor's own modules from another project,
+  one file per project in ``licenses/`` (a ``Name:``/``Source:``/``Commit:``/``License:``
+  header, a blank line, then the license text).
 
 - **Python**: the packages pinned in ``requirements.lock`` (what PyInstaller freezes),
   from ``importlib.metadata`` in the running environment, with the license files their
@@ -116,6 +120,27 @@ def _license_texts(folder: Path) -> list[str]:
     return texts
 
 
+def adapted_components(folder: Path) -> list[Component]:
+    """Projects whose code is adapted into ours, from their files in ``licenses/``."""
+    out = []
+    for path in sorted(folder.glob("*.txt")) if folder.is_dir() else []:
+        text = path.read_text(encoding="utf-8")
+        header = dict(
+            line.split(":", 1) for line in text.split("\n\n", 1)[0].splitlines()
+            if ":" in line and not line.startswith(" ")
+        )
+        out.append(
+            Component(
+                "Adapted source",
+                header.get("Name", path.stem).strip(),
+                header.get("Commit", "?").strip(),
+                header.get("License", "UNKNOWN").strip(),
+                [text],
+            )
+        )
+    return out
+
+
 def npm_components(frontend: Path) -> list[Component]:
     lock = json.loads((frontend / "package-lock.json").read_text(encoding="utf-8"))
     out = []
@@ -174,8 +199,9 @@ def render(components: list[Component], notes: list[str]) -> str:
         "ResumeTailor: third-party notices",
         "",
         "ResumeTailor itself is MIT-licensed (see LICENSE). It bundles the components",
-        "below, each under its own license. Where a license text was shipped with the",
-        "component it is reproduced at the end, once per distinct text.",
+        "below, each under its own license, and adapts code from the projects listed",
+        "under \"Adapted source\". Where a license text was shipped with the component",
+        "it is reproduced at the end, once per distinct text.",
         "",
     ]
     lines += [f"Note: {note}" for note in notes]
@@ -199,6 +225,7 @@ def render(components: list[Component], notes: list[str]) -> str:
 def main(argv: list[str] | None = None) -> int:
     parser = argparse.ArgumentParser(description=__doc__.split("\n", 1)[0])
     parser.add_argument("--out", type=Path, default=ROOT / "THIRD-PARTY-NOTICES.txt")
+    parser.add_argument("--licenses", type=Path, default=ROOT / "licenses")
     parser.add_argument("--lock", type=Path, default=ROOT / "requirements.lock")
     parser.add_argument("--frontend", type=Path, default=ROOT / "frontend")
     parser.add_argument(
@@ -210,7 +237,7 @@ def main(argv: list[str] | None = None) -> int:
     args = parser.parse_args(argv)
 
     notes: list[str] = []
-    components = python_components(args.lock)
+    components = adapted_components(args.licenses) + python_components(args.lock)
     if (args.frontend / "package-lock.json").is_file():
         components += npm_components(args.frontend)
     else:

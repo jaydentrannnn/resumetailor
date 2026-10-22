@@ -9,6 +9,7 @@ from typing import Any, Literal, get_args
 from pydantic import BaseModel, Field, PrivateAttr
 
 from resume_tailor.apply.funnel.screen import ScreenResult
+from resume_tailor.pipeline.posting_guard import GuardFindings
 
 ApplicationStatus = Literal[
     "discovered",
@@ -179,6 +180,9 @@ class Application(BaseModel):
     # Additive JSON-column fields: old SQLite/legacy rows load with empty defaults.
     resume_ack_revision: str = ""
     resume_ack_at: str = ""
+    #: What `posting_guard` removed from or flagged in the saved JD (`daily_rows.save_jd`);
+    #: None for a row saved before the guard, which `submit_guard` scans on demand.
+    posting_guard: GuardFindings | None = None
 
     #: The stored version this object was read from (never mutated), or None for a
     #: row built in memory. `upsert` diffs against it; see the module docstring.

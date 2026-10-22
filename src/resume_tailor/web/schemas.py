@@ -21,6 +21,7 @@ from ..document.cover_settings import CoverSettings
 from ..document.template_adjust import CurrentLayout
 from ..model_selection import AiModels, ModelProvider, ModelSelection
 from ..pipeline.include import IncludeOptions
+from ..pipeline.posting_guard import GuardFindings
 
 EffortLevel = Literal["low", "medium", "high"]
 #: Keys of `config.EFFORT_STEPS`.
@@ -1575,6 +1576,10 @@ class ApplicationOut(BaseModel):
     apply_kind: Literal["easy_apply", "external", "unknown"] = "unknown"
     #: A search-result card saved without its description (`store_models.Application.capture_stub`).
     capture_stub: bool = False
+    #: What the posting guard removed from or flagged in the JD (`posting_guard`).
+    posting_guard: GuardFindings | None = None
+    #: Its alarms as sentences (`posting_guard.warnings`); empty for a clean posting.
+    posting_warnings: list[str] = Field(default_factory=list)
 
 
 class ApplicationsListResponse(BaseModel):

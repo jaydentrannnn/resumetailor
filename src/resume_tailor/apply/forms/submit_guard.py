@@ -19,6 +19,9 @@ plain-language note:
   company and role that was submitted in the last 30 days.
 - **Pacing.** A random 20–90 s gap between automatic submits in this process, and only
   one submit in flight at a time (`pace`).
+- **Posting instructions.** The posting has a line addressed to an AI tool
+  (`posting_guard`). The text never reaches a model as an instruction, but an employer
+  who plants one is testing applicants, so the student looks before anything is sent.
 
 Every function reads the live registry and settings, so a cap reached mid-batch holds
 the next form, not the whole batch.
@@ -42,6 +45,7 @@ from resume_tailor import config
 
 HoldCode = Literal[
     "paused", "daily_cap", "company_cap", "already_submitted", "duplicate", "resume_quality",
+    "posting_instructions",
 ]
 
 #: Statuses that mean the employer (probably) has the application.
@@ -160,6 +164,27 @@ def _submitted_at(app: Any) -> datetime | None:
     return None
 
 
+def _posting_hold(app: Any) -> Hold | None:
+    """Hold a posting with a line addressed to an AI tool. A row saved before the guard
+    has no findings, so its saved JD is scanned now."""
+    from resume_tailor.pipeline import posting_guard
+
+    found = getattr(app, "posting_guard", None)
+    path = getattr(app, "jd_text_path", None)
+    if found is None and path:
+        try:
+            found = posting_guard.guard(Path(path).read_text(encoding="utf-8"))[1]
+        except OSError:
+            found = None
+    if found is None or not found.instruction_like:
+        return None
+    return Hold(
+        "posting_instructions",
+        "This posting has text addressed to AI tools. Check it before submitting:"
+        f" “{found.instruction_like[0]}”",
+    )
+
+
 def _describe(app: Any) -> str:
     label = f"{app.company} — {app.role}".strip(" —")
     return label or _key(app)
@@ -188,6 +213,8 @@ def check(
             return Hold(
                 "resume_quality", "Review this resume's quality warnings in Apply before submitting",
             )
+    if (held := _posting_hold(app)) is not None:
+        return held
     now = now or _now()
     if apps is None:
         from resume_tailor.apply.funnel import store

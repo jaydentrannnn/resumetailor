@@ -393,6 +393,35 @@ user (`_process_one(include_known=False)`). It never fills or submits: autofill 
 auto-submit happen only from Fill. Because it never submits, the scheduler starts a missed
 run on the next tick however late, and the automation pause does not hold it.
 
+**Posting integrity** (`pipeline/posting_guard.py`, pure; adapted from ai-job-search, MIT,
+notice in `licenses/`). Every way a posting arrives drops what a reader cannot see before
+the text is saved or reaches a model:
+
+- **HTML** (HTTP page, ATS feed fragment, uploaded `.html`): `strip_hidden` removes hidden
+  elements (`display:none`, `visibility:hidden`, zero opacity or font size, transparent
+  text, clip/clip-path, off-screen offsets, a zero box with clipped overflow, `hidden`,
+  `aria-hidden`) before `fetch_jd`'s extractor reads the markup. Style values are read the
+  way a browser reads them, with entities decoded and CSS comments removed. Comments and
+  script/style/svg/template blocks go too. A context variable (`fetch_jd.collect_hidden`)
+  gathers what was removed, including from deep inside `ats_api`, so it can be scanned.
+- **The browser read**: `_VISIBLE_TEXT_JS` removes elements that computed styles hide
+  (`innerText` keeps zero opacity, zero font size, transparent text and off-screen text)
+  and returns their text.
+- **All text**: `guard` removes invisible characters (zero-width, bidi, soft hyphen, BOM,
+  the Unicode tag block apart from the three UK flags; U+2028/U+2029 become line breaks).
+  It then scans visible and removed text for lines addressed to an AI reader, hidden URLs
+  and look-alike letters. Tag-block payloads are decoded so they can be quoted.
+
+The findings (`GuardFindings`) go on `JdText.guard` (with their alarms in `warnings`), on
+`FetchResult.guard`, and on the row as `Application.posting_guard` (`daily_rows.save_jd`).
+The API adds `posting_warnings` for the Overview's "Check this posting" notice. Hidden blocks
+alone are context, not an alarm: navigation chrome is hidden on most pages. An
+instruction-like line holds auto-submit; Prepare and Fill still run. The cover-letter and
+application-answer prompts frame the posting as untrusted data. For the cover letter the
+frame sits in the request as well as the system prompt, because a target field's snapshot
+freezes its system prompt. One side effect: an Eightfold page (`pcsx-data` JSON in a hidden
+`<code>`) no longer passes as text over HTTP, so it goes to the browser read.
+
 The SPA starts persistent `find`, `prepare`, and `fill` operations through
 `apply/funnel/operations.py`; operation state and a bounded event history live in
 `output/.../applications/operations.json`, so progress survives page refreshes. Fill verifies
@@ -405,7 +434,9 @@ the header's "Pause all automation" switch is on (`<DATA_ROOT>/automation.json`,
 profile). It holds when the rolling 24-hour caps are reached (`auto_submit_max_per_day`
 default 25, `auto_submit_max_per_company_per_day` default 2), counted from `auto_submit`
 status notes. It also holds a possible duplicate: the row was already submitted, or a row in
-the same group or with the same company and role was submitted in the last 30 days.
+the same group or with the same company and role was submitted in the last 30 days. And it
+holds a posting with a line addressed to an AI tool (`posting_instructions`, from the row's
+`posting_guard` findings; a row saved before the guard has its `jd.txt` scanned on the spot).
 `submit_guard.pace` spaces automatic submits 20–90 s apart, one at a time. Fill runs up to
 `ApplySettings.max_parallel_fills` (default 2, range 1–4) applications at once, each in its
 own tab over its own CDP connection (Playwright sync objects are thread-bound); file uploads

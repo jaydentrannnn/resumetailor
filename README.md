@@ -560,3 +560,11 @@ Per-stage overrides (`--rewrite-model`, `--expand-model`, `--skills-model`, or t
 ResumeTailor is released under the [MIT License](LICENSE). The desktop installer also
 ships `THIRD-PARTY-NOTICES.txt`, the licenses of the libraries it bundles
 (`scripts/third_party_notices.py` generates it at release time).
+
+### Acknowledgements
+
+The posting integrity check (`pipeline/posting_guard.py`, which strips hidden text and
+flags lines addressed to AI tools) is adapted from
+[ai-job-search](https://github.com/ai-job-search-dev/ai-job-search) by Mads Lorentzen,
+under the MIT License; its notice is in `licenses/ai-job-search-LICENSE.txt`.
+Other features credited to that project's ideas name it where they are described.

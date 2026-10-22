@@ -115,6 +115,18 @@ export type ApplicationRow = {
   apply_kind?: ApplyKind;
   /** Saved from search results by the extension, description not captured yet. */
   capture_stub?: boolean;
+  /** What the posting check removed or flagged (`posting_guard`); null before it ran. */
+  posting_guard?: {
+    hidden_blocks: number;
+    hidden_urls: string[];
+    invisible_chars: Record<string, number>;
+    invisible_flagged: number;
+    /** Lines addressed to an AI tool, quoted; these hold an automatic submit. */
+    instruction_like: string[];
+    homoglyph_runs: string[];
+  } | null;
+  /** The check's alarms as sentences; empty for a clean posting. */
+  posting_warnings?: string[];
   screen: {
     passed: boolean;
     coverage: number;
