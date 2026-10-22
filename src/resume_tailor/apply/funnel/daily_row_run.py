@@ -220,6 +220,11 @@ class _RowRun:
         index = self.index
         if self.ckey in index.by_canonical:
             return self._merge_known(index.by_canonical[self.ckey])
+        # The same source posting under another key: its link resolves differently now
+        # (e.g. a wrapper that reaches the ATS). Never a second row for one posting.
+        known = index.by_source_ref.get((self.ref.source, self.ref.source_job_id))
+        if known is not None and known in index.by_canonical:
+            return self._merge_known(self._rekey(index.by_canonical[known], known))
         if index.by_group.get(self.gkey):
             return self._join_group()
         app = self._discover()
@@ -233,6 +238,25 @@ class _RowRun:
         index.by_canonical[self.ckey] = app
         index.by_source_ref[(self.ref.source, self.ref.source_job_id)] = self.ckey
         index.by_group.setdefault(self.gkey, []).append(self.ckey)
+
+    def _rekey(
+        self, existing: store_models.Application, old_key: str
+    ) -> store_models.Application:
+        """Move ``existing`` from a placeholder key onto this sighting's real requisition
+        key (`_merge_known`'s upsert writes the move); a real key is never replaced."""
+        if not identity.is_placeholder_key(old_key) or identity.is_placeholder_key(self.ckey):
+            return existing
+        existing.canonical_key = self.ckey
+        existing.final_url = self.final_url
+        index = self.index
+        index.by_canonical[self.ckey] = index.by_canonical.pop(old_key)
+        for ref, ckey in index.by_source_ref.items():
+            if ckey == old_key:
+                index.by_source_ref[ref] = self.ckey
+        for members in index.by_group.values():
+            members[:] = [self.ckey if k == old_key else k for k in members]
+        self._log(f"[rekey] {self.row.company} {old_key} → {self.ckey}")
+        return existing
 
     def _merge_known(self, existing: store_models.Application) -> store_models.Application | None:
         """Another sighting of a known requisition: record it; carry on only when that

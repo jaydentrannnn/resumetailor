@@ -189,6 +189,8 @@ def prepare_application(
     except Exception as exc:
         daily_rows._settle_failed_prepare(previous, source_job_id, error=str(exc))
         raise
+    # A link that now resolves to a requisition another row holds leaves this one behind.
+    store.fold_stranded()
     prepared = store.get(source_job_id)
     assert prepared is not None
     if refresh_artifacts and prepared.status != "ready":
@@ -302,6 +304,8 @@ def run_daily(
             on_progress=on_progress,
         )
         daily_progress._progress_set(processed=len(to_process), current="")
+        if not dry_run:
+            store.fold_stranded()
 
         daily_rows._append_log(
             log_file,

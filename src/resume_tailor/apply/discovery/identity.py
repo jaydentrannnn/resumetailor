@@ -242,6 +242,13 @@ def canonical_key(final_url: str) -> str:
     return f"other:{host}:{digest}"
 
 
+def is_placeholder_key(key: str) -> bool:
+    """Whether ``key`` names a URL rather than a requisition: an unrecognised host
+    (often a wrapper link that did not resolve yet), a row with no link, or a legacy id.
+    """
+    return not key or key.startswith(("other:", "pending:", "legacy:"))
+
+
 def _requisition(url: str) -> tuple[str, str, str]:
     """(ATS, owner, id) of the requisition a page URL shows; ("other", host, digest) when
     it names none. The owner is the employer's tenant or board ("R123" at two Workday

@@ -100,6 +100,66 @@ def _migrate_v3(
         changed = True
     return apps, changed
 
+def _refs(app: store_models.Application) -> set[tuple[str, str]]:
+    return {(ref.source, ref.source_job_id) for ref in app.source_refs} | {
+        (app.source, app.source_job_id)
+    }
+
+def _fold_stranded_duplicates(
+    apps: dict[str, store_models.Application],
+) -> tuple[dict[str, store_models.Application], bool]:
+    """Drop the untouched copy left behind when a posting's link began resolving.
+
+    A posting saved under a placeholder key (an unresolved wrapper link) gets its real
+    requisition key once the link reaches the ATS: `daily_row_run._RowRun._rekey` moves
+    the row, but when another source already found that requisition the sighting merges
+    into that row instead, and older versions always made a second row. Either way the
+    placeholder row stays ``discovered`` with a source posting a real-keyed row also
+    holds. It is folded into that one sibling only when it never got further (no tailor
+    run, no fill); its source refs move across and any ``duplicate_of`` naming it is
+    pointed at the sibling. Rows that change are copies, so ``apps`` is never mutated and
+    an unchanged row is still the very object passed in.
+    """
+    by_ref: dict[tuple[str, str], list[str]] = {}
+    for key, app in apps.items():
+        for ref in _refs(app):
+            by_ref.setdefault(ref, []).append(key)
+    out = dict(apps)
+    changed = False
+
+    def editable(key: str) -> store_models.Application:
+        if out[key] is apps[key]:
+            out[key] = apps[key].model_copy(deep=True)
+        return out[key]
+
+    for key, app in apps.items():
+        stranded = (
+            app.status == "discovered"
+            and identity.is_placeholder_key(key)
+            and not app.job_id
+            and app.fill is None
+        )
+        if not stranded:
+            continue
+        siblings = {
+            other
+            for ref in _refs(app)
+            for other in by_ref[ref]
+            if other != key and other in out and not identity.is_placeholder_key(other)
+        }
+        if len(siblings) != 1:
+            continue
+        real_key = siblings.pop()
+        known = _refs(out[real_key])
+        missing = [ref for ref in app.source_refs if (ref.source, ref.source_job_id) not in known]
+        if missing:
+            editable(real_key).source_refs.extend(ref.model_copy() for ref in missing)
+        del out[key]
+        for other_key in [k for k, other in out.items() if other.duplicate_of == key]:
+            editable(other_key).duplicate_of = None if other_key == real_key else real_key
+        changed = True
+    return out, changed
+
 def _migrate_v4(
     apps: dict[str, store_models.Application],
 ) -> tuple[dict[str, store_models.Application], bool]:

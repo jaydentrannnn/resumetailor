@@ -2399,3 +2399,20 @@ gh_jid fix). Run 1 vs its 30-posting rerun had zero noise, but live sites drift.
 - Not done, by decision: years-of-experience range options (no measured blank) and
   ignoring search boxes in the entry wait (no measured case).
 - Still untested: Workday, iCIMS and Oracle (58 targets) need the test inbox.
+
+## 2026-10-22 — One row per source posting when a link starts resolving
+
+- Bug: a posting first saved under a placeholder key (`other:<wrapper host>:…`, e.g. a
+  zapply.jobs link that did not resolve yet, then `needs_browser`) got a second row when
+  Prepare later resolved the link to the ATS: the new key missed `by_canonical`, the
+  same company+role hit `by_group`, and `_join_group` made a sibling with the same
+  `source_job_id`. The original stayed `discovered`. The Apply page keys rows and the
+  selection by `source_job_id`, so the ready row lost to the stuck one: Fill (n) did not
+  count it, and duplicate React keys left ghost rows under Needs you. `store.get` by
+  source id picked either. Live data: 11 such pairs, plus 11 stuck copies whose link
+  resolved to a requisition another source already held.
+- Fix: `_RowRun._register` checks the sighting's source ref before the group index and
+  `_rekey`s that row onto the real key (a real key is never replaced by a placeholder).
+  `store.fold_stranded` drops an untouched placeholder `discovered` row (no tailor run,
+  no fill) whose source posting exactly one real-keyed row also holds; it runs on each
+  database's first open in a process, after Prepare and after each Find/nightly run.

@@ -83,6 +83,8 @@ _JSON_MARKER = "json_import:applications"
 _cache: tuple[Path, int, dict[str, store_models.Application]] | None = None
 #: Databases whose JSON import is settled, so `_db` can skip the check.
 _imported: set[Path] = set()
+#: Databases `_repair_stranded` has checked in this process.
+_repaired: set[Path] = set()
 
 
 def _db_file() -> Path:
@@ -95,7 +97,40 @@ def _db() -> sqlite3.Connection:
     conn = db.connect(db_file)
     if db_file not in _imported:
         _import_json(conn, db_file)
+    if db_file not in _repaired:
+        _repair_stranded(conn)
+        _repaired.add(db_file)
     return conn
+
+
+def _repair_stranded(conn: sqlite3.Connection) -> None:
+    """`fold_stranded` on first open, for rows an older version left behind."""
+    with _LOCK, db.transaction(conn):
+        rows = {
+            key: store_models.Application.model_validate_json(doc)
+            for key, doc in conn.execute("SELECT key, doc FROM applications")
+        }
+        folded, changed = store_migrations._fold_stranded_duplicates(rows)
+        if not changed:
+            return
+        for key in rows.keys() - folded.keys():
+            conn.execute("DELETE FROM applications WHERE key = ?", (key,))
+        for key, app in folded.items():
+            if app is not rows[key]:
+                _put(conn, key, app)
+        db.bump(conn, _TABLE)
+        _log.info("folded %d stranded application rows", len(rows) - len(folded))
+
+
+def fold_stranded() -> int:
+    """Remove placeholder rows a resolved sighting left behind; returns how many
+    (`store_migrations._fold_stranded_duplicates`). Run after Prepare and each Find."""
+    with _txn():
+        current = _snapshot()
+        folded, changed = store_migrations._fold_stranded_duplicates(current)
+        if changed:
+            _write(folded)
+        return len(current) - len(folded)
 
 
 @contextmanager
