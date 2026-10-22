@@ -2368,3 +2368,34 @@ Workday/iCIMS/Oracle (`fill_probe_inbox.py`, IMAP; not run yet, no test inbox).
 - **Probe artefacts:** SmartRecruiters' own-host résumé upload is blocked by the guard
   (page shows "Cannot upload resume"), so its 7 stops are not app failures; the readback
   labels radio groups by option text, so Ashby/Lever answers show as "not seen".
+
+## 2026-10-21 — Batch 3 fixes, measured on the same postings (run 1 → run 3)
+
+Seven fixes from the Batch 3 probe (commits 67e5bbd..adbd0fd), re-probed on the 61
+non-account postings (`output/evals/b3-run3`; Duolingo again in `b3-run3b` after the
+gh_jid fix). Run 1 vs its 30-posting rerun had zero noise, but live sites drift.
+
+- Reached review 33 → 37; called closed 1 → 7 (Ashby "Job not found", Greenhouse
+  `?error=true` and gh_jid landings); fill_failed 6 → 2; stopped mid-way 18 → 12.
+- Answers on the page graded ok 378 → 396; wrong 0 → 0; leaks 0; submits 0.
+- Required blanks, deduplicated by label: 103 → 99. The raw count fell 234 → 99 mostly
+  because the readback now names radio/checkbox groups by their question (counted once).
+- Fixed blanks: Greenhouse "degree currently pursuing" (Bachelor's → Undergraduate),
+  "Degree discipline", now-or-future sponsorship; Ashby contact number, most recent
+  employer, place of residence, course studying; Lever location; Jobvite preferred name.
+- Entry: Meta hides its posting with aria-hidden (role queries missed "Apply now");
+  Dayforce's chooser needs "Apply without an Account". Both reach their forms headless;
+  under the probe, Meta's guard still refuses `/ajax/route-definition/` (probe artefact).
+  PACCAR reaches its SuccessFactors sign-in; run 1's failure was the guard refusing
+  `/services/cas/createpayload/`. A page whose only "filled" box kept its own value
+  (PACCAR's job-alert days) now ends as no form.
+- SmartRecruiters 5/7 reach review with the probe's own-host upload of the made-up
+  resume; 01 and 07 still stop mid-way (wizard does not advance; not yet diagnosed).
+- Resolver diagnosis: of 21 rejected dropdown answers, most rejections were right
+  (journalism years, UK right to work, "worked at ID.me?"); the guard was not loosened.
+- Regression caught by the rerun and fixed: Duolingo draws its own form from Greenhouse's
+  API with no embed frame, so the gh_jid check now applies only to a page with no
+  controls of its own.
+- Not done, by decision: years-of-experience range options (no measured blank) and
+  ignoring search boxes in the entry wait (no measured case).
+- Still untested: Workday, iCIMS and Oracle (58 targets) need the test inbox.
