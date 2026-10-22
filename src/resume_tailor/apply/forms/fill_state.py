@@ -158,6 +158,9 @@ class _FillState:
         self.wizard = None if self.is_workday else wizards.for_fill(wizard_ats)
         #: The platform the landed page shows (`ats_fingerprint`), for diagnostics.
         self.landed_platform = ""
+        #: Whether the entry step clicked an Apply control (False only when it found
+        #: none), for the progress log.
+        self.entry_clicked = True
         self.ats_name = (app.ats or pkt.ats or "").lower()
         self.out_dir = config.APPLICATIONS_OUTPUT_DIR / source_job_id
         self.page: Any = None

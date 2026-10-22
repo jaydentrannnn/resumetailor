@@ -58,8 +58,11 @@ def _click_and_track_popup(page: Any, context: Any, click_fn: Callable[[], None]
 #: ATSs whose pre-fill hint opens the application form itself (no second entry click).
 _HINT_ENTERS_FORM = frozenset({"smartrecruiters"})
 
-def find_and_click_apply(page: Any, ats: str, context: Any = None) -> Any:
-    """Find and click the Apply button/link, returning the resulting active page."""
+def find_and_click_apply(
+    page: Any, ats: str, context: Any = None, outcome: dict[str, bool] | None = None,
+) -> Any:
+    """Find and click the Apply button/link, returning the resulting active page.
+    ``outcome["entered"]`` says whether an entry control was clicked."""
     current_page = page
     entered = False
 
@@ -113,9 +116,12 @@ def find_and_click_apply(page: Any, ats: str, context: Any = None) -> Any:
                 current_page, context, lambda: clicks.safe_click(manual_btn, purpose="enter", timeout=4000)
             )
             _settle_after_entry(current_page, before, 1000)
+            entered = True
     except Exception:  # noqa: BLE001
         pass
 
+    if outcome is not None:
+        outcome["entered"] = entered
     return current_page
 
 _CONTROL_COUNT_JS = (

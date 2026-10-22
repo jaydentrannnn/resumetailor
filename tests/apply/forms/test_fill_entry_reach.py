@@ -380,3 +380,26 @@ def test_guest_routes(text, guest):
     from resume_tailor.apply.ats import ats_hints
 
     assert bool(ats_hints.GUEST_ENTRY_PATTERN.search(text)) is guest
+
+
+
+class _NoApply(_Page):
+    """A posting with no Apply control (Meta and Tesla as the Batch 3 fill saw them)."""
+
+    def get_by_role(self, role, **kwargs):
+        return _Absent()
+
+    def evaluate(self, _script):
+        return 0
+
+
+def test_the_entry_step_says_whether_it_clicked_an_apply_control():
+    outcome = {}
+    fill_buttons.find_and_click_apply(_NoApply(), "other", outcome=outcome)
+    assert outcome == {"entered": False}
+    outcome = {}
+    page = _Page(menu_item=None)
+    page.get_by_role = lambda role, **kwargs: _MenuItem(page) if role == "button" else _Absent()
+    page.evaluate = lambda _script: 0
+    fill_buttons.find_and_click_apply(page, "other", outcome=outcome)
+    assert outcome == {"entered": True}

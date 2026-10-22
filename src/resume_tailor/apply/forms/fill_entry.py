@@ -78,7 +78,11 @@ class _FillEntry(fill_state._FillState):
         if self.fill_mode != "continue" or self.is_workday:
             self.target_id = browser.target_id(context, self.page)
             self._record_target(self.page.url)
-        self.progress("application form opened")
+        if not self.entry_clicked:
+            # Meta and Tesla (Batch 3) logged "form opened" with no Apply control found.
+            self.progress("no Apply control found; checking the posting page itself")
+        else:
+            self.progress("application form opened")
         if self.fill_mode == "continue":
             from resume_tailor.apply.funnel import submission_monitor  # noqa: PLC0415
             try:
@@ -148,9 +152,11 @@ class _FillEntry(fill_state._FillState):
             return self._handoff(closed, status="fill_failed")
         self.progress("locating application form")
         if not self.is_workday:
+            outcome: dict[str, bool] = {}
             self.page = fill_buttons.find_and_click_apply(
-                page, self.app.ats or self.pkt.ats, context=self.context
+                page, self.app.ats or self.pkt.ats, context=self.context, outcome=outcome
             )
+            self.entry_clicked = outcome.get("entered", True)
         return None
 
     def _enter_workday(self) -> FillResult | None:
