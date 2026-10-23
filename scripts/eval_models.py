@@ -19,11 +19,13 @@ Experiment E (arms are `current` and `hybrid`; fetched non-tech postings include
     python scripts\\eval_models.py extract --limit 80 --control 30
     python scripts\\eval_models.py extract --limit 30 --spec <json spec> --tag azure
 
-Variant experiments (arms `current` vs `gaps` / `scope`; same model and effort; each run's
-own tailored bullets; the cover sample keeps runs with an unmet must-have):
+Variant experiments (arms `current` vs `gaps` / `scope` / `note`; same model and effort;
+each run's own tailored bullets; the cover sample keeps runs with an unmet must-have).
+For review experiments, `current` is the frozen pre-8390edb prompt and schema:
 
     python scripts\\eval_models.py cover --limit 30 --control 15
     python scripts\\eval_models.py review --limit 30 --control 15
+    python scripts\\eval_models.py review-note --limit 30 --control 15
 
 Judge (a different model family; Azure OpenAI via its OpenAI-compatible v1 endpoint):
 

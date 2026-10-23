@@ -24,9 +24,28 @@ from resume_tailor.pipeline.jd import JobRequirements
 from resume_tailor.pipeline.rewrite_prompts import _format_keywords
 
 
-class ScopedVerdict(review.BulletVerdict):
+class BulletVerdict(BaseModel):
+    """One bullet's review outcome from the model."""
+
+    id: str
+    verdict: Literal["keep", "cut", "rewrite"]
+    reason: str = ""
+    replacement: str = ""
+
+
+class ReviewLLM(BaseModel):
+    """Schema-validated model output for one review pass."""
+
+    scope_read: str = ""
+    bullets: list[BulletVerdict] = Field(default_factory=list)
+
+
+class NotedVerdict(BulletVerdict):
     scope_risk: Literal["none", "stretch"] = "none"
     scope_note: str = ""
+
+
+class ScopedVerdict(NotedVerdict):
     softer_replacement: str = ""
 
 
@@ -36,17 +55,33 @@ class ScopedReviewLLM(BaseModel):
     consistency: list[str] = Field(default_factory=list)
 
 
-class NotedVerdict(review.BulletVerdict):
-    scope_risk: Literal["none", "stretch"] = "none"
-    scope_note: str = ""
-
-
 class NotedReviewLLM(BaseModel):
     scope_read: str = ""
     bullets: list[NotedVerdict] = Field(default_factory=list)
 
 
-SYSTEM = review._BASE_SYSTEM + """
+#: Frozen from pipeline/review.py before 8390edb (parent d7435e4). The baseline's
+#: prompt and response schema above must not follow changes to the shipped review.
+BASE_SYSTEM = """\
+You are a hiring manager synthesised from the job posting below. Review the candidate's \
+tailored resume bullets for THIS role only.
+
+For each bullet, choose exactly one verdict:
+- keep — this bullet should stay on the resume as written
+- cut — this bullet does not help for this role; remove it
+- rewrite — the claim is useful but the wording should change; supply a replacement
+
+Rules:
+- Judge fit for the posting, not general resume quality.
+- Never invent a skill, tool, metric, employer, or claim absent from the bullet you are \
+reviewing. A rewrite may only rephrase what that bullet already says.
+- Give a one-line reason for every verdict.
+- Prefer cut over rewrite when the bullet is off-topic; prefer keep when it already \
+mirrors the posting honestly.
+"""
+
+
+SYSTEM = BASE_SYSTEM + """
 Also, for each bullet:
 - scope_risk: "stretch" when the wording may claim more ownership, scale or impact than \
 the bullet's own facts show, so an interviewer could catch it; otherwise "none".
@@ -61,8 +96,13 @@ numbers, tools, team sizes). Leave it empty when there are none.
 
 #: Variant B ("note"): the stretch flag and its note only. The rewrite instructions are
 #: untouched and no softer text is generated, so nothing new reaches the guard. It passed
-#: on 2026-10-23 and shipped: production's prompt is now exactly this.
-NOTE_SYSTEM = review._SYSTEM
+#: on 2026-10-23 and shipped. Keep this measured arm fixed alongside the baseline.
+NOTE_SYSTEM = BASE_SYSTEM + """
+Also, for each bullet:
+- scope_risk: "stretch" when the wording may claim more ownership, scale or impact than \
+the bullet's own facts show, so an interviewer could catch it; otherwise "none".
+- scope_note: one line saying what could be questioned, only when scope_risk is "stretch".
+"""
 
 
 def _guarded(source: Bullet, text: str) -> tuple[str, str]:
@@ -82,14 +122,18 @@ def review_scoped(
     bullets: dict[str, str],
     cover_paragraphs: Sequence[str] = (),
     *,
-    variant: Literal["scope", "note"] = "scope",
+    variant: Literal["baseline", "scope", "note"] = "scope",
 ) -> dict[str, Any]:
     """One broader review pass; the record shape `stages.review_record` also produces.
-    `variant="note"` asks for the stretch flag and note only, over the production
-    review's exact user message (no cover letter, no consistency, no softer text)."""
-    note = variant == "note"
+    `variant="baseline"` replays the pre-8390edb review. `variant="note"` asks for
+    the stretch flag and note only, over the same user message (no cover letter,
+    no consistency, no softer text). Both prompts and schemas are frozen here."""
+    baseline = variant == "baseline"
+    scope = variant == "scope"
+    if baseline and not bullets:
+        return {"scope_read": "", "bullets": [], "consistency": []}
     notes = "\n".join(f"  - {n}" for n in requirements.domain_notes) or "  (none)"
-    cover = "" if note else "\n\n".join(p.strip() for p in cover_paragraphs if p.strip())
+    cover = "\n\n".join(p.strip() for p in cover_paragraphs if p.strip()) if scope else ""
     user = (
         f"<role>{requirements.title} ({requirements.seniority})</role>\n\n"
         f"<what_the_role_involves>\n{notes}\n</what_the_role_involves>\n\n"
@@ -100,9 +144,10 @@ def review_scoped(
     response = llm.client_for("review").messages.parse(
         model=config.model_for("review"),
         max_tokens=config.max_tokens_for("review"),
-        system=NOTE_SYSTEM if note else SYSTEM,
+        system={"baseline": BASE_SYSTEM, "note": NOTE_SYSTEM, "scope": SYSTEM}[variant],
         messages=[{"role": "user", "content": user}],
-        output_format=NotedReviewLLM if note else ScopedReviewLLM,
+        output_format={"baseline": ReviewLLM, "note": NotedReviewLLM,
+                       "scope": ScopedReviewLLM}[variant],
         output_config={"effort": config.effort_for("review")},
     )
     parsed = response.parsed_output
@@ -116,16 +161,19 @@ def review_scoped(
         source = by_id.get(item.id) or Bullet(id=item.id, text=bullets[item.id], tags=[])
         replacement, dropped = (
             _guarded(source, item.replacement) if item.verdict == "rewrite" else ("", ""))
-        stretch = item.scope_risk == "stretch"
-        offered_softer = "" if note else item.softer_replacement
+        if baseline and dropped:
+            dropped = "rewrite " + dropped
+        risk = "none" if baseline else item.scope_risk
+        stretch = risk == "stretch"
+        offered_softer = item.softer_replacement if scope else ""
         softer, softer_dropped = _guarded(source, offered_softer) if stretch else ("", "")
         rows.append({
             "id": item.id, "verdict": item.verdict, "reason": item.reason.strip(),
             "replacement": replacement, "dropped_note": dropped,
             "offered": bool(item.replacement.strip()) and item.verdict == "rewrite",
-            "scope_risk": item.scope_risk, "scope_note": item.scope_note.strip() if stretch else "",
+            "scope_risk": risk, "scope_note": item.scope_note.strip() if stretch else "",
             "softer": softer, "softer_dropped": softer_dropped,
             "softer_offered": stretch and bool(offered_softer.strip()),
         })
-    consistency = [] if note else [c.strip() for c in parsed.consistency if c.strip()]
+    consistency = [c.strip() for c in parsed.consistency if c.strip()] if scope else []
     return {"scope_read": parsed.scope_read.strip(), "bullets": rows, "consistency": consistency}

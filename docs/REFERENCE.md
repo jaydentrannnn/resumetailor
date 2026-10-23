@@ -762,22 +762,30 @@ dropped (they were another posting's). `pipeline/interview_prep.prepare` (purpos
 the requirements, the sent bullets and cover letter, the must-haves the resume lacks
 (coverage `resume is None`) and earlier outcome notes; it returns likely questions tagged
 by source, STAR stories citing bullet ids, and questions to ask. A story citing no sent
-bullet, or whose parts fail `coverletter.check_claims` against only its cited bullets (no
-posting numbers), is left out with a note. Gap questions get no drafted answer (the 4d
-gap-bridge carve-out was not shipped). `probe_points` (no LLM) lists sent bullets with a
+bullet, or whose parts fail `sent_claims.check_claims` against only its cited sent text
+(no current master-resume context, tags or posting numbers), is left out with a note.
+Sent bullets removed from the current master still support a draft, with a warning to
+check whether they were removed to correct a fact. Gap questions get no drafted answer
+(the 4d gap-bridge carve-out was not shipped). `probe_points` (no LLM) lists sent bullets with a
 number or an ownership verb. `POST /api/applications/{id}/interview-prep` (409 with no
-tailored run) saves `APPLICATIONS_OUTPUT_DIR/<id>/interview_prep/<stage>.json`; the GET
-lists them. `pipeline/followup_note.draft` (purpose `followup`) writes a 60–120 word
-follow-up or thank-you for email, LinkedIn or a portal; each line passes `check_claims`
-against the sent bullets plus typed facts (name, recipient, company, role, send date,
+tailored run) captures the profile and destination before drafting, runs unlocked in
+that profile's context, and re-checks the active profile under the template lock before
+saving `APPLICATIONS_OUTPUT_DIR/<id>/interview_prep/<stage>.json` (409 if it changed);
+the GET lists them. `pipeline/followup_note.draft` (purpose `followup`) writes a 60–120
+word follow-up or thank-you for email, LinkedIn or a portal; each line passes
+`sent_claims.check_claims` against the sent bullets plus typed facts (name, recipient,
+company, role, send date,
 event notes, salutations, days, months), else a claim-free template replaces it with a
 warning. A row with no run still gets a note (with no bullets, any claim falls back).
 Nothing is recorded until the student presses Mark as sent (`followup_sent`).
 `apply/funnel/followup_due.state` (pure; UTC days, like send dates) offers a follow-up at
 10+ days with no employer reply, under 2 sent and 7+ days since the last, and no
-`employer_timeline` date still ahead; a thank-you after an interview event with nothing
-sent since; and `stale` at 60+ days silent. `ApplicationOut.follow_up` carries it on the
-detail response; `GET /api/applications/follow-ups` lists due and stale rows for the
+`employer_timeline` date still ahead; a thank-you after a completed interview (or after
+a scheduled interview's date has passed) with nothing sent since; and `stale` at 60+
+days silent with no pending employer timeline. An undated legacy timeline gets seven
+days from its recorded date; the Outcome form requires an expected reply date for new
+timelines. `ApplicationOut.follow_up` carries it on the detail response;
+`GET /api/applications/follow-ups` lists due and stale rows for the
 Apply page's Follow up line, and `POST /api/applications/no-reply` records `ghosted` on
 rows still stale (never `rejected`). Routes live in `web/routes/after_send.py`, registered
 before `applications` so `follow-ups` is not read as an id, and run on the Light model
@@ -1960,7 +1968,12 @@ the arms on the same cases. It is eval-only: nothing under `src/` imports
   (`review_scoped(variant="note")`, stage `review-note`) asks for the scope flag and its
   note only, over the production review's exact user message; it shipped on 2026-10-23,
   so `review._SYSTEM` is now `_BASE_SYSTEM + _SCOPE_RULES` and `.review.md` prints "May be
-  questioned: <note>" (the review stays CLI-only, `--review`). The production seam for
+  questioned: <note>" (the review stays CLI-only, `--review`). Both review experiments
+  keep `current` as the pre-8390edb prompt and schema frozen in `evals/review_scope.py`
+  (`variant="baseline"`); the measured note arm is frozen there too, so changes to the
+  shipped review cannot turn the comparison into a test against itself. Use a fresh
+  `--name` for a new run: completed records in an existing folder are still skipped.
+  The production seam for
   the cover variants is `coverletter._user_message`. The others did not ship (results in
   `docs/notes/cover-letter-and-claims.md` and `docs/notes/pipeline-and-guards.md`).
 - **Cost.** At `medium`, rewrite on gemini-3.8-flash is ~$0.06 and ~140 s per posting; at

@@ -6,8 +6,8 @@ import json
 from datetime import UTC, datetime, timedelta
 
 from resume_tailor import config
+from resume_tailor.apply.funnel import followup_due, outcomes, store_models
 from resume_tailor.apply.funnel import store as apply_store
-from resume_tailor.apply.funnel import store_models
 from resume_tailor.pipeline import followup_note, interview_prep
 
 
@@ -100,6 +100,56 @@ def test_follow_ups_list_due_rows_and_no_reply_marks_only_stale_ones(client):
     assert (event.type, event.note) == ("ghosted", "No reply 70 days after sending")
     assert apply_store.get("b").outcome_events == []
     assert c.get("/api/applications/follow-ups").json()["stale"] == []
+
+
+def test_prep_refuses_to_save_after_a_profile_switch(client, monkeypatch, tmp_path):
+    c, _q = client
+    _run()
+    apply_store.save_all({"a": _sent(12, job_id="run-1")})
+    original_folder = config.APPLICATIONS_OUTPUT_DIR / "a" / "interview_prep"
+    other_folder = tmp_path / "other-profile"
+    reply = interview_prep.PrepLLM()
+
+    class SwitchingClient(_Client):
+        def parse(self, **kwargs):
+            monkeypatch.setattr(config, "_ACTIVE_WORKSPACE_ID", "other-profile")
+            monkeypatch.setattr(config, "APPLICATIONS_OUTPUT_DIR", other_folder)
+            return super().parse(**kwargs)
+
+    monkeypatch.setattr(interview_prep.llm, "client_for", lambda p: SwitchingClient(reply, []))
+    response = c.post("/api/applications/a/interview-prep", json={"stage": "technical"})
+    assert response.status_code == 409
+    assert not (original_folder / "technical.json").exists()
+    assert not (other_folder / "a" / "interview_prep" / "technical.json").exists()
+
+
+def test_a_saved_undated_timeline_keeps_detail_and_follow_ups_readable(client, monkeypatch):
+    c, _q = client
+    today = followup_due.today()
+    app = _sent(70)
+    outcomes.add_event(app, "employer_timeline", note="Waiting for the recruiter")
+    apply_store.save_all({"a": app})
+    # Read the persisted row, including the legacy null date, through both front doors.
+    detail = c.get("/api/applications/a")
+    assert detail.status_code == 200
+    assert detail.json()["application"]["follow_up"]["stale"] is False
+    assert c.get("/api/applications/follow-ups").json() == {"due": [], "stale": []}
+    monkeypatch.setattr(followup_due, "today", lambda: today + timedelta(days=8))
+    listed = c.get("/api/applications/follow-ups").json()
+    assert [row["application_id"] for row in listed["due"]] == ["a"]
+
+
+def test_bulk_no_reply_skips_an_old_application_with_a_pending_timeline(client):
+    c, _q = client
+    deadline = (followup_due.today() + timedelta(days=7)).isoformat()
+    app = _sent(70)
+    outcomes.add_event(app, "employer_timeline", occurred_on=deadline)
+    apply_store.save_all({"a": app})
+    result = c.post("/api/applications/no-reply", json={"application_ids": ["a"]})
+    assert result.json() == {
+        "updated": [], "skipped": {"a": f"The employer said to expect news by {deadline}."},
+    }
+    assert [e.type for e in apply_store.get("a").outcome_events] == ["employer_timeline"]
 
 
 def test_the_report_downloads_as_one_html_file(client):

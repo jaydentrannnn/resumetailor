@@ -50,10 +50,13 @@ export function OutcomeForm({
           </select>
         </label>
         <label className="block text-xs">
-          <span className="mb-1 block text-ink-2">When (optional)</span>
+          <span className="mb-1 block text-ink-2">
+            {type === "employer_timeline" ? "Expected reply date" : "When (optional)"}
+          </span>
           <input
             type="date"
             className="field text-sm"
+            required={type === "employer_timeline"}
             value={day}
             onChange={(e) => setDay(e.target.value)}
           />

@@ -28,7 +28,7 @@ from resume_tailor.apply.funnel import store as apply_store
 from resume_tailor.content import data
 from resume_tailor.infra import atomic
 from resume_tailor.pipeline import followup_note, interview_prep
-from resume_tailor.web import job_routing
+from resume_tailor.web import job_routing, template_ops
 
 router = APIRouter()
 
@@ -163,21 +163,35 @@ def saved_preps(source_job_id: str) -> PrepList:
 )
 def make_prep(source_job_id: str, body: PrepRequest) -> interview_prep.InterviewPrep:
     """Draft prep for one round from what was sent, and save it (replacing that round's)."""
-    app = _app(source_job_id)
-    copy = _copy(app)
+    with template_ops.LOCK:
+        context = config.default_context()
+        app = _app(source_job_id)
+        folder = _prep_dir(app)
+        copy = _copy(app)
+        resume = data.load()
     try:
-        with job_routing.pinned_role("light"):
+        with config.use_context(context), job_routing.pinned_role("light"):
             prep = interview_prep.prepare(
-                body.stage, resume=data.load(), role=app.role, company=app.company,
+                body.stage, resume=resume, role=app.role, company=app.company,
                 requirements=copy.requirements, bullets=copy.bullets,
                 cover_letter=copy.cover_letter, jd_text=copy.jd_text, gaps=copy.gaps,
                 notes=_notes(app), based_on=copy.based_on,
             )
     except RuntimeError as exc:
         raise HTTPException(status_code=502, detail=str(exc)) from exc
-    folder = _prep_dir(app)
-    folder.mkdir(parents=True, exist_ok=True)
-    atomic.write_text(folder / f"{body.stage}.json", prep.model_dump_json(indent=2) + "\n")
+    with template_ops.LOCK:
+        if (
+            config.active_workspace_id() != context.workspace_id
+            or context.paths["APPLICATIONS_OUTPUT_DIR"] != config.APPLICATIONS_OUTPUT_DIR
+        ):
+            raise HTTPException(
+                status_code=409,
+                detail=(
+                    "The profile changed while drafting. Open the original profile and try again."
+                ),
+            )
+        folder.mkdir(parents=True, exist_ok=True)
+        atomic.write_text(folder / f"{body.stage}.json", prep.model_dump_json(indent=2) + "\n")
     return prep
 
 

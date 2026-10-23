@@ -18,7 +18,6 @@ from resume_tailor.pipeline import (
     fit_types,
     followups,
     jd,
-    review,
     rewrite,
     tag_infer,
 )
@@ -287,18 +286,9 @@ class Replay:
         return {**record, "facts": facts}
 
     def review(self, case: Case) -> dict[str, Any]:
-        """The current hiring-manager review of the run's tailored bullets."""
-        result = review.review_bullets(self.resume, self._requirements(case), self.tailored(case))
-        record = {
-            "scope_read": result.scope_read, "consistency": [],
-            "bullets": [{"id": b.id, "verdict": b.verdict, "reason": b.reason,
-                         "replacement": b.replacement, "dropped_note": b.dropped_note,
-                         "offered": b.verdict == "rewrite"
-                         and bool(b.replacement or b.dropped_note),
-                         "scope_risk": "stretch" if b.scope_note else "none",
-                         "scope_note": b.scope_note}
-                        for b in result.bullets],
-        }
+        """Frozen pre-8390edb review: the `current` arm of both review experiments."""
+        record = review_scope.review_scoped(self.resume, self._requirements(case),
+                                            self.tailored(case), variant="baseline")
         return {**record, "metrics": metrics.review_metrics(record)}
 
     def review_scope(self, case: Case) -> dict[str, Any]:

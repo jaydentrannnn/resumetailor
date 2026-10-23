@@ -5,7 +5,7 @@ letter the employer has, the must-haves the resume does not show, and the candid
 notes from earlier rounds. It returns likely questions, STAR stories and questions to ask.
 
 Every story cites the bullets it retells; each of its four parts must pass
-`coverletter.check_claims` against those bullets alone, or the story is left out with a
+`sent_claims.check_claims` against those bullets alone, or the story is left out with a
 note. Gap questions get no drafted answer: the candidate answers those in their own
 words. The probe list is deterministic: bullets with a number or an ownership verb, the
 claims an interviewer is most likely to dig into. Nothing here is sent anywhere.
@@ -23,8 +23,7 @@ from pydantic import BaseModel, Field
 from .. import config
 from ..content.data import MasterResume
 from ..infra import llm
-from . import posting_guard
-from .coverletter import check_claims
+from . import posting_guard, sent_claims
 from .jd import JobRequirements
 from .rewrite_prompts import _format_keywords
 
@@ -199,9 +198,7 @@ def _request(
     return "\n\n".join(parts)
 
 
-def _guard_story(
-    story: PrepStory, resume: MasterResume, bullets: dict[str, str]
-) -> tuple[PrepStory | None, str]:
+def _guard_story(story: PrepStory, bullets: dict[str, str]) -> tuple[PrepStory | None, str]:
     """The story with only known bullet ids, or None and why it was left out."""
     cited = {bid: bullets[bid] for bid in story.bullet_ids if bid in bullets}
     if not cited:
@@ -209,7 +206,7 @@ def _guard_story(
     offenders: list[str] = []
     for part in (story.situation, story.task, story.action, story.result):
         if part.strip():
-            check = check_claims(resume, cited, "", part)
+            check = sent_claims.check_claims(cited, part)
             offenders += check.unsupported_terms + check.unsupported_numbers
     if offenders:
         terms = ", ".join(dict.fromkeys(offenders))
@@ -250,9 +247,9 @@ def prepare(
             f"Model did not return parseable interview prep (stop_reason={response.stop_reason!r})."
         )
     stories: list[PrepStory] = []
-    warnings: list[str] = []
+    warnings = sent_claims.missing_bullet_warnings(resume, bullets)
     for story in parsed.stories:
-        kept, note = _guard_story(story, resume, bullets)
+        kept, note = _guard_story(story, bullets)
         if kept is not None:
             stories.append(kept)
         else:

@@ -2,7 +2,7 @@
 
 One LLM call writes 60 to 120 words in the shape of the channel the candidate picked
 (an email with a subject, a LinkedIn message, or an applicant-portal message). Every
-sentence passes `coverletter.check_claims` against the bullets that were sent, plus
+sentence passes `sent_claims.check_claims` against the bullets that were sent, plus
 what the candidate typed (the recipient and their interview notes); a draft that fails
 is replaced by a plain template that claims nothing. The note is only shown: the
 candidate copies it and records ``followup_sent`` when they send it.
@@ -19,7 +19,7 @@ from pydantic import BaseModel, Field
 from .. import config
 from ..content.data import MasterResume
 from ..infra import llm
-from .coverletter import check_claims
+from . import sent_claims
 
 #: Bumped when ``_SYSTEM`` or the request shape changes.
 _FOLLOWUP_PROMPT_VERSION = 1
@@ -87,13 +87,12 @@ def _dates(sent_on: str) -> list[str]:
     return [sent_on, f"{day:%B} {day.day}, {day.year}", f"{day.day} {day:%B} {day.year}"]
 
 
-def _offenders(resume: MasterResume, bullets: dict[str, str], jd_text: str,
-               text: str, typed: list[str]) -> list[str]:
+def _offenders(bullets: dict[str, str], text: str, typed: list[str]) -> list[str]:
     """Unsupported terms and numbers, line by line (a greeting line is its own sentence)."""
     found: list[str] = []
     for line in text.splitlines():
         if line.strip():
-            check = check_claims(resume, bullets, jd_text, line, extra_sources=typed)
+            check = sent_claims.check_claims(bullets, line, extra_sources=typed)
             found += check.unsupported_terms + check.unsupported_numbers
     return list(dict.fromkeys(found))
 
@@ -136,7 +135,11 @@ def draft(
     recipient: str = "",
     notes: Sequence[str] = (),
 ) -> FollowupNote:
-    """Draft one note. Raises RuntimeError when the model reply won't parse."""
+    """Draft one note. Raises RuntimeError when the model reply won't parse.
+
+    ``jd_text`` remains accepted for callers, but posting numbers are not evidence for
+    candidate claims. Only the sent bullets and explicit typed facts support the note.
+    """
     sent = "\n".join(f"  - {text}" for text in bullets.values())
     typed = "\n".join(f"  - {n}" for n in notes) or "  (none)"
     user = (
@@ -163,9 +166,10 @@ def draft(
     body = parsed.body.strip()
     typed = [resume.contact.name, recipient, company, role, _LETTER_WORDS,
              *_dates(sent_on), *notes]
-    offenders = _offenders(resume, bullets, jd_text, f"{subject}\n{body}", typed)
+    offenders = _offenders(bullets, f"{subject}\n{body}", typed)
     note = FollowupNote(
         kind=kind, channel=channel, subject=subject, body=body,
+        warnings=sent_claims.missing_bullet_warnings(resume, bullets),
         model=config.backend_for("followup").label(),
         made_at=datetime.now(UTC).isoformat(timespec="seconds"),
     )

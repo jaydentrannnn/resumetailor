@@ -107,6 +107,29 @@ def test_without_requirements_the_cleaned_posting_is_sent(prep_calls):
     assert "<role>Data Analyst at Acme</role>" in user
 
 
+def test_a_sent_story_survives_removal_from_the_master_with_a_warning(prep_calls):
+    resume = synthetic_resume()
+    resume.projects[0].bullets.clear()
+    prep_calls(PrepLLM(stories=[
+        _story(["proj_b1"], action="I indexed 1,200 research notes with embeddings."),
+    ]))
+    prep = _prepare(resume=resume)
+    assert [s.bullet_ids for s in prep.stories] == [["proj_b1"]]
+    assert any("no longer" in w and "master resume" in w for w in prep.warnings)
+
+
+def test_current_master_skills_and_tags_cannot_support_a_sent_story(prep_calls):
+    resume = synthetic_resume()
+    resume.skills[0].items.append("Kubernetes")
+    resume.projects[0].bullets[0].tags.append("Kubernetes")
+    prep_calls(PrepLLM(stories=[
+        _story(["proj_b1"], action="I indexed notes with Kubernetes."),
+    ]))
+    prep = _prepare(resume=resume)
+    assert prep.stories == []
+    assert any("added Kubernetes" in w for w in prep.warnings)
+
+
 def test_an_unparseable_reply_raises(prep_calls):
     prep_calls(None)
     with pytest.raises(RuntimeError, match="interview prep"):

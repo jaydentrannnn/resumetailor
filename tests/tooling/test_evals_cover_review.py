@@ -120,7 +120,7 @@ def test_scoped_review_guards_both_suggestions(monkeypatch):
     assert calls[0]["system"].startswith(review_scope.review._BASE_SYSTEM)
 
 
-def test_note_variant_is_the_production_review_plus_the_flag(monkeypatch):
+def test_note_variant_is_the_frozen_baseline_plus_the_flag(monkeypatch):
     resume = synthetic_resume()
     bullet = resume.all_bullets()[0]
     calls = []
@@ -140,16 +140,83 @@ def test_note_variant_is_the_production_review_plus_the_flag(monkeypatch):
     bullets = {bullet.id: bullet.text}
     record = review_scope.review_scoped(resume, _requirements("SQL"), bullets,
                                         ["My cover letter."], variant="note")
-    review_scope.review.review_bullets(resume, _requirements("SQL"), bullets)
-    noted, current = calls
-    assert noted["messages"] == current["messages"]
-    assert noted["system"] == current["system"]  # shipped: production is variant B
+    review_scope.review_scoped(resume, _requirements("SQL"), bullets, variant="baseline")
+    noted, baseline = calls
+    assert noted["messages"] == baseline["messages"]
+    assert noted["system"].startswith(baseline["system"])
+    assert "scope_risk" in noted["system"] and "scope_risk" not in baseline["system"]
     assert "softer" not in noted["system"] and "consistency" not in noted["system"]
     [row] = record["bullets"]
     assert (row["scope_risk"], row["scope_note"], row["softer_offered"]) == (
         "stretch", "Team size unclear", False)
     assert record["consistency"] == []
     assert metrics.review_metrics(record)["stretch"] == 1
+    monkeypatch.setattr(review_scope.review, "_SYSTEM", "A future production review")
+    monkeypatch.setattr(review_scope.review, "_BASE_SYSTEM", "A future production baseline")
+    review_scope.review_scoped(resume, _requirements("SQL"), bullets, variant="note")
+    assert calls[-1]["system"] == noted["system"]
+    assert calls[-1]["output_format"] is noted["output_format"]
+
+
+def test_review_experiments_keep_the_pre_note_baseline_after_production_changes(monkeypatch):
+    import eval_models
+
+    resume = synthetic_resume()
+    bullet = resume.all_bullets()[0]
+    calls = []
+
+    class _Messages:
+        def parse(self, **kwargs):
+            calls.append(kwargs)
+            shape = kwargs["output_format"]
+            return SimpleNamespace(parsed_output=shape(), stop_reason="end_turn")
+
+    monkeypatch.setattr(review_scope.llm, "client_for",
+                        lambda purpose: SimpleNamespace(messages=_Messages()))
+    monkeypatch.setattr(review_scope.review, "_SYSTEM", "A future production review")
+    replay = stages.Replay.__new__(stages.Replay)
+    replay.resume = resume
+    requirements = _requirements("SQL")
+    monkeypatch.setattr(replay, "_requirements", lambda case: requirements)
+    monkeypatch.setattr(replay, "tailored", lambda case: {bullet.id: bullet.text})
+    for stage in ("review", "review-note"):
+        base, _candidate, methods = eval_models._VARIANTS[stage]
+        record = getattr(replay, methods[base])(None)
+        assert record["metrics"]["stretch"] == 0
+    for call in calls:
+        assert call["system"].startswith("You are a hiring manager")
+        assert "scope_risk" not in call["system"]
+        schema = call["output_format"].model_json_schema()
+        verdict = schema["$defs"]["BulletVerdict"]["properties"]
+        assert set(verdict) == {"id", "verdict", "reason", "replacement"}
+        assert "tailored_bullets" in call["messages"][0]["content"]
+
+
+def test_frozen_review_baseline_still_drops_fabricated_rewrites(monkeypatch):
+    resume = synthetic_resume()
+    bullet = resume.all_bullets()[0]
+
+    class _Messages:
+        def parse(self, **kwargs):
+            shape = kwargs["output_format"]
+            reply = shape(bullets=[
+                {"id": bullet.id, "verdict": "rewrite", "reason": "clearer",
+                 "replacement": bullet.text + " using Kubernetes"},
+                {"id": "not-on-page", "verdict": "cut"},
+            ])
+            return SimpleNamespace(parsed_output=reply, stop_reason="end_turn")
+
+    monkeypatch.setattr(review_scope.llm, "client_for",
+                        lambda purpose: SimpleNamespace(messages=_Messages()))
+    replay = stages.Replay.__new__(stages.Replay)
+    replay.resume = resume
+    monkeypatch.setattr(replay, "_requirements", lambda case: _requirements("SQL"))
+    monkeypatch.setattr(replay, "tailored", lambda case: {bullet.id: bullet.text})
+    record = replay.review(None)
+    [row] = record["bullets"]
+    assert row["replacement"] == "" and row["offered"] is True
+    assert row["dropped_note"].startswith("rewrite dropped (fabricated:")
+    assert record["metrics"]["guard_dropped_rate"] == 1
 
 
 def test_judge_prompts_show_both_sides():

@@ -6,7 +6,8 @@ Pure: reads a row's status history and outcome events (`outcomes`), never writes
   fewer than `MAX_FOLLOW_UPS` follow-ups sent (the latest at least `FOLLOW_UP_GAP_DAYS`
   ago), and no date the employer gave (``employer_timeline``) still ahead. A timeline
   is a reply, but once its date passes in silence a follow-up is due again.
-- **Thank-you**: an interview was recorded and nothing was sent after it.
+- **Thank-you**: an interview was completed, or its scheduled date has passed, and
+  nothing was sent after it. An invitation alone does not mean an interview happened.
 - **Stale**: sent at least `STALE_AFTER_DAYS` ago with no reply and nothing closing it.
   The Apply page offers these for a bulk "no reply" (``ghosted`` events, never
   ``rejected``), after the student confirms.
@@ -15,7 +16,7 @@ Pure: reads a row's status history and outcome events (`outcomes`), never writes
 from __future__ import annotations
 
 from collections.abc import Iterable
-from datetime import UTC, date, datetime
+from datetime import UTC, date, datetime, timedelta
 from typing import Literal
 
 from pydantic import BaseModel
@@ -27,7 +28,6 @@ FOLLOW_UP_GAP_DAYS = 7
 MAX_FOLLOW_UPS = 2
 STALE_AFTER_DAYS = 60
 
-_INTERVIEW = frozenset({"interview_invited", "interview_scheduled", "interview_completed"})
 #: Statuses from before outcome events that mean the employer answered.
 _LEGACY_REPLY = frozenset({"interview", "rejected"})
 
@@ -60,7 +60,9 @@ class DueList(BaseModel):
     stale: list[DueRow]
 
 
-def _day(value: str) -> date | None:
+def _day(value: str | None) -> date | None:
+    if not value:
+        return None
     try:
         return date.fromisoformat(value[:10])
     except ValueError:
@@ -74,6 +76,25 @@ def today() -> date:
 
 def _when(event: store_models.OutcomeEvent) -> str:
     return event.occurred_on or event.recorded_at[:10]
+
+
+def _deadline(event: store_models.OutcomeEvent) -> date | None:
+    """An undated legacy timeline gets a week's grace from when it was recorded."""
+    explicit = _day(event.occurred_on)
+    if explicit is not None:
+        return explicit
+    recorded = _day(event.recorded_at)
+    return recorded + timedelta(days=FOLLOW_UP_GAP_DAYS) if recorded is not None else None
+
+
+def _interview_day(event: store_models.OutcomeEvent, today: date) -> date | None:
+    if event.type == "interview_completed":
+        day = _day(_when(event))
+        return day if day is not None and day <= today else None
+    if event.type == "interview_scheduled":
+        day = _day(event.occurred_on)
+        return day if day is not None and day < today else None
+    return None
 
 
 def _replied(app: store_models.Application, events: list[store_models.OutcomeEvent]) -> bool:
@@ -94,9 +115,9 @@ def state(app: store_models.Application, today: date) -> FollowUpState:
     sent_notes = [e for e in events if e.type == "followup_sent"]
     result = FollowUpState(sent_on=sent, days_since_sent=days, follow_ups_sent=len(sent_notes))
     progress = outcomes.hiring_progress(app)
-    interviews = [e for e in events if e.type in _INTERVIEW]
+    interviews = [day for e in events if (day := _interview_day(e, today)) is not None]
     if interviews and progress.closed is None:
-        last = _when(interviews[-1])
+        last = max(interviews).isoformat()
         if not any(_when(e) >= last for e in sent_notes):
             result.due = "thank_you"
             return result
@@ -104,15 +125,16 @@ def state(app: store_models.Application, today: date) -> FollowUpState:
     if progress.closed is not None:
         result.reason = f"Closed: {outcomes.STAGE_LABELS[progress.closed].lower()}."
         return result
-    result.stale = not replied and days >= STALE_AFTER_DAYS
     if replied:
         result.reason = "The employer has replied."
         return result
-    timeline = [_day(e.occurred_on) for e in events if e.type == "employer_timeline"]
+    timeline = [_deadline(e) for e in events if e.type == "employer_timeline"]
     ahead = [d for d in timeline if d is not None and d >= today]
     if ahead:
         result.reason = f"The employer said to expect news by {max(ahead).isoformat()}."
-    elif len(sent_notes) >= MAX_FOLLOW_UPS:
+        return result
+    result.stale = days >= STALE_AFTER_DAYS
+    if len(sent_notes) >= MAX_FOLLOW_UPS:
         result.reason = f"{MAX_FOLLOW_UPS} follow-ups sent already."
     elif days < FOLLOW_UP_AFTER_DAYS:
         result.reason = f"Sent {days} day(s) ago; follow up after {FOLLOW_UP_AFTER_DAYS}."

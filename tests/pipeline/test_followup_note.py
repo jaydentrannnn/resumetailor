@@ -85,3 +85,31 @@ def test_an_empty_draft_falls_back_too(note_calls):
     note = _draft(kind="thank_you", recipient="")
     assert note.source == "template" and note.subject == "Thank you: Data Analyst"
     assert note.body.startswith("Hello,") and "empty note" in note.warnings[0]
+
+
+def test_sent_facts_survive_removal_from_the_master_with_a_warning(note_calls):
+    resume = synthetic_resume()
+    resume.projects[0].bullets.clear()
+    note_calls(FollowupLLM(body="I indexed 1,200 research notes with embeddings."))
+    note = _draft(resume=resume, bullets={
+        "proj_b1": "Indexed 1,200 research notes with embeddings.",
+    })
+    assert note.source == "llm"
+    assert any("no longer" in w and "master resume" in w for w in note.warnings)
+
+
+def test_current_master_skills_and_tags_do_not_support_follow_up_claims(note_calls):
+    resume = synthetic_resume()
+    resume.skills[0].items.append("Kubernetes")
+    resume.projects[0].bullets[0].tags.append("Kubernetes")
+    note_calls(FollowupLLM(body="I indexed notes with Kubernetes."))
+    note = _draft(resume=resume)
+    assert note.source == "template"
+    assert "Kubernetes" in note.warnings[0]
+
+
+def test_posting_numbers_cannot_support_candidate_claims(note_calls):
+    note_calls(FollowupLLM(body="I indexed 5 research notes."))
+    note = _draft(jd_text="The role requires 5 years of experience.")
+    assert note.source == "template"
+    assert "5" in note.warnings[0]

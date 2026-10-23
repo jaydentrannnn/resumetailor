@@ -6,6 +6,8 @@ from __future__ import annotations
 import json
 from datetime import date
 
+import pytest
+
 from resume_tailor import config
 from resume_tailor.apply.funnel import followup_due, outcomes, sent_copy, store, store_models
 
@@ -55,6 +57,42 @@ def test_an_employer_timeline_waits_until_its_date_passes():
     assert followup_due.state(waiting, TODAY).reason.endswith("by 2026-10-30.")
     passed = _with(_app(), ("employer_timeline", "2026-10-20"))
     assert followup_due.state(passed, TODAY).due == "follow_up"
+
+
+def test_a_pending_employer_timeline_blocks_stale_even_after_sixty_days():
+    app = _with(_app("2026-08-01"), ("employer_timeline", "2026-10-30"))
+    waiting = followup_due.state(app, TODAY)
+    assert (waiting.due, waiting.stale) == (None, False)
+    assert followup_due.due_list([app], TODAY).stale == []
+    assert followup_due.state(app, date(2026, 10, 31)).stale is True
+
+
+def test_an_undated_timeline_gets_seven_days_from_when_it_was_recorded():
+    app = _app("2026-08-01")
+    event = outcomes.add_event(app, "employer_timeline")
+    event.recorded_at = "2026-10-20T12:00:00+00:00"
+    for day in (TODAY, date(2026, 10, 27)):
+        waiting = followup_due.state(app, day)
+        assert (waiting.due, waiting.stale) == (None, False)
+        assert waiting.reason.endswith("by 2026-10-27.")
+    expired = followup_due.state(app, date(2026, 10, 28))
+    assert (expired.due, expired.stale) == ("follow_up", True)
+
+
+@pytest.mark.parametrize(("kind", "day", "due"), [
+    ("interview_invited", "2026-10-20", None),
+    ("interview_scheduled", "2026-10-30", None),
+    ("interview_scheduled", "2026-10-22", None),
+    ("interview_scheduled", None, None),
+    ("interview_scheduled", "2026-10-20", "thank_you"),
+    ("interview_completed", "2026-10-22", "thank_you"),
+    ("interview_completed", None, "thank_you"),
+    ("interview_completed", "2026-10-30", None),
+])
+def test_thank_yous_wait_until_an_interview_has_happened(kind, day, due):
+    app = _with(_app(), (kind, day))
+    app.outcome_events[-1].recorded_at = "2026-10-20T12:00:00+00:00"
+    assert followup_due.state(app, TODAY).due == due
 
 
 def test_a_thank_you_follows_an_interview_until_a_note_is_sent():
