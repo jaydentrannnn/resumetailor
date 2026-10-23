@@ -50,6 +50,7 @@ def test_ollama_model_setting_repoints_only_the_ollama_stages(client, monkeypatc
         "prep": "gemma4",
         "followup": "gemma4",
         "research": "gemma4",
+        "evidence": "gemma4",
     }
     config.resolve("claude")
 

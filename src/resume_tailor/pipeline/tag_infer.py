@@ -29,7 +29,7 @@ from pathlib import Path
 from pydantic import BaseModel, Field
 
 from .. import config
-from ..content import bullet_tags
+from ..content import bullet_tags, evidence_store
 from ..content.data import MasterResume
 from ..infra import llm
 from . import events
@@ -293,10 +293,12 @@ def prepare_run(
     resume: MasterResume, *, on_event: events.ProgressCallback | None = None
 ) -> Inference:
     """Run start: fill any missing inferences, then install this run's match-tag context
-    (`bullet_tags.annotate`). Call before anything reads match tags or `known_terms`."""
+    (`bullet_tags.annotate`). Call before anything reads match tags or `known_terms`.
+    Skills the student kept for matching only (`evidence_store.with_matching`) join the
+    inferred ones in that context, never the cache."""
     bullet_tags.clear()
     inference = ensure(resume, preferred=bullet_tags.known_terms(resume), on_event=on_event)
-    bullet_tags.annotate(resume, inference.skills)
+    bullet_tags.annotate(resume, evidence_store.with_matching(resume, inference.skills))
     return inference
 
 
@@ -308,5 +310,5 @@ def annotate_cached(resume: MasterResume) -> Inference:
     context that never annotates reads no inferred skills at all (`bullet_tags._current`).
     """
     inference = cached(resume)
-    bullet_tags.annotate(resume, inference.skills)
+    bullet_tags.annotate(resume, evidence_store.with_matching(resume, inference.skills))
     return inference

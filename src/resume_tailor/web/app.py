@@ -275,6 +275,7 @@ from resume_tailor.web.routes import (  # noqa: E402, I001
     desktop as _desktop_routes,
     diagnostics as _diagnostics_routes,
     discovery as _discovery_routes,
+    evidence as _evidence_routes,
     extension as _extension_routes,
     jd as _jd_routes,
     jobs as _jobs_routes,
@@ -306,7 +307,7 @@ for _router in (
     _jd_routes, _answers_routes, _automation_routes, _discovery_routes,
     _extension_routes, _update_routes, _reference_routes, _search_presets_routes,
     _cover_letter_routes, _template_edit_routes, _vertex_routes, _desktop_routes,
-    _mail_updates_routes, _pay_routes, _company_research_routes,
+    _mail_updates_routes, _pay_routes, _company_research_routes, _evidence_routes,
 ):
     app.include_router(_router.router)
 

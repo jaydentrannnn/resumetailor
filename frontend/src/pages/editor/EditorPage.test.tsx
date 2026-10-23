@@ -1,6 +1,7 @@
 // @vitest-environment jsdom
 import "@testing-library/jest-dom/vitest";
 import { cleanup, fireEvent, render, screen, waitFor, within } from "@testing-library/react";
+import { MemoryRouter } from "react-router-dom";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { fetchConfig, fetchMasterResume, saveMasterResume } from "../../api";
 import { type MasterResume, stripRowKeys, withRowKeys } from "../../lib/resumeEdit";
@@ -112,14 +113,16 @@ afterEach(cleanup);
 
 async function editor() {
   const view = render(
-    <ToastProvider>
-      <ConfirmProvider>
-        <EditorProvider>
-          <EditorPage showContact={false} />
-        </EditorProvider>
-      </ConfirmProvider>
-      <StatusMessage />
-    </ToastProvider>,
+    <MemoryRouter>
+      <ToastProvider>
+        <ConfirmProvider>
+          <EditorProvider>
+            <EditorPage showContact={false} />
+          </EditorProvider>
+        </ConfirmProvider>
+        <StatusMessage />
+      </ToastProvider>
+    </MemoryRouter>,
   );
   await screen.findByRole("button", { name: "Expand State University" });
   return view;

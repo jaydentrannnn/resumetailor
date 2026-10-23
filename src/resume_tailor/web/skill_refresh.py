@@ -22,7 +22,7 @@ from contextlib import contextmanager
 from dataclasses import dataclass
 
 from resume_tailor import config, workspace
-from resume_tailor.content import bullet_tags
+from resume_tailor.content import bullet_tags, evidence_store
 from resume_tailor.content.data import MasterResume
 from resume_tailor.pipeline import tag_infer
 from resume_tailor.web import job_routing
@@ -70,13 +70,16 @@ def pinned_tailor() -> Iterator[None]:
 
 def cached_inference(resume: MasterResume) -> dict[str, list[str]]:
     """Inferred skills already cached for `resume` under the Tailor routing (no model
-    call); empty when the routing settings are unusable, so callers fall back to Extra
-    skills + detection. Routes read this instead of whatever a job last installed."""
+    call), with the skills kept for matching only (`evidence_store.with_matching`), as a
+    run sees them; just those when the routing settings are unusable, so callers fall
+    back to Extra skills + detection. Routes read this instead of whatever a job last
+    installed."""
     try:
         with pinned_tailor():
-            return tag_infer.cached(resume).skills
+            inferred = tag_infer.cached(resume).skills
     except ValueError:
-        return {}
+        inferred = {}
+    return evidence_store.with_matching(resume, inferred)
 
 
 def schedule(resume: MasterResume) -> None:

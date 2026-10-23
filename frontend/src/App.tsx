@@ -36,10 +36,12 @@ import { CommandProvider } from "./state/commandState";
 import { ShellContext, type ShellSlots } from "./lib/shell";
 import { useWindowTitle } from "./lib/useWindowTitle";
 import { useStartPage } from "./lib/useStartPage";
+import { EvidencePage } from "./pages/resume/EvidencePage";
 import { ResumePage } from "./pages/resume/ResumePage";
 
-/** Profile and Resume share unsaved-edit protection: leaving both asks first. */
-const guarded = (path: string) => path.startsWith("/profile/") || path === "/resume";
+/** Profile, Resume and its Evidence page share unsaved-edit protection: leaving them asks first. */
+const guarded = (path: string) =>
+  path.startsWith("/profile/") || path === "/resume" || path.startsWith("/resume/");
 
 /**
  * Root: `ThemeProvider` owns light/dark/system preference (localStorage).
@@ -159,6 +161,7 @@ function Shell() {
                   <Route path="/applications/sources" element={<SourcesPage />} />
                   <Route path="/applications/:applicationId" element={<ApplicationDetailPage />} />
                   <Route path="/resume" element={<ResumePage />} />
+                  <Route path="/resume/evidence" element={<EvidencePage />} />
                   <Route path="/profile" element={<Navigate to="/profile/personal" replace />} />
                   <Route path="/profile/personal" element={<ProfilePage />} />
                   <Route path="/profile/application" element={<ProfilePage />} />

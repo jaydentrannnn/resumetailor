@@ -43,6 +43,11 @@ JSON_TYPES = ("application/json",)
 class FetchError(Exception):
     """A page that was not fetched; the message says why in plain words."""
 
+    def __init__(self, message: str, *, status: int | None = None) -> None:
+        super().__init__(message)
+        #: The HTTP status the server answered with, when it answered at all.
+        self.status = status
+
 
 @dataclass(frozen=True)
 class Fetched:
@@ -136,21 +141,27 @@ class Fetcher:
     def close(self) -> None:
         self._client.close()
 
-    def get(self, url: str, *, types: tuple[str, ...] = PAGE_TYPES) -> Fetched:
-        """GET ``url`` (a page by default), following redirects by hand."""
+    def get(self, url: str, *, types: tuple[str, ...] = PAGE_TYPES,
+            headers: dict[str, str] | None = None) -> Fetched:
+        """GET ``url`` (a page by default), following redirects by hand. ``headers`` (a
+        token, say) go only to ``url``'s own host, never to a host it redirects to."""
         current: str | httpx.URL = url
+        start = _checked(url)
+        home = (start.scheme, start.host, start.port)
         for _ in range(MAX_REDIRECTS + 1):
             parsed = _checked(current)
             if not self._rules(parsed).allows(parsed.raw_path.decode("ascii") or "/"):
                 raise FetchError(
                     f"{parsed.host} asks automated tools not to read this page (robots.txt)."
                 )
-            response, body = self._send(parsed, ", ".join(types), MAX_BYTES)
+            extra = headers if (parsed.scheme, parsed.host, parsed.port) == home else None
+            response, body = self._send(parsed, ", ".join(types), MAX_BYTES, headers=extra)
             if response.is_redirect:
                 current = parsed.join(response.headers["location"])
                 continue
             if response.status_code != 200:
-                raise FetchError(f"{parsed.host} answered {response.status_code}.")
+                raise FetchError(f"{parsed.host} answered {response.status_code}.",
+                                 status=response.status_code)
             media = _media_type(response)
             if media not in types:
                 raise FetchError(f"{parsed.host} sent {media or 'an unknown type'}, not a page.")
@@ -158,18 +169,19 @@ class Fetcher:
             return Fetched(str(parsed), media, text)
         raise FetchError("The page redirected too many times.")
 
-    def get_json(self, url: str) -> Any:
+    def get_json(self, url: str, *, headers: dict[str, str] | None = None) -> Any:
         """GET ``url`` and parse its JSON body."""
-        fetched = self.get(url, types=JSON_TYPES)
+        fetched = self.get(url, types=JSON_TYPES, headers=headers)
         try:
             return json.loads(fetched.text)
         except json.JSONDecodeError as exc:
             raise FetchError(f"{httpx.URL(fetched.url).host} sent JSON that won't parse.") from exc
 
-    def _send(self, url: httpx.URL, accept: str, cap: int, *,
-              truncate: bool = False) -> tuple[httpx.Response, bytes]:
+    def _send(self, url: httpx.URL, accept: str, cap: int, *, truncate: bool = False,
+              headers: dict[str, str] | None = None) -> tuple[httpx.Response, bytes]:
         try:
-            with self._client.stream("GET", url, headers={"Accept": accept}) as response:
+            with self._client.stream("GET", url,
+                                     headers={**(headers or {}), "Accept": accept}) as response:
                 if response.is_redirect:
                     return response, b""
                 chunks: list[bytes] = []

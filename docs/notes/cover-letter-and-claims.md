@@ -119,3 +119,14 @@ Agile/LEAN", "Java... my foundation relies on Python"). Production `coverletter.
 unchanged apart from the `_user_message` seam. The interview-prep gap-bridge answers that
 depended on this are dropped too. If revisited: allow at most one acknowledgement, only
 for a hard technical must-have, never for soft skills or language lists.
+
+## Company facts in cover letters: cut by the eval (2026-10-23, "Later" tier L4.6)
+
+The variant put up to 12 researched company facts in a `<company_facts>` block before the posting. The rule allowed at most one fact, only in a sentence about the company. Fact numbers counted as source only outside first-person sentences. Setup: 30 cases, Light model Vertex gemini-3.8-flash, 3-case control, judge gpt-5-mini Azure in both orders (`output/eval/cover-company`). Facts came from `company_run.run` over a guessed `www.<name>.com` plus the posting and were frozen per case (`research.jsonl`); 29/30 cases got facts (median about 6).
+- Coded rules passed: unsupported claims left 0 -> 0, gaps claimed as experience 0.133 -> 0.100.
+- The judge rule failed: company lost 23% of pairs vs 0% for the control.
+- Head to head it was a wash: 10 company wins, 7 losses, 13 ties (sign test p ≈ 0.6), and AI tells rose 0.567 -> 0.733 per letter.
+- In the losing pairs the judge cited "unsupported employer/location claims": the facts invited sentences about the employer that read as padding.
+- Quality-neutral at best, so not shipped (ship only measured gains). Company research stays display-only on the Posting tab.
+- The eval code stays: `variants.company()`, the `cover-company` stage and `judge.cover_prompt(facts=...)`.
+- The planned interview-prep use ("questions to ask") is deferred with it.

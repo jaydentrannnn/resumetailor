@@ -140,6 +140,8 @@ export type BulletSkills = {
   error: string | null;
   waiting: number;
   bullets: Record<string, string[]>;
+  /** Skills kept from evidence for matching only, by bullet id; never on the resume. */
+  evidence?: Record<string, string[]>;
 };
 
 export function fetchBulletSkills(): Promise<BulletSkills> {

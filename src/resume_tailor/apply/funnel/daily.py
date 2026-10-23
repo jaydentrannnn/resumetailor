@@ -9,7 +9,7 @@ from contextlib import contextmanager
 from resume_tailor import config, workspace
 from resume_tailor.apply.discovery import source_rows
 from resume_tailor.apply.funnel import store, store_models, store_views
-from resume_tailor.content import bullet_tags, data
+from resume_tailor.content import bullet_tags, data, evidence_store
 from resume_tailor.content.data import MasterResume
 from resume_tailor.pipeline import tag_infer
 from resume_tailor.web import skill_refresh
@@ -100,7 +100,7 @@ def _resume_skills(resume: MasterResume, job_defaults: JobSettings) -> list[str]
     profile, overrides, effort = model_routing(job_defaults)
     with config.pinned(profile, overrides=overrides, effort=effort):
         inference = tag_infer.ensure(resume, preferred=bullet_tags.known_terms(resume, {}))
-    return bullet_tags.known_terms(resume, inference.skills)
+    return bullet_tags.known_terms(resume, evidence_store.with_matching(resume, inference.skills))
 
 
 def prepare_application(

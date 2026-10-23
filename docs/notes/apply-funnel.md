@@ -2609,3 +2609,25 @@ before using, behind guards; no prompt the tailored resume depends on changed.
 - Domain matching first allowed any domain that started with the company name, and "acmesupplies.com" matched "Acme". Now the domain must be the name, the name plus a common ending (hq, inc, app, ai, …), or a prefix of a longer name (capitalone.com for Capital One Financial).
 - No search key was saved on the owner's machine (2026-10-23), so the live check used the posting plus one page added by hand. Search is covered by recorded-shape tests only.
 - The fact guard folds case, whitespace and curly quotes before the excerpt match. The model often normalises quotes, and a strict match would drop facts that are true.
+
+## Evidence intake (2026-10-23, "Later" tier L5)
+
+GitHub repositories and documents become evidence sources (`importing/github_evidence.py`, `evidence_sources.py`). `pipeline/evidence.py` (purpose `evidence`, Light model) proposes bullets, new projects, skills and courses from one source. Proposals live in workspace `evidence.json` (`content/evidence_store.py`) and change nothing until the student decides each one.
+- Each source is scanned by hand, one model call per request, so there is no background job. A GitHub add lists the repositories only.
+- Unauthenticated GitHub allows 60 API reads an hour, and a repository costs 3 (list entry, languages, contributors). READMEs come from raw.githubusercontent.com, which is not counted. 20 repositories fit in one hour; a second import within the hour needs `GITHUB_TOKEN`. The token header goes only to the first host of a request, never to a redirect target (`Fetcher.get(headers=...)`).
+- Attribution comes from GitHub's contributor counts: own at 80%+ of commits, contributed below that, unknown when the student is not counted (commits under an unlinked email), fork never scanned. Work in a repository the student did not mostly write is forced to `inferred` with "Which part of X did you build?". So is a syllabus skill ("beyond the course?").
+- The guard drops, never repairs: the excerpt must appear in the source (case, whitespace and quotes folded); a bullet must pass `fabrication.check_fabrication` with the excerpt as its only source; a skill or course must be named in its excerpt; nothing already on the resume (`_match_key` equality or 75% word overlap, the entry's shown skills, Skills items, coursework).
+- Matching only adds a skill to that entry's bullets. It joins inferred skills at `tag_infer.prepare_run`/`annotate_cached`, `skill_refresh.cached_inference` and the screen's `daily._known_tags`. The screen needs it too: `known_tags` is part of the JD extraction cache key, and a screen without it would miss the tailor job's cached read. It never reaches `Bullet.tags`, the guard whitelist or the Skills pool. The editor shows it as "From evidence (matching only)".
+- Deviation: Add to resume holds `template_ops.LOCK` for the read-merge-write but not `get_queue().busy()`, because the resume's own save route does not check it either (a run reads the resume once, at its start).
+- Uploads use `jd_input`'s .txt/.pdf/.docx readers directly, not `from_file`. The posting path refuses anything under 200 characters, and a reference letter can be that short. The cap here is 5 MB.
+- The Add dialog holds while the editor has unsaved edits. Adopting the saved file (`syncFromDisk`) would otherwise discard them.
+
+## Evidence intake: live measurement and guard fixes (2026-10-23, L5)
+
+One read-only run over the student's own 8 public repositories (6 own, 2 contributed), Light model Vertex gemini-3.8-flash, nothing written to the real `evidence.json`.
+- First pass: 2 kept, 18 dropped, all "excerpt not in source". Cause: tokenisation, not invention. READMEs keep markdown (`**bold**`, code ticks, `|` table cells, list dashes) and the model quotes the plain words. `check` now removes that markup from both sides before the substring test (`evidence._MARKUP`); the words must still match in order.
+- After the fix, same replies: 15 kept, 5 dropped, every drop correct (2 quotes joined from separate places, 1 "@ k=3" quoted as "at k=3" with an unsupported "1.24 ms", 1 "AWS" not in its quote, 1 skill already on the resume).
+- Read all 15: 13 faithful; 2 add small wording ("to support parallel evidence gathering", "natural"). `check_fabrication` checks terms and numbers, not ordinary words, so the Add dialog (quote beside the editable text) is the backstop.
+- Skills from a repository the student did not mostly write were proposed as stated; `_basis` now makes them inferred with a question, like bullets and projects.
+- Tried and reverted: a prompt v2 ("copied from one place", "purpose" added to the never-add list). Drops fell to 2 only because quotes grew to ~800 characters across headings, and a purpose clause still appeared. Not a measured gain; the prompt stays v1. The excerpt cap in `check` is now the 400 characters the prompt asks for (was 2x).
+- Budget: listing a user costs 1 GitHub API read plus 2 per repository (languages, contributors); READMEs come from raw.githubusercontent.com and do not count.

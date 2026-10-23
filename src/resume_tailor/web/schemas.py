@@ -1050,6 +1050,9 @@ class BulletSkillsResponse(BaseModel):
     #: Bullets whose text has not been through inference yet.
     waiting: int = 0
     bullets: dict[str, list[str]] = Field(default_factory=dict)
+    #: Skills the student kept for matching only (`evidence_store`), by bullet id —
+    #: shown apart, never on the resume.
+    evidence: dict[str, list[str]] = Field(default_factory=dict)
 
 
 class MasterResumeImportResponse(BaseModel):

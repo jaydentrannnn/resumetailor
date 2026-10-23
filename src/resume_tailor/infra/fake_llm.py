@@ -133,6 +133,8 @@ def reply(output_format: type[BaseModel], prompt: str) -> BaseModel:
                                         prompt, re.S)
             if (first := re.split(r"(?<=[.!?])\s", body.strip(), maxsplit=1)[0].strip())
         ]}
+    elif name == "ItemsLLM":
+        data = {"items": _evidence_items(prompt)}
     elif name == "FollowupLLM":
         data = {
             "subject": "Following up on my application",
@@ -142,6 +144,28 @@ def reply(output_format: type[BaseModel], prompt: str) -> BaseModel:
     else:
         return _minimal(output_format)
     return output_format.model_validate(data)
+
+
+def _evidence_items(prompt: str) -> list[dict[str, str]]:
+    """The document's first full line as a bullet for the first resume entry, and its
+    first GitHub language as a skill there — both quoted, so both pass the guard."""
+    entry = re.search(r'<entry id="([^"]+)"', prompt)
+    body = re.search(r"<document [^>]*>\n(.*?)\n</document>", prompt, re.S)
+    if not entry or not body:
+        return []
+    items: list[dict[str, str]] = []
+    line = next((ln.strip() for ln in body.group(1).splitlines()
+                 if len(ln.split()) >= 6 and not re.match(r"[\w ()]+: ", ln)), "")
+    if line:
+        first = re.split(r"(?<=[.!?])\s", line, maxsplit=1)[0]
+        items.append({"kind": "bullet", "target_entry_id": entry.group(1), "text": first,
+                      "excerpt": first, "basis": "stated"})
+    languages = re.search(r"^Languages \(detected by GitHub\): ([^,\n]+)", body.group(1), re.M)
+    if languages:
+        items.append({"kind": "skill", "target_entry_id": entry.group(1),
+                      "text": languages.group(1).strip(), "excerpt": languages.group(0),
+                      "basis": "inferred", "question": "Did you write the code in it?"})
+    return items
 
 
 class _Messages:

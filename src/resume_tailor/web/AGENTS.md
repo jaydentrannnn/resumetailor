@@ -47,7 +47,8 @@ same text (`tests/tooling/test_agent_docs.py` enforces it).
   registered before `applications`), `mail_updates` (job emails Claude Desktop read, as
   proposals the student accepts), `pay` (an application's posted pay and pay for similar
   roles; imported pay data), `company_research` (facts quoted from pages about an
-  application's company; started by hand),
+  application's company; started by hand), `evidence` (GitHub repositories and
+  documents as resume evidence; items added only on the student's accept),
   `extension`, `resume`,
   `template`, `libraries`, `config`, `workspaces`, `system`, `setup`, `answers`,
   `automation`, `discovery`, `jd`, `onboarding`, `secrets`, `diagnostics`, `update`, `reference`

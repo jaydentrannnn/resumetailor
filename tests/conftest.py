@@ -254,6 +254,15 @@ def _isolated_company_research(tmp_path, monkeypatch):
     monkeypatch.setattr(company_store, "research_dir", lambda: tmp_path / "company_research")
 
 
+@pytest.fixture(autouse=True)
+def _isolated_evidence(tmp_path, monkeypatch):
+    """`evidence.json` sits beside the master resume, which some tests leave pointing at
+    the checkout's `data/`; keep it per test."""
+    from resume_tailor.content import evidence_store
+
+    monkeypatch.setattr(evidence_store, "path", lambda: tmp_path / "evidence.json")
+
+
 @pytest.fixture(scope="session")
 def built_template(tmp_path_factory) -> Path:
     """Build the tagged template from `tests.fixtures._full_featured_resume` once for

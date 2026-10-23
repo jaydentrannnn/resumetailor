@@ -173,16 +173,26 @@ function BulletRow({
 function BulletSkillsLine({ bulletId }: { bulletId: string }) {
   const skills = useBulletSkills();
   const shown = skills?.bullets[bulletId] ?? [];
-  if (shown.length === 0 && !skills?.running) return null;
+  const kept = skills?.evidence?.[bulletId] ?? [];
+  if (shown.length === 0 && kept.length === 0 && !skills?.running) return null;
   return (
     <div className="mt-2 flex flex-wrap items-center gap-1.5 text-xs text-ink-muted">
-      <span>Skills it shows:</span>
+      {(shown.length > 0 || skills?.running) && <span>Skills it shows:</span>}
       {shown.map((skill) => (
         <span key={skill} className="rounded-sm border border-line px-1.5 py-0.5 text-ink">
           {skill}
         </span>
       ))}
       {skills?.running && <span>Detecting skills…</span>}
+      {kept.length > 0 && <span>From evidence (matching only):</span>}
+      {kept.map((skill) => (
+        <span
+          key={`e-${skill}`}
+          className="rounded-sm border border-dashed border-line px-1.5 py-0.5"
+        >
+          {skill}
+        </span>
+      ))}
     </div>
   );
 }

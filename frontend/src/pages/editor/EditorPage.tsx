@@ -1,6 +1,7 @@
 import { EntryEditorProvider } from "./EntryEditorContext";
 import { moveEntryToSection } from "../../lib/resumeEntryEdit";
 import { useState } from "react";
+import { Link } from "react-router-dom";
 import { Modal } from "../../components/Modal";
 import { ResumeHistoryList } from "../../components/ResumeHistoryList";
 import { ImportResumePanel } from "../../components/ImportResumePanel";
@@ -256,6 +257,18 @@ export function EditorPage({
                       <ImportResumePanel embedded />
                     </div>
                   </details>
+                  {!embedded && (
+                    <p className="mt-3 text-sm">
+                      <Link className="rt-link" to="/resume/evidence">
+                        Add from GitHub or documents
+                      </Link>
+                      <span className="text-ink-muted">
+                        {" "}
+                        · items quoted from your repositories, syllabi or letters, added only when
+                        you choose
+                      </span>
+                    </p>
+                  )}
                 </Tile>
               )}
 

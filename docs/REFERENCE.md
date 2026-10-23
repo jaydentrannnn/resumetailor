@@ -913,6 +913,54 @@ resume support.
   (`detail/CompanyTile.tsx`, `CompanyFacts.tsx`, `lib/companyResearch.ts`). Each fact shows
   its quote, source link and date. The tile has Research company, Add a page or note,
   Refresh and Remove, plus the caption "Never counted as your experience".
+- Display only: putting facts into cover letters failed its eval on 2026-10-23
+  (`docs/notes/cover-letter-and-claims.md`).
+
+**Evidence intake.** Resume items read from GitHub repositories and documents the student
+adds. Nothing reaches the resume until the student decides each item.
+- Sources (`importing/github_evidence.py`, `evidence_sources.py`):
+  - GitHub, by username (owned repositories, most recently pushed first, at most 20) or a
+    repository link. Each repository's text is its name, description, the languages
+    GitHub detects and its README (markdown images, links and code blocks removed).
+    Reads go through `polite_fetch`. A saved `GITHUB_TOKEN` is sent to api.github.com only.
+  - Attribution from contributor counts: own (80%+ of commits), contributed, unknown (the
+    student is not counted), fork (shown, never scanned).
+  - Pasted text or a .txt/.pdf/.docx (5 MB): a syllabus, reference letter, write-up or
+    other document.
+  - Every text goes through `posting_guard` and is capped at 8,000 characters.
+- Proposals (`pipeline/evidence.py`, purpose `evidence`, Light model): one call per
+  source, started by hand (Scan; a pasted or uploaded document scans when added). The
+  model reads a compact resume view (entry ids, bullets, skills, coursework). It returns
+  up to 8 items: a bullet for an entry, a new project, a skill for an entry, or a course.
+  Each has a verbatim excerpt and a basis (stated or inferred); an inferred item asks a
+  question first.
+  - `check` drops an item when its excerpt is over 400 characters or not in the source
+    (markdown emphasis, code ticks, table pipes and list dashes are removed from both
+    sides first); when a bullet fails `fabrication.check_fabrication` with the excerpt as
+    its only source; when a skill or course is not named in its excerpt; or when it is
+    already on the resume. Ordinary words are not checked, so a bullet can still add a
+    purpose the quote lacks; the Add dialog shows the quote beside the editable text.
+  - Syllabus skills, and bullets, projects and skills from a repository the student did
+    not mostly write, are forced to inferred.
+  - The raw reply is cached under `config.fingerprint("evidence")`, the source hash and
+    the prompt.
+- Store (`content/evidence_store.py`): workspace `evidence.json` beside the master resume.
+  It holds sources, proposals (pending, added, matching_only, dismissed; ids hashed from
+  what they propose, so a rescan never offers a dismissed item again) and `matching`.
+- Decisions (`web/routes/evidence.py`, `/api/evidence/...`):
+  - Add to resume (`content/evidence_accept.py`) writes the student's edited text, with
+    the Extra skills they tick, through the resume save (a version, a backup, a skill
+    refresh) under `template_ops.LOCK`.
+  - Matching only keeps a skill on its entry's bullets for matching. It joins inferred
+    skills in `tag_infer.prepare_run`/`annotate_cached`, `skill_refresh.cached_inference`
+    and the screen, and never reaches `Bullet.tags`, `Project.tech`, the Skills section
+    or the guard. `GET /api/master-resume/skills` returns it as `evidence`.
+  - Dismiss, and Undo (reopen) for a dismissed or matching-only item.
+- UI: `/resume/evidence` (`pages/resume/EvidencePage.tsx`, `evidence/`), linked from the
+  Resume page's import tile. Add a source and the sources list on the left; items waiting,
+  grouped by source, on the right, each with its quote, a Stated/Suggested chip and the
+  question. Add is held while the editor has unsaved edits. The editor shows kept skills
+  as "From evidence (matching only)".
 
 For postings stuck in `needs_browser` (HTTP + CDP could not extract enough JD text), the
 Claude Desktop skill in `docs/skills/apply-from-queue/` is the manual fallback — it opens

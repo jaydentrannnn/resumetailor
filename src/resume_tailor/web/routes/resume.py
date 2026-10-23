@@ -15,7 +15,14 @@ from fastapi import APIRouter, File, Form, HTTPException, UploadFile
 from pydantic import ValidationError
 
 from resume_tailor import config
-from resume_tailor.content import bullet_tags, data, degree_line, edu_dates, resume_versions
+from resume_tailor.content import (
+    bullet_tags,
+    data,
+    degree_line,
+    edu_dates,
+    evidence_store,
+    resume_versions,
+)
 from resume_tailor.content.data import MasterResume
 from resume_tailor.document import template_analyze
 from resume_tailor.importing import (
@@ -216,10 +223,15 @@ def get_bullet_skills() -> BulletSkillsResponse:
         for skill in inferred.get(bullet.text, []):
             shown.setdefault(config.canonical_tag(skill), skill)
         bullets[bullet.id] = [s for c, s in shown.items() if c not in have]
+    try:
+        evidence = evidence_store.matching_by_bullet(resume)
+    except (OSError, ValueError):
+        evidence = {}
     # A failure only matters while bullets still lack skills; a later pass (a save, a
     # run's start) that filled them makes it history.
     return BulletSkillsResponse(
-        running=running, error=error if waiting else None, waiting=waiting, bullets=bullets
+        running=running, error=error if waiting else None, waiting=waiting, bullets=bullets,
+        evidence=evidence,
     )
 
 

@@ -117,6 +117,7 @@ export const KEY_LABELS: Record<string, string> = {
   USAJOBS_EMAIL: "USAJobs Email (User-Agent header)",
   BRAVE_SEARCH_API_KEY: "Brave Search API key (company research)",
   TAVILY_API_KEY: "Tavily API key (company research)",
+  GITHUB_TOKEN: "GitHub token (evidence from your repositories; read-only, public repos)",
 };
 
 /** Help text and links for savable credentials. */
@@ -133,6 +134,10 @@ export const KEY_HELP: Record<string, { label: string; href: string }> = {
   },
   BRAVE_SEARCH_API_KEY: { label: "brave.com/search/api", href: "https://brave.com/search/api/" },
   TAVILY_API_KEY: { label: "tavily.com", href: "https://tavily.com/" },
+  GITHUB_TOKEN: {
+    label: "github.com/settings/personal-access-tokens",
+    href: "https://github.com/settings/personal-access-tokens",
+  },
 };
 
 /** Providers the Autofill model can use (`ApplySettings.model_provider`), labelled. */

@@ -223,6 +223,7 @@ SAVABLE_CREDENTIALS: tuple[str, ...] = (
     "ANTHROPIC_API_KEY",
     "BRAVE_SEARCH_API_KEY",
     "GEMINI_API_KEY",
+    "GITHUB_TOKEN",
     "GOOGLE_API_KEY",
     "LLM_API_KEY",
     "OLLAMA_API_KEY",
@@ -360,7 +361,8 @@ EFFORT = "medium"
 #: against the sent bullets and only ever shown, never sent.
 #: `research` lists facts about a company from pages read for it
 #: (`company_research.extract`); each fact must quote its source, and none is ever
-#: resume support.
+#: resume support. `evidence` proposes resume items from a source the student added
+#: (`pipeline/evidence.scan`); each quotes the source and waits for the student.
 PURPOSES = (
     "extract",
     "score",
@@ -374,6 +376,7 @@ PURPOSES = (
     "prep",
     "followup",
     "research",
+    "evidence",
 )
 
 #: Providers `parse_spec` recognises as a leading segment. Anything else is read as a bare
@@ -472,6 +475,8 @@ DEFAULT_EFFORT: dict[str, str] = {
     "followup": os.environ.get("LLM_EFFORT_FOLLOWUP", "low"),
     # Quoting facts out of supplied pages; every fact is checked against its quote.
     "research": os.environ.get("LLM_EFFORT_RESEARCH", "low"),
+    # Proposals quoted from one document; every one is checked against its quote.
+    "evidence": os.environ.get("LLM_EFFORT_EVIDENCE", "low"),
 }
 
 #: Recommended effort that depends on the provider, used unless `LLM_EFFORT_<STAGE>` is
@@ -486,8 +491,8 @@ PROVIDER_DEFAULT_EFFORT: dict[str, dict[str, str]] = {
 _EFFORT_FROM_ENV = frozenset(p for p in DEFAULT_EFFORT if os.environ.get(f"LLM_EFFORT_{p.upper()}"))
 
 #: The steps Settings → AI model → Advanced lets a user tune, and the stages each covers.
-#: `review`, `prep`, `followup` and `research` are not offered and always use their
-#: recommended effort.
+#: `review`, `prep`, `followup`, `research` and `evidence` are not offered and always use
+#: their recommended effort.
 EFFORT_STEPS: dict[str, tuple[str, ...]] = {
     "analysis": ("extract", "score", "facets", "skills"),
     "rewrite": ("rewrite",),
@@ -604,6 +609,8 @@ MODEL_PROFILES: dict[str, dict[str, str]] = {
         "followup": _OLLAMA_DEFAULT,
         # Company facts are quoted and checked against their sources — free backend.
         "research": _OLLAMA_DEFAULT,
+        # Evidence proposals are quoted, guarded and only ever suggestions — free backend.
+        "evidence": _OLLAMA_DEFAULT,
     },
 }
 

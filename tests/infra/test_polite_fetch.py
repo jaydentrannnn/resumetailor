@@ -133,3 +133,25 @@ def test_the_real_transport_checks_the_address_again_when_it_connects():
     assert isinstance(backend, polite_fetch._GuardedBackend)
     with pytest.raises(httpcore.ConnectError, match="not a public"):
         backend.connect_tcp("127.0.0.1.nip.io", 80)
+
+
+def test_extra_headers_reach_only_the_first_host_and_a_refusal_keeps_its_status():
+    seen: list[httpx.Request] = []
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        seen.append(request)
+        if request.url.path == "/robots.txt":
+            return httpx.Response(404)
+        if request.url.host == "example.com":
+            return httpx.Response(302, headers={"location": "https://www.example.com/next"})
+        return _page()
+
+    with polite_fetch.Fetcher(transport=httpx.MockTransport(handler)) as fetcher:
+        fetcher.get("https://example.com/start", headers={"Authorization": "Bearer t"})
+    pages = [r for r in seen if r.url.path != "/robots.txt"]
+    assert [r.headers.get("authorization") for r in pages] == ["Bearer t", None]
+
+    with (_fetcher({"https://example.com/x": httpx.Response(403)}) as fetcher,
+          pytest.raises(polite_fetch.FetchError) as caught):
+        fetcher.get("https://example.com/x")
+    assert caught.value.status == 403
