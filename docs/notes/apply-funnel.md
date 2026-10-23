@@ -2631,3 +2631,12 @@ One read-only run over the student's own 8 public repositories (6 own, 2 contrib
 - Skills from a repository the student did not mostly write were proposed as stated; `_basis` now makes them inferred with a question, like bullets and projects.
 - Tried and reverted: a prompt v2 ("copied from one place", "purpose" added to the never-add list). Drops fell to 2 only because quotes grew to ~800 characters across headings, and a purpose clause still appeared. Not a measured gain; the prompt stays v1. The excerpt cap in `check` is now the 400 characters the prompt asks for (was 2x).
 - Budget: listing a user costs 1 GitHub API read plus 2 per repository (languages, contributors); READMEs come from raw.githubusercontent.com and do not count.
+
+## Tracker board (2026-10-23)
+- A kanban page (`/tracker`) over every Done row, after Simplify's tracker. The column is derived from the outcome events, never stored, so the board, the Done table, the report and the progress banner cannot disagree.
+- A drag records events (dated today, `Moved on the tracker`); dragging back voids the events above the target instead of deleting them. Undo voids what the move added and re-adds copies of what it voided (`replaces=`), so history only grows. Today's date is used because a drag says "this happened", not when; the Outcome tab corrects a date.
+- Done only: a `submit_unconfirmed` row stays on the Apply page, and its email lands in the board's tray. Never-sent Done rows sit in a Not sent column that starts hidden and cannot be moved (restore on the Apply page).
+- A legacy status (`interview`, `rejected`, `ghosted`) has no event to void, so a move it blocks is refused with a 409 and nothing is saved (`store.update` saves only when mutate returns).
+- Emails: pending proposals show on their card (Accept/Dismiss through the existing mail routes); unmatched ones sit in a tray and dropping one on a card asks before recording. No LLM anywhere.
+- Rail: Tracker sits after Profile, not after Apply, so Ctrl+1–5 keep their pages; its badge counts pending email updates.
+- Tracker is the sixth default rail page, so Ctrl+6 opens it; a saved custom sidebar order gets it appended at the end (`visibleRailItems` appends required pages missing from the order), so existing users see it without touching Appearance.

@@ -160,6 +160,7 @@ function Shell() {
                   <Route path="/applications" element={<ApplyPage />} />
                   <Route path="/applications/sources" element={<SourcesPage />} />
                   <Route path="/applications/:applicationId" element={<ApplicationDetailPage />} />
+                  <Route path="/tracker" element={<TrackerPage />} />
                   <Route path="/resume" element={<ResumePage />} />
                   <Route path="/resume/evidence" element={<EvidencePage />} />
                   <Route path="/profile" element={<Navigate to="/profile/personal" replace />} />
@@ -190,6 +191,9 @@ const ApplyPage = lazy(() =>
 );
 const SourcesPage = lazy(() =>
   import("./pages/apply/SourcesPage").then((m) => ({ default: m.SourcesPage })),
+);
+const TrackerPage = lazy(() =>
+  import("./pages/tracker/TrackerPage").then((m) => ({ default: m.TrackerPage })),
 );
 const ApplicationDetailPage = lazy(() =>
   import("./pages/ApplicationDetailPage").then((m) => ({ default: m.ApplicationDetailPage })),

@@ -292,6 +292,7 @@ from resume_tailor.web.routes import (  # noqa: E402, I001
     system as _system_routes,
     template as _template_routes,
     template_edit as _template_edit_routes,
+    tracker as _tracker_routes,
     update as _update_routes,
     vertex as _vertex_routes,
     workspaces as _workspaces_routes,
@@ -308,6 +309,7 @@ for _router in (
     _extension_routes, _update_routes, _reference_routes, _search_presets_routes,
     _cover_letter_routes, _template_edit_routes, _vertex_routes, _desktop_routes,
     _mail_updates_routes, _pay_routes, _company_research_routes, _evidence_routes,
+    _tracker_routes,
 ):
     app.include_router(_router.router)
 

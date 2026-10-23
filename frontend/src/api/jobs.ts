@@ -45,7 +45,7 @@ export type CoverAngles = {
 export type JobSettings = {
   ai_models?: AiModels | null;
   ai_advanced_enabled?: boolean;
-  /** The desktop app's Ctrl+1…5 hints in the side bar (app-wide; default on). */
+  /** The desktop app's Ctrl+1…6 hints in the side bar (app-wide; default on). */
   show_shortcut_hints?: boolean;
   /** Page to open on launch (app-wide); "/" is Tailor. */
   start_page?: string;

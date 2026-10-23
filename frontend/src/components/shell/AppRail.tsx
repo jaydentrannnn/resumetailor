@@ -9,6 +9,10 @@ import { UpdateChip } from "../UpdateChip";
 import { type ThemePreference, useTheme } from "../../state/themeState";
 import { RailIcon, SETTINGS_ICON, THEME_ICONS, visibleRailItems } from "./railItems";
 import { useNeedsYouCount } from "./useNeedsYouCount";
+import { usePendingEmailCount } from "./usePendingEmailCount";
+
+const BADGE =
+  "absolute left-6 top-0.5 shrink-0 rounded-full bg-attn px-1 text-[10px] font-medium text-on-accent min-[900px]:static min-[900px]:px-1.5 min-[900px]:text-[11px]";
 
 // The rail is 184px wide with labels; below 900px it keeps only the icons. Class names
 // stay literal (`min-[900px]:…`) so Tailwind finds them.
@@ -23,13 +27,14 @@ const rowClass = ({ isActive }: { isActive: boolean }) =>
 /**
  * The app's left rail: the work areas, then the theme, what needs attention (setup
  * steps left, an update), the profile switcher and Settings at the bottom. Shortcut hints
- * show only in the desktop app, where the browser does not keep Ctrl+1…5 for its tabs,
+ * show only in the desktop app, where the browser does not keep Ctrl+1…6 for its tabs,
  * and can be hidden in Settings › Appearance.
  */
 export function AppRail() {
   const { settings } = useRunState();
   const hints = useDesktop() && settings.show_shortcut_hints !== false;
   const needsYou = useNeedsYouCount();
+  const emails = usePendingEmailCount();
   const items = visibleRailItems(settings.rail_layout);
   return (
     <nav
@@ -45,11 +50,13 @@ export function AppRail() {
           <RailIcon path={item.icon} />
           <span className="hidden min-w-0 flex-1 truncate min-[900px]:inline">{item.label}</span>
           {item.badge === "apply" && needsYou ? (
-            <span
-              className="absolute left-6 top-0.5 shrink-0 rounded-full bg-attn px-1 text-[10px] font-medium text-on-accent min-[900px]:static min-[900px]:px-1.5 min-[900px]:text-[11px]"
-              aria-label={`${needsYou} need you`}
-            >
+            <span className={BADGE} aria-label={`${needsYou} need you`}>
               {needsYou}
+            </span>
+          ) : null}
+          {item.badge === "email" && emails ? (
+            <span className={BADGE} aria-label={`${emails} email ${emails === 1 ? "update" : "updates"}`}>
+              {emails}
             </span>
           ) : null}
           {hints && (

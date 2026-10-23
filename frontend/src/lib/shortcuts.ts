@@ -1,6 +1,6 @@
 /** Global keyboard shortcuts: which action a keydown maps to, if any. */
 /**
- * "pages" (Ctrl+1…5, Ctrl+,) and "undo" are listed for the help dialog; `railTarget` and
+ * "pages" (Ctrl+1…6, Ctrl+,) and "undo" are listed for the help dialog; `railTarget` and
  * the Resume editor (`undoKeyFor`) handle them.
  */
 export type ShortcutAction =
@@ -10,9 +10,9 @@ export const SHORTCUTS: { keys: string[]; action: ShortcutAction; description: s
   { keys: ["Ctrl", "K"], action: "commands", description: "Find a page or an action" },
   { keys: ["Ctrl", "Enter"], action: "primary", description: "Tailor resume (on the Tailor page)" },
   {
-    keys: ["Ctrl", "1…5"],
+    keys: ["Ctrl", "1…6"],
     action: "pages",
-    description: "Tailor, Apply, Resume, Template, Profile",
+    description: "Tailor, Apply, Resume, Template, Profile, Tracker",
   },
   { keys: ["Ctrl", ","], action: "pages", description: "Settings" },
   { keys: ["Ctrl", "S"], action: "save", description: "Save (Resume and Profile)" },

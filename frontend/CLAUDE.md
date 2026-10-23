@@ -27,7 +27,7 @@ hermetic backend).
   (the `index.ts` barrel) so `vi.mock("../api")` keeps covering every call.
 - `src/state/` — React context providers (run, template, library, workspace, editor, ...).
 - `src/pages/` — one folder per page area (`apply/`, `run/`, `editor/`, `resume/`, `onboarding/`,
-  `profile/`, `settings/`); `src/components/` — shared UI (`ui/` primitives).
+  `profile/`, `settings/`, `tracker/`); `src/components/` — shared UI (`ui/` primitives).
 - `src/lib/` — pure logic with colocated `*.test.ts`; keep components thin and put
   testable logic here.
 

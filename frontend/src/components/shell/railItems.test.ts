@@ -13,16 +13,17 @@ const key = (k: string, extra: Partial<KeyboardEvent> = {}) =>
   }) as KeyboardEvent;
 
 describe("railTarget", () => {
-  it("maps Ctrl/Cmd+1…5 to the rail's pages and Ctrl+, to Settings", () => {
+  it("maps Ctrl/Cmd+1…6 to the rail's pages and Ctrl+, to Settings", () => {
     expect(railTarget(key("1"))).toBe("/");
     expect(railTarget(key("2"))).toBe("/applications");
     expect(railTarget(key("3"))).toBe("/resume");
     expect(railTarget(key("5", { ctrlKey: false, metaKey: true }))).toBe("/profile");
+    expect(railTarget(key("6"))).toBe("/tracker");
     expect(railTarget(key(","))).toBe("/settings");
   });
 
   it("ignores other keys and modifier mixes", () => {
-    expect(railTarget(key("6"))).toBeNull();
+    expect(railTarget(key("7"))).toBeNull();
     expect(railTarget(key("0"))).toBeNull();
     expect(railTarget(key("1", { ctrlKey: false }))).toBeNull();
     expect(railTarget(key("1", { shiftKey: true }))).toBeNull();
@@ -32,11 +33,17 @@ describe("railTarget", () => {
   it("follows a custom visible order", () => {
     const items = visibleRailItems({
       order: ["/profile", "/"],
-      hidden: ["/applications", "/resume", "/template"],
+      hidden: ["/applications", "/resume", "/template", "/tracker"],
     });
     expect(items.map((i) => i.to)).toEqual(["/profile", "/"]);
     expect(railTarget(key("1"), items)).toBe("/profile");
     expect(railTarget(key("2"), items)).toBe("/");
+  });
+
+  it("adds a new required page to the end of an older saved order", () => {
+    const items = visibleRailItems({ order: ["/profile", "/"], hidden: [] });
+    expect(items.map((i) => i.to).slice(0, 2)).toEqual(["/profile", "/"]);
+    expect(items.at(-1)?.to).toBe("/tracker");
   });
 });
 
@@ -45,13 +52,13 @@ describe("visibleRailItems", () => {
     expect(visibleRailItems().map((i) => i.to)).not.toContain("/vocabulary");
     const pinned = visibleRailItems({
       order: ["/", "/vocabulary"],
-      hidden: ["/applications", "/resume", "/template", "/profile"],
+      hidden: ["/applications", "/resume", "/template", "/profile", "/tracker"],
     });
     expect(pinned.map((i) => i.to)).toEqual(["/", "/vocabulary"]);
     expect(
       visibleRailItems({
         order: [],
-        hidden: ["/", "/applications", "/resume", "/template", "/profile"],
+        hidden: ["/", "/applications", "/resume", "/template", "/profile", "/tracker"],
       }).length,
     ).toBeGreaterThan(0);
   });

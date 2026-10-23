@@ -45,7 +45,8 @@ same text (`tests/tooling/test_agent_docs.py` enforces it).
   `applications`, `outcomes` (what happened after sending; works on archived rows),
   `after_send` (interview prep, follow-up notes, "no reply" marks, the offline report;
   registered before `applications`), `mail_updates` (job emails Claude Desktop read, as
-  proposals the student accepts), `pay` (an application's posted pay and pay for similar
+  proposals the student accepts), `tracker` (the Tracker board: moves and undo on Done
+  rows), `pay` (an application's posted pay and pay for similar
   roles; imported pay data), `company_research` (facts quoted from pages about an
   application's company; started by hand), `evidence` (GitHub repositories and
   documents as resume evidence; items added only on the student's accept),

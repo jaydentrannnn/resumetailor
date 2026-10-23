@@ -5,14 +5,14 @@ export type RailItem = {
   label: string;
   end?: boolean;
   icon: string;
-  badge?: "apply";
+  badge?: "apply" | "email";
   /** When true, hidden until the user pins it in Appearance › Sidebar. */
   optional?: boolean;
 };
 
 export type RailLayout = { order: string[]; hidden: string[] };
 
-/** Shipped pages in Ctrl+1…5 order; optional pages are off until pinned. */
+/** Shipped pages in Ctrl+1…6 order; optional pages are off until pinned. */
 export const RAIL_ITEMS: RailItem[] = [
   { to: "/", label: "Tailor", end: true, icon: "M3 2h7l3 3v9H3zM6 8h4M6 11h4" },
   { to: "/applications", label: "Apply", icon: "M2 4h12v9H2zM6 4V2.5h4V4", badge: "apply" },
@@ -23,6 +23,8 @@ export const RAIL_ITEMS: RailItem[] = [
     label: "Profile",
     icon: "M5.5 5.5a2.5 2.5 0 1 0 5 0a2.5 2.5 0 1 0-5 0M3 14c.6-2.8 2.6-4 5-4s4.4 1.2 5 4",
   },
+  // After the first five so their Ctrl+1…5 shortcuts stay where they were (Tracker is Ctrl+6).
+  { to: "/tracker", label: "Tracker", icon: "M2 2.5h3.5v11H2zM6.25 2.5h3.5v7h-3.5zM10.5 2.5H14v9h-3.5z", badge: "email" },
   {
     to: "/vocabulary",
     label: "Vocabulary",

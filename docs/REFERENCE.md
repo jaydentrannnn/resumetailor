@@ -827,6 +827,29 @@ outcome event (`source="mcp"`, dated by the email, note `From email “<subject>
 did not upload it); a row already submitted is left alone. "Accept all matched" skips
 flagged and unmatched emails. There is no MCP accept.
 
+**Tracker board (`/tracker`).** Every Done (archived) row as a card, in columns derived
+from `outcomes.hiring_progress`, never stored: Not sent (screened out, skipped or
+archived by hand; hidden at first, never movable) · Applied · Assessment · Interviewing ·
+Offer (hired shares it) · Closed (the reason, and the furthest stage past Applied). A
+`submit_unconfirmed` row is not in Done, so it is not on the board. `apply/funnel/tracker`
+(pure) turns a move into events, dated today, note `Moved on the tracker`: forward adds
+the column's step (`assessment`, `interview_invited`, `offer`); back voids the live events
+ranked above the target and adds the target's step if the card never reached it; Closed
+needs a reason (rejected, ghosted, withdrawn; offer declined only after an offer), and a
+new reason voids the old closing event; reopening voids the closing events after the last
+step. Nothing is deleted. A move returns a receipt (`added`, `voided`); `undo` voids what
+it added and re-adds copies (`replaces=<old id>`, same date and source) of what it voided,
+and refuses once the card has changed since. A stage held by a legacy status (`interview`,
+`rejected`, `ghosted`) cannot be voided, so a move that leaves the derived column short of
+the target is refused (409) and nothing is saved. Routes (`web/routes/tracker.py`):
+`GET /api/tracker` (cards with their pending email proposals, the unmatched or off-board
+proposals for the tray, per-column counts, `last_synced`), `POST /api/tracker/{id}/move
+{column, reason?}` and `…/undo {receipt}`, both inside `store.update`, refusing rows not in
+Done. The page drags natively (or uses each card's ⋯ menu), moves optimistically with
+rollback, and offers Undo in the status bar; card emails are accepted or dismissed through
+the mail routes above, and a tray email dropped on a card asks before recording. Hidden
+columns are per browser (`rt.tracker.hidden.<workspace>`); filters live in the URL.
+
 **Pay benchmarks.** The `research/` package holds facts about the market. None of it is
 ever resume support: no fabrication-guard source, no bullet tags, no prompt context.
 - `pay_parse.posted_ranges` (pure) reads base-pay figures and ranges with their currency
