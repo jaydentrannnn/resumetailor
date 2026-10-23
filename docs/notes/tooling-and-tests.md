@@ -279,3 +279,17 @@ while LM Studio kept generating, blocking the next request); a failed polish cal
 the whole run instead of keeping the drafts (moot while polish is off); LM Studio rejects
 the first structured-output rung (`json_object`, HTTP 400) on every call; and one posting
 (4d3e7fe4069a) made three different models loop or fail.
+
+## 2026-10-22 — Eval stages `cover` and `review`
+
+`scripts/eval_models.py cover|review` replay saved runs (tailored bullets, requirements,
+JD) through `coverletter.draft_letter` and `review.review_bullets`. Variants live in
+`scripts/evals/variants.py`: `gaps` wraps `coverletter._system`, `_user_message` (a
+behaviour-neutral seam split out of `_call_model` for this) and `_check_fabrication`, and
+is a no-op unless a task sets the unmet list; `scope` is a separate eval-only caller,
+`scripts/evals/review_scope.py`, never shipped. A case's unmet must-haves are those
+neither in `known_tags` nor named in the resume's visible text, capped at two in posting
+order. Decision rules (`report.COVER_CHECKS`, `REVIEW_CHECKS`) were fixed before any run:
+unsupported claims and gaps claimed as experience must not rise; guard-dropped review
+suggestions may rise at most 5 points; the judge arm may lose at most 10 points more
+often than the control.

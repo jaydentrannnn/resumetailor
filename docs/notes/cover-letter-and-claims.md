@@ -103,3 +103,19 @@ reported as leftovers. Retry behaviour is unchanged (`hard_offenders` still driv
 Expansion (`expand._accept_bullets`) now runs `bullet_checks.delegated_authorship` and
 warns once per entry when a bullet claims first-hand work its source credits to a
 vendor or contractor. Report only: no retry, no drop (the paste text is advisory).
+
+## 2026-10-22 — Cover-letter gap bridges: measured, not shipped
+
+Experiment 4d passed up to two unmet must-haves as `<unmet_requirements>` with a rule to
+acknowledge them honestly and bridge from adjacent work, plus a guard carve-out allowing
+a gap term only in a sentence with a negation or learning cue. 30 cases, light model
+Vertex gemini-3.8-flash, judge gpt-5-mini both orders, 15-case control
+(`output/eval/cover-gaps`). The coded gate passed (unsupported claims 0.033 -> 0, gaps
+claimed as experience 0.033 -> 0, one case each; judge losses 39% vs control 33%), but the
+judge split 11 baseline wins, 10 gap-bridge wins, 7 ties: quality-neutral, so it was cut.
+A blind read of three pairs agreed: the bridged letters were more honest but read weaker,
+and one stacked three admissions ("not worked in mobile", "not yet operated in
+Agile/LEAN", "Java... my foundation relies on Python"). Production `coverletter.py` is
+unchanged apart from the `_user_message` seam. The interview-prep gap-bridge answers that
+depended on this are dropped too. If revisited: allow at most one acknowledgement, only
+for a hard technical must-have, never for soft skills or language lists.

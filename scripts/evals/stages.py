@@ -12,20 +12,25 @@ from resume_tailor import config, workspace
 from resume_tailor.content import bullet_tags, data, industries, style
 from resume_tailor.pipeline import (
     bullet_checks,
+    coverletter,
+    coverletter_format,
     expand,
     fit_types,
     followups,
     jd,
+    review,
     rewrite,
     tag_infer,
 )
 from resume_tailor.pipeline.jd import JobRequirements
 
-from . import corpus, hybrid_extract, judge, metrics
+from . import corpus, hybrid_extract, judge, metrics, review_scope, variants
 from .corpus import Case
 
 #: A case needs this many of its saved bullet ids still in today's resume.
 MIN_BULLETS = 3
+#: Unmet must-haves the gap-bridge arm offers the cover letter (experiment 4d).
+MAX_GAPS = 2
 #: A model spec (string, or a JSON object) that replaces the profile's Light model for
 #: every arm; the profile's own model still judges (`profile_spec`).
 LIGHT_ENV = "EVAL_LIGHT"
@@ -200,12 +205,87 @@ class Replay:
         record["metrics"]["candidates"] = found
         return record
 
+    # -- cover letter and review (experiments 4d, 4e) ------------------------------------
+
+    @staticmethod
+    def tailored(case: Case) -> dict[str, str]:
+        """The run's final tailored bullets (`bullets.json`), `{}` when absent."""
+        return corpus._read_json(case.job_dir / "bullets.json") if case.job_dir else {}
+
+    def can_cover(self, case: Case) -> bool:
+        return case.requirements_json() is not None and len(self.tailored(case)) >= MIN_BULLETS
+
+    def unmet(self, case: Case) -> list[str]:
+        """Must-haves the resume does not have at all (coverage's `resume is None`) and
+        never names in its text, in posting order, at most `MAX_GAPS`: the gaps the
+        cover-letter arm may acknowledge."""
+        if getattr(self, "_resume_text", None) is None:
+            from resume_tailor.document import render
+
+            self._resume_text = "\n".join(render.visible_text(
+                self.resume, {b.id: b.text for b in self.resume.all_bullets()}))
+        claimed = self._requirements(case).as_claimed()
+        known = set(self.known_tags)
+        phrases = {}
+        for k in claimed.by_importance("must_have"):
+            if k.canonical not in known and not bullet_checks.contains_phrase(
+                    self._resume_text, k.phrase):
+                phrases.setdefault(k.canonical, k.phrase)
+        return list(phrases.values())[:MAX_GAPS]
+
+    def _cover(self, case: Case) -> dict[str, Any]:
+        letter = coverletter.draft_letter(
+            self.resume, self._requirements(case), self.tailored(case), case.jd_text,
+            use_cache=False,
+        )
+        unmet = self.unmet(case)
+        return {
+            "paragraphs": letter.paragraphs, "warnings": letter.warnings, "unmet": unmet,
+            "metrics": metrics.cover_metrics(letter.paragraphs, letter.warnings,
+                                             letter.word_count, unmet),
+        }
+
+    def cover(self, case: Case) -> dict[str, Any]:
+        """The current cover letter for the run's own tailored bullets, cache bypassed."""
+        return self._cover(case)
+
+    def cover_gaps(self, case: Case) -> dict[str, Any]:
+        """The same letter with the run's unmet must-haves offered as gaps to bridge."""
+        with variants.gaps(self.unmet(case)):
+            return self._cover(case)
+
+    def review(self, case: Case) -> dict[str, Any]:
+        """The current hiring-manager review of the run's tailored bullets."""
+        result = review.review_bullets(self.resume, self._requirements(case), self.tailored(case))
+        record = {
+            "scope_read": result.scope_read, "consistency": [],
+            "bullets": [{"id": b.id, "verdict": b.verdict, "reason": b.reason,
+                         "replacement": b.replacement, "dropped_note": b.dropped_note,
+                         "offered": b.verdict == "rewrite"
+                         and bool(b.replacement or b.dropped_note)}
+                        for b in result.bullets],
+        }
+        return {**record, "metrics": metrics.review_metrics(record)}
+
+    def review_scope(self, case: Case) -> dict[str, Any]:
+        """The broader review: scope risk, softer wording, consistency (experiment 4e)."""
+        cover = corpus._read_json(case.job_dir / "cover.json") if case.job_dir else {}
+        record = review_scope.review_scoped(self.resume, self._requirements(case),
+                                            self.tailored(case), cover.get("paragraphs") or ())
+        return {**record, "metrics": metrics.review_metrics(record)}
+
     def judge_inputs(self, stage: str, case: Case, a: dict, b: dict) -> tuple:
         """`(build, output a, output b)` for `judge.both_orders` from two arm results."""
         if stage == "extract":
             return judge.extract_prompt(case.jd_text), a["requirements"], b["requirements"]
         requirements = self._requirements(case)
         must = [k.phrase for k in requirements.keywords if k.importance == "must_have"]
+        if stage == "cover":
+            shown = coverletter_format._format_tailored_entries(self.resume, self.tailored(case))
+            return (judge.cover_prompt(requirements.title, must, shown),
+                    a["paragraphs"], b["paragraphs"])
+        if stage == "review":
+            return judge.review_prompt(requirements.title, must, self.tailored(case)), a, b
         if stage == "rewrite":
             return judge.rewrite_prompt(requirements.title, must, self.judge_sources(
                 [i for i in a["texts"] if i in self.by_id])), a["texts"], b["texts"]

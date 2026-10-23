@@ -164,6 +164,14 @@ EXPAND_CHECKS = [
     ("empty_entries", 0.0, True, "entries left empty don't rise"),
 ]
 
+COVER_CHECKS = [
+    ("factual_left", 0.0, True, "claims left unsupported after the retry don't rise"),
+    ("gap_claimed", 0.0, True, "unmet must-haves named as experience don't rise"),
+]
+REVIEW_CHECKS = [
+    ("guard_dropped_rate", 0.05, True, "suggestions dropped by the guard rise <= 5 points"),
+]
+
 
 def verdict(rules: list[Rule]) -> str:
     if any(r.passed is False for r in rules):

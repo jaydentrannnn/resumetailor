@@ -846,3 +846,18 @@ when a run finishes and backfilled at startup by `sync_run_coverage`. It reads `
 so a bullet edit's re-measure shows after the next startup. The table meter, the detail
 overview and the coverage sort use it, falling back to the screen's resume figure before
 tailoring.
+
+## 2026-10-22 — Broader hiring-manager review: judge liked it, guard gate failed
+
+Experiment 4e (`scripts/evals/review_scope.py`) added per-bullet `scope_risk`
+(none|stretch) with a note and a guarded `softer_replacement`, plus `consistency`
+findings across bullets, profile line and cover letter. 30 cases, same models and judge as
+the cover experiment (`output/eval/review-scope`). The judge preferred it strongly (22
+wins, 3 losses, 5 ties; control split 7/5/3), mostly for flagging overstated claims. It
+failed the pre-registered guard rule: suggestions the fabrication guard dropped rose from
+0.111 to 0.371 per case (CI +0.10 to +0.43). Softer replacements were dropped 17 of 53
+times, and ordinary rewrites rose too (13 -> 20 drops), so the wider prompt makes rewrites
+reach across bullets ("Docker Compose", "APIs") or reword numbers ("1000"). Not shipped;
+`review.py` is unchanged. Consistency findings were rare (3 in 30 cases). Next variant
+worth one run: the stretch flag and note only, no generated softer text and the rewrite
+instructions untouched, so nothing new reaches the guard.

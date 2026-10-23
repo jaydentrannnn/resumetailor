@@ -1677,9 +1677,21 @@ the arms on the same cases. It is eval-only: nothing under `src/` imports
   custom OpenAI-compatible provider). Each pair is judged in both orders, and a win counts
   only when both orders agree. Its key is stored with `judge-key` in the secret store, or
   read from `AZURE_OPENAI_API_KEY`.
-- **Decision rules** are code (`REWRITE_CHECKS`, `EXPAND_CHECKS`,
-  `report_extract.rules`), so `summary.md` prints PASS/FAIL/INCOMPLETE, never a judgement
-  call.
+- **Decision rules** are code (`REWRITE_CHECKS`, `EXPAND_CHECKS`, `COVER_CHECKS`,
+  `REVIEW_CHECKS`, `report_extract.rules`), so `summary.md` prints PASS/FAIL/INCOMPLETE,
+  never a judgement call.
+- **Variant experiments** (`cover`, `review`) compare `current` against a candidate on
+  the same model and effort, using each saved run's own `bullets.json`. `cover` vs `gaps`
+  (`variants.gaps`) offers up to two unmet must-haves (not a known skill and never named
+  in the resume's text) as `<unmet_requirements>`, adds `GAP_RULE`, and lets the claim
+  guard pass a gap term only in a sentence with a `GAP_CUE`; it samples only runs with an
+  unmet must-have. Its metrics are claims left after the retry, gaps named, and gaps named
+  in a first-person claim sentence without a cue (`gap_claimed`). `review` vs `scope`
+  (`evals/review_scope.py`, an eval-only LLM caller) adds per-bullet scope risk with a
+  guarded softer wording, and consistency notes across bullets and the run's cover letter;
+  its metric is the share of suggestions the guard drops. The production seam is
+  `coverletter._user_message`. Neither variant shipped (results in
+  `docs/notes/cover-letter-and-claims.md` and `docs/notes/pipeline-and-guards.md`).
 - **Cost.** At `medium`, rewrite on gemini-3.8-flash is ~$0.06 and ~140 s per posting; at
   `low` it is ~$0.007 and ~16 s. Smoke-test with `--limit 10` first.
 

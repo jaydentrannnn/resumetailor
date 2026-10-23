@@ -163,3 +163,54 @@ def extract_metrics(
         "verbatim_violations": len(verify_verbatim(requirements, jd_text)),
         **coverage(resume, requirements),
     }
+
+
+def _named(text: str, phrase: str) -> bool:
+    return bullet_checks.contains_phrase(text, phrase)
+
+
+def cover_metrics(
+    paragraphs: Sequence[str], warnings: Sequence[str], words: int, unmet: Sequence[str],
+) -> dict[str, float]:
+    """Claims the guard left after its retry, unmet must-haves the letter names, and how
+    many of those a first-person claim sentence (the guard's own test) names without a
+    gap cue, AI tells, and length."""
+    from resume_tailor.pipeline import coverletter_style
+
+    from . import variants
+
+    left = next((w for w in warnings if w.startswith("Unsupported claims remain")), "")
+    sentences = [s for p in paragraphs
+                 for s in coverletter_style._SENTENCE_SPLIT.split(p.strip()) if s.strip()]
+    mentioned = [g for g in unmet if any(_named(s, g) for s in sentences)]
+    claims = [s for s in sentences if coverletter_style._FIRST_PERSON_VERB.search(s)
+              and not variants.GAP_CUE.search(s)]
+    claimed = [g for g in mentioned if any(_named(s, g) for s in claims)]
+    return {
+        "words": words,
+        "factual_left": len(left.split(":", 1)[1].split(";")) if left else 0,
+        "style_left": int(any(w.startswith("Style issues remain") for w in warnings)),
+        "ai_tells": sum(1 for w in warnings if w.startswith("AI tell:")),
+        "gap_mentioned": len(mentioned),
+        "gap_claimed": len(claimed),
+    }
+
+
+def review_metrics(record: dict) -> dict[str, float]:
+    """Verdict counts, the share of offered rewrites the guard dropped, and the broader
+    review's extra findings (stretch flags, consistency notes)."""
+    rows = record["bullets"]
+    offered = sum(r["offered"] for r in rows) + sum(r.get("softer_offered", False) for r in rows)
+    dropped = sum(bool(r["dropped_note"]) for r in rows) + sum(
+        bool(r.get("softer_dropped")) for r in rows)
+    stretch = sum(r.get("scope_risk") == "stretch" for r in rows)
+    consistency = len(record.get("consistency") or [])
+    return {
+        "bullets": len(rows),
+        "cuts": sum(r["verdict"] == "cut" for r in rows),
+        "rewrites": sum(r["verdict"] == "rewrite" for r in rows),
+        "guard_dropped_rate": dropped / offered if offered else 0.0,
+        "stretch": stretch,
+        "consistency": consistency,
+        "findings": sum(r["verdict"] != "keep" for r in rows) + stretch + consistency,
+    }

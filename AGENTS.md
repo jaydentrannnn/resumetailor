@@ -30,7 +30,7 @@ styling, template markup, or anything about layout.** Only `jd.py`, `rewrite.py`
 `relevance.py`, `followups.py`, `bullet_merge.py`), `facets.py`, `expand.py`, `skills.py`, `coverletter.py`, `review.py`, `propose.py`, `tag_infer.py` — plus
 the apply funnel's `apply/answers/` `answer.py`, `model_resolver.py`, `hybrid_resolver.py`
 (form-field labels/options and resume text, never document XML), and the eval-only
-`scripts/evals/` `judge.py` and `hybrid_extract.py` (never shipped) — call the API,
+`scripts/evals/` `judge.py`, `hybrid_extract.py` and `review_scope.py` (never shipped) — call the API,
 exchanging plain text/JSON only. `llm.py` routes which backend; `render.py` is
 the only module that touches the document (mechanically, via `docxtpl`); `convert.py`
 owns PDF conversion. Six stages on every clean run: JD extraction, relevance scoring,

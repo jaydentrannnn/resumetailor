@@ -442,6 +442,48 @@ def _call_model(
     previous_paragraphs: list[str] | None = None,
 ) -> coverletter_models.CoverLetterLLM:
     """Issue one cover-letter LLM call and return the parsed result."""
+    user = _user_message(
+        resume=resume,
+        requirements=requirements,
+        bullets=bullets,
+        jd_text=jd_text,
+        word_band=word_band,
+        instruction=instruction,
+        angles=angles,
+        retry_offenders=retry_offenders,
+        previous_paragraphs=previous_paragraphs,
+    )
+    client = llm.client_for("cover")
+    response = client.messages.parse(
+        model=config.model_for("cover"),
+        max_tokens=config.max_tokens_for("cover"),
+        system=_system(),
+        messages=[{"role": "user", "content": user}],
+        output_format=coverletter_models.CoverLetterLLM,
+        output_config={"effort": config.effort_for("cover")},
+    )
+    result = response.parsed_output
+    if result is None:
+        raise RuntimeError(
+            f"Model did not return a parseable cover letter "
+            f"(stop_reason={response.stop_reason!r})."
+        )
+    return result
+
+
+def _user_message(
+    *,
+    resume: MasterResume,
+    requirements: JobRequirements,
+    bullets: dict[str, str],
+    jd_text: str,
+    word_band: tuple[int, int],
+    instruction: str = "",
+    angles: coverletter_models.CoverAngles | None = None,
+    retry_offenders: list[str] | None = None,
+    previous_paragraphs: list[str] | None = None,
+) -> str:
+    """The user message of one cover-letter call (plain text, no document content)."""
     lo, hi = word_band
     notes = "\n".join(f"  - {n}" for n in requirements.domain_notes) or "  (none)"
     user_parts = [
@@ -467,24 +509,7 @@ def _call_model(
             f"\n\n<previous_draft>\n{prev}\n</previous_draft>\n\n"
             f"<issues>\n{offenders}\n</issues>\n\n{_RETRY_INSTRUCTION}"
         )
-    user = "".join(user_parts)
-
-    client = llm.client_for("cover")
-    response = client.messages.parse(
-        model=config.model_for("cover"),
-        max_tokens=config.max_tokens_for("cover"),
-        system=_system(),
-        messages=[{"role": "user", "content": user}],
-        output_format=coverletter_models.CoverLetterLLM,
-        output_config={"effort": config.effort_for("cover")},
-    )
-    result = response.parsed_output
-    if result is None:
-        raise RuntimeError(
-            f"Model did not return a parseable cover letter "
-            f"(stop_reason={response.stop_reason!r})."
-        )
-    return result
+    return "".join(user_parts)
 
 
 @telemetry.stage("cover")

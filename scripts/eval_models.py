@@ -19,6 +19,12 @@ Experiment E (arms are `current` and `hybrid`; fetched non-tech postings include
     python scripts\\eval_models.py extract --limit 80 --control 30
     python scripts\\eval_models.py extract --limit 30 --spec <json spec> --tag azure
 
+Variant experiments (arms `current` vs `gaps` / `scope`; same model and effort; each run's
+own tailored bullets; the cover sample keeps runs with an unmet must-have):
+
+    python scripts\\eval_models.py cover --limit 30 --control 15
+    python scripts\\eval_models.py review --limit 30 --control 15
+
 Judge (a different model family; Azure OpenAI via its OpenAI-compatible v1 endpoint):
 
     python scripts\\eval_models.py judge-key --judge-url <url> --judge-model <deployment>
@@ -56,6 +62,13 @@ _METRICS = {
                 "over_length", "under_length", "verb_collisions", "phrase_collisions",
                 "changed_rate", "mean_chars"],
     "expand": ["entries", "empty_entries", "bullets", "guard_dropped", "chars", "over_limit"],
+    "cover": ["factual_left", "gap_claimed", "gap_mentioned", "style_left", "ai_tells", "words"],
+    "review": ["guard_dropped_rate", "findings", "cuts", "rewrites", "stretch", "consistency"],
+}
+#: Variant experiments: `(baseline arm, candidate arm, Replay method per arm)`.
+_VARIANTS = {
+    "cover": ("current", "gaps", {"current": "cover", "gaps": "cover_gaps"}),
+    "review": ("current", "scope", {"current": "review", "scope": "review_scope"}),
 }
 #: The profile each fetched group runs against (a finance resume for finance postings).
 _GROUP_WORKSPACE = {"finance": "nina", "nontech": "default"}
@@ -70,7 +83,8 @@ def _parse_spec(raw: str | None):
 def _args(argv: list[str] | None) -> argparse.Namespace:
     parser = argparse.ArgumentParser(description=__doc__.splitlines()[0])
     parser.add_argument("stage", choices=[
-        "rewrite", "expand", "extract", "fetch", "judge", "judge-key", "report"])
+        "rewrite", "expand", "extract", "cover", "review", "fetch", "judge", "judge-key",
+        "report"])
     parser.add_argument("--arms", help="effort arms, baseline first (default medium,low)")
     parser.add_argument("--limit", default="10", help="saved postings to sample, or 'all'")
     parser.add_argument("--control", type=int, default=0,
@@ -113,7 +127,8 @@ def _summary(eval_dir: Path) -> str:
     else:
         stage, base, cand = meta["stage"], meta["base"], meta["cand"]
         grouped = report.by_arm(records)
-        checks = {"rewrite": report.REWRITE_CHECKS, "expand": report.EXPAND_CHECKS}[stage]
+        checks = {"rewrite": report.REWRITE_CHECKS, "expand": report.EXPAND_CHECKS,
+                  "cover": report.COVER_CHECKS, "review": report.REVIEW_CHECKS}[stage]
         rules = report.gate(grouped, verdicts, base, cand, checks=checks)
         errors = sum(1 for r in records if r.get("status") == "error")
         text = report.markdown(f"{stage}: {base} vs {cand}", grouped, _METRICS[stage],
@@ -168,6 +183,41 @@ def _run_effort(args: argparse.Namespace, eval_dir: Path) -> int:
     arms_mod.run(tasks, getattr(replay, args.stage), arms_mod.Results(eval_dir / "cases.jsonl"),
                  setup=replay.setup, workers=args.workers, out_dir=eval_dir,
                  progress=_progress)
+    print(_summary(eval_dir))
+    return 0
+
+
+# -- variant experiments (cover letter gap bridges, broader review) ------------------------
+
+
+def _run_variant(args: argparse.Namespace, eval_dir: Path) -> int:
+    """Baseline vs candidate on each run's own tailored bullets, same model and effort;
+    the cover experiment samples only runs with at least one unmet must-have."""
+    _sandbox(eval_dir)
+    from evals import arms as arms_mod
+    from evals.stages import Replay
+
+    base, cand, methods = _VARIANTS[args.stage]
+    replay = Replay(args.workspace)
+    cases = [c for c in corpus.load_saved(sandbox.live_jobs_dir(args.workspace), args.workspace)
+             if replay.can_cover(c)]
+    if args.stage == "cover":
+        cases = [c for c in cases if replay.unmet(c)]
+    chosen = corpus.sample(cases, None if args.limit == "all" else int(args.limit),
+                           seed=args.seed)
+    spec = _parse_spec(args.spec) or replay.light_spec
+    _write_meta(eval_dir, {
+        "stage": args.stage, "base": base, "cand": cand, "model": _model(spec),
+        "workspace": args.workspace, "spec": spec, "seed": args.seed,
+        "cases": [c.case_id for c in chosen]})
+    print(f"{len(chosen)} case(s) of {len(cases)} eligible on {_model(spec)}; writing {eval_dir}")
+    results = arms_mod.Results(eval_dir / "cases.jsonl")
+    for name in (base, cand):
+        tasks = [(c, arms_mod.Arm(name, spec)) for c in chosen]
+        if name == base:
+            tasks += [(c, arms_mod.Arm(base, spec, repeat=1)) for c in chosen[: args.control]]
+        arms_mod.run(tasks, getattr(replay, methods[name]), results, setup=replay.setup,
+                     workers=args.workers, out_dir=eval_dir, progress=_progress)
     print(_summary(eval_dir))
     return 0
 
@@ -304,6 +354,8 @@ def main(argv: list[str] | None = None) -> int:
         return _run_judge(args, eval_dir)
     if args.stage == "extract":
         return _run_extract(args, eval_dir)
+    if args.stage in _VARIANTS:
+        return _run_variant(args, eval_dir)
     return _run_effort(args, eval_dir)
 
 

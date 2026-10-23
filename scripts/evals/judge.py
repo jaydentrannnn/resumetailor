@@ -63,6 +63,30 @@ _RUBRIC = {
         "from any source bullet of the same entry is supported.\n"
         f"{_SUPPORTED}"
     ),
+    "cover": (
+        "You compare two cover-letter bodies written for the same job posting from the same "
+        "tailored resume.\n"
+        "Judge, in priority order:\n"
+        "1. Truthfulness: every claim about the candidate is supported by the resume. "
+        "Claiming or implying a skill, tool or experience the resume does not show loses "
+        "outright; saying plainly that the candidate has not used something yet is not a "
+        "claim.\n"
+        "2. Fit: connects the candidate's real experience to this employer's stated needs, "
+        "specifically.\n"
+        "3. Writing: clear, concise and natural; nothing that could open any letter for any "
+        "company.\n"
+    ),
+    "review": (
+        "You compare two advisory reviews of the same tailored resume bullets for one job "
+        "posting, written to help the candidate before applying. Nothing in them is applied "
+        "automatically.\n"
+        "Judge, in priority order:\n"
+        "1. Accuracy: each verdict and note is right about the bullet and the posting; a "
+        "suggested wording adds nothing the bullet does not state (invented content loses "
+        "outright).\n"
+        "2. Usefulness: the candidate could act on it; concerns are specific, not generic.\n"
+        "3. Concision: no padding or repetition.\n"
+    ),
     "extract": (
         "You compare two keyword lists extracted from the same job posting.\n"
         "Judge, in priority order: the must-have list misses none of the posting's real "
@@ -181,6 +205,43 @@ def expand_prompt(title: str, must_haves: list[str], entries: dict[str, dict]):
                           f"  <A>\n{render(a_by.get(key))}\n  </A>\n"
                           f"  <B>\n{render(b_by.get(key))}\n  </B>\n</entry>")
         return _posting(title, must_haves) + "\n".join(blocks)
+
+    return build
+
+
+def cover_prompt(title: str, must_haves: list[str], resume: str):
+    """`build(a, b)` for two lists of letter paragraphs over the same tailored `resume`."""
+
+    def build(a: list[str], b: list[str]) -> str:
+        letter_a, letter_b = "\n\n".join(a), "\n\n".join(b)
+        return (_posting(title, must_haves) + f"<resume>\n{resume}\n</resume>\n\n"
+                f"<A>\n{letter_a}\n</A>\n\n<B>\n{letter_b}\n</B>")
+
+    return build
+
+
+def _review_text(record: dict) -> str:
+    lines = []
+    for row in record["bullets"]:
+        line = f"- {row['id']}: {row['verdict']}. {row['reason']}"
+        if row.get("replacement"):
+            line += f" Suggested: {row['replacement']}"
+        if row.get("scope_risk") == "stretch":
+            line += f" Possible stretch: {row.get('scope_note', '')}"
+            if row.get("softer"):
+                line += f" Softer: {row['softer']}"
+        lines.append(line)
+    lines += [f"- Consistency: {note}" for note in record.get("consistency") or []]
+    return "\n".join(lines) or "(no findings)"
+
+
+def review_prompt(title: str, must_haves: list[str], bullets: dict[str, str]):
+    """`build(a, b)` for two review records over the same tailored `bullets`."""
+    shown = "\n".join(f"<bullet id={i!r}>{t}</bullet>" for i, t in sorted(bullets.items()))
+
+    def build(a: dict, b: dict) -> str:
+        return (_posting(title, must_haves) + f"<bullets>\n{shown}\n</bullets>\n\n"
+                f"<A>\n{_review_text(a)}\n</A>\n\n<B>\n{_review_text(b)}\n</B>")
 
     return build
 
