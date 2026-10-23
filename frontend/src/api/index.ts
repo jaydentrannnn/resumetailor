@@ -15,6 +15,7 @@ export * from "./outcomes";
 export * from "./afterSend";
 export * from "./mailUpdates";
 export * from "./pay";
+export * from "./companyResearch";
 export * from "./sources";
 export * from "./modelQueue";
 export * from "./coverLetter";

@@ -6,6 +6,7 @@ import { useApplicationPay } from "../../../lib/useApplicationPay";
 import { ReportCard } from "../../run/ReportCard";
 import { siteName } from "../../CapturedStubs";
 import { PostedDate } from "../PostedDate";
+import { CompanyTile } from "./CompanyTile";
 import { FitNotes } from "./FitNotes";
 import { PayTile } from "./PayTile";
 import { ReferralLinks } from "./ReferralLinks";
@@ -123,17 +124,26 @@ function PostingCheck({ app }: { app: ApplicationRow }) {
   );
 }
 
-/** Job description: the posting text saved with the application. */
-export function JobDescriptionPanel({ text }: { text: string | null | undefined }) {
+/** Job description: facts about the company, then the posting text saved with the application. */
+export function JobDescriptionPanel({
+  text,
+  sourceJobId,
+}: {
+  text: string | null | undefined;
+  sourceJobId: string;
+}) {
   return (
-    <Tile title="Job description">
-      {text ? (
-        <p className="max-w-[80ch] whitespace-pre-wrap text-sm text-ink-2">{text}</p>
-      ) : (
-        <p className="text-sm text-ink-muted">
-          The job description was not saved for this application.
-        </p>
-      )}
-    </Tile>
+    <div className="space-y-4">
+      <CompanyTile sourceJobId={sourceJobId} />
+      <Tile title="Job description">
+        {text ? (
+          <p className="max-w-[80ch] whitespace-pre-wrap text-sm text-ink-2">{text}</p>
+        ) : (
+          <p className="text-sm text-ink-muted">
+            The job description was not saved for this application.
+          </p>
+        )}
+      </Tile>
+    </div>
   );
 }

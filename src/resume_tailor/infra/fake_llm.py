@@ -10,6 +10,7 @@ Replies are read off the prompt, so they stay guard-clean:
 - Scoring gives every bullet 6/10.
 - Extraction keeps the known tags whose words appear in the posting.
 - Interview prep retells the first sent bullet verbatim; a follow-up note claims nothing.
+- Company research quotes the first sentence of each source as its fact.
 - Everything else gets the smallest valid answer: empty selections, "keep" verdicts
   and a claim-free cover letter.
 
@@ -125,6 +126,13 @@ def reply(output_format: type[BaseModel], prompt: str) -> BaseModel:
             ],
             "ask": ["What does a typical week look like on this team?"],
         }
+    elif name == "FactsLLM":
+        data = {"facts": [
+            {"text": first, "kind": "about", "source_id": sid, "excerpt": first}
+            for sid, body in re.findall(r'<source id="([^"]+)"[^>]*>\n(.*?)\n</source>',
+                                        prompt, re.S)
+            if (first := re.split(r"(?<=[.!?])\s", body.strip(), maxsplit=1)[0].strip())
+        ]}
     elif name == "FollowupLLM":
         data = {
             "subject": "Following up on my application",

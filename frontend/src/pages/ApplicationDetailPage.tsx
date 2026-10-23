@@ -99,7 +99,9 @@ export function ApplicationDetailPage() {
           <div role="tabpanel">
             {tab === "overview" && <OverviewPanel app={app} job={job} />}
             {tab === "outcome" && <OutcomePanel app={app} onSaved={view.setApplication} />}
-            {tab === "jd" && <JobDescriptionPanel text={detail?.jd_text} />}
+            {tab === "jd" && (
+              <JobDescriptionPanel text={detail?.jd_text} sourceJobId={app.source_job_id} />
+            )}
             {tab === "files" && (
               <FilesPanel
                 app={app}

@@ -246,6 +246,14 @@ def _isolated_pay_data(tmp_path, monkeypatch):
     monkeypatch.setattr(pay_import, "datasets_dir", lambda: tmp_path / "pay_data")
 
 
+@pytest.fixture(autouse=True)
+def _isolated_company_research(tmp_path, monkeypatch):
+    """Company research is app-wide (`DATA_ROOT/company_research`); keep it per test."""
+    from resume_tailor.research import company_store
+
+    monkeypatch.setattr(company_store, "research_dir", lambda: tmp_path / "company_research")
+
+
 @pytest.fixture(scope="session")
 def built_template(tmp_path_factory) -> Path:
     """Build the tagged template from `tests.fixtures._full_featured_resume` once for

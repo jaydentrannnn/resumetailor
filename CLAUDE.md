@@ -27,7 +27,7 @@ the Claude Desktop fallback for `needs_browser` postings.
 
 **The LLM produces plain strings and nothing else. It never sees, receives, or emits XML,
 styling, template markup, or anything about layout.** Only `jd.py`, `rewrite.py` (with
-`relevance.py`, `followups.py`, `bullet_merge.py`), `facets.py`, `expand.py`, `skills.py`, `coverletter.py`, `review.py`, `propose.py`, `tag_infer.py`, `interview_prep.py`, `followup_note.py` — plus
+`relevance.py`, `followups.py`, `bullet_merge.py`), `facets.py`, `expand.py`, `skills.py`, `coverletter.py`, `review.py`, `propose.py`, `tag_infer.py`, `interview_prep.py`, `followup_note.py`, `company_research.py` — plus
 the apply funnel's `apply/answers/` `answer.py`, `model_resolver.py`, `hybrid_resolver.py`
 (form-field labels/options and resume text, never document XML), and the eval-only
 `scripts/evals/` `judge.py`, `hybrid_extract.py` and `review_scope.py` (never shipped) — call the API,
@@ -134,8 +134,8 @@ Docs cite bare module names (`fit.py`, `render.py`); the few that repeat across 
 | `document/` | `render`, `convert`, `docx_text`, `docx_normalize`, `template_*` (analysis helpers: `analysis_types`, `contact_detect`, `entry_structure`, `field_candidates`, `header_fields`, `section_mapping`, `table_layout`, `profile_validation`), `cover_template`, `default_templates`, `calibrate`, `rerender`, `thumbnails`, `pdf_text_check` (the exported PDF's text read back) — no LLM, ever |
 | `content/` | `data` (the master-resume model), `data_transfer`, `edu_dates`, `libraries` (+ `library_models`; one built-in dictionary + app-wide user additions), `bullet_tags` (computed match tags), `industries`, `style`, `labels`, `onboarding`, `resume_versions` |
 | `importing/` | `resume_import` (.docx entry; `import_common`, `import_contact`, `import_entries`, `import_merge_match`, `import_merge`, `import_layout`), `resume_import_pdf` (PDF entry + its LLM call; `pdf_patterns`, `pdf_lines`, `pdf_structure`, `pdf_build`) |
-| `infra/` | `llm`, `fake_llm`, `logs`, `secret_store`, `atomic` (unique-temp atomic writes), `housekeeping`, `desktop_main`, `desktop_update` |
-| `research/` | facts about the market, never resume support: `pay_parse` (posted pay ranges with currency and period), `pay_level` (role family and level from a title), `pay_index` (ranges across saved postings), `pay_import` (CSV/XLSX pay data, app-wide), `pay_bench` (pay for similar roles) — no LLM |
+| `infra/` | `llm`, `fake_llm`, `logs`, `secret_store`, `atomic` (unique-temp atomic writes), `polite_fetch` (+ `robots`; the one door for page fetches: public addresses only, robots.txt honoured), `housekeeping`, `desktop_main`, `desktop_update` |
+| `research/` | facts about the market, never resume support: `pay_parse` (posted pay ranges with currency and period), `pay_level` (role family and level from a title), `pay_index` (ranges across saved postings), `pay_import` (CSV/XLSX pay data, app-wide), `pay_bench` (pay for similar roles); company research: `web_search` (Brave/Tavily, company name only), `pages` (fetched page → guarded text), `company_sources`, `company_store` (app-wide), `company_run` — the LLM call is `pipeline/company_research` |
 | `apply/`, `web/`, `mcp_server/`, `storage/`, `library_seeds/` | see their own `CLAUDE.md` / docstrings |
 
 ## Code organization

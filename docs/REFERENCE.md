@@ -866,6 +866,54 @@ ever resume support: no fabrication-guard source, no bullet tags, no prompt cont
     posted ranges and never as an offer estimate;
   - Settings › Data & backups › "Pay data" (`PayDataCard`, `PayImportDialog`).
 
+**Company research.** Facts about an application's company, each quoted from a page
+read for it. It runs only when the student asks, never nightly, and the facts are never
+resume support.
+- Fetching: `infra/polite_fetch.Fetcher` is the one door for page reads.
+  - GET only, user agent `ResumeTailor/<version>`, 20 s timeout, 5 MB cap.
+  - At most 5 redirects, followed by hand; each hop is checked again.
+  - http(s) only, no credentials in the address. A host that resolves to a non-public
+    address is refused before the request and again at connect time
+    (`_GuardedBackend`). No proxy from the environment.
+  - robots.txt (`infra/robots.py`): the ResumeTailor group, else `*`; the longest match
+    wins and a tie goes to Disallow. 404/410 allows everything; any other failure blocks
+    the host. Read once per host per fetcher.
+  - `research/pages.py` turns a page into text: the `<head>` is dropped (its title kept
+    apart), then the posting extractor and `posting_guard`; capped at 8,000 characters.
+- Search (`research/web_search.py`): Brave (`BRAVE_SEARCH_API_KEY`) before Tavily
+  (`TAVILY_API_KEY`), both saved keys; with neither, nothing is searched. Queries are
+  `"<Company>" official site` and `"<Company>" news`. Hits are leads, never sources.
+- Sources, in order (`research/company_sources.py`):
+  1. the posting's "About …" section, else its first 6,000 characters;
+  2. the Greenhouse board blurb (`boards-api.greenhouse.io/v1/boards/<board>`);
+  3. the official site (a URL given, else a hit whose domain matches the name): its
+     homepage plus the given page or the first of /about, /about-us, /company;
+  4. up to 3 news pages, one per domain, no social sites;
+  5. pages and notes the student adds.
+
+  Links inside postings are never followed.
+- Extraction (`pipeline/company_research.py`, purpose `research`, Light model): up to 12
+  facts, each with a source id and a verbatim excerpt. Sources are framed as untrusted.
+  `check_fact` keeps a fact only when the excerpt is in its source (case, whitespace and
+  quote marks folded), its numbers are in the excerpt, and its capitalised names are in
+  the excerpt or the company name (a sentence's first word is exempt unless it looks
+  like a brand). Failures are dropped and counted. The raw reply is cached under
+  `config.fingerprint("research")` and the source hashes. At most 36,000 characters of
+  source text go into one request.
+- Store (`research/company_store.py`): `DATA_ROOT/company_research/<slug>.json`, the
+  slug from `identity.normalize_company`, so it is app-wide and shared by applications
+  to the same company. Fresh for 30 days, then the UI says so. A removed fact's id (from
+  its text) is kept in `removed`, so re-extraction never brings it back.
+- `company_run.run`: a first research or Refresh reads the automatic sources again and
+  re-reads the pages and notes added before. Adding a page or note reads only that.
+- Routes (`web/routes/company_research.py`): `GET`/`POST
+  /api/applications/{id}/company-research` (`site_url`, `urls`, `notes`, `refresh`) and
+  `DELETE …/company-research/facts/{fact_id}`.
+- UI: a "Company" tile above the posting on the Job description tab
+  (`detail/CompanyTile.tsx`, `CompanyFacts.tsx`, `lib/companyResearch.ts`). Each fact shows
+  its quote, source link and date. The tile has Research company, Add a page or note,
+  Refresh and Remove, plus the caption "Never counted as your experience".
+
 For postings stuck in `needs_browser` (HTTP + CDP could not extract enough JD text), the
 Claude Desktop skill in `docs/skills/apply-from-queue/` is the manual fallback — it opens
 the posting, starts `tailor_application` with the copied JD text, then `mark_application`.

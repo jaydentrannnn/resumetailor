@@ -221,11 +221,13 @@ SAVABLE_CREDENTIALS: tuple[str, ...] = (
     "ADZUNA_APP_ID",
     "ADZUNA_APP_KEY",
     "ANTHROPIC_API_KEY",
+    "BRAVE_SEARCH_API_KEY",
     "GEMINI_API_KEY",
     "GOOGLE_API_KEY",
     "LLM_API_KEY",
     "OLLAMA_API_KEY",
     "OPENAI_API_KEY",
+    "TAVILY_API_KEY",
     "USAJOBS_API_KEY",
     "USAJOBS_EMAIL",
 )
@@ -356,6 +358,9 @@ EFFORT = "medium"
 #: `prep` drafts interview prep from what was sent (`interview_prep.prepare`) and
 #: `followup` a short follow-up or thank-you note (`followup.draft`); both are guarded
 #: against the sent bullets and only ever shown, never sent.
+#: `research` lists facts about a company from pages read for it
+#: (`company_research.extract`); each fact must quote its source, and none is ever
+#: resume support.
 PURPOSES = (
     "extract",
     "score",
@@ -368,6 +373,7 @@ PURPOSES = (
     "answer",
     "prep",
     "followup",
+    "research",
 )
 
 #: Providers `parse_spec` recognises as a leading segment. Anything else is read as a bare
@@ -464,6 +470,8 @@ DEFAULT_EFFORT: dict[str, str] = {
     "prep": os.environ.get("LLM_EFFORT_PREP", "low"),
     # A few sentences under the same claim guard as answers.
     "followup": os.environ.get("LLM_EFFORT_FOLLOWUP", "low"),
+    # Quoting facts out of supplied pages; every fact is checked against its quote.
+    "research": os.environ.get("LLM_EFFORT_RESEARCH", "low"),
 }
 
 #: Recommended effort that depends on the provider, used unless `LLM_EFFORT_<STAGE>` is
@@ -478,7 +486,8 @@ PROVIDER_DEFAULT_EFFORT: dict[str, dict[str, str]] = {
 _EFFORT_FROM_ENV = frozenset(p for p in DEFAULT_EFFORT if os.environ.get(f"LLM_EFFORT_{p.upper()}"))
 
 #: The steps Settings → AI model → Advanced lets a user tune, and the stages each covers.
-#: `review`, `prep` and `followup` are not offered and always use their recommended effort.
+#: `review`, `prep`, `followup` and `research` are not offered and always use their
+#: recommended effort.
 EFFORT_STEPS: dict[str, tuple[str, ...]] = {
     "analysis": ("extract", "score", "facets", "skills"),
     "rewrite": ("rewrite",),
@@ -593,6 +602,8 @@ MODEL_PROFILES: dict[str, dict[str, str]] = {
         # Interview prep and follow-ups are guarded and advisory — free backend.
         "prep": _OLLAMA_DEFAULT,
         "followup": _OLLAMA_DEFAULT,
+        # Company facts are quoted and checked against their sources — free backend.
+        "research": _OLLAMA_DEFAULT,
     },
 }
 

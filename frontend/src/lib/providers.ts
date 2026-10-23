@@ -115,6 +115,8 @@ export const KEY_LABELS: Record<string, string> = {
   OLLAMA_API_KEY: "Ollama cloud key (only for Ollama cloud models)",
   USAJOBS_API_KEY: "USAJobs API Key (job search)",
   USAJOBS_EMAIL: "USAJobs Email (User-Agent header)",
+  BRAVE_SEARCH_API_KEY: "Brave Search API key (company research)",
+  TAVILY_API_KEY: "Tavily API key (company research)",
 };
 
 /** Help text and links for savable credentials. */
@@ -129,6 +131,8 @@ export const KEY_HELP: Record<string, { label: string; href: string }> = {
     label: "developer.usajobs.gov",
     href: "https://developer.usajobs.gov/APIRequest/Index",
   },
+  BRAVE_SEARCH_API_KEY: { label: "brave.com/search/api", href: "https://brave.com/search/api/" },
+  TAVILY_API_KEY: { label: "tavily.com", href: "https://tavily.com/" },
 };
 
 /** Providers the Autofill model can use (`ApplySettings.model_provider`), labelled. */

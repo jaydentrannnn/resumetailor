@@ -2599,3 +2599,13 @@ before using, behind guards; no prompt the tailored resume depends on changed.
 - There is no `pay_index.json`. Hashing every jd.txt would read the files anyway, so the cache is in memory, keyed by path, size and mtime.
 - "Near" is the same state code, labelled "in TX", not "near Austin, TX". The first sandbox pass showed Dallas and Houston under "near Austin".
 - Hourly, yearly and other periods are never converted (no 2080-hour year) and never share a percentile. openpyxl is the one new dependency (MIT, pure Python).
+
+## Company research (2026-10-23, "Later" tier L4)
+
+- Page reads go through `infra/polite_fetch`. httpx has no public hook for the network backend, so `_transport()` sets the pool's `_network_backend` to `_GuardedBackend`. The address check then also runs at connect time, which closes the DNS-rebinding gap between the pre-check and the socket. A test asserts the hook is in place, so an httpx upgrade that moves it fails loudly.
+- robots.txt has its own parser. `urllib.robotparser` takes the first matching rule in file order and has no `*`/`$` patterns. A tie goes to Disallow (RFC 9309 says Allow); the stricter reading keeps us out of ambiguous rules.
+- The search APIs (Brave/Tavily) are keyed API calls, not page reads, so they skip robots and call httpx directly. `SearchError` is raised `from None`, so the request (and its key) never shows in a traceback.
+- First sandbox read of a real page (stripe.com/about) put the `<title>` into the body ("About Us | Stripe Stripe is …"). `pages.page_text` now drops `<head>` before extracting. The posting extractor still keeps head text, which is harmless for postings, so it is unchanged.
+- Domain matching first allowed any domain that started with the company name, and "acmesupplies.com" matched "Acme". Now the domain must be the name, the name plus a common ending (hq, inc, app, ai, …), or a prefix of a longer name (capitalone.com for Capital One Financial).
+- No search key was saved on the owner's machine (2026-10-23), so the live check used the posting plus one page added by hand. Search is covered by recorded-shape tests only.
+- The fact guard folds case, whitespace and curly quotes before the excerpt match. The model often normalises quotes, and a strict match would drop facts that are true.
