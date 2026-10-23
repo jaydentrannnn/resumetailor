@@ -96,6 +96,12 @@ export function PipelineOptions({
               checked: options.show_actions,
               onChange: (show_actions) => onChange({ show_actions }),
             },
+            {
+              label: "Skill gaps",
+              checked: options.show_gaps,
+              disabled: options.style === "compact",
+              onChange: (show_gaps) => onChange({ show_gaps }),
+            },
           ]}
         />
       </OptionGroup>

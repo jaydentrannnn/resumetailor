@@ -427,6 +427,29 @@ export function getApplyProgress(): Promise<ApplyProgress> {
   return request<ApplyProgress>("/api/applications/progress");
 }
 
+/** One must-have across the postings you went after (`skill_gaps.SkillGap`). */
+export type SkillGap = {
+  skill: string;
+  canonical: string;
+  /** Distinct postings that asked for it. */
+  jobs: number;
+  /** Those postings' coverage shares, summed: near-misses count more. */
+  weight: number;
+  companies: string[];
+};
+
+/** Must-haves the resume lacks, and ones it has that the page didn't show. */
+export type SkillGaps = {
+  counted: number;
+  uncounted: number;
+  gaps: SkillGap[];
+  not_shown: SkillGap[];
+};
+
+export function getSkillGaps(): Promise<SkillGaps> {
+  return request<SkillGaps>("/api/applications/skill-gaps");
+}
+
 /** Prefix of a status-filter value that filters by hiring outcome instead. */
 export const HIRING_FILTER = "hiring:";
 

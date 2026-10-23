@@ -26,6 +26,7 @@ from resume_tailor.apply.funnel import (
     daily_retry,
     packet_fields,
     packet_profile_fields,
+    skill_gaps,
     store_models,
     store_stats,
     store_views,
@@ -34,7 +35,7 @@ from resume_tailor.apply.funnel import operations as apply_operations
 from resume_tailor.apply.funnel import packet as apply_packet
 from resume_tailor.apply.funnel import scheduler as apply_scheduler
 from resume_tailor.apply.funnel import store as apply_store
-from resume_tailor.content import data, dates
+from resume_tailor.content import bullet_tags, data, dates
 from resume_tailor.content.data import MasterResume
 from resume_tailor.pipeline import jd
 from resume_tailor.web import job_routing, template_ops
@@ -496,6 +497,16 @@ def get_open_application_tabs() -> dict[str, Any]:
 def get_application_progress() -> store_stats.ProgressStats:
     """Send times and stage counts for the Apply page's progress banner (read-only)."""
     return store_stats.progress_stats(apply_store.rows_view().values())
+
+
+@router.get("/api/applications/skill-gaps", response_model=skill_gaps.SkillGaps)
+def get_skill_gaps() -> skill_gaps.SkillGaps:
+    """Must-haves the pursued postings asked for that the resume lacks or didn't show."""
+    try:
+        known = set(bullet_tags.known_terms(data.load()))
+    except (OSError, ValueError):
+        known = None  # no readable resume: rank from the runs' own snapshots
+    return skill_gaps.skill_gaps(apply_store.rows_view().values(), known=known)
 
 
 @router.get("/api/applications", response_model=ApplicationsListResponse)

@@ -697,6 +697,10 @@ every screening flag that did not reject the row (`eligibility_flags` ∪ `scree
 language level or unlisted language, years asked for, seniority mismatch, returning-intern
 or enrollment wording, a level token in the title). Codes with no wording are left out;
 gaps stay in the run report below it.
+Under it, `detail/ReferralLinks.tsx` (logic in `lib/referralLinks.ts`) offers two
+LinkedIn people searches, "<Company> recruiter" and "<Company> <role keyword>" (the title
+minus term, year, level and location words). They are plain links the user opens in the
+browser; the app never fetches or visits LinkedIn.
 
 **What was sent, and what happened next.** `store.set_status` calls
 `apply/funnel/attempts.on_status`: a row moving into `submitted`/`submit_unconfirmed`
@@ -721,6 +725,18 @@ through the status filter) and the CSV (`hiring_stage`, `hiring_closed`, `<step>
 read it. `store_stats.outcome_cohort` counts only applications sent at least
 `COHORT_DAYS` (21) ago, so every rate in the pipeline banner has the same denominator,
 and keeps silence (`no_reply`) apart from rejection.
+
+**Skill gaps across postings.** `apply/funnel/skill_gaps.py` (pure, no LLM) reads the
+coverage funnel (`coverage.read`) of every pursued row (screened in or later, not a
+duplicate, one per tailored run) and lists, by distinct postings, the must-haves the
+master resume does not back (`resume is None`) and, apart, the ones it backs that the page
+did not show. Each posting counts by its coverage share (`in_resume / total`), so a gap in
+a near-miss ranks above one in a posting that was never close. The route
+(`GET /api/applications/skill-gaps`) passes the current resume's `known_terms`, which
+drops a gap the resume has backed since that run. Rows without a tailored run have no
+funnel and are only counted (`uncounted`). The pipeline banner shows the top five of each
+under its stages (`SkillGapLines.tsx`, option `pipeline_banner.show_gaps`; not in the
+compact line).
 
 For postings stuck in `needs_browser` (HTTP + CDP could not extract enough JD text), the
 Claude Desktop skill in `docs/skills/apply-from-queue/` is the manual fallback — it opens

@@ -1,4 +1,4 @@
-import type { ApplyProgress, PipelineBannerOptions } from "../../../api";
+import type { ApplyProgress, PipelineBannerOptions, SkillGaps } from "../../../api";
 import { Meter, Tile } from "../../../components/ui";
 import type { ApplyTab } from "../../../lib/applyPage";
 import {
@@ -11,17 +11,21 @@ import {
 } from "../../../lib/applyPipeline";
 import { BannerActions, CustomizeLink } from "./BannerActions";
 import { OutcomeRates, PipelineFunnel, PipelineStrip } from "./PipelineViews";
+import { SkillGapLines } from "./SkillGapLines";
 
 /** How far the postings found in a date range got, stage by stage, as cards, a funnel or a line. */
 export function PipelineBanner({
   progress,
   options,
+  gaps = null,
   now,
   onTab,
   onSettings,
 }: {
   progress: ApplyProgress;
   options: PipelineBannerOptions;
+  /** Most-asked missing skills; shown under the stages (not in the compact line). */
+  gaps?: SkillGaps | null;
   now: Date;
   onTab: (tab: ApplyTab) => void;
   onSettings?: () => void;
@@ -59,8 +63,13 @@ export function PipelineBanner({
       ) : (
         <PipelineCards steps={steps} showPercent={options.show_percent} />
       )}
-      {(drop || actions || onSettings || !!progress.outcomes?.sent) && (
+      {(drop ||
+        actions ||
+        onSettings ||
+        !!progress.outcomes?.sent ||
+        !!(gaps?.gaps.length || gaps?.not_shown.length)) && (
         <div className="mt-5 flex flex-wrap items-center gap-4 border-t border-line pt-4">
+          <SkillGapLines gaps={gaps} />
           <OutcomeRates cohort={progress.outcomes} />
           {drop && (
             <p className="min-w-80 flex-1 text-sm text-ink-2">

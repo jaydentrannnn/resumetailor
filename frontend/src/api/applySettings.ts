@@ -161,6 +161,8 @@ export type PipelineBannerOptions = {
   show_percent: boolean;
   show_drop: boolean;
   show_actions: boolean;
+  /** Most-asked must-haves the resume lacks (`/api/applications/skill-gaps`). */
+  show_gaps: boolean;
 };
 
 export type BrowserId = "edge" | "chrome" | "comet";

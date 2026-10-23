@@ -5,6 +5,7 @@ import { ReportCard } from "../../run/ReportCard";
 import { siteName } from "../../CapturedStubs";
 import { PostedDate } from "../PostedDate";
 import { FitNotes } from "./FitNotes";
+import { ReferralLinks } from "./ReferralLinks";
 
 /** Overview: the application's facts, why it was screened out, and the tailor report. */
 export function OverviewPanel({ app, job }: { app: ApplicationRow; job: JobStatus | null }) {
@@ -63,6 +64,7 @@ export function OverviewPanel({ app, job }: { app: ApplicationRow; job: JobStatu
         )}
         <FitNotes app={app} job={job} />
         <PostingCheck app={app} />
+        <ReferralLinks app={app} />
         {app.error && <p className="mt-4 text-sm text-danger">{app.error}</p>}
       </Tile>
       {job?.report && <ReportCard report={job.report} />}

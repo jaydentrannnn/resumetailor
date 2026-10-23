@@ -79,6 +79,7 @@ export const PIPELINE_DEFAULTS: PipelineBannerOptions = {
   show_percent: true,
   show_drop: true,
   show_actions: true,
+  show_gaps: true,
 };
 
 type Saved = Pick<ApplySettings, "goal_banner" | "activity_banner" | "pipeline_banner">;

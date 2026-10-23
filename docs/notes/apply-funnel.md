@@ -2502,3 +2502,17 @@ was nowhere on screen: the required skills the page shows, and the screening fla
 plain words. Flags were stored on every row (`eligibility_flags`, `screen.flags`) but no
 view ever displayed them, so a passed row's "asks for 3+ years" or "fluent German" signal
 was invisible. No probability or score is shown.
+
+## 2026-10-22 — Skill gaps across pursued postings
+
+`skill_gaps.py` ranks must-haves by distinct postings weighted by each posting's coverage
+share (`in_resume / total`), not by `1 - fit`: a gap that stood between the applicant and
+a near-match is the one worth learning or writing up first, while a far-off posting adds
+little. The plan said rows without a tailored run would be classified with
+`coverage.funnel(master, requirements)`; those rows have no saved requirements (only runs
+write `requirements.json`), so they are counted as `uncounted` instead of re-reading
+their JD with a model call on every banner refresh. A funnel is a snapshot of the resume
+at run time, so the route passes the current resume's `known_terms` and a gap the resume
+has backed since drops out. A reused run (`reused_from_job_id`) counts once. Shown as two
+lines under the pipeline banner's stages (option `show_gaps`) rather than a fourth banner
+kind: it is about the same postings the pipeline counts.

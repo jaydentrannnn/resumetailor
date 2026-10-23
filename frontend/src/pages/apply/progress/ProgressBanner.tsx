@@ -4,6 +4,7 @@ import { activityOptions, goalOptions, pipelineOptions } from "../../../lib/prog
 import { ActivityBanner } from "./ActivityBanner";
 import { GoalBanner } from "./GoalBanner";
 import { PipelineBanner } from "./PipelineBanner";
+import { useSkillGaps } from "./useSkillGaps";
 import { useApplyProgress } from "./useApplyProgress";
 
 /**
@@ -32,6 +33,9 @@ export function ProgressBanner({
 }) {
   const progress = useApplyProgress(workspaceId, revision);
   const kind = apply.progress_banner ?? "goal";
+  const pipeline = pipelineOptions(apply);
+  const showGaps = kind === "pipeline" && pipeline.show_gaps && pipeline.style !== "compact";
+  const gaps = useSkillGaps(workspaceId, revision, showGaps);
   if (kind === "off") return null;
   if (!preview && (!progress || progress.found === 0)) return null;
   const empty = {
@@ -62,7 +66,8 @@ export function ProgressBanner({
     return (
       <PipelineBanner
         progress={data}
-        options={pipelineOptions(apply)}
+        options={pipeline}
+        gaps={gaps}
         now={now}
         onTab={onTab}
         onSettings={onSettings}

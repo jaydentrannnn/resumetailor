@@ -1059,3 +1059,11 @@ command line, `explorer /select,"<path>"`.
 **What:** Heatmap always draws in the app accent; the Activity color picker and the unreleased custom-hex support are gone (`heatFill(level)`). `ActivityBannerOptions.color` stays in the schema (shipped presets only) so saved settings still validate, but nothing reads it. Customize dialog options use `OptionColumns`/`OptionGroup` (three columns, Show always third); long date ranges (Activity Dates, Pipeline Postings found) are dropdowns (`OptionSelect`) since the Segmented wrapped unevenly. "Customize banner" sits at the right end of each full banner's action row; the Goal banner's "Goal: N a week - Change" line was replaced by it. Heatmap cells are fixed tracks (max 14px) packed at the top right instead of stretching.
 **Why:** User feedback on the dialog layout and banner balance; one accent setting instead of a second per-banner color.
 **Impact:** Compact banner styles still have no Customize link (unchanged). Appearance Theme card shows the picker directly (no "Appearance" row label).
+
+## 2026-10-22 — Referral search links on the Overview
+
+`ReferralLinks.tsx` gives two LinkedIn people-search links (company recruiters; people in
+the role at the company). They are plain user-clicked links; nothing in the app or the
+extension fetches LinkedIn, which keeps the capture-only rule. The role keyword strips
+term, year, level and location words so "Data Analyst Intern (Summer 2026) - NYC"
+searches "Data Analyst"; a title with no job words left gets only the recruiter search.

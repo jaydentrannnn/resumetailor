@@ -261,6 +261,8 @@ class PipelineBannerOptions(BaseModel):
     show_percent: bool = True
     show_drop: bool = True
     show_actions: bool = True
+    #: Most-asked must-haves the resume lacks (`apply/funnel/skill_gaps.py`).
+    show_gaps: bool = True
 
 
 class ApplySettings(BaseModel):

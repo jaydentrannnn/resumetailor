@@ -1,12 +1,12 @@
 // @vitest-environment jsdom
 import { cleanup, fireEvent, render, screen, waitFor } from "@testing-library/react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import type { ApplyProgress, ApplySettings, PostingTimes } from "../../../api";
-import { getApplyProgress } from "../../../api";
+import type { ApplyProgress, ApplySettings, PostingTimes, SkillGaps } from "../../../api";
+import { getApplyProgress, getSkillGaps } from "../../../api";
 import { ProgressBanner } from "./ProgressBanner";
 import { ProgressBannerSetting } from "./ProgressBannerSetting";
 
-vi.mock("../../../api", () => ({ getApplyProgress: vi.fn() }));
+vi.mock("../../../api", () => ({ getApplyProgress: vi.fn(), getSkillGaps: vi.fn() }));
 
 const today = new Date().toISOString();
 const posting = (sent: boolean): PostingTimes => ({
@@ -32,7 +32,12 @@ const progress = (fields: Partial<ApplyProgress> = {}): ApplyProgress => ({
   ...fields,
 });
 
-beforeEach(() => vi.mocked(getApplyProgress).mockResolvedValue(progress()));
+const noGaps: SkillGaps = { counted: 0, uncounted: 0, gaps: [], not_shown: [] };
+
+beforeEach(() => {
+  vi.mocked(getApplyProgress).mockResolvedValue(progress());
+  vi.mocked(getSkillGaps).mockResolvedValue(noGaps);
+});
 afterEach(() => {
   cleanup();
   vi.clearAllMocks();
@@ -114,6 +119,27 @@ describe("ProgressBanner", () => {
     show({ progress_banner: "pipeline" });
     expect(await screen.findByText("Of 14 sent 3+ weeks ago:")).toBeTruthy();
     expect(screen.getByText(/5 replied · 2 interviews · 9 no reply yet/)).toBeTruthy();
+  });
+
+  it("lists the most-asked missing skills under the pipeline, not in the compact line", async () => {
+    const gap = { canonical: "k8s", weight: 2.5, companies: ["Acme", "Globex"] };
+    vi.mocked(getSkillGaps).mockResolvedValue({
+      counted: 6,
+      uncounted: 1,
+      gaps: [{ ...gap, skill: "Kubernetes", jobs: 4 }],
+      not_shown: [],
+    });
+    show({ progress_banner: "pipeline" });
+    expect(await screen.findByText("Most asked, not in your resume:")).toBeTruthy();
+    expect(screen.getByTitle("4 postings: Acme, Globex and 2 more").textContent).toBe(
+      "Kubernetes 4",
+    );
+    expect(screen.queryByText("In your resume, not on the page:")).toBeNull();
+    cleanup();
+    vi.mocked(getSkillGaps).mockClear();
+    show({ progress_banner: "pipeline", pipeline_banner: { style: "compact" } });
+    expect(await screen.findByText("Pipeline · all time")).toBeTruthy();
+    expect(getSkillGaps).not.toHaveBeenCalled();
   });
 
   it("stays hidden when switched off or before anything was found", async () => {

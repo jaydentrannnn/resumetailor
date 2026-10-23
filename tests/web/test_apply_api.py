@@ -719,3 +719,27 @@ def test_progress_route_reports_sent_times_and_stage_counts(client):
     body = c.get("/api/applications/progress").json()
     assert body["sent"] == [{"at": "2026-10-02T09:00:00+00:00", "company": "A"}]
     assert (body["found"], body["sent_total"], body["unscreened"]) == (2, 1, 1)
+
+
+def test_skill_gaps_route_ranks_the_runs_unbacked_must_haves(client):
+    c, _q = client
+    run_dir = config.OUTPUT_DIR / "jobs" / "job-1"
+    run_dir.mkdir(parents=True)
+    (run_dir / "coverage.json").write_text(json.dumps({
+        "total": 2, "in_resume": 1, "on_page": 1,
+        "keywords": [{"canonical": "kubernetes", "phrase": "Kubernetes", "resume": None,
+                      "page": None},
+                     {"canonical": "sql", "phrase": "SQL", "resume": "stated",
+                      "page": "expressed"}],
+    }), encoding="utf-8")
+    apply_store.save_all({
+        "a": store_models.Application(source="t", source_job_id="a", company="A", role="R",
+                                      status="submitted", job_id="job-1"),
+        "b": store_models.Application(source="t", source_job_id="b", company="B", role="R",
+                                      status="screened_in"),
+    })
+
+    body = c.get("/api/applications/skill-gaps").json()
+    assert (body["counted"], body["uncounted"]) == (1, 1)
+    assert [(g["skill"], g["jobs"], g["weight"]) for g in body["gaps"]] == [("Kubernetes", 1, 0.5)]
+    assert body["not_shown"] == []
