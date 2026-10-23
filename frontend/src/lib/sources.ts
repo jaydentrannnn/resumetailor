@@ -67,8 +67,7 @@ export function sourceKindLabel(kind: SourceKind): string {
 
 /** The badge on a row: "Adzuna search" for a keyword search, else the kind's label. */
 export function sourceBadge(source: SourceConfig): string {
-  if (source.kind === "job_search")
-    return `${PROVIDER_LABELS[source.provider === "usajobs" ? "usajobs" : "adzuna"]} search`;
+  if (source.kind === "job_search") return `${PROVIDER_LABELS[providerOf(source)]} search`;
   return sourceKindLabel(source.kind);
 }
 
@@ -77,11 +76,12 @@ export function isReadmeKind(kind: SourceKind): boolean {
   return kind === "simplify_html" || kind === "pipe_table" || kind === "company_link_table";
 }
 
-export type SearchProvider = "adzuna" | "usajobs";
+export type SearchProvider = "adzuna" | "usajobs" | "freehire";
 
 export const PROVIDER_LABELS: Record<SearchProvider, string> = {
   adzuna: "Adzuna",
   usajobs: "USAJobs",
+  freehire: "freehire.me",
 };
 
 /** The Sources tab's three groups; every source belongs to exactly one. */
@@ -95,7 +95,9 @@ export function groupOf(kind: SourceKind): SourceGroup {
 
 /** The provider a keyword search runs on; older searches without one ran on Adzuna. */
 export function providerOf(source: SourceConfig): SearchProvider {
-  return source.provider === "usajobs" ? "usajobs" : "adzuna";
+  return source.provider === "usajobs" || source.provider === "freehire"
+    ? source.provider
+    : "adzuna";
 }
 
 /** "owner/repo" from a GitHub link (also raw/blob READMEs); the host + path otherwise; "" when empty. */
@@ -368,8 +370,9 @@ export function newReadmeSource(
   };
 }
 
-/** Credentials each keyword-search provider needs (saved through `/api/secrets`). */
-export const PROVIDER_KEYS: Record<"adzuna" | "usajobs", { name: string; label: string }[]> = {
+/** Credentials each keyword-search provider needs (saved through `/api/secrets`); freehire.me
+ * needs none, so it is always connected. */
+export const PROVIDER_KEYS: Record<SearchProvider, { name: string; label: string }[]> = {
   adzuna: [
     { name: "ADZUNA_APP_ID", label: "Adzuna app ID" },
     { name: "ADZUNA_APP_KEY", label: "Adzuna app key" },
@@ -378,6 +381,7 @@ export const PROVIDER_KEYS: Record<"adzuna" | "usajobs", { name: string; label: 
     { name: "USAJOBS_API_KEY", label: "USAJobs API key" },
     { name: "USAJOBS_EMAIL", label: "USAJobs account email" },
   ],
+  freehire: [],
 };
 
 /** "3 of 5 sources on". */

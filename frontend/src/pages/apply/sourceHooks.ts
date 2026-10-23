@@ -64,7 +64,10 @@ export function useProviderConnections(): ProviderConnections {
   const has = (provider: SearchProvider) =>
     saved !== null && PROVIDER_KEYS[provider].every((key) => saved.has(key.name));
   return {
-    connected: saved === null ? null : { adzuna: has("adzuna"), usajobs: has("usajobs") },
+    connected:
+      saved === null
+        ? null
+        : { adzuna: has("adzuna"), usajobs: has("usajobs"), freehire: has("freehire") },
     savedKeys: saved ?? new Set(),
     refresh,
   };

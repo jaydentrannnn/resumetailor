@@ -312,6 +312,12 @@ A keyword search (`kind="job_search"`, `apply/discovery/job_apis.py`) queries Ad
 comma-separated phrases, each searched on its own and merged by `job_id` — then applies the same
 `include`/`exclude`/`locations` filters (`source_watchlists.matches_filters`) and its own
 `max_age_days` (default 14). Paging stops at `MAX_PAGES` with a polite delay between pages.
+The `freehire` provider (`apply/discovery/freehire.py`) needs no key: it sends `q`,
+`countries` and `posted_within_days` to freehire.me's public `GET /api/v1/jobs/search`
+(base URL overridable with `RESUME_TAILOR_FREEHIRE_URL`), takes no place name, and maps
+each hit's `url`, the employer's own ATS posting, so it dedupes by requisition against
+every other source. `scripts/freehire_trial.py --workspace-dir <folder>` (read-only) records
+a daily snapshot of the hits the registry lacks; `--report` re-checks them all.
 **Filters for every source** (`ApplySettings.source_filters`: `include`/`exclude`/`locations`) are
 added to each source's own words by `apply/discovery/source_filters.with_global_filters` before
 `sources.fetch_source_rows` (Find jobs, the nightly run and the source Test); `SourceConfig.ignore_global_include`

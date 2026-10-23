@@ -115,24 +115,26 @@ export function JobSearchEditor({
         onChange={(query) => onChange({ ...source, query })}
       />
 
-      <label className="block text-xs">
-        <span className="font-medium">Search near</span>
-        <input
-          aria-label="Search location"
-          className="field mt-1 w-full text-sm"
-          placeholder="e.g. Chicago, IL (leave empty for anywhere)"
-          value={source.location ?? ""}
-          onChange={(e) => onChange({ ...source, location: e.target.value })}
-        />
-        <span className="text-ink-muted">
-          Sent to {label}; the location filter below narrows further.
-        </span>
-      </label>
-      {provider === "adzuna" && (
+      {provider !== "freehire" && (
+        <label className="block text-xs">
+          <span className="font-medium">Search near</span>
+          <input
+            aria-label="Search location"
+            className="field mt-1 w-full text-sm"
+            placeholder="e.g. Chicago, IL (leave empty for anywhere)"
+            value={source.location ?? ""}
+            onChange={(e) => onChange({ ...source, location: e.target.value })}
+          />
+          <span className="text-ink-muted">
+            Sent to {label}; the location filter below narrows further.
+          </span>
+        </label>
+      )}
+      {provider !== "usajobs" && (
         <label className="block text-xs">
           <span className="font-medium">Country</span>
           <select
-            aria-label="Adzuna country code"
+            aria-label={`${label} country code`}
             className="field mt-1 w-full text-sm"
             value={source.country || "us"}
             onChange={(e) => onChange({ ...source, country: e.target.value })}

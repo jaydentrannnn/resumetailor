@@ -39,7 +39,7 @@ export type SourceConfig = {
   /** Widens the funnel-wide age limit (the longer wins); watchlists default to 7 days, job_search 14 days. */
   max_age_days?: number | null;
   /** Keyword job search (`job_search`) sources only. */
-  provider?: "adzuna" | "usajobs" | null;
+  provider?: "adzuna" | "usajobs" | "freehire" | null;
   /** One or more comma-separated phrases (max 5), each searched separately. */
   query?: string;
   location?: string;

@@ -2528,3 +2528,18 @@ credentials) keeps the existing "Last check failed" line instead of a second ver
 a source that has never found anything is not called degraded (it may just be quiet or
 misconfigured, which the error line already says). The route strips `history` from the
 response; old files without history count their one entry as the first run.
+
+## 2026-10-22 — freehire.me as a keyword-search provider
+
+Added `provider="freehire"` (no key) after one trial snapshot with the owner's two Adzuna
+searches' phrases, US, 7-day window and global filters: 1,101 hits kept by the filters,
+1,013 neither in the registry by requisition nor by company + role. Narrowed to
+intern/new-grad/junior titles in the US on a fillable ATS, 58 were new (39 Greenhouse;
+e.g. Anduril 2027 SWE intern reqs the registry lacked, Cubist and NFP, never tracked).
+Hits carry the employer's ATS URL, so they dedupe with watchlist and README sightings and
+skip the `zapply.jobs` redirect rows that end `needs_browser`. The plan asked for a
+week-long trial before keeping it; one snapshot was clear enough to wire it in, and
+`scripts/freehire_trial.py` stays so the week can be run (daily, then `--report`, which
+drops postings another source has since found). Remove the provider if the report shows
+the unique share collapsing. Not sent: `location` (freehire wants a display-name city
+facet, not free text), so the editor hides "Search near" for it.

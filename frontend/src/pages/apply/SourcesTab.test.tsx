@@ -207,7 +207,9 @@ describe("groups", () => {
     for (const title of ["Job lists", "Search engines", "Company watchlists"])
       expect(screen.getByRole("heading", { name: title })).toBeTruthy();
     expect(screen.getByText(/GitHub lists of internships/)).toBeTruthy();
-    expect(screen.getByText(/Keyword searches through Adzuna or USAJobs/)).toBeTruthy();
+    expect(
+      screen.getByText(/Keyword searches through Adzuna, USAJobs or freehire.me/),
+    ).toBeTruthy();
     expect(screen.getByText(/Companies whose careers pages/)).toBeTruthy();
     expect(screen.getByRole("button", { name: "+ Add job list" })).toBeTruthy();
     expect(screen.getByRole("button", { name: "+ Add search" })).toBeTruthy();
@@ -328,6 +330,27 @@ describe("connecting a search engine", () => {
     fireEvent.keyDown(input, { key: "Enter" });
     fireEvent.click(await within(dialog).findByRole("button", { name: "Add search" }));
     expect(onChange.mock.lastCall![0][0]).toMatchObject({ provider: "usajobs", query: "policy" });
+  });
+
+  it("starts a freehire.me search with a country and no keys or place to ask for", async () => {
+    const { onChange } = renderTab([]);
+    fireEvent.click(screen.getByRole("button", { name: "+ Add search" }));
+    let dialog = await screen.findByRole("dialog", { name: "New Adzuna search" });
+    fireEvent.change(within(dialog).getByLabelText("Search engine"), {
+      target: { value: "freehire" },
+    });
+    dialog = await screen.findByRole("dialog", { name: "New freehire.me search" });
+    expect(within(dialog).queryByLabelText("Search location")).toBeNull();
+    expect(within(dialog).getByLabelText("freehire.me country code")).toBeTruthy();
+    expect(within(dialog).queryByRole("alert")).toBeNull();
+    const input = within(dialog).getByLabelText("Search phrases", { selector: "input" });
+    fireEvent.change(input, { target: { value: "ml intern" } });
+    fireEvent.keyDown(input, { key: "Enter" });
+    fireEvent.click(await within(dialog).findByRole("button", { name: "Add search" }));
+    expect(onChange.mock.lastCall![0][0]).toMatchObject({
+      provider: "freehire",
+      query: "ml intern",
+    });
   });
 });
 

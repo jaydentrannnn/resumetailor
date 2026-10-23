@@ -3,7 +3,7 @@ import { saveSecret } from "../../api";
 import { Button, Modal } from "../../components/ui";
 import { describe } from "../../lib/errors";
 import { PROVIDER_KEYS, PROVIDER_LABELS, type SearchProvider } from "../../lib/sources";
-const KEY_LINKS: Record<SearchProvider, string> = {
+const KEY_LINKS: Partial<Record<SearchProvider, string>> = {
   adzuna: "https://developer.adzuna.com/signup",
   usajobs: "https://developer.usajobs.gov/apirequest/",
 };

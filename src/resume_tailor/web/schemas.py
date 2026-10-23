@@ -131,7 +131,7 @@ class SourceConfig(BaseModel):
     #: Keep a remote posting that names no country (`posting_location`).
     keep_unknown_remote: bool = True
     max_age_days: int | None = Field(default=None, ge=0, le=365)
-    provider: Literal["adzuna", "usajobs"] | None = None
+    provider: Literal["adzuna", "usajobs", "freehire"] | None = None
     query: str = ""
     location: str = ""
     country: str = "us"

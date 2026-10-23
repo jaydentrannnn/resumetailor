@@ -4,6 +4,8 @@ Commit: e16acee
 License: MIT
 Adapted into: src/resume_tailor/pipeline/posting_guard.py (from tools/posting_guard.py);
   tests/pipeline/test_posting_guard.py (from tests/test_posting_guard.py)
+Informed by (no code ported): src/resume_tailor/apply/discovery/freehire.py (the
+  freehire.me endpoint and fields from .agents/skills/freehire-search/url-reference.md)
 
 Each adapted file names its upstream file and lists the local changes in its header.
 

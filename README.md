@@ -214,7 +214,7 @@ Add, edit and remove sources on their own **Job sources** page: Apply settings â
 | --- | --- |
 | **Job lists** | GitHub README lists: pick from the catalog (SimplifyJobs, speedyapply and more, tagged by field) or paste a link to any repo. Tech lists are on by default; the setup screen picks lists for your field |
 | **Company watchlist** | Paste a company's careers page or job-board link; it finds the Greenhouse, Lever, Ashby, SmartRecruiters or Workday board behind it and watches every posting there |
-| **Keyword search** | Adzuna or USAJobs by keywords and location, for any industry. Needs free API keys, connected once on the Job sources page |
+| **Keyword search** | Adzuna, USAJobs or freehire.me by keywords, for any industry. Adzuna and USAJobs need free API keys, connected once on the Job sources page; freehire.me needs none |
 
 Every source, of every kind, has the same filters (keep titles containing, skip titles containing, only these locations) and a maximum
 posting age. Postings that duplicate one you already have are merged, and eligibility

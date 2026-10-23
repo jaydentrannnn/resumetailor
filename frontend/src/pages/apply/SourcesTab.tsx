@@ -248,7 +248,7 @@ export function SourcesTab({
         <SourceGroup
           id="search"
           title="Search engines"
-          explanation="Keyword searches through Adzuna or USAJobs. Connect a free API key once, then add as many searches as you like."
+          explanation="Keyword searches through Adzuna, USAJobs or freehire.me. Adzuna and USAJobs need a free API key, connected once; freehire.me needs none."
           action={
             <Button size="sm" variant="secondary" onClick={newSearch}>
               + Add search

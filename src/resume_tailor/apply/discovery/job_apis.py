@@ -1,4 +1,4 @@
-"""Job search source: keyword-based job search via public APIs (Adzuna + USAJobs).
+"""Job search source: keyword-based job search via public APIs (Adzuna, USAJobs, freehire).
 
 Unlike company watchlists which query specific ATS boards for one company, job search
 sources query job aggregators across any industry by keyword, location, and recency.
@@ -15,6 +15,7 @@ from typing import Any, Literal
 import httpx
 
 from resume_tailor import config
+from resume_tailor.apply.discovery import freehire
 from resume_tailor.apply.discovery.source_rows import SourceRow
 from resume_tailor.apply.discovery.source_watchlists import (
     _age_days,
@@ -23,8 +24,8 @@ from resume_tailor.apply.discovery.source_watchlists import (
     source_keyword_filters,
 )
 
-JobProvider = Literal["adzuna", "usajobs"]
-JOB_PROVIDERS: tuple[JobProvider, ...] = ("adzuna", "usajobs")
+JobProvider = Literal["adzuna", "usajobs", "freehire"]
+JOB_PROVIDERS: tuple[JobProvider, ...] = ("adzuna", "usajobs", "freehire")
 
 #: Pause between pages to stay polite to the public APIs.
 JOB_SEARCH_DELAY_SECONDS = 1.0
@@ -368,6 +369,14 @@ def _search_usajobs(
     return rows, errors
 
 
+def _search_freehire(
+    source: Any, *, query: str, get: Callable[..., Any], now: datetime
+) -> tuple[list[SourceRow], list[str]]:
+    """freehire.me needs no key (`discovery/freehire.py`)."""
+    return freehire.search(source, query=query, get=get, now=now, max_pages=MAX_PAGES,
+                           pause=lambda: _sleep(JOB_SEARCH_DELAY_SECONDS))
+
+
 def split_phrases(query: str) -> list[str]:
     """The distinct comma-separated phrases in ``query``, at most `MAX_PHRASES`."""
     phrases = [p.strip() for p in (query or "").split(",")]
@@ -398,6 +407,8 @@ def job_search_rows(
         search = _search_adzuna
     elif provider == "usajobs":
         search = _search_usajobs
+    elif provider == "freehire":
+        search = _search_freehire
     else:
         raise ValueError(f"unsupported job search provider {provider!r}")
 
