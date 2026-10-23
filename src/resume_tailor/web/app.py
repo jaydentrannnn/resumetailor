@@ -278,6 +278,7 @@ from resume_tailor.web.routes import (  # noqa: E402, I001
     jd as _jd_routes,
     jobs as _jobs_routes,
     libraries as _libraries_routes,
+    mail_updates as _mail_updates_routes,
     onboarding as _onboarding_routes,
     outcomes as _outcomes_routes,
     reference as _reference_routes,
@@ -303,6 +304,7 @@ for _router in (
     _jd_routes, _answers_routes, _automation_routes, _discovery_routes,
     _extension_routes, _update_routes, _reference_routes, _search_presets_routes,
     _cover_letter_routes, _template_edit_routes, _vertex_routes, _desktop_routes,
+    _mail_updates_routes,
 ):
     app.include_router(_router.router)
 

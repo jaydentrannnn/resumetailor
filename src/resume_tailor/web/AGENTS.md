@@ -44,7 +44,8 @@ same text (`tests/tooling/test_agent_docs.py` enforces it).
   lookup (helpers, no router) used by `jobs` and `applications`. Routers: `jobs`,
   `applications`, `outcomes` (what happened after sending; works on archived rows),
   `after_send` (interview prep, follow-up notes, "no reply" marks, the offline report;
-  registered before `applications`),
+  registered before `applications`), `mail_updates` (job emails Claude Desktop read, as
+  proposals the student accepts),
   `extension`, `resume`,
   `template`, `libraries`, `config`, `workspaces`, `system`, `setup`, `answers`,
   `automation`, `discovery`, `jd`, `onboarding`, `secrets`, `diagnostics`, `update`, `reference`

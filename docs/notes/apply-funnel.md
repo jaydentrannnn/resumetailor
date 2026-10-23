@@ -2583,3 +2583,11 @@ before using, behind guards; no prompt the tailored resume depends on changed.
 - The funnel shows Sent / Interviewed / Offer / Hired as "this far or further". Assessment was dropped from it: counting by rank made an interview without an assessment show up as "Assessment".
 - "Sent" was defined twice: `store_stats._SENT_STATUSES` left out `submit_unconfirmed` while `outcomes.sent_on` (and `attempts`, `submit_guard`) counted it, so the banner's sent count and its reply-rate denominator disagreed. It is now `outcomes.SENT` everywhere; the report shows unconfirmed sends as their own card.
 - Silence ("no reply yet", or marked `ghosted`) never counts as a rejection, unlike upstream's report, which folds no-response into its rejection rate.
+
+## Email updates through Claude Desktop (2026-10-23, "Later" tier L2)
+
+- The app never holds mail credentials: an in-app Gmail OAuth flow needs Google's restricted-scope review. Claude Desktop's own Gmail connector reads the mail and posts it through three MCP tools (`email_search_plan`, `submit_job_emails`, `list_email_proposals`); there is deliberately no MCP accept.
+- Email text is untrusted and never goes to our model. `mail_signals.classify` reads only the subject and first 700 characters with fixed phrase lists, so a rejection that mentions the earlier assessment is still a rejection (priority order), and a status line far down a newsletter is not read.
+- An ATS sender or a role title alone never matches: half the inbox comes from greenhouse-mail.io. A company name, its own mail domain or a requisition id must point at the row; a tie is shown as unclear with the tied rows to pick from.
+- "Application received" mail confirms a `submit_unconfirmed` row as `submitted` with a "Confirmed by email" note, which `attempts.method_for` reads as manual, so the attempt stays unconfirmed (the app did not upload those files). On a row already submitted, accepting it changes nothing: the first sandbox pass appended a second `submitted` history entry.
+- The Gmail query is never `in:inbox` (filters and archiving hide most ATS mail) and folds subdomains (`from:lever.co` already matches hire.lever.co).

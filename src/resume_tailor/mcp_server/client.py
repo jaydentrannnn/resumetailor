@@ -236,6 +236,18 @@ class BackendClient:
             json={"type": outcome, "occurred_on": occurred_on, "note": note, "source": "mcp"},
         )
 
+    async def mail_search_plan(self) -> dict[str, Any]:
+        """GET /api/mail/search-plan."""
+        return await self._request("GET", "/api/mail/search-plan")
+
+    async def post_mail_messages(self, messages: list[dict[str, Any]]) -> dict[str, Any]:
+        """POST /api/mail/messages."""
+        return await self._request("POST", "/api/mail/messages", json={"messages": messages})
+
+    async def mail_proposals(self) -> dict[str, Any]:
+        """GET /api/mail/proposals."""
+        return await self._request("GET", "/api/mail/proposals")
+
     async def download_bytes(self, path: str) -> bytes:
         """GET a download route and return raw bytes."""
         result = await self._request("GET", path)

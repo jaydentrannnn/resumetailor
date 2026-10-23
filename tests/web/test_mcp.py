@@ -335,3 +335,27 @@ async def test_record_outcome_on_a_done_row(mcp_client, tmp_path, monkeypatch):
     assert result["outcome_events"][0]["source"] == "mcp"
     with pytest.raises(BackendError):
         await tools.record_outcome(mcp_client, "a", "party")
+
+
+@pytest.mark.asyncio
+async def test_job_emails_reach_the_app_as_proposals_only(mcp_client, tmp_path, monkeypatch):
+    """submit_job_emails keeps proposals for the student; no event is written."""
+    from resume_tailor.apply.funnel import store as apply_store
+    from resume_tailor.apply.funnel import store_models
+
+    row = store_models.Application(source="t", source_job_id="a", company="Acme", role="Analyst")
+    apply_store.set_status(row, "submitted", note="")
+    apply_store.save_all({"a": row})
+    plan = await tools.email_search_plan(mcp_client)
+    assert '"Acme"' in plan["query"]
+    result = await tools.submit_job_emails(mcp_client, [
+        {"message_id": "m1", "sender": "jobs@acme.com", "subject": "Acme interview",
+         "date": "2026-10-20", "body": "We'd like to invite you to an interview.",
+         "labels": ["ignored"]},
+        {"subject": "no id is dropped"},
+    ])
+    assert result["matched"] == 1 and result["pending"] == 1
+    assert "Email updates" in result["next_step"]
+    listed = await tools.list_email_proposals(mcp_client)
+    assert listed["proposals"][0]["signal"] == "interview_invited"
+    assert apply_store.get("a").outcome_events == []

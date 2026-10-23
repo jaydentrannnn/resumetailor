@@ -30,7 +30,7 @@ def _site(url: str) -> str:
     return _SAME_SITE.get(host, host)
 
 
-def _requisitions(key: str, ats: str) -> list[str]:
+def requisition_ids(key: str, ats: str) -> list[str]:
     """The key's requisition, then (Workday) the bare id its location variant shows."""
     requisition = key.rsplit(":", 1)[-1] if key else ""
     if not requisition:
@@ -39,7 +39,7 @@ def _requisitions(key: str, ats: str) -> list[str]:
     return [requisition, variant["base"]] if variant else [requisition]
 
 
-def _mentions(requisitions: list[str], text: str) -> bool:
+def mentions_any(requisitions: list[str], text: str) -> bool:
     return any(
         re.search(rf"(?<![\w-]){re.escape(requisition)}(?![\w-])", text, re.I)
         for requisition in requisitions
@@ -53,7 +53,7 @@ def confirmation(
     if _site(posting_url) != _site(current_url):
         return None
     key = identity.canonical_key(posting_url.rstrip("/").removesuffix("/apply"))
-    requisitions = _requisitions(key, ats)
+    requisitions = requisition_ids(key, ats)
     if not requisitions:
         return None
     requisition = requisitions[0]
@@ -61,12 +61,12 @@ def confirmation(
     matching_url = current_key == key or (
         len(requisitions) > 1 and current_key == key.removesuffix(requisition) + requisitions[1]
     )
-    matching_body = _mentions(requisitions, body)
+    matching_body = mentions_any(requisitions, body)
     if not matching_url and not matching_body:
         return None
     date_signal = ""
     if ats == "workday" and rows is not None and not matching_url:
-        matching_rows = [row for row in rows if _mentions(requisitions, row)]
+        matching_rows = [row for row in rows if mentions_any(requisitions, row)]
         if any(re.search(r"not (?:yet )?submitted|application (?:draft|not submitted)", row, re.I)
                for row in matching_rows):
             return None

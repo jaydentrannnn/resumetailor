@@ -426,3 +426,37 @@ async def record_outcome(
 ) -> dict[str, Any]:
     """Record what happened after an application went out."""
     return await client.record_outcome(source_job_id, outcome, occurred_on=occurred_on, note=note)
+
+
+#: Fields a job email is passed in with; anything else is dropped before posting.
+_MAIL_FIELDS = ("message_id", "sender", "subject", "date", "body")
+#: Characters of a body passed on: the opening is where an update is stated.
+_MAIL_BODY_CHARS = 4000
+
+
+async def email_search_plan(client: BackendClient) -> dict[str, Any]:
+    """The Gmail search to run for job emails since the last sync."""
+    return await client.mail_search_plan()
+
+
+async def submit_job_emails(
+    client: BackendClient, messages: list[dict[str, Any]]
+) -> dict[str, Any]:
+    """Post job emails as proposals the student reviews in the app (50 at most per call)."""
+    cleaned = []
+    for message in messages[:50]:
+        item = {key: str(message.get(key) or "") for key in _MAIL_FIELDS}
+        item["body"] = item["body"][:_MAIL_BODY_CHARS]
+        if item["message_id"]:
+            cleaned.append(item)
+    result = await client.post_mail_messages(cleaned)
+    result["next_step"] = (
+        "Tell the student to open ResumeTailor's Apply page and review the Email updates "
+        "line; nothing is recorded on an application until they accept it there."
+    )
+    return result
+
+
+async def list_email_proposals(client: BackendClient) -> dict[str, Any]:
+    """Email updates still waiting for the student's decision."""
+    return await client.mail_proposals()

@@ -703,7 +703,8 @@ but cannot be prepared, filled, retried, or corrected until restored. The regist
 uses nonblocking Apply/daily worker gates plus the workspace lock and returns 409 if busy.
 MCP tools:
 `list_applications`, `get_application_packet`, `answer_application_question`,
-`mark_application`, `record_outcome`.
+`mark_application`, `record_outcome`, and the email tools `email_search_plan`,
+`submit_job_emails`, `list_email_proposals` (below).
 
 **Fit on an application's Overview.** `detail/FitNotes.tsx` (logic in
 `lib/fitSummary.ts`, no model call, no score) lists the must-haves the tailored page shows
@@ -795,6 +796,36 @@ sent row newest first. `GET /api/applications/report.html` (in `after_send`) dow
 the In progress toolbar's "Download report" / "Save report…" button and Ctrl+K command
 fetch it. "Sent" is one definition everywhere: `outcomes.SENT` (an unconfirmed submit
 included), which the progress banner's stage counts now share.
+
+**Email updates (through Claude Desktop).** The app holds no mail credentials and sends no
+email text to a model. Claude Desktop's own Gmail connector reads the mail, following
+`docs/skills/email-outcomes/`. MCP `email_search_plan` returns the Gmail query from
+`GET /api/mail/search-plan`: `after:` the last sync (30 days back the first time),
+`-in:sent -in:drafts`, never limited to the inbox, OR-ing application-system sender domains
+(`mail_signals.ATS_DOMAINS`, subdomains folded) with the quoted names of companies whose
+applications are prepared or sent and not closed (subject words instead past 40
+companies). `submit_job_emails` posts at most 50 messages (`message_id`, `sender`,
+`subject`, `date`, `body` ≤ 4,000 characters) to `POST /api/mail/messages`.
+`apply/funnel/mail_signals` (pure) classifies each from its subject and first 700
+characters with fixed phrase lists, in priority order offer > rejected > interview invite
+> assessment > "sent" (an acknowledgement); job alerts and newsletters are ignored, and it
+never proposes `hired` or `offer_declined`. `match` scores each prepared or sent row:
+company named +3, the company's own mail domain +2, a requisition id
+(`submission_monitor.requisition_ids`) +5, role named +2, the row's ATS sender +1. It needs
+a company, domain or requisition reason and a score of at least 3; a tie is unclear, with
+the tied rows as candidates. `check` flags a proposal that contradicts the record (a
+rejection after an offer, an interview on a closed row, a date already recorded).
+`apply/funnel/mail_inbox` keeps one proposal per message in `mail_inbox.json` beside the
+registry: a 500-character excerpt cleaned by `posting_guard.guard`, every message id ever
+seen (re-posting adds nothing), and `last_synced`. Nothing reaches an application until
+the student accepts it on the Apply page (`EmailUpdatesNotice`, `GET /api/mail/proposals`,
+`POST …/{id}/accept {signal?, app_id?}` or `…/dismiss`); the type and the application can
+be changed first, and an unmatched email lists every open application. Accept adds an
+outcome event (`source="mcp"`, dated by the email, note `From email “<subject>”`) inside
+`store.update`, or for "sent" moves a `submit_unconfirmed` (or prepared) row to
+`submitted` with the note `Confirmed by email: …` (the attempt stays unconfirmed: the app
+did not upload it); a row already submitted is left alone. "Accept all matched" skips
+flagged and unmatched emails. There is no MCP accept.
 
 For postings stuck in `needs_browser` (HTTP + CDP could not extract enough JD text), the
 Claude Desktop skill in `docs/skills/apply-from-queue/` is the manual fallback — it opens
