@@ -87,6 +87,26 @@ export function optimistic(
 }
 
 const HIDDEN_KEY = "rt.tracker.hidden.";
+const SEEN_KEY = "rt.tracker.autoSeen.";
+
+/** Automatic closes this browser was told about ("Got it"), so the notice shows only new ones. */
+export function readSeenAuto(workspaceId: string): string[] {
+  try {
+    const raw = window.localStorage.getItem(SEEN_KEY + workspaceId);
+    if (raw) return JSON.parse(raw) as string[];
+  } catch {
+    // storage blocked or malformed: show them all
+  }
+  return [];
+}
+
+export function writeSeenAuto(workspaceId: string, ids: string[]): void {
+  try {
+    window.localStorage.setItem(SEEN_KEY + workspaceId, JSON.stringify(ids.slice(-200)));
+  } catch {
+    // advisory only
+  }
+}
 
 /** Columns hidden on this browser; Not sent starts hidden. */
 export function readHidden(workspaceId: string): TrackerColumn[] {

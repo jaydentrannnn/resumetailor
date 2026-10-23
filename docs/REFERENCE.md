@@ -835,6 +835,38 @@ outcome event (`source="mcp"`, dated by the email, note `From email “<subject>
 did not upload it); a row already submitted is left alone. "Accept all matched" skips
 flagged and unmatched emails. There is no MCP accept.
 
+**Email updates (the app's own mailbox check).** For a mailbox Claude Desktop cannot
+reach, Settings › Email saves an IMAP account per profile (`mail_settings.json` beside
+`mail_inbox.json`; the password only in `infra/secret_store` as `profile:<id>:mail:imap`,
+never in a file, a response or a log). `apply/funnel/mail_imap` (stdlib `imaplib`, no
+LLM) is read-only by construction: TLS only (993, or STARTTLS on 143), every folder opened
+with EXAMINE, every fetch a `BODY.PEEK`, and its `_Box` wrapper has no command that flags,
+moves, copies or deletes. It skips sent, drafts and trash folders, searches `UID SEARCH
+SINCE`, and reads headers first; a body (first 300 KB) is fetched only when the sender is
+an application or hiring system (`ATS_DOMAINS`, `HIRING_HOSTS`: assessment and scheduling
+tools), a company of a prepared or sent application appears in the sender or subject, or
+the subject has job words. HTML goes through `fetch_jd.extract_fragment_text` and
+`posting_guard.guard`, capped at 4,000 characters; the key is the Message-ID, else
+`imap:<folder>:<uidvalidity>:<uid>`. `apply/funnel/mail_sync` runs one check at a time
+(the first tick after startup, then every 1/3/6/12 hours, or Check now; `web/app.py`'s
+`mail-sync` thread ticks each minute), for the active profile only (a profile switch
+during a check discards it). It reads from a day before the last check, or from the first
+application sent, and ingests in posts of 50 with `require_match` (an email matching no
+row is ignored unless a hiring system sent it, and so is an acknowledgement for a row
+already confirmed as sent). `classify` matches on normalised text
+(NFKC, straight quotes, whitespace collapsed) and skips a phrase inside a conditional
+sentence ("if you are not selected…"); newsletter wording blocks every signal except a
+rejection. A proposal is `confident` when it is a rejection matched to exactly one sent,
+open row by its requisition id or role, with no flag. With "Close confident rejections
+automatically" on (off by default; switching it on closes the pending ones at once),
+`mail_inbox.auto_close` records each as a `rejected`
+event (`source="monitor"`, note `Closed from email “<subject>”`); the Tracker lists the
+last 14 days' (`auto_closed`) with Undo (`POST /api/mail/proposals/{id}/undo` voids the
+event and puts the email back to pending, never to be closed automatically again). Routes:
+`GET|PUT|DELETE /api/mail/account`, `POST /api/mail/account/test` (409 refused login, 502
+unreachable) and `…/check`; `GET /api/tracker` adds `mail` (configured, last check, error,
+running). Claude Desktop posts get the same `confident` marking and auto-close.
+
 **Tracker board (`/tracker`).** Every Done (archived) row as a card, in columns derived
 from `outcomes.hiring_progress`, never stored: Not sent (screened out, skipped or
 archived by hand; hidden at first, never movable) · Applied · Assessment · Interviewing ·

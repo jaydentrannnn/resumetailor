@@ -11,6 +11,8 @@ const api = vi.hoisted(() => ({
   undoTrackerMove: vi.fn(),
   acceptMailProposal: vi.fn(),
   dismissMailProposal: vi.fn(),
+  undoMailProposal: vi.fn(),
+  checkMailNow: vi.fn(),
 }));
 const toast = vi.hoisted(() => ({ success: vi.fn(), error: vi.fn() }));
 vi.mock("../../api", () => api);
@@ -51,6 +53,9 @@ const email = (patch: Partial<MailProposal>): MailProposal => ({
   reason: "",
   flag: "",
   state: "pending",
+  confident: false,
+  auto: false,
+  event_id: "",
   company: "",
   role: "",
   stage: "",
@@ -58,10 +63,22 @@ const email = (patch: Partial<MailProposal>): MailProposal => ({
   ...patch,
 });
 
-function board(cards: TrackerCard[], unmatched: MailProposal[] = []): TrackerBoard {
+function board(
+  cards: TrackerCard[],
+  unmatched: MailProposal[] = [],
+  extra: Partial<TrackerBoard> = {},
+): TrackerBoard {
   const counts = { not_sent: 0, applied: 0, assessment: 0, interview: 0, offer: 0, closed: 0 };
   for (const c of cards) counts[c.column] += 1;
-  return { cards, unmatched, counts, last_synced: "2026-10-21T10:00:00+00:00" };
+  return {
+    cards,
+    unmatched,
+    counts,
+    last_synced: "2026-10-21T10:00:00+00:00",
+    auto_closed: [],
+    mail: { configured: false, username: "", last_checked: "", last_error: "", running: false },
+    ...extra,
+  };
 }
 
 const dataTransfer = { setData: vi.fn(), effectAllowed: "", dropEffect: "" };
@@ -209,5 +226,57 @@ describe("TrackerPage", () => {
     const select = await screen.findByRole("combobox", { name: "Stage of Acme" });
     fireEvent.change(select, { target: { value: "closed:withdrawn" } });
     await waitFor(() => expect(api.moveTrackerCard).toHaveBeenCalledWith("acme", "closed", "withdrawn"));
+  });
+
+  it("lists automatic closes with Undo until Got it, then only new ones", async () => {
+    const closed = email({
+      id: "a1",
+      app_id: "acme",
+      company: "Acme",
+      role: "Data Analyst",
+      signal: "rejected",
+      subject: "Your application",
+      state: "accepted",
+      auto: true,
+    });
+    api.getTrackerBoard.mockResolvedValue(board([card({ column: "closed" })], [], { auto_closed: [closed] }));
+    api.undoMailProposal.mockResolvedValue({});
+    const { unmount } = renderPage();
+    const notice = await screen.findByRole("region", { name: "Closed from email" });
+    expect(notice.textContent).toContain("1 closed from email");
+    fireEvent.click(within(notice).getByRole("button", { name: "Undo" }));
+    await waitFor(() => expect(api.undoMailProposal).toHaveBeenCalledWith("a1"));
+    fireEvent.click(within(notice).getByRole("button", { name: "Got it" }));
+    expect(screen.queryByRole("region", { name: "Closed from email" })).toBeNull();
+    unmount();
+
+    renderPage();
+    await screen.findByText("Data Analyst", { selector: "button" });
+    expect(screen.queryByRole("region", { name: "Closed from email" })).toBeNull();
+  });
+
+  it("offers to connect a mailbox, then shows its last check with Check now", async () => {
+    api.getTrackerBoard.mockResolvedValue(board([card({})]));
+    const { unmount } = renderPage();
+    const connect = await screen.findByRole("link", { name: "Connect an email account" });
+    expect(connect.getAttribute("href")).toBe("/settings?tab=email");
+    unmount();
+
+    const mail = { configured: true, username: "me@example.com", last_checked: "", last_error: "", running: false };
+    api.getTrackerBoard.mockResolvedValue(board([card({})], [], { mail }));
+    api.checkMailNow.mockResolvedValue({});
+    const second = renderPage();
+    fireEvent.click(await screen.findByRole("button", { name: "Check now" }));
+    await waitFor(() => expect(api.checkMailNow).toHaveBeenCalled());
+    expect(screen.queryByRole("link", { name: "Connect an email account" })).toBeNull();
+    second.unmount();
+
+    api.getTrackerBoard.mockResolvedValue(
+      board([card({})], [], { mail: { ...mail, last_error: "The mail server refused that username or password." } }),
+    );
+    renderPage();
+    const alert = await screen.findByRole("alert");
+    expect(alert.textContent).toContain("refused");
+    expect(within(alert).getByRole("link", { name: "Email settings" })).toBeTruthy();
   });
 });

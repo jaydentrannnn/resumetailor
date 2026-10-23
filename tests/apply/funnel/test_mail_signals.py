@@ -96,3 +96,74 @@ def test_check_flags_a_proposal_that_contradicts_the_record():
 )
 def test_received_on_reads_iso_and_mail_dates(raw, expected):
     assert mail_signals.received_on(raw) == expected
+
+
+@pytest.mark.parametrize(
+    ("subject", "body", "expected"),
+    [
+        # A phrase wrapped onto a new line, or typed with a curly apostrophe or NBSP.
+        ("Update", "After review we have decided to move forward with other\ncandidates.",
+         "rejected"),
+        ("Update", "We won’t be moving forward with your application.", "rejected"),
+        ("Update", "We​ regret to inform you that the role is closed.", "rejected"),
+        # Wordings the first list missed.
+        ("Your application", "The team decided to move forward with another candidate.",
+         "rejected"),
+        ("Your application", "We have decided to move forward with candidates whose "
+         "background fits more closely.", "rejected"),
+        ("Hello", "We are no longer hiring for this position.", "rejected"),
+        ("Hello", "While impressed, we have not selected your application this time.",
+         "rejected"),
+        ("Hello", "We have decided to progress with other candidates.", "rejected"),
+        ("Hello", "We made the difficult decision to not move forward.", "rejected"),
+        ("Hello", "We will not be able to move forward with your candidacy.", "rejected"),
+        ("Hello", "We decided to offer the position to another candidate.", "rejected"),
+        ("Hello", "We are sorry, but you do not meet the minimum qualifications.", "rejected"),
+        ("Hello", "Your assessment expired, so your application is no longer active.",
+         "rejected"),
+        # A cancelled interview: the role was filled, so it is a rejection.
+        ("RE: Phone screen interview invitation", "Sorry, we have to cancel. The role you "
+         "were going to interview for has been filled.", "rejected"),
+        # An offer made to someone else is not an offer.
+        ("Update", "We are extending an offer to another candidate.", "rejected"),
+        # A rejection with a newsletter footer is still a rejection; an alert is not news.
+        ("Update", "We regret to inform you. Join our newsletter for updates.", "rejected"),
+        ("Jobs picked for you", "We'd like to speak with you about these jobs.", None),
+    ],
+)
+def test_classify_reads_wrapped_text_and_more_wordings(subject, body, expected):
+    assert mail_signals.classify(subject, body) == expected
+
+
+@pytest.mark.parametrize(
+    "body",
+    [
+        "Thank you for applying! We'll let you know if you are selected for the next step "
+        "or if you are no longer being considered for the role.",
+        "Thanks for applying. If you are not selected, keep an eye on our jobs page.",
+        "Thank you for applying. If you haven't heard from us within four weeks, we've "
+        "likely moved forward with other candidates.",
+        "Thank you for applying. If your experience is a fit, we'll reach out to schedule "
+        "an interview.",
+        "Thank you for your application. Since the role needs coding, you may receive an "
+        "invitation to take a coding assessment.",
+    ],
+)
+def test_a_conditional_next_step_is_only_an_acknowledgement(body):
+    assert mail_signals.classify("Thank you for applying", body) == "sent"
+
+
+def test_normalize_folds_spacing_quotes_and_invisible_characters():
+    assert mail_signals.normalize("We’re  not\n\nmoving​ forward") == (
+        "We're not moving forward"
+    )
+
+
+def test_check_flags_an_email_older_than_the_application():
+    sent = store_models.StatusChange(status="submitted", at="2026-10-10T18:00:00+00:00")
+    app = _app("a", "Acme", status_history=[sent])
+    assert mail_signals.check("rejected", app, "2026-09-01") == (
+        "This email is older than the application."
+    )
+    # A day of slack for time zones.
+    assert mail_signals.check("rejected", app, "2026-10-09") == ""

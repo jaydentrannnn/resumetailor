@@ -25,7 +25,7 @@ from starlette.exceptions import HTTPException as StarletteHTTPException
 
 from resume_tailor import config, workspace
 from resume_tailor.apply.funnel import daily as apply_daily
-from resume_tailor.apply.funnel import daily_progress
+from resume_tailor.apply.funnel import daily_progress, mail_sync
 from resume_tailor.apply.funnel import operations as apply_operations
 from resume_tailor.apply.funnel import scheduler as apply_scheduler
 from resume_tailor.content import data, data_transfer
@@ -81,6 +81,17 @@ def _apply_scheduler_loop(stop: threading.Event) -> None:
             return
 
 
+def _mail_sync_loop(stop: threading.Event) -> None:
+    """The app's own mailbox check (`mail_sync.tick`): due after startup, then on schedule."""
+    while True:
+        try:
+            mail_sync.tick()
+        except Exception:  # noqa: BLE001 - a mail check must never crash the process
+            _log.exception("mail check tick failed")
+        if stop.wait(mail_sync.TICK_SECONDS):
+            return
+
+
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     """Resolve the active workspace (migrating the legacy layout on first boot)."""
@@ -132,6 +143,10 @@ async def lifespan(app: FastAPI):
         daemon=True,
     )
     scheduler.start()
+    mail_checker = threading.Thread(
+        target=_mail_sync_loop, args=(_scheduler_stop,), name="mail-sync", daemon=True,
+    )
+    mail_checker.start()
     from resume_tailor.apply.funnel import answer_harvest  # noqa: PLC0415
     with contextlib.suppress(Exception):
         answer_harvest.restore()
@@ -141,6 +156,7 @@ async def lifespan(app: FastAPI):
     answer_harvest.stop()
     _scheduler_stop.set()
     scheduler.join(timeout=2.0)
+    mail_checker.join(timeout=2.0)
 
 
 app = FastAPI(title="ResumeTailor", version="0.1.0", lifespan=lifespan)
@@ -280,6 +296,7 @@ from resume_tailor.web.routes import (  # noqa: E402, I001
     jd as _jd_routes,
     jobs as _jobs_routes,
     libraries as _libraries_routes,
+    mail_account as _mail_account_routes,
     mail_updates as _mail_updates_routes,
     onboarding as _onboarding_routes,
     outcomes as _outcomes_routes,
@@ -309,7 +326,7 @@ for _router in (
     _extension_routes, _update_routes, _reference_routes, _search_presets_routes,
     _cover_letter_routes, _template_edit_routes, _vertex_routes, _desktop_routes,
     _mail_updates_routes, _pay_routes, _company_research_routes, _evidence_routes,
-    _tracker_routes,
+    _tracker_routes, _mail_account_routes,
 ):
     app.include_router(_router.router)
 

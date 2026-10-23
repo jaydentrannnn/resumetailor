@@ -26,7 +26,10 @@ Use when the student asks to "check my email for job updates" or similar.
    Date header) and `body` (plain text; the first 4,000 characters are kept). At most 50
    per call; call again for more. Posting the same message twice adds nothing.
 5. Report the counts it returns and tell the student to open the Apply page and review
-   **Email updates**. Nothing is recorded on an application until they accept it there.
+   **Email updates**. Nothing is recorded on an application until they accept it there,
+   except rejections the app is sure of when the student has switched on closing them
+   automatically (Settings → Email; `closed` in the counts). Each can be undone on the
+   Tracker.
 
 `list_email_proposals()` shows what is still waiting, if the student asks.
 

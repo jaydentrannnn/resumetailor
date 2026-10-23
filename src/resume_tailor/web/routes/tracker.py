@@ -12,7 +12,7 @@ from datetime import date
 from fastapi import APIRouter, HTTPException
 from pydantic import BaseModel, Field
 
-from resume_tailor.apply.funnel import mail_inbox, tracker
+from resume_tailor.apply.funnel import mail_inbox, mail_sync, tracker
 from resume_tailor.apply.funnel import store as apply_store
 
 from .mail_updates import ProposalView, _view
@@ -24,6 +24,16 @@ class BoardCard(tracker.TrackerCard):
     proposals: list[ProposalView] = Field(default_factory=list)
 
 
+class MailStatus(BaseModel):
+    """The app's own mailbox check, for the Tracker's email line."""
+
+    configured: bool = False
+    username: str = ""
+    last_checked: str = ""
+    last_error: str = ""
+    running: bool = False
+
+
 class TrackerBoard(BaseModel):
     cards: list[BoardCard]
     #: Pending email updates with no card on the board: unmatched, or about an
@@ -31,6 +41,9 @@ class TrackerBoard(BaseModel):
     unmatched: list[ProposalView]
     counts: dict[str, int]
     last_synced: str = ""
+    #: Rejections recorded from email without a click, last 14 days (each can be undone).
+    auto_closed: list[ProposalView] = Field(default_factory=list)
+    mail: MailStatus
 
 
 class MoveRequest(BaseModel):
@@ -61,8 +74,17 @@ def get_board() -> TrackerBoard:
     counts = {column: 0 for column in tracker.COLUMNS}
     for c in cards:
         counts[c.column] += 1
+    settings = mail_sync.load()
+    mail = MailStatus(
+        configured=settings.imap is not None,
+        username=settings.imap.username if settings.imap else "",
+        last_checked=settings.last_checked, last_error=settings.last_error,
+        running=mail_sync.running(),
+    )
     return TrackerBoard(cards=cards, unmatched=unmatched, counts=counts,
-                        last_synced=mail_inbox.load().last_synced)
+                        last_synced=mail_inbox.load().last_synced,
+                        auto_closed=[_view(p, by_id) for p in mail_inbox.recent_auto()],
+                        mail=mail)
 
 
 def _write(source_job_id: str, change) -> tuple[tracker.TrackerCard, object]:

@@ -1,25 +1,24 @@
 import { useState } from "react";
 import { useNavigate, useSearchParams } from "react-router-dom";
 import type { TrackerCard, TrackerColumn } from "../../api";
-import { CopyButton } from "../../components/CopyButton";
-import { CommandBar, EmptyState, InlineHelp, Page, Segmented, Skeleton } from "../../components/ui";
+import { CommandBar, EmptyState, Page, Segmented, Skeleton } from "../../components/ui";
 import { describe } from "../../lib/errors";
-import { filterCards, readHidden, shortDate, writeHidden, type TrackerFilters as Filters } from "../../lib/tracker";
+import { filterCards, readHidden, writeHidden, type TrackerFilters as Filters } from "../../lib/tracker";
 import { useTrackerBoard } from "../../lib/useTrackerBoard";
 import { useCommands } from "../../state/commandState";
 import { useWorkspaceState } from "../../state/workspaceState";
+import { AutoClosedNotice } from "./AutoClosedNotice";
 import { EmailTray } from "./EmailTray";
+import { MailLine } from "./MailLine";
 import { TrackerBoardView } from "./TrackerBoardView";
 import { TrackerFilters } from "./TrackerFilters";
 import { TrackerList } from "./TrackerList";
 import { TrackerContext, type PendingEmail, type TrackerDrag } from "./trackerContext";
 
-const ASK_CLAUDE = "Check my email for job updates";
-
 /**
  * Tracker: every Done application in columns by hiring stage. Moving a card records
- * what happened (an outcome event); email updates Claude Desktop read sit on their
- * cards, or in a tray to drag onto the right one.
+ * what happened (an outcome event); email updates (the app's own mailbox check, or
+ * Claude Desktop) sit on their cards, or in a tray to drag onto the right one.
  */
 export function TrackerPage() {
   const actions = useTrackerBoard();
@@ -106,14 +105,7 @@ export function TrackerPage() {
           hidden={hidden}
           onShow={toggle}
         />
-        <p className="flex flex-wrap items-center gap-1.5 text-xs text-ink-muted">
-          {board?.last_synced ? `Email last checked ${shortDate(board.last_synced)}.` : "Email not checked yet."}
-          <InlineHelp label="checking email">
-            In Claude Desktop, with Gmail and ResumeTailor connected, ask: “{ASK_CLAUDE}”. Updates appear
-            here to accept; nothing is recorded until you do.
-          </InlineHelp>
-          <CopyButton label="Copy the request" text={ASK_CLAUDE} />
-        </p>
+        <MailLine />
         {loadError && !board ? (
           <EmptyState title="Could not load the tracker">{describe(loadError).detail}</EmptyState>
         ) : !board ? (
@@ -121,6 +113,7 @@ export function TrackerPage() {
         ) : (
           <>
             {/* The tray stands on its own: its emails may be about applications not in Done. */}
+            <AutoClosedNotice key={workspaceId} proposals={board.auto_closed} workspaceId={workspaceId} />
             <EmailTray proposals={board.unmatched} />
             {board.cards.length === 0 ? (
               <EmptyState title="Nothing in Done yet">

@@ -359,8 +359,10 @@ async def submit_job_emails(messages: list[dict[str, Any]]) -> dict[str, Any]:
     ResumeTailor works out, without any model, which application each email is about and
     what it says (an acknowledgement, an assessment, an interview invite, an offer, a
     rejection), and keeps it as a proposal. Nothing is recorded on an application until
-    the student accepts it in the app; tell them to review the Email updates line on the
-    Apply page. Sending the same message again is harmless.
+    the student accepts it in the app, except rejections it is sure of when the student
+    has switched on closing those automatically (``closed`` in the result; each can be
+    undone on the Tracker). Tell them to review the Email updates line on the Apply page.
+    Sending the same message again is harmless.
     """
     try:
         return await tools.submit_job_emails(_get_client(), messages)

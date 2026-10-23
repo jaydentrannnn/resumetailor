@@ -13,6 +13,7 @@ export * from "./applySettings";
 export * from "./applications";
 export * from "./outcomes";
 export * from "./afterSend";
+export * from "./mailAccount";
 export * from "./mailUpdates";
 export * from "./tracker";
 export * from "./pay";

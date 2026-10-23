@@ -1,9 +1,11 @@
-"""Email updates: job emails Claude Desktop read, proposed as outcomes for the student.
+"""Email updates: job emails read for what happened, proposed as outcomes for the student.
 
-Claude Desktop's own Gmail connector does the reading; the MCP server asks here for the
-search to run (`search-plan`), posts what it found (`messages`), and the student
-accepts or dismisses each proposal in the app. Nothing is written to an application
-without that click, and no email text goes to a model here (`apply/funnel/mail_signals`).
+Claude Desktop's own Gmail connector does one kind of reading: the MCP server asks here
+for the search to run (`search-plan`) and posts what it found (`messages`). The app's own
+mailbox check is the other (`routes/mail_account.py`). The student accepts or dismisses
+each proposal in the app; only when they have switched it on are confident rejections
+recorded without that click (`mail_inbox.auto_close`), each with an undo here. No email
+text goes to a model (`apply/funnel/mail_signals`).
 """
 
 from __future__ import annotations
@@ -11,7 +13,7 @@ from __future__ import annotations
 from fastapi import APIRouter, HTTPException
 from pydantic import BaseModel, Field
 
-from resume_tailor.apply.funnel import mail_inbox, mail_signals, outcomes, store_models
+from resume_tailor.apply.funnel import mail_inbox, mail_signals, mail_sync, outcomes, store_models
 from resume_tailor.apply.funnel import store as apply_store
 
 router = APIRouter()
@@ -127,6 +129,8 @@ def search_plan() -> SearchPlan:
 def post_messages(body: MessagesRequest) -> MessagesResult:
     """Read job emails into proposals (nothing is recorded on an application)."""
     result = mail_inbox.ingest(body.messages, _rows())
+    if mail_sync.load().auto_close:
+        result.closed = mail_inbox.auto_close()
     return MessagesResult(**result.model_dump(), pending=len(mail_inbox.pending()))
 
 
@@ -157,3 +161,15 @@ def dismiss_proposal(proposal_id: str) -> ProposalView:
     except KeyError as exc:
         raise HTTPException(status_code=404, detail="That email update is gone.") from exc
     return _view(proposal, {})
+
+
+@router.post("/api/mail/proposals/{proposal_id}/undo", response_model=ProposalView)
+def undo_proposal(proposal_id: str) -> ProposalView:
+    """Take back an automatic close: its event is removed and the email waits again."""
+    try:
+        proposal = mail_inbox.undo_auto(proposal_id)
+    except KeyError as exc:
+        raise HTTPException(status_code=404, detail="That email update is gone.") from exc
+    except ValueError as exc:
+        raise HTTPException(status_code=409, detail=str(exc)) from exc
+    return _view(proposal, {app.source_job_id: app for app in _rows()})

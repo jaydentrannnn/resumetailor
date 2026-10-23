@@ -67,6 +67,8 @@ describe("tracker", () => {
       unmatched: [],
       counts: { not_sent: 0, applied: 1, assessment: 0, interview: 0, offer: 0, closed: 0 },
       last_synced: "",
+      auto_closed: [],
+      mail: { configured: false, username: "", last_checked: "", last_error: "", running: false },
     };
     const next = withCard(board, optimistic(card({}), "offer"));
     expect(next.counts.applied).toBe(0);

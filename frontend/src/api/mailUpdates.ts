@@ -6,7 +6,7 @@ export type MailSignal = "sent" | "assessment" | "interview_invited" | "offer" |
 /** An application an unclear email could be about. */
 export type MailCandidate = { id: string; company: string; role: string; stage: string };
 
-/** One job email Claude Desktop read, waiting to be accepted or dismissed. */
+/** One job email (read by Claude Desktop or the app's own check), waiting to be accepted or dismissed. */
 export type MailProposal = {
   id: string;
   message_id: string;
@@ -22,6 +22,11 @@ export type MailProposal = {
   /** Why this needs a second look (it contradicts what is recorded); "" when it fits. */
   flag: string;
   state: "pending" | "accepted" | "dismissed";
+  /** A rejection sure enough to record without asking. */
+  confident: boolean;
+  /** Recorded automatically, not by the student; `event_id` is the event it added. */
+  auto: boolean;
+  event_id: string;
   company: string;
   role: string;
   /** The application's hiring stage now. */
@@ -48,4 +53,9 @@ export function acceptMailProposal(
 /** Drop an email update; nothing is recorded. */
 export function dismissMailProposal(id: string): Promise<MailProposal> {
   return request(proposalPath(id, "dismiss"), { method: "POST" });
+}
+
+/** Take back an automatic close: its event is removed and the email waits again. */
+export function undoMailProposal(id: string): Promise<MailProposal> {
+  return request(proposalPath(id, "undo"), { method: "POST" });
 }

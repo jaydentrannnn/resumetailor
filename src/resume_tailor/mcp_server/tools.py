@@ -452,7 +452,9 @@ async def submit_job_emails(
     result = await client.post_mail_messages(cleaned)
     result["next_step"] = (
         "Tell the student to open ResumeTailor's Apply page and review the Email updates "
-        "line; nothing is recorded on an application until they accept it there."
+        "line; nothing is recorded on an application until they accept it there, except "
+        "the confident rejections counted in `closed` (only when they switched that on), "
+        "which they can undo on the Tracker."
     )
     return result
 

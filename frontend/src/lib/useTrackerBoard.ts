@@ -1,9 +1,11 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import {
   acceptMailProposal,
+  checkMailNow,
   dismissMailProposal,
   getTrackerBoard,
   moveTrackerCard,
+  undoMailProposal,
   undoTrackerMove,
   type MailProposal,
   type TrackerBoard,
@@ -124,7 +126,33 @@ export function useTrackerBoard() {
     [change, toast],
   );
 
-  return { board, loadError, busy, move, acceptEmail, dismissEmail };
+  const undoAutoClose = useCallback(
+    (proposal: MailProposal) =>
+      change(proposal.id, async () => {
+        try {
+          await undoMailProposal(proposal.id);
+          toast.success(`${proposal.company || "Application"}: reopened`);
+        } catch (reason) {
+          toast.error("Could not undo that close", describe(reason).detail);
+        }
+      }),
+    [change, toast],
+  );
+
+  const checkEmail = useCallback(
+    () =>
+      change("mail-check", async () => {
+        try {
+          await checkMailNow();
+          setBoard((b) => (b ? { ...b, mail: { ...b.mail, running: true } } : b));
+        } catch (reason) {
+          toast.error("Could not check email", describe(reason).detail);
+        }
+      }),
+    [change, toast],
+  );
+
+  return { board, loadError, busy, move, acceptEmail, dismissEmail, undoAutoClose, checkEmail };
 }
 
 export type TrackerActions = ReturnType<typeof useTrackerBoard>;

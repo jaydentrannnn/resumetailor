@@ -28,12 +28,24 @@ export type TrackerCard = {
   proposals: MailProposal[];
 };
 
+/** The app's own mailbox check, for the Tracker's email line. */
+export type TrackerMailStatus = {
+  configured: boolean;
+  username: string;
+  last_checked: string;
+  last_error: string;
+  running: boolean;
+};
+
 export type TrackerBoard = {
   cards: TrackerCard[];
   /** Email updates with no card on the board (unmatched, or about a row not in Done). */
   unmatched: MailProposal[];
   counts: Record<TrackerColumn, number>;
   last_synced: string;
+  /** Rejections closed from email in the last 14 days, each with an undo. */
+  auto_closed: MailProposal[];
+  mail: TrackerMailStatus;
 };
 
 /** What a move changed, so Undo reverses exactly that. */

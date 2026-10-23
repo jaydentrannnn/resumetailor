@@ -6,12 +6,14 @@ import { AiSection } from "./AiSection";
 import { AppearanceSection } from "./AppearanceSection";
 import { BrowserSection } from "./BrowserSection";
 import { DataSection } from "./DataSection";
+import { EmailSection } from "./EmailSection";
 
 const TABS = [
   { id: "ai", label: "AI model" },
   { id: "appearance", label: "Appearance" },
   { id: "data", label: "Data & backups" },
   { id: "browser", label: "Browser extension" },
+  { id: "email", label: "Email" },
   { id: "about", label: "About" },
 ] as const;
 
@@ -41,7 +43,7 @@ export function SettingsPage() {
   return (
     <Page width="wide" className="lg:-mb-12 lg:-mt-5">
       <CommandBar title="Settings" />
-      <div className="grid min-w-0 gap-6 lg:grid-cols-[13rem_minmax(0,1fr)] lg:gap-0">
+      <div className="grid min-w-0 grid-cols-1 gap-6 lg:grid-cols-[13rem_minmax(0,1fr)] lg:gap-0">
         <div className="lg:-ml-2 lg:min-h-[calc(100vh-var(--rt-bar-top)-var(--rt-bar-bottom))] lg:border-r lg:border-line lg:py-5 lg:pr-3">
           <Tabs
             label="Settings sections"
@@ -57,6 +59,7 @@ export function SettingsPage() {
             {tab === "appearance" && <AppearanceSection />}
             {tab === "data" && <DataSection />}
             {tab === "browser" && <BrowserSection />}
+            {tab === "email" && <EmailSection />}
             {tab === "about" && <AboutSection />}
           </TileLayout.Provider>
         </div>

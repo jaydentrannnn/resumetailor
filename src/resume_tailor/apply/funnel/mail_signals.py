@@ -6,16 +6,21 @@ proposes, and the student confirms every proposal in the app (`mail_inbox`).
 
 `classify` looks at the subject and the first lines only, with fixed phrase lists, in a
 fixed priority (an offer beats a rejection beats an interview beats an assessment beats
-an acknowledgement). It never proposes ``hired`` or ``offer_declined``: those are the
-student's own steps. `match` scores the registry rows an email could be about; a tie or
-no match leaves it unclear, for the student to assign.
+an acknowledgement). Text is normalised first (one space between words, straight
+quotes), so a phrase wrapped onto a new line still matches, and a hit inside a
+conditional sentence ("if you are not selected…", "you may receive an assessment") is
+skipped: thank-you emails describe next steps that have not happened. It never proposes
+``hired`` or ``offer_declined``: those are the student's own steps. `match` scores the
+registry rows an email could be about; a tie or no match leaves it unclear, for the
+student to assign.
 """
 
 from __future__ import annotations
 
 import re
+import unicodedata
 from dataclasses import dataclass, field
-from datetime import date, datetime
+from datetime import date, datetime, timedelta
 from email.utils import parseaddr, parsedate_to_datetime
 from typing import Literal
 
@@ -39,16 +44,37 @@ _NOISE = re.compile(
 _SIGNALS: tuple[tuple[Signal, re.Pattern[str]], ...] = (
     ("offer", re.compile(
         r"\b(?:offer letter|pleased to (?:extend |make )?(?:you )?(?:an |a formal )?offer|"
-        r"(?:extend|extending) (?:you )?an offer|offer of employment|"
-        r"your (?:job |written )?offer)\b",
+        r"(?:extend|extending) (?:you )?an offer(?! to (?:another|a different|other) candidate)|"
+        r"offer of employment|your (?:job |written )?offer)\b",
         re.I)),
     ("rejected", re.compile(
-        r"\b(?:not (?:be )?moving forward|move forward with other candidates|"
-        r"(?:decided|chosen|elected) (?:not to|to not) (?:proceed|move forward)|"
-        r"pursue other candidates|other candidates whose|(?:have|has) not been selected|"
-        r"not been selected|regret to inform|no longer (?:under consideration|being considered)|"
-        r"position has (?:now )?been filled|unable to offer you|will not be progressing|"
-        r"not (?:to )?progress(?:ing)? your application)\b",
+        r"\b(?:not (?:be )?moving forward|no longer moving forward|"
+        r"mov(?:e|ed|ing) forward with (?:some )?(?:other|another|different) "
+        r"(?:candidates?|applicants?|individuals?)|"
+        r"(?:decided|chosen|elected|opted|decision) to (?:move|moving) forward with "
+        r"(?:the )?(?:candidates|applicants|others)|"
+        r"only (?:be )?able to move forward with candidates|"
+        r"(?:decided|chosen) to (?:progress|proceed|continue(?: the process)?) with "
+        r"(?:other|another|others)|"
+        r"(?:decided|chosen|elected|decision) (?:not to|to not) (?:proceed|move forward|progress)|"
+        r"(?:won't|will not|unable to|not able to|cannot|can't)(?: be able to)? (?:be )?"
+        r"(?:moving|move) forward|"
+        r"pursue other (?:candidates|applicants)|other candidates whose|"
+        r"other (?:candidates|applicants) (?:may |might )?(?:better|more closely) "
+        r"(?:fit|match|align)|"
+        r"(?:have|has) not been selected|not been selected|not selected your application|"
+        r"regret to inform|no longer (?:under consideration|being considered)|"
+        r"application is no longer active|no longer (?:hiring|recruiting) for|"
+        r"(?:position|role|job|opening|requisition)\b.{0,60}?(?:has|have) (?:now )?been filled|"
+        r"(?:position|role|job|opening) (?:is now|was) filled|"
+        r"(?:offer(?:ed)?|extended an offer|made an offer) (?:the (?:position|role) )?to "
+        r"(?:another|a different) candidate|(?:choose|chosen|selected) another candidate|"
+        r"unable to offer you|will not be progressing|"
+        r"not (?:to )?progress(?:ing)? your application|"
+        r"did not find a (?:fit|match)|"
+        r"(?:won't|will not|unable to|not able to) (?:be able to )?invite you to the next|"
+        r"you (?:do not|don't|did not|didn't|haven't|have not) (?:meet|met) (?:the |our )?"
+        r"(?:minimum |basic )?(?:qualifications|requirements))\b",
         re.I)),
     ("interview_invited", re.compile(
         r"\b(?:invit\w* (?:you )?to (?:an? )?(?:phone |video |virtual |onsite |on-site )?interview|"
@@ -87,6 +113,29 @@ ATS_DOMAINS: dict[str, str] = {
     "jobvite.com": "jobvite",
     "bamboohr.com": "bamboohr",
 }
+#: Other senders of hiring mail (assessments, scheduling, recruiting tools). Only the
+#: mailbox reader's pre-filter uses them (`mail_imap`); they never match a row alone.
+HIRING_HOSTS: tuple[str, ...] = (
+    "hackerrank.com", "codesignal.com", "codility.com", "hirevue.com", "pymetrics.ai",
+    "karat.io", "calendly.com", "goodtime.io", "modernloop.io", "gem.com", "workable.com",
+    "workablemail.com", "rippling.com", "jazzhr.com", "breezy.hr", "recruitee.com",
+    "teamtailor.com", "oraclecloud.com", "avature.net", "eightfold.ai", "phenom.com",
+    "paradox.ai", "brassring.com", "docusign.net", "joinhandshake.com", "simplify.jobs",
+    "applytojob.com", "gr8people.com",
+)
+#: Words that make a sentence about what *might* happen ("if you are not selected", "you
+#: may receive a coding assessment"): a thank-you email describing next steps.
+_CONDITIONAL = re.compile(
+    r"\b(?:if|should you|once you|whether|unless|in the event|likely|"
+    r"may (?:receive|be invited|be contacted|be asked|choose))\b",
+    re.I,
+)
+#: Where a sentence ends; " | " joins the subject to the body.
+_SENTENCE_END = re.compile(r"[.!?|](?=\s|$)")
+_QUOTES = str.maketrans({"’": "'", "‘": "'", "“": '"', "”": '"'})
+_INVISIBLE = re.compile(r"[­​-‏⁠﻿]")
+_SPACE = re.compile(r"\s+")
+_ANGLE_ADDRESS = re.compile(r"<([^<>@\s]+@[^<>\s]+)>\s*$")
 #: Rows an email can be about: anything the student may have applied to.
 _APPLIED_OR_PREPARED = outcomes.SENT | {
     "ready", "filling", "awaiting_review", "awaiting_otp", "fill_failed",
@@ -107,15 +156,15 @@ class Mail:
 
     @property
     def from_domain(self) -> str:
-        return parseaddr(self.sender)[1].rpartition("@")[2].lower()
+        return sender_parts(self.sender)[1].rpartition("@")[2].lower()
 
     @property
     def display_name(self) -> str:
-        return parseaddr(self.sender)[0]
+        return sender_parts(self.sender)[0]
 
     @property
     def head(self) -> str:
-        return f"{self.subject}\n{self.body[:_HEAD_CHARS]}"
+        return _head(self.subject, self.body)
 
 
 @dataclass
@@ -124,6 +173,8 @@ class Match:
     reason: str
     #: Rows that tied for the best score, when nothing clearly won.
     candidates: list[str] = field(default_factory=list)
+    #: What pointed at the row ("company named", "requisition id", ...).
+    reasons: list[str] = field(default_factory=list)
 
 
 def received_on(raw: str) -> str | None:
@@ -145,14 +196,46 @@ def received_on(raw: str) -> str | None:
         return None
 
 
+def sender_parts(sender: str) -> tuple[str, str]:
+    """``(display name, address)`` of a From header. `parseaddr` gives up on an unquoted
+    "@" in the name ("jobs@acme.com <jobs@acme.com>"); the angle-bracket address wins."""
+    name, address = parseaddr(sender)
+    if address:
+        return name, address
+    if found := _ANGLE_ADDRESS.search(sender):
+        return sender[: found.start()].strip().strip('"'), found.group(1).strip()
+    return "", sender.strip() if "@" in sender else ""
+
+
+def normalize(text: str) -> str:
+    """Text as matched: NFKC, straight quotes, no invisible characters, and one space
+    between words, so a phrase wrapped onto a new line or typed with a curly apostrophe
+    still matches."""
+    text = unicodedata.normalize("NFKC", text).translate(_QUOTES)
+    return _SPACE.sub(" ", _INVISIBLE.sub("", text)).strip()
+
+
+def _head(subject: str, body: str) -> str:
+    return f"{normalize(subject)} | {normalize(body)[:_HEAD_CHARS]}"
+
+
+def _stated(head: str, hit: re.Match[str]) -> bool:
+    """False when the sentence leading up to ``hit`` makes it conditional."""
+    start = max((m.end() for m in _SENTENCE_END.finditer(head, 0, hit.start())), default=0)
+    return _CONDITIONAL.search(head, start, hit.start()) is None
+
+
 def classify(subject: str, body: str) -> Signal | None:
     """What the email says happened, from its subject and opening; None for anything
     else (a newsletter, a job alert, a question)."""
-    head = f"{subject}\n{body[:_HEAD_CHARS]}"
-    if _NOISE.search(head):
-        return None
+    head = _head(subject, body)
+    # Rejections often close with "join our newsletter" or "set up job alerts", so noise
+    # only rules out the other signals.
+    noise = _NOISE.search(head) is not None
     for signal, pattern in _SIGNALS:
-        if pattern.search(head):
+        if noise and signal != "rejected":
+            continue
+        if any(_stated(head, hit) for hit in pattern.finditer(head)):
             return signal
     return None
 
@@ -164,6 +247,12 @@ def _words(text: str) -> list[str]:
 def _phrase_in(phrase: list[str], words: list[str]) -> bool:
     n = len(phrase)
     return bool(n) and any(words[i:i + n] == phrase for i in range(len(words) - n + 1))
+
+
+def hiring_sender(domain: str) -> bool:
+    """An application, assessment or scheduling system's mail host."""
+    return _ats_for(domain) is not None or any(
+        domain == host or domain.endswith("." + host) for host in HIRING_HOSTS)
 
 
 def _ats_for(domain: str) -> str | None:
@@ -218,7 +307,21 @@ def match(mail: Mail, apps: list[store_models.Application]) -> Match:
     if len(top) > 1:
         return Match(None, "More than one application could match.",
                      candidates=[key for _, key, _ in top])
-    return Match(scored[0][1], "Matched by " + ", ".join(scored[0][2]) + ".")
+    return Match(scored[0][1], "Matched by " + ", ".join(scored[0][2]) + ".",
+                 reasons=scored[0][2])
+
+
+def confident(signal: Signal | None, found: Match, app: store_models.Application | None,
+              flag: str) -> bool:
+    """A rejection sure enough to record without asking: one application, pinned by its
+    requisition id or its role, sent and still open, with nothing contradicting it."""
+    if signal != "rejected" or app is None or flag or found.candidates:
+        return False
+    if found.app_id != app.source_job_id or app.status not in _CONFIRMED_SENT:
+        return False
+    if not {"requisition id", "role named"} & set(found.reasons):
+        return False
+    return outcomes.hiring_progress(app).closed is None
 
 
 def check(signal: Signal, app: store_models.Application, on: str | None) -> str:
@@ -230,6 +333,10 @@ def check(signal: Signal, app: store_models.Application, on: str | None) -> str:
         if app.archived_at:
             return "This application is in Done; restore it to change its status."
         return ""
+    sent = outcomes.sent_on(app)
+    # A day of slack: the email's date is in the sender's time zone, the send in UTC.
+    if on and sent and date.fromisoformat(on) < date.fromisoformat(sent) - timedelta(days=1):
+        return "This email is older than the application."
     rank = outcomes.STAGES.index(progress.stage or "applied")
     if signal == "rejected" and rank >= outcomes.STAGES.index("offer"):
         return "This application already has an offer recorded."

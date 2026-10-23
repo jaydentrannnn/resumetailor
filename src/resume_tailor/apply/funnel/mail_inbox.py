@@ -1,10 +1,12 @@
 """Proposals read from job emails, waiting for the student to accept or dismiss them.
 
-Claude Desktop reads the student's mail through its own Gmail connector and posts the
-job emails here (`web/routes/mail_updates.py`); the app never holds mail credentials.
-Each email becomes at most one proposal: an outcome event (or "sent", confirming an
-application) for the application `mail_signals.match` found, or an unclear one the
-student assigns. Nothing reaches an application until the student accepts it.
+Two paths post job emails here: Claude Desktop, reading Gmail through its own connector
+(`web/routes/mail_updates.py`), and the app's own read-only IMAP check (`mail_imap`,
+`mail_sync`). Each email becomes at most one proposal: an outcome event (or "sent",
+confirming an application) for the application `mail_signals.match` found, or an unclear
+one the student assigns. Nothing reaches an application until the student accepts it,
+with one exception the student switches on: `auto_close` records the rejections
+`mail_signals.confident` is sure of, and `undo_auto` takes one back.
 
 The inbox is one JSON file beside the profile's application registry. Every message id
 seen is remembered, so posting the same emails again adds nothing. Only a short,
@@ -13,8 +15,10 @@ cleaned excerpt of each email is kept.
 
 from __future__ import annotations
 
+import contextlib
 import hashlib
 import threading
+from collections.abc import Callable
 from datetime import UTC, date, datetime, timedelta
 from pathlib import Path
 from typing import Literal
@@ -55,6 +59,11 @@ class Proposal(BaseModel):
     state: State = "pending"
     created_at: str = ""
     decided_at: str = ""
+    #: A rejection sure enough to record without asking (`mail_signals.confident`).
+    confident: bool = False
+    #: Recorded by `auto_close`, not by the student; `event_id` is the event it added.
+    auto: bool = False
+    event_id: str = ""
 
 
 class Inbox(BaseModel):
@@ -77,6 +86,8 @@ class IngestResult(BaseModel):
     unclear: int = 0
     ignored: int = 0
     already_seen: int = 0
+    #: Confident rejections `auto_close` recorded.
+    closed: int = 0
 
 
 def path() -> Path:
@@ -115,8 +126,17 @@ def search_since(inbox: Inbox | None = None, *, today: date | None = None) -> st
     return ((today or datetime.now(UTC).date()) - timedelta(days=FIRST_LOOKBACK_DAYS)).isoformat()
 
 
-def ingest(messages: list[IncomingMail], apps: list[store_models.Application]) -> IngestResult:
-    """Turn new job emails into pending proposals; returns what happened to each."""
+def ingest(
+    messages: list[IncomingMail], apps: list[store_models.Application], *,
+    require_match: bool = False,
+) -> IngestResult:
+    """Turn new job emails into pending proposals; returns what happened to each.
+
+    ``require_match`` (the mailbox check, which reads more than hiring mail) ignores an
+    email that matched no application unless a hiring system sent it: an "offer" from a
+    shop is not news about an application. It also ignores an acknowledgement for an
+    application already confirmed as sent, which every application gets.
+    """
     result = IngestResult()
     with _LOCK:
         inbox = load()
@@ -136,7 +156,14 @@ def ingest(messages: list[IncomingMail], apps: list[store_models.Application]) -
                 mail_signals.received_on(message.date),
             )
             found = mail_signals.match(mail, apps)
+            if (require_match and not found.app_id and not found.candidates
+                    and not mail_signals.hiring_sender(mail.from_domain)):
+                result.ignored += 1
+                continue
             app = next((a for a in apps if a.source_job_id == found.app_id), None)
+            if require_match and signal == "sent" and app is not None and _confirmed(app):
+                result.ignored += 1  # "We received your application": nothing new.
+                continue
             flag = mail_signals.check(signal, app, mail.received_on) if app else ""
             inbox.proposals.append(Proposal(
                 id=_proposal_id(message.message_id), message_id=message.message_id,
@@ -145,6 +172,7 @@ def ingest(messages: list[IncomingMail], apps: list[store_models.Application]) -
                 excerpt=_excerpt(message.body), signal=signal,
                 app_id=found.app_id, candidates=found.candidates, reason=found.reason,
                 flag=flag, created_at=_now(),
+                confident=mail_signals.confident(signal, found, app, flag),
             ))
             if found.app_id:
                 result.matched += 1
@@ -166,10 +194,14 @@ def _note(proposal: Proposal) -> str:
     return f"From email “{subject}”"
 
 
+def _confirmed(app: store_models.Application) -> bool:
+    return app.status in outcomes.SENT and app.status != "submit_unconfirmed"
+
+
 def _apply(proposal: Proposal, signal: mail_signals.Signal,
            app: store_models.Application) -> None:
     if signal == "sent":
-        if app.status in outcomes.SENT and app.status != "submit_unconfirmed":
+        if _confirmed(app):
             return  # Already confirmed as sent: nothing to change, no second status entry.
         if app.archived_at:
             raise ValueError("Restore this application before changing its status")
@@ -205,6 +237,77 @@ def accept(
         proposal.app_id, proposal.signal = target, kind
         _save(inbox)
     return proposal, app
+
+
+def _close(proposal: Proposal, added: list[str]) -> Callable[[store_models.Application], None]:
+    def mutate(app: store_models.Application) -> None:
+        # Re-checked on the stored row: a close recorded meanwhile wins.
+        if outcomes.hiring_progress(app).closed is not None:
+            return
+        event = outcomes.add_event(app, "rejected", occurred_on=proposal.received_on,
+                                   note=f"Closed from email “{proposal.subject}”"[:500],
+                                   source="monitor")
+        added.append(event.id)
+    return mutate
+
+
+def auto_close() -> int:
+    """Record every pending confident rejection on its application; returns how many."""
+    closed = 0
+    with _LOCK:
+        inbox = load()
+        for proposal in inbox.proposals:
+            if proposal.state != "pending" or not proposal.confident or not proposal.app_id:
+                continue
+            added: list[str] = []
+            try:
+                store.update(proposal.app_id, _close(proposal, added))
+            except store.StaleApplication:
+                continue
+            if not added:  # Already closed: leave it for the student to dismiss.
+                proposal.confident = False
+                continue
+            proposal.state, proposal.decided_at = "accepted", _now()
+            proposal.auto, proposal.event_id = True, added[0]
+            closed += 1
+        _save(inbox)
+    return closed
+
+
+def undo_auto(proposal_id: str) -> Proposal:
+    """Take back one automatic close: remove its event (kept in the history, voided) and
+    put the email back to pending. It is never closed automatically again.
+
+    Raises:
+        KeyError: Unknown proposal.
+        ValueError: Not an automatic close.
+    """
+    with _LOCK:
+        inbox = load()
+        proposal = next((p for p in inbox.proposals if p.id == proposal_id), None)
+        if proposal is None:
+            raise KeyError(proposal_id)
+        if not proposal.auto:
+            raise ValueError("That email was not recorded automatically")
+
+        def void(app: store_models.Application) -> None:
+            # Already removed in the Outcome tab, or edited there: nothing left to undo.
+            with contextlib.suppress(KeyError, ValueError):
+                outcomes.void_event(app, proposal.event_id)
+
+        with contextlib.suppress(store.StaleApplication):
+            store.update(proposal.app_id or "", void)
+        proposal.state, proposal.decided_at = "pending", ""
+        proposal.auto, proposal.confident, proposal.event_id = False, False, ""
+        _save(inbox)
+    return proposal
+
+
+def recent_auto(days: int = 14) -> list[Proposal]:
+    """Automatic closes from the last ``days`` days, newest first."""
+    since = (datetime.now(UTC) - timedelta(days=days)).isoformat(timespec="seconds")
+    rows = [p for p in load().proposals if p.auto and p.decided_at >= since]
+    return sorted(rows, key=lambda p: p.decided_at, reverse=True)
 
 
 def dismiss(proposal_id: str) -> Proposal:
