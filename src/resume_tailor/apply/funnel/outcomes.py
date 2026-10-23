@@ -43,7 +43,9 @@ RESPONSES: frozenset[str] = frozenset(
         "offer", "hired", "offer_declined", "rejected", "employer_timeline",
     }
 )
-_SENT = frozenset({"submitted", "submit_unconfirmed", "interview", "rejected", "ghosted"})
+#: Statuses that mean the application went out (an unconfirmed submit included: the
+#: submit was clicked, only the confirmation page was not seen).
+SENT = frozenset({"submitted", "submit_unconfirmed", "interview", "rejected", "ghosted"})
 #: Legacy statuses read as events.
 _LEGACY = {"interview": "interview_invited", "rejected": "rejected", "ghosted": "ghosted"}
 
@@ -94,9 +96,9 @@ def _timeline(app: store_models.Application) -> list[tuple[str, str]]:
 def sent_on(app: store_models.Application) -> str | None:
     """The date the application first went out (ISO date), or None."""
     for change in app.status_history:
-        if change.status in _SENT:
+        if change.status in SENT:
             return change.at[:10]
-    if app.status in _SENT or app.outcome_events:
+    if app.status in SENT or app.outcome_events:
         return (app.discovered_at or "")[:10] or None
     return None
 

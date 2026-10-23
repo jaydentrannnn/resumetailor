@@ -2576,3 +2576,10 @@ inside its `store.update` so a reply recorded meanwhile is skipped.
 
 Not measured with the eval harness: prep and notes are advisory text the student reads
 before using, behind guards; no prompt the tailored resume depends on changed.
+
+## Offline application report (2026-10-23, "Later" tier L1)
+
+- `apply/funnel/report_html.py` renders the registry as one self-contained HTML file (inline CSS/SVG, no scripts, every value escaped); `GET /api/applications/report.html` lives in `after_send` so it is matched before `/{id}`.
+- The funnel shows Sent / Interviewed / Offer / Hired as "this far or further". Assessment was dropped from it: counting by rank made an interview without an assessment show up as "Assessment".
+- "Sent" was defined twice: `store_stats._SENT_STATUSES` left out `submit_unconfirmed` while `outcomes.sent_on` (and `attempts`, `submit_guard`) counted it, so the banner's sent count and its reply-rate denominator disagreed. It is now `outcomes.SENT` everywhere; the report shows unconfirmed sends as their own card.
+- Silence ("no reply yet", or marked `ghosted`) never counts as a rejection, unlike upstream's report, which folds no-response into its rejection rate.

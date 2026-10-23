@@ -629,6 +629,11 @@ export function applicationsExportUrl(): string {
   return "/api/applications/export.csv";
 }
 
+/** The offline application report: one self-contained HTML file. */
+export function applicationsReportUrl(): string {
+  return "/api/applications/report.html";
+}
+
 /** A guarded draft for one free-text application question (`POST /api/jobs/{id}/answer`). */
 export type AnswerDraft = {
   answer: string;

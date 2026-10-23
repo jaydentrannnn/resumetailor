@@ -14,8 +14,9 @@ from pydantic import BaseModel
 from . import outcomes, store, store_models
 
 #: An outcome after sending implies the application was sent, even when the timeline
-#: has no ``submitted`` entry (marked by hand straight to Interview, say).
-_SENT_STATUSES: frozenset[str] = frozenset({"submitted", "interview", "rejected", "ghosted"})
+#: has no ``submitted`` entry (marked by hand straight to Interview, say). The same set
+#: `outcomes.sent_on` reads, so the banner's sent count and its reply rates agree.
+_SENT_STATUSES: frozenset[str] = outcomes.SENT
 
 #: Pipeline stages in order: (key, the statuses that mean a posting got that far).
 _STAGES: tuple[tuple[str, frozenset[str]], ...] = (

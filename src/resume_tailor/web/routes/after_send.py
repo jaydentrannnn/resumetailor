@@ -1,20 +1,29 @@
-"""After an application is sent: interview prep, follow-up notes and "no reply" marks.
+"""After an application is sent: interview prep, follow-up notes, "no reply" marks and
+the offline report.
 
 Prep and notes are drafted from what the employer received (`apply/funnel/sent_copy.py`)
 on the Light task model, like other app tools, and are only shown: nothing here is sent.
-Registered before the applications router so ``/api/applications/follow-ups`` is not
-read as an application id.
+Registered before the applications router so ``/api/applications/follow-ups`` (and
+``report.html``) is not read as an application id.
 """
 
 from __future__ import annotations
 
+from datetime import date
 from pathlib import Path
 
 from fastapi import APIRouter, HTTPException
+from fastapi.responses import Response
 from pydantic import BaseModel, Field
 
-from resume_tailor import config
-from resume_tailor.apply.funnel import followup_due, outcomes, sent_copy, store_models
+from resume_tailor import config, workspace
+from resume_tailor.apply.funnel import (
+    followup_due,
+    outcomes,
+    report_html,
+    sent_copy,
+    store_models,
+)
 from resume_tailor.apply.funnel import store as apply_store
 from resume_tailor.content import data
 from resume_tailor.infra import atomic
@@ -82,6 +91,27 @@ def _notes(app: store_models.Application) -> list[str]:
 def follow_ups_due() -> followup_due.DueList:
     """Sent applications due a follow-up or thank-you, and those gone silent."""
     return followup_due.due_list(apply_store.rows_view().values(), followup_due.today())
+
+
+@router.get("/api/applications/report.html")
+def application_report() -> Response:
+    """Download the application report: one self-contained HTML file (offline)."""
+    today = date.today()
+    profile = ""
+    if (active := config.active_workspace_id()) is not None:
+        try:
+            profile = workspace.resolve(active).label
+        except workspace.WorkspaceError:
+            profile = ""
+    html = report_html.build(apply_store.rows_view().values(), today=today, profile=profile)
+    return Response(
+        html,
+        media_type="text/html; charset=utf-8",
+        headers={
+            "Content-Disposition":
+                f'attachment; filename="applications-report-{today.isoformat()}.html"'
+        },
+    )
 
 
 @router.post("/api/applications/no-reply", response_model=NoReplyResult)

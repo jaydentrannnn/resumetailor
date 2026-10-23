@@ -1,5 +1,6 @@
 import {
   applicationsExportUrl,
+  applicationsReportUrl,
   type ApplicationRow,
   type ApplySettings,
   type SourcesStatus,
@@ -58,6 +59,13 @@ export function FindJobsTools({
       keywords: "export spreadsheet",
       run: () => save(applicationsExportUrl(), "applications.csv"),
     },
+    {
+      id: "apply-report",
+      title: saveLabel("application report", desktop),
+      group: "Apply",
+      keywords: "export offline html summary rates",
+      run: () => save(applicationsReportUrl(), "applications-report.html"),
+    },
   ]);
   return (
     <>
@@ -106,6 +114,13 @@ export function FindJobsTools({
         url={applicationsExportUrl()}
         what="CSV"
         fallbackName="applications.csv"
+        variant="plain"
+        size="md"
+      />
+      <SaveFileButton
+        url={applicationsReportUrl()}
+        what="report"
+        fallbackName="applications-report.html"
         variant="plain"
         size="md"
       />

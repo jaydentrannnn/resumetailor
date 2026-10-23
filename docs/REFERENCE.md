@@ -783,6 +783,19 @@ before `applications` so `follow-ups` is not read as an id, and run on the Light
 (`job_routing.pinned_role("light")`). UI: `FollowUpTile`, `InterviewPrepTile` (shown once
 an interview is recorded) in the Outcome tab; `FollowUpsNotice` on the Apply page.
 
+**Offline report.** `apply/funnel/report_html.build` (pure) renders the registry as one
+self-contained HTML file: inline CSS and SVG, no scripts or external assets, every value
+escaped, dark mode by `prefers-color-scheme`. Cards: sent (by the app / marked by hand /
+not confirmed), prepared but not sent, reply, interview and offer rates over the
+`store_stats.COHORT_DAYS` cohort (count of a stated denominator), explicit rejections,
+no reply yet, and marked "no reply"; silence is never a rejection. A funnel (Sent,
+Interviewed, Offer, Hired) counts the furthest stage ever reached, so an interview before a
+rejection still counts; then sends per week, breakdowns by source and by ATS, and every
+sent row newest first. `GET /api/applications/report.html` (in `after_send`) downloads it;
+the In progress toolbar's "Download report" / "Save report…" button and Ctrl+K command
+fetch it. "Sent" is one definition everywhere: `outcomes.SENT` (an unconfirmed submit
+included), which the progress banner's stage counts now share.
+
 For postings stuck in `needs_browser` (HTTP + CDP could not extract enough JD text), the
 Claude Desktop skill in `docs/skills/apply-from-queue/` is the manual fallback — it opens
 the posting, starts `tailor_application` with the copied JD text, then `mark_application`.

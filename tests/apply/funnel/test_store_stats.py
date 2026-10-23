@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+from datetime import date
+
 import pytest
 from pydantic import ValidationError
 
@@ -106,3 +108,10 @@ def test_banner_options_default_and_reject_bad_values():
     ):
         with pytest.raises(ValidationError):
             ApplySettings(**bad)
+
+
+def test_an_unconfirmed_submit_counts_as_sent_like_the_reply_rates_do():
+    rows = [_app("unsure", "submit_unconfirmed", (("submit_unconfirmed", "2026-09-01T09:00:00+00:00"),))]
+    stats = store_stats.progress_stats(rows, today=date(2026, 10, 23))
+    assert stats.sent_total == 1 and len(stats.sent) == 1
+    assert stats.outcomes.sent == 1

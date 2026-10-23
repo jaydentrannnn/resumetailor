@@ -100,3 +100,15 @@ def test_follow_ups_list_due_rows_and_no_reply_marks_only_stale_ones(client):
     assert (event.type, event.note) == ("ghosted", "No reply 70 days after sending")
     assert apply_store.get("b").outcome_events == []
     assert c.get("/api/applications/follow-ups").json()["stale"] == []
+
+
+def test_the_report_downloads_as_one_html_file(client):
+    c, _q = client
+    apply_store.save_all({"a": _sent(30).model_copy(update={"company": "<Acme>"})})
+    response = c.get("/api/applications/report.html")
+    assert response.status_code == 200
+    assert response.headers["content-type"].startswith("text/html")
+    assert response.headers["content-disposition"].startswith(
+        'attachment; filename="applications-report-'
+    )
+    assert "&lt;Acme&gt;" in response.text and "<Acme>" not in response.text
