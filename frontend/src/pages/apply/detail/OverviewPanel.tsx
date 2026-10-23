@@ -4,6 +4,7 @@ import { applicationStatusLabel } from "../../../lib/applicationStatus";
 import { ReportCard } from "../../run/ReportCard";
 import { siteName } from "../../CapturedStubs";
 import { PostedDate } from "../PostedDate";
+import { FitNotes } from "./FitNotes";
 
 /** Overview: the application's facts, why it was screened out, and the tailor report. */
 export function OverviewPanel({ app, job }: { app: ApplicationRow; job: JobStatus | null }) {
@@ -60,6 +61,7 @@ export function OverviewPanel({ app, job }: { app: ApplicationRow; job: JobStatu
             ))}
           </div>
         )}
+        <FitNotes app={app} job={job} />
         <PostingCheck app={app} />
         {app.error && <p className="mt-4 text-sm text-danger">{app.error}</p>}
       </Tile>

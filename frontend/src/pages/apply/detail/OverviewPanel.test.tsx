@@ -1,8 +1,11 @@
 // @vitest-environment jsdom
 import { cleanup, render, screen } from "@testing-library/react";
-import { afterEach, describe, expect, it } from "vitest";
+import { afterEach, describe, expect, it, vi } from "vitest";
 import type { ApplicationRow } from "../../../api";
 import { OverviewPanel } from "./OverviewPanel";
+
+// The report card needs a whole run report; these tests are about the blocks above it.
+vi.mock("../../run/ReportCard", () => ({ ReportCard: () => null }));
 
 // No `test.globals`, so Testing Library's automatic cleanup never registers.
 afterEach(cleanup);
@@ -65,5 +68,35 @@ describe("OverviewPanel posting check", () => {
       />,
     );
     expect(screen.queryByText("Check this posting")).toBeNull();
+  });
+});
+
+describe("OverviewPanel fit", () => {
+  it("names the required skills on the page and what screening flagged", () => {
+    render(
+      <OverviewPanel
+        app={row({ eligibility_flags: ["language_level:German"] })}
+        job={
+          {
+            report: {
+              coverage_funnel: {
+                keywords: [
+                  { canonical: "sql", phrase: "SQL", resume: "stated", page: "expressed" },
+                  { canonical: "go", phrase: "Go", resume: null, page: null },
+                ],
+              },
+            },
+          } as never
+        }
+      />,
+    );
+    expect(screen.getByText("Fit")).toBeTruthy();
+    expect(screen.getByText("SQL")).toBeTruthy();
+    expect(screen.getByText(/asks for fluent German/)).toBeTruthy();
+  });
+
+  it("has no fit block without strengths or flags", () => {
+    render(<OverviewPanel app={row({})} job={null} />);
+    expect(screen.queryByText("Fit")).toBeNull();
   });
 });

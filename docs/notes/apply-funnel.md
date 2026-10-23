@@ -2492,3 +2492,13 @@ skips the gate. Measured on 1,013 unique saved postings with the owner's profile
 (English + Vietnamese): one hit, "Bilingual (English / Spanish).", which is a real
 requirement; the only false positive found ("enrolled at a Dutch university") led to the
 adjective rule.
+
+## 2026-10-22 — Fit notes on the Overview
+
+The plan called for four groups (strengths, have-it-but-not-shown, gaps, uncertainties).
+The run report on the same tab already names missing required and nice-to-have skills
+and the "in your resume, not on the tailored page" group, so `FitNotes` adds only what
+was nowhere on screen: the required skills the page shows, and the screening flags in
+plain words. Flags were stored on every row (`eligibility_flags`, `screen.flags`) but no
+view ever displayed them, so a passed row's "asks for 3+ years" or "fluent German" signal
+was invisible. No probability or score is shown.

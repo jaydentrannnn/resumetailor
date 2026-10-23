@@ -690,6 +690,14 @@ MCP tools:
 `list_applications`, `get_application_packet`, `answer_application_question`,
 `mark_application`, `record_outcome`.
 
+**Fit on an application's Overview.** `detail/FitNotes.tsx` (logic in
+`lib/fitSummary.ts`, no model call, no score) lists the must-haves the tailored page shows
+(`coverage_funnel` keywords whose page status is expressed or demonstrated) and words
+every screening flag that did not reject the row (`eligibility_flags` ∪ `screen.flags`:
+language level or unlisted language, years asked for, seniority mismatch, returning-intern
+or enrollment wording, a level token in the title). Codes with no wording are left out;
+gaps stay in the run report below it.
+
 **What was sent, and what happened next.** `store.set_status` calls
 `apply/funnel/attempts.on_status`: a row moving into `submitted`/`submit_unconfirmed`
 from a status that was not already sent gets a `SubmissionAttempt`, a read-only copy of
