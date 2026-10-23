@@ -118,14 +118,15 @@ export function TrackerPage() {
           <EmptyState title="Could not load the tracker">{describe(loadError).detail}</EmptyState>
         ) : !board ? (
           <Skeleton className="h-64 w-full" />
-        ) : board.cards.length === 0 ? (
-          <EmptyState title="Nothing in Done yet">
-            Applications you send (or skip) move to Done on the Apply page and show here.
-          </EmptyState>
         ) : (
           <>
+            {/* The tray stands on its own: its emails may be about applications not in Done. */}
             <EmailTray proposals={board.unmatched} />
-            {view === "list" ? (
+            {board.cards.length === 0 ? (
+              <EmptyState title="Nothing in Done yet">
+                Applications you send (or skip) move to Done on the Apply page and show here.
+              </EmptyState>
+            ) : view === "list" ? (
               <TrackerList cards={shown} />
             ) : (
               <TrackerBoardView cards={cards} hidden={hidden} onHide={toggle} />

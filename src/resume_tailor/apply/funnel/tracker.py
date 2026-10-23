@@ -88,9 +88,15 @@ def _void(app: store_models.Application, events, receipt: Receipt) -> None:
         receipt.voided.append(event.id)
 
 
-def _add(app, kind, today: date, receipt: Receipt) -> None:
-    event = outcomes.add_event(app, kind, occurred_on=today.isoformat(), note=_NOTE)
+def _add(app, kind, on: str, receipt: Receipt) -> None:
+    event = outcomes.add_event(app, kind, occurred_on=on, note=_NOTE)
     receipt.added.append(event.id)
+
+
+def _closing_day(app: store_models.Application, today: date) -> str:
+    """Today, or the latest live event's date when one is scheduled later (an interview
+    next week): the stage is worked out in date order, so an earlier close would not hold."""
+    return max([today.isoformat(), *(_when(e) for e in outcomes.live_events(app))])
 
 
 def move(
@@ -117,15 +123,16 @@ def move(
             if progress.closed == reason:
                 return receipt
             _void(app, _open_closings(app), receipt)
-        _add(app, reason, today, receipt)
+        _add(app, reason, _closing_day(app, today), receipt)
     elif target != current:
-        if current == "closed":
-            _void(app, _open_closings(app), receipt)
         above = [e for e in outcomes.live_events(app)
                  if _RANK.get(outcomes._EVENT_STAGE.get(e.type, ""), -1) > _RANK[target]]
         _void(app, above, receipt)
+        # After the later steps go, a closing event they had overtaken (a rejection
+        # before an interview) would close the card again: open means none applies.
+        _void(app, _open_closings(app), receipt)
         if _RANK[outcomes.hiring_progress(app).stage or "applied"] < _RANK[target]:
-            _add(app, _STEP_EVENT[target], today, receipt)
+            _add(app, _STEP_EVENT[target], today.isoformat(), receipt)
     if column_of(app) != target:
         raise ValueError(
             "This stage comes from an older status mark; change it in the Outcome tab"
@@ -150,7 +157,10 @@ def undo(app: store_models.Application, receipt: Receipt) -> None:
         raise ValueError("This card changed since; use the Outcome tab")
     for event in added:
         outcomes.void_event(app, event.id)
-    for event in voided:
+    # Copies go back in their original order: same-day events are read in list order,
+    # so an interview and a rejection on one day must stay interview-then-rejection.
+    position = {event.id: index for index, event in enumerate(app.outcome_events)}
+    for event in sorted(voided, key=lambda e: position[e.id]):
         # The original stays voided; a copy dated as it was becomes the live one.
         outcomes.add_event(app, event.type, occurred_on=_when(event), note=event.note,
                            source=event.source, replaces=event.id)

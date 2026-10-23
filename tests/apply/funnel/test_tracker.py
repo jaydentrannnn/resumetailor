@@ -154,3 +154,28 @@ def test_cards_cover_done_rows_only_newest_update_first():
     skipped = cards[-1]
     assert (skipped.column, skipped.label, skipped.sent_on) == ("not_sent", "Skipped", None)
     assert cards[0].last_update == "2026-10-01"
+
+
+def test_undo_restores_same_day_events_in_their_order():
+    app = _app(events=(("interview_invited", "2026-09-15"), ("rejected", "2026-09-15")))
+    receipt = tracker.move(app, "applied", today=TODAY)
+    tracker.undo(app, receipt)
+    assert tracker.card(app).column == "closed"
+    assert _live(app) == ["interview_invited", "rejected"]
+
+
+def test_back_past_an_overtaken_rejection_voids_it_too():
+    app = _app(events=(("rejected", "2026-09-01"), ("interview_invited", "2026-09-15")))
+    receipt = tracker.move(app, "applied", today=TODAY)
+    assert tracker.column_of(app) == "applied" and _live(app) == []
+    tracker.undo(app, receipt)
+    assert tracker.column_of(app) == "interview"
+
+
+def test_closing_before_a_scheduled_interview_dates_the_close_after_it():
+    app = _app(events=(("interview_scheduled", "2026-10-30"),))
+    tracker.move(app, "closed", reason="rejected", today=TODAY)
+    card = tracker.card(app)
+    assert (card.column, card.label, card.reached) == ("closed", "Rejected", "Interviewing")
+    [closing] = [e for e in outcomes.live_events(app) if e.type == "rejected"]
+    assert closing.occurred_on == "2026-10-30"

@@ -97,6 +97,16 @@ describe("TrackerPage", () => {
     expect(column("interview")).toBeNull();
   });
 
+  it("keeps the email tray when nothing is in Done yet", async () => {
+    api.getTrackerBoard.mockResolvedValue(
+      board([], [email({ app_id: "globex", company: "Globex", role: "Analyst" })]),
+    );
+    renderPage();
+    await screen.findByText("Nothing in Done yet");
+    expect(screen.getByRole("region", { name: "Emails to assign" })).toBeTruthy();
+    expect(screen.getByRole("button", { name: "Accept" })).toBeTruthy();
+  });
+
   it("records a drag, offers Undo, and rolls back a refused move", async () => {
     api.getTrackerBoard.mockResolvedValue(board([card({})]));
     const moved = card({ column: "interview", label: "Interviewing", stage: "interview" });

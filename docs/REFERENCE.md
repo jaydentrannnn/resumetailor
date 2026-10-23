@@ -834,12 +834,15 @@ Offer (hired shares it) · Closed (the reason, and the furthest stage past Appli
 `submit_unconfirmed` row is not in Done, so it is not on the board. `apply/funnel/tracker`
 (pure) turns a move into events, dated today, note `Moved on the tracker`: forward adds
 the column's step (`assessment`, `interview_invited`, `offer`); back voids the live events
-ranked above the target and adds the target's step if the card never reached it; Closed
-needs a reason (rejected, ghosted, withdrawn; offer declined only after an offer), and a
-new reason voids the old closing event; reopening voids the closing events after the last
-step. Nothing is deleted. A move returns a receipt (`added`, `voided`); `undo` voids what
-it added and re-adds copies (`replaces=<old id>`, same date and source) of what it voided,
-and refuses once the card has changed since. A stage held by a legacy status (`interview`,
+ranked above the target, then any closing event left after the last remaining step (a
+rejection those steps had overtaken, or the card's own close), and adds the target's step
+if the card never reached it; Closed needs a reason (rejected, ghosted, withdrawn; offer
+declined only after an offer), and a new reason voids the old closing event. A close is
+dated today, or the latest live event's date when one is later (an interview scheduled
+next week), since stages are read in date order. Nothing is deleted. A move returns a
+receipt (`added`, `voided`); `undo` voids what it added and re-adds copies
+(`replaces=<old id>`, same date and source) of what it voided, in their original order
+(same-day events are read in list order), and refuses once the card has changed since. A stage held by a legacy status (`interview`,
 `rejected`, `ghosted`) cannot be voided, so a move that leaves the derived column short of
 the target is refused (409) and nothing is saved. Routes (`web/routes/tracker.py`):
 `GET /api/tracker` (cards with their pending email proposals, the unmatched or off-board
