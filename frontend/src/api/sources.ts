@@ -155,6 +155,11 @@ export type SourceRunStatus = {
   error: string | null;
   /** ISO timestamp of that run. */
   at: string;
+  /** Rows missing a company or title. */
+  blank?: number;
+  /** Verdict over its recent runs (`source_status.health`); null when it looks healthy. */
+  health?: "degraded" | "rate_limited" | null;
+  health_reason?: string | null;
 };
 
 export type SourcesStatus = {

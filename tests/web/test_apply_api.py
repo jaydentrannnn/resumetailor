@@ -650,9 +650,23 @@ def test_sources_status_serves_the_recorded_entries(client, tmp_path, monkeypatc
         json.dumps({"sources": {"a": entry, "b": failed}, "last_run_at": entry["at"]}),
         encoding="utf-8",
     )
+    healthy = {"blank": 0, "health": None, "health_reason": None}
     assert c.get("/api/apply/sources/status").json() == {
-        "sources": {"a": entry, "b": failed}, "last_run_at": entry["at"],
+        "sources": {"a": {**entry, **healthy}, "b": {**failed, **healthy}},
+        "last_run_at": entry["at"],
     }
+
+
+def test_sources_status_flags_a_source_that_stopped_finding(client, tmp_path, monkeypatch):
+    c, _q = client
+    path = tmp_path / "source_status.json"
+    monkeypatch.setattr(config, "SOURCE_STATUS_PATH", path)
+    run = {"found": 30, "kept": 9, "error": None, "at": "2026-10-01T10:00:00+00:00"}
+    empty = {**run, "found": 0, "kept": 0, "error": "No postings found"}
+    path.write_text(json.dumps({"sources": {"a": {**empty, "history": [run, empty]}}}), "utf-8")
+    entry = c.get("/api/apply/sources/status").json()["sources"]["a"]
+    assert entry["health"] == "degraded" and "after 30 before" in entry["health_reason"]
+    assert "history" not in entry
 
 
 @pytest.mark.parametrize("content", ["{not json", "[]", '{"sources": []}', '{"sources": {"a": {"found": "x"}}}'])

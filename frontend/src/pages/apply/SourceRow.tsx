@@ -18,7 +18,10 @@ const HEALTH_TONE = {
   ok: "text-success",
   error: "text-danger",
   muted: "text-ink-muted",
+  attention: "text-attn",
 } as const;
+
+const MARK_TONE = { ok: "done", error: "failed", muted: "muted", attention: "attention" } as const;
 
 /**
  * One source, identical for every kind and every age of entry: select box, on/off switch,
@@ -116,6 +119,7 @@ export function SourceRow({
               <span className="text-xs font-normal text-ink-muted">{sourceBadge(source)}</span>
               {health.tone === "ok" && <StatusChip tone="done">Healthy</StatusChip>}
               {health.tone === "error" && <StatusChip tone="failed">Last check failed</StatusChip>}
+              {health.chip && <StatusChip tone="attention">{health.chip}</StatusChip>}
               {update && <StatusChip tone="attention">Update available</StatusChip>}
             </p>
           )}
@@ -127,9 +131,7 @@ export function SourceRow({
           <p
             className={`mt-1 flex items-center gap-1.5 font-mono text-xs [overflow-wrap:anywhere] ${HEALTH_TONE[health.tone]}`}
           >
-            <StatusMark
-              tone={health.tone === "ok" ? "done" : health.tone === "error" ? "failed" : "muted"}
-            />
+            <StatusMark tone={MARK_TONE[health.tone]} />
             <span className="sr-only">Last run: </span>
             {health.text}
           </p>

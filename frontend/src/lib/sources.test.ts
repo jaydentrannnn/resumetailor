@@ -259,6 +259,24 @@ describe("health", () => {
     });
   });
 
+  it("shows a verdict over recent runs ahead of the error line", () => {
+    const run = {
+      found: 0,
+      kept: 0,
+      error: "HTTP 429 from api.example",
+      at: "2026-09-29T10:00:00Z",
+    };
+    const limited = { ...run, health: "rate_limited" as const, health_reason: "Throttled." };
+    expect(sourceHealth(source, limited, NOW)).toEqual({
+      text: "Throttled. · 2h ago",
+      tone: "attention",
+      chip: "Rate limited",
+    });
+    const broken = { ...run, error: "No postings found", health: "degraded" as const };
+    expect(sourceHealth(source, broken, NOW).chip).toBe("Looks broken");
+    expect(sourceHealth(source, broken, NOW).text).toBe("No postings found · 2h ago");
+  });
+
   it("writes the header line", () => {
     const list = [source, base({ id: "b", enabled: false }), base({ id: "c" })];
     expect(sourcesHeadline(list, "2026-09-29T10:00:00Z", NOW)).toBe(

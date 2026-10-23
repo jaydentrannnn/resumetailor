@@ -322,6 +322,15 @@ The **location policy** in the same settings (`work_types` On-site/Hybrid/Remote
 applied to every fetched row by `daily_batch.by_location` (`apply/discovery/posting_location.py`);
 a remote row naming no country is kept unless the source turns off `keep_unknown_remote`.
 Postings kept outside the authorized countries are answered as needing sponsorship.
+**Source health** (`apply/discovery/source_status.py`): each run records per source
+`found`, `kept`, `blank` (rows missing a company or title) and `error` in
+`source_status.json`, plus the last `HISTORY` (10) runs. `health` turns that history into a
+verdict for the Job sources page (`GET /api/apply/sources/status` adds `health` and
+`health_reason`; `SourceRow.tsx` shows a chip): **rate_limited** when the latest error
+names HTTP 429, a rate limit, a captcha or a block; **degraded** when a source that found
+postings earlier in its history found none this run, or when at least 4 rows came back and
+half or more lacked a company or title. A plain failure stays on the existing error line;
+a healthy source shows no verdict.
 
 **Answer book** (`apply/answers/answer_book.py`, Profile → Application details): one table
 (the workspace `app.db`'s `answer_memory`, schema migration 3) for review corrections

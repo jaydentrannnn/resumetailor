@@ -250,8 +250,13 @@ def get_catalog() -> source_catalog.CatalogResponse:
 class SourceRunStatus(BaseModel):
     found: int
     kept: int
+    #: Rows missing a company or title; 0 for a run recorded before it was counted.
+    blank: int = 0
     error: str | None = None
     at: str
+    #: `source_status.health` over the source's recent runs; None when it looks healthy.
+    health: Literal["degraded", "rate_limited"] | None = None
+    health_reason: str | None = None
 
 
 class SourcesStatus(BaseModel):
@@ -261,7 +266,10 @@ class SourcesStatus(BaseModel):
 
 @router.get("/api/apply/sources/status", response_model=SourcesStatus)
 def get_sources_status() -> SourcesStatus:
-    return SourcesStatus.model_validate(source_status.load_source_status())
+    status = source_status.load_source_status()
+    for entry in status["sources"].values():
+        entry.update(source_status.health(entry))
+    return SourcesStatus.model_validate(status)
 
 
 @router.post("/api/apply/sources/inspect", response_model=SourceInspection)

@@ -2516,3 +2516,15 @@ at run time, so the route passes the current resume's `known_terms` and a gap th
 has backed since drops out. A reused run (`reused_from_job_id`) counts once. Shown as two
 lines under the pipeline banner's stages (option `show_gaps`) rather than a fourth banner
 kind: it is about the same postings the pipeline counts.
+
+## 2026-10-22 — Source health verdicts
+
+`source_status.json` already held each source's latest found/kept/error; it now also keeps
+`blank` and the last 10 runs, and `source_status.health` derives a verdict at read time
+(nothing new is persisted beyond the history). Degraded means "used to find postings,
+found none now" or "half or more of 4+ rows lack a company or title"; rate-limited means
+the latest error names 429, a rate limit, a captcha or a block. A plain failure (DNS,
+credentials) keeps the existing "Last check failed" line instead of a second verdict, and
+a source that has never found anything is not called degraded (it may just be quiet or
+misconfigured, which the error line already says). The route strips `history` from the
+response; old files without history count their one entry as the first run.

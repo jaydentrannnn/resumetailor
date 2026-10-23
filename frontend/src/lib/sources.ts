@@ -455,7 +455,14 @@ export function relativeTime(iso: string | null | undefined, now = Date.now()): 
   return `${Math.floor(hours / 24)}d ago`;
 }
 
-export type SourceHealth = { text: string; tone: "ok" | "error" | "muted" };
+export type SourceHealth = {
+  text: string;
+  tone: "ok" | "error" | "muted" | "attention";
+  /** The chip beside the name for an "attention" verdict. */
+  chip?: string;
+};
+
+const VERDICT_CHIP = { degraded: "Looks broken", rate_limited: "Rate limited" } as const;
 
 /** The health line under a source: last run's counts, its failure reason, or why there is none. */
 export function sourceHealth(
@@ -475,6 +482,14 @@ export function sourceHealth(
     /(?:needs|requires credentials:?)\s.*[A-Z]_(?:KEY|EMAIL|ID)/.test(run.error)
   )
     return { text: "Keys saved since the last run · runs next time", tone: "muted" };
+  if (run.health) {
+    const reason = run.health_reason ?? run.error ?? "";
+    return {
+      text: when ? `${reason} · ${when}` : reason,
+      tone: "attention",
+      chip: VERDICT_CHIP[run.health],
+    };
+  }
   if (run.error) return { text: when ? `${run.error} · ${when}` : run.error, tone: "error" };
   const counts = `${run.found.toLocaleString("en-US")} found · ${run.kept.toLocaleString("en-US")} kept`;
   return { text: when ? `${counts} · ${when}` : counts, tone: "ok" };

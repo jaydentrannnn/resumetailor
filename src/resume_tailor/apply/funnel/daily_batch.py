@@ -26,12 +26,17 @@ from . import daily_progress, daily_row_run, daily_rows
 
 _ROW_POOL_SIZE = 4
 
-def _source_status_entry(found: int, kept: int, error: str) -> dict[str, object]:
-    """One source's row in `source_status.json`; an empty source with no error says so."""
+def _source_status_entry(
+    rows: list[source_rows.SourceRow], kept: int, error: str
+) -> dict[str, object]:
+    """One source's row in `source_status.json`; an empty source with no error says so.
+    ``blank`` counts rows missing a company or title (`source_status.health`)."""
     reason = source_status.short_reason(error) if error else None
-    if reason is None and found == 0:
+    if reason is None and not rows:
         reason = "No postings found"
-    return {"found": found, "kept": kept, "error": reason, "at": daily_rows._now_iso()}
+    blank = sum(1 for row in rows if not row.company.strip() or not row.role.strip())
+    return {"found": len(rows), "kept": kept, "blank": blank, "error": reason,
+            "at": daily_rows._now_iso()}
 
 def _discover_new_rows(
     settings: ApplySettings,
@@ -149,11 +154,11 @@ def _filter_source(
         summary.errors.append(f"{src.id}: {exc}")
         daily_rows._append_log(log_file, f"[source {src.id}] error: {exc}", log)
         status_entries[src.id] = _source_status_entry(
-            len(rows), 0, source_status.failure_reason(exc)
+            rows, 0, source_status.failure_reason(exc)
         )
         return None
     status_entries[src.id] = _source_status_entry(
-        len(rows),
+        rows,
         len(filtered.new_rows) + filtered.already_known,
         "; ".join(source_errors),
     )
