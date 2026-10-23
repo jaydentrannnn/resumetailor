@@ -254,6 +254,38 @@ class Replay:
         with variants.gaps(self.unmet(case)):
             return self._cover(case)
 
+    # -- company facts in the cover letter (L4.6) -------------------------------------
+
+    #: Facts per case id, researched once before the arms run (`research_company`).
+    frozen_facts: dict[str, list[str]] = {}
+
+    @staticmethod
+    def company_name(case: Case) -> str:
+        packet = corpus._read_json(case.job_dir / "packet.json") if case.job_dir else {}
+        return str(packet.get("company") or "").strip()
+
+    def research_company(self, case: Case) -> dict[str, Any]:
+        """Research the case's company once, through the store: the posting, plus the
+        `<name>.com` homepage when it names the company (no search key is assumed)."""
+        from resume_tailor.infra import polite_fetch
+        from resume_tailor.research import company_run
+
+        name = self.company_name(case)
+        with polite_fetch.Fetcher() as fetcher:
+            site = _guess_site(name, fetcher)
+            research = company_run.run(company=name, jd_text=case.jd_text, site_url=site,
+                                       fetcher=fetcher)
+        return {"company": name, "site": site, "facts": [f.text for f in research.facts],
+                "dropped": research.dropped,
+                "sources": [[s.kind, s.url or ""] for s in research.sources]}
+
+    def cover_company(self, case: Case) -> dict[str, Any]:
+        """The current letter with the case's frozen company facts offered."""
+        facts = self.frozen_facts.get(case.case_id, [])
+        with variants.company(facts):
+            record = self._cover(case)
+        return {**record, "facts": facts}
+
     def review(self, case: Case) -> dict[str, Any]:
         """The current hiring-manager review of the run's tailored bullets."""
         result = review.review_bullets(self.resume, self._requirements(case), self.tailored(case))
@@ -280,9 +312,10 @@ class Replay:
             return judge.extract_prompt(case.jd_text), a["requirements"], b["requirements"]
         requirements = self._requirements(case)
         must = [k.phrase for k in requirements.keywords if k.importance == "must_have"]
-        if stage == "cover":
+        if stage in ("cover", "cover-company"):
             shown = coverletter_format._format_tailored_entries(self.resume, self.tailored(case))
-            return (judge.cover_prompt(requirements.title, must, shown),
+            facts = self.frozen_facts.get(case.case_id, []) if stage == "cover-company" else []
+            return (judge.cover_prompt(requirements.title, must, shown, facts),
                     a["paragraphs"], b["paragraphs"])
         if stage == "review":
             return judge.review_prompt(requirements.title, must, self.tailored(case)), a, b
@@ -307,3 +340,22 @@ class Replay:
             "requirements": requirements.model_dump(mode="json"),
             "metrics": metrics.extract_metrics(requirements, case.jd_text, self.resume),
         }
+
+
+def _guess_site(company: str, fetcher) -> str:
+    """``https://www.<name>.com/`` when its page names the company, else "" (eval only:
+    production takes the site from search or the student)."""
+    from resume_tailor.apply.discovery import identity
+    from resume_tailor.infra.polite_fetch import FetchError
+    from resume_tailor.research import company_sources, pages
+
+    full, plain = company_sources._squashed(company)
+    words = identity.normalize_company(company).split()
+    if not (plain or full) or not words:
+        return ""
+    url = f"https://www.{plain or full}.com/"
+    try:
+        text, title, _ = pages.page_text(fetcher.get(url))
+    except FetchError:
+        return ""
+    return url if words[0] in f"{title} {text[:2000]}".casefold() else ""

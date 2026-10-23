@@ -130,3 +130,68 @@ def test_judge_prompts_show_both_sides():
     assert "Possible stretch: scale Softer: Helped build" in review
     assert "- Consistency: Dates" in review and "<B>\n(no findings)\n</B>" in review
     assert "cover" in judge._RUBRIC and "review" in judge._RUBRIC
+
+
+@pytest.fixture
+def fresh_company(monkeypatch):
+    """Install the company-facts wrappers for this test only."""
+    from resume_tailor.pipeline import coverletter_style
+
+    monkeypatch.setattr(variants, "_company_installed", False)
+    for name in ("_system", "_user_message"):
+        monkeypatch.setattr(coverletter, name, getattr(coverletter, name))
+    monkeypatch.setattr(coverletter_style, "_numbers_not_in_source",
+                        coverletter_style._numbers_not_in_source)
+
+
+def test_company_variant_frames_the_facts_before_the_posting(fresh_company):
+    variants.install_company()
+    kwargs = dict(resume=synthetic_resume(), requirements=_requirements("SQL"), bullets={},
+                  jd_text="We need SQL.", word_band=(200, 300))
+    plain = coverletter._user_message(**kwargs)
+    with variants.company(["Acme serves 5 million businesses."]):
+        user, system = coverletter._user_message(**kwargs), coverletter._system()
+    assert "<company_facts>" not in plain and variants.COMPANY_RULE not in coverletter._system()
+    assert user.index(variants.COMPANY_FRAME) < user.index("<company_facts>\n- Acme serves")
+    assert user.index("</company_facts>") < user.index(coverletter._POSTING_FRAME)
+    assert system.index(variants.COMPANY_RULE) < system.index("Return a JSON object")
+
+
+def test_a_fact_number_passes_only_outside_first_person_claims(fresh_company):
+    from resume_tailor.pipeline import coverletter_style
+
+    variants.install_company()
+    about = "Acme serves 5 million businesses, and I want to help."
+    claim = "I built tools for 5 million users."
+    assert coverletter_style._numbers_not_in_source(about, [], "") == ["5"]
+    with variants.company(["Acme serves 5 million businesses."]):
+        assert coverletter_style._numbers_not_in_source(about, [], "") == []
+        assert coverletter_style._numbers_not_in_source(f"{about} {claim}", [], "") == ["5"]
+        assert coverletter_style._numbers_not_in_source("Acme has 900 staff.", [], "") == ["900"]
+
+
+def test_the_company_judge_sees_the_facts_and_its_own_rubric():
+    build = judge.cover_prompt("Analyst", ["SQL"], "Acme\n- Built SQL", ["Acme makes maps."])
+    text = build(["A"], ["B"])
+    assert text.index("<company_facts>\n- Acme makes maps.\n") < text.index("<A>")
+    assert "<company_facts>" not in judge.cover_prompt("Analyst", [], "R")(["A"], ["B"])
+    assert "copied wrong" in judge.system("cover-company")
+
+
+def test_the_site_guess_needs_the_page_to_name_the_company(monkeypatch):
+    from resume_tailor.infra.polite_fetch import Fetched, FetchError
+
+    class _Fetcher:
+        def __init__(self, page):
+            self.page, self.asked = page, []
+
+        def get(self, url):
+            self.asked.append(url)
+            if self.page is None:
+                raise FetchError("down")
+            return Fetched(url, "text/html", self.page)
+
+    named = _Fetcher("<title>Acme Analytics</title><p>Dashboards.</p>")
+    assert stages._guess_site("Acme Analytics, Inc.", named) == "https://www.acmeanalytics.com/"
+    assert stages._guess_site("Acme Analytics", _Fetcher("<p>Domain for sale</p>")) == ""
+    assert stages._guess_site("Acme Analytics", _Fetcher(None)) == ""

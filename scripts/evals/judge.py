@@ -11,7 +11,7 @@ from __future__ import annotations
 
 import json
 import threading
-from collections.abc import Callable, Iterable
+from collections.abc import Callable, Iterable, Sequence
 from concurrent.futures import ThreadPoolExecutor, as_completed
 from pathlib import Path
 from typing import Literal
@@ -75,6 +75,20 @@ _RUBRIC = {
         "specifically.\n"
         "3. Writing: clear, concise and natural; nothing that could open any letter for any "
         "company.\n"
+    ),
+    "cover-company": (
+        "You compare two cover-letter bodies written for the same job posting from the same "
+        "tailored resume.\n"
+        "Judge, in priority order:\n"
+        "1. Truthfulness: every claim about the candidate is supported by the resume. "
+        "Claiming or implying a skill, tool or experience the resume does not show loses "
+        "outright; saying plainly that the candidate has not used something yet is not a "
+        "claim. A statement about the employer must match the posting or <company_facts>; "
+        "a fact copied wrong, or told as something the candidate did, loses outright.\n"
+        "2. Fit: connects the candidate's real experience to this employer's stated needs, "
+        "specifically.\n"
+        "3. Writing: clear, concise and natural; nothing that could open any letter for any "
+        "company. Using a company fact is not a merit in itself.\n"
     ),
     "review": (
         "You compare two advisory reviews of the same tailored resume bullets for one job "
@@ -209,13 +223,16 @@ def expand_prompt(title: str, must_haves: list[str], entries: dict[str, dict]):
     return build
 
 
-def cover_prompt(title: str, must_haves: list[str], resume: str):
-    """`build(a, b)` for two lists of letter paragraphs over the same tailored `resume`."""
+def cover_prompt(title: str, must_haves: list[str], resume: str, facts: Sequence[str] = ()):
+    """`build(a, b)` for two lists of letter paragraphs over the same tailored `resume`;
+    ``facts`` are the company facts one arm was offered (L4.6), shown to the judge too."""
+    known = "".join(f"- {f}\n" for f in facts)
+    company = f"<company_facts>\n{known}</company_facts>\n\n" if facts else ""
 
     def build(a: list[str], b: list[str]) -> str:
         letter_a, letter_b = "\n\n".join(a), "\n\n".join(b)
-        return (_posting(title, must_haves) + f"<resume>\n{resume}\n</resume>\n\n"
-                f"<A>\n{letter_a}\n</A>\n\n<B>\n{letter_b}\n</B>")
+        return (_posting(title, must_haves) + f"<resume>\n{resume}\n</resume>\n\n" + company
+                + f"<A>\n{letter_a}\n</A>\n\n<B>\n{letter_b}\n</B>")
 
     return build
 

@@ -65,9 +65,11 @@ _METRICS = {
     "cover": ["factual_left", "gap_claimed", "gap_mentioned", "style_left", "ai_tells", "words"],
     "review": ["guard_dropped_rate", "findings", "cuts", "rewrites", "stretch", "consistency"],
 }
+_METRICS["cover-company"] = _METRICS["cover"]
 #: Variant experiments: `(baseline arm, candidate arm, Replay method per arm)`.
 _VARIANTS = {
     "cover": ("current", "gaps", {"current": "cover", "gaps": "cover_gaps"}),
+    "cover-company": ("current", "company", {"current": "cover", "company": "cover_company"}),
     "review": ("current", "scope", {"current": "review", "scope": "review_scope"}),
 }
 #: The profile each fetched group runs against (a finance resume for finance postings).
@@ -83,8 +85,8 @@ def _parse_spec(raw: str | None):
 def _args(argv: list[str] | None) -> argparse.Namespace:
     parser = argparse.ArgumentParser(description=__doc__.splitlines()[0])
     parser.add_argument("stage", choices=[
-        "rewrite", "expand", "extract", "cover", "review", "fetch", "judge", "judge-key",
-        "report"])
+        "rewrite", "expand", "extract", "cover", "cover-company", "review", "fetch", "judge",
+        "judge-key", "report"])
     parser.add_argument("--arms", help="effort arms, baseline first (default medium,low)")
     parser.add_argument("--limit", default="10", help="saved postings to sample, or 'all'")
     parser.add_argument("--control", type=int, default=0,
@@ -128,7 +130,8 @@ def _summary(eval_dir: Path) -> str:
         stage, base, cand = meta["stage"], meta["base"], meta["cand"]
         grouped = report.by_arm(records)
         checks = {"rewrite": report.REWRITE_CHECKS, "expand": report.EXPAND_CHECKS,
-                  "cover": report.COVER_CHECKS, "review": report.REVIEW_CHECKS}[stage]
+                  "cover": report.COVER_CHECKS, "cover-company": report.COVER_CHECKS,
+                  "review": report.REVIEW_CHECKS}[stage]
         rules = report.gate(grouped, verdicts, base, cand, checks=checks)
         errors = sum(1 for r in records if r.get("status") == "error")
         text = report.markdown(f"{stage}: {base} vs {cand}", grouped, _METRICS[stage],
@@ -203,9 +206,18 @@ def _run_variant(args: argparse.Namespace, eval_dir: Path) -> int:
              if replay.can_cover(c)]
     if args.stage == "cover":
         cases = [c for c in cases if replay.unmet(c)]
+    if args.stage == "cover-company":
+        cases = [c for c in cases if replay.company_name(c)]
     chosen = corpus.sample(cases, None if args.limit == "all" else int(args.limit),
                            seed=args.seed)
     spec = _parse_spec(args.spec) or replay.light_spec
+    if args.stage == "cover-company":
+        print(f"researching {len(chosen)} compan(ies) once, then freezing the facts")
+        arms_mod.run([(c, arms_mod.Arm("research", spec)) for c in chosen],
+                     replay.research_company, arms_mod.Results(eval_dir / "research.jsonl"),
+                     setup=replay.setup, workers=args.workers, out_dir=eval_dir,
+                     progress=_progress)
+        replay.frozen_facts = _frozen_facts(eval_dir)
     _write_meta(eval_dir, {
         "stage": args.stage, "base": base, "cand": cand, "model": _model(spec),
         "workspace": args.workspace, "spec": spec, "seed": args.seed,
@@ -220,6 +232,14 @@ def _run_variant(args: argparse.Namespace, eval_dir: Path) -> int:
                      workers=args.workers, out_dir=eval_dir, progress=_progress)
     print(_summary(eval_dir))
     return 0
+
+
+def _frozen_facts(eval_dir: Path) -> dict[str, list[str]]:
+    """Company facts per case from the research pass (L4.6), `{}` for other stages."""
+    from evals import arms as arms_mod
+
+    records = arms_mod.Results(eval_dir / "research.jsonl").records()
+    return {r["case"]: r["result"]["facts"] for r in records if r.get("status") == "ok"}
 
 
 # -- experiment E ------------------------------------------------------------------------
@@ -317,6 +337,7 @@ def _run_judge(args: argparse.Namespace, eval_dir: Path) -> int:
             case = by_id[case_id]
             if case.workspace not in replays:
                 replays[case.workspace] = Replay(case.workspace)
+                replays[case.workspace].frozen_facts = _frozen_facts(eval_dir)
             build, out_a, out_b = replays[case.workspace].judge_inputs(
                 stage, case, grouped[a][case_id]["result"], grouped[b][case_id]["result"])
             jobs.append((case_id, a, b, build, out_a, out_b))
