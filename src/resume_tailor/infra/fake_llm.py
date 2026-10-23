@@ -9,6 +9,7 @@ Replies are read off the prompt, so they stay guard-clean:
 - Rewriting returns every bullet's current text unchanged.
 - Scoring gives every bullet 6/10.
 - Extraction keeps the known tags whose words appear in the posting.
+- Interview prep retells the first sent bullet verbatim; a follow-up note claims nothing.
 - Everything else gets the smallest valid answer: empty selections, "keep" verdicts
   and a claim-free cover letter.
 
@@ -112,6 +113,23 @@ def reply(output_format: type[BaseModel], prompt: str) -> BaseModel:
                 "I am writing to apply for this role.",
                 "Thank you for considering my application.",
             ]
+        }
+    elif name == "PrepLLM":
+        sent = _bullets(prompt)[:1]
+        data = {
+            "questions": [{"question": "Walk me through a project you are proud of."}],
+            "stories": [
+                {"question": "Walk me through a project you are proud of.",
+                 "bullet_ids": [i], "action": t}
+                for i, t in sent
+            ],
+            "ask": ["What does a typical week look like on this team?"],
+        }
+    elif name == "FollowupLLM":
+        data = {
+            "subject": "Following up on my application",
+            "body": "Hello,\nI wanted to follow up on my application. I remain very "
+                    "interested in the role.\nBest regards",
         }
     else:
         return _minimal(output_format)

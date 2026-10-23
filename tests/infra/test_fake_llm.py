@@ -10,6 +10,8 @@ from resume_tailor.infra import fake_llm, llm
 from resume_tailor.pipeline import (
     coverletter_models,
     facets_models,
+    followup_note,
+    interview_prep,
     jd,
     relevance,
     review,
@@ -44,6 +46,20 @@ def test_extraction_keeps_known_tags_named_in_the_posting():
     parsed = fake_llm.reply(jd.JobRequirements, prompt)
     assert [k.canonical for k in parsed.keywords] == ["python", "sql"]
     assert parsed.title == "Data Analyst Intern"
+
+
+def test_prep_retells_a_sent_bullet_and_the_note_passes_its_guard():
+    resume = synthetic_resume()
+    bullets = {b.id: b.text for exp in resume.experience for b in exp.bullets}
+    prompt = interview_prep._request(
+        "technical", role="Analyst", company="Acme", requirements=None, bullets=bullets,
+        cover_letter="", jd_text="", gaps=(), notes=(),
+    )
+    prep = fake_llm.reply(interview_prep.PrepLLM, prompt)
+    [story] = prep.stories
+    assert (story.bullet_ids, story.action) == (list(bullets)[:1], next(iter(bullets.values())))
+    note = fake_llm.reply(followup_note.FollowupLLM, "")
+    assert followup_note._offenders(resume, bullets, "", note.body, []) == []
 
 
 @pytest.mark.parametrize(

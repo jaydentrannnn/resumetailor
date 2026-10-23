@@ -2543,3 +2543,36 @@ week-long trial before keeping it; one snapshot was clear enough to wire it in, 
 drops postings another source has since found). Remove the provider if the report shows
 the unique share collapsing. Not sent: `location` (freehire wants a display-name city
 facet, not free text), so the editor hides "Search near" for it.
+
+## 2026-10-22 — Interview prep and follow-ups, after sending
+
+Both live in the Outcome tab, not new tabs (the detail tab bar already overflows):
+Interview prep shows once an interview event exists, Follow up / Thank-you note only
+when one is due. They read the submitted attempt's copy (`sent_copy`), so a later
+Prepare that rewrites the run folder cannot change what prep is built from. Rows sent
+before attempts existed fall back to the run folder and say so; refusing them would
+have left every application already in flight without prep. Prep is saved under
+`interview_prep/<stage>.json` in the application folder rather than inside the
+attempt folder, one file per round, naming the attempt it came from.
+
+Gap questions get no drafted answers: the 4d gap-bridge carve-out lost its eval, so
+there is no guard rule that lets a gap term through, and an unguarded answer is out.
+Stories are checked against only the bullets they cite and with no posting numbers
+(`check_claims(..., jd_text="")`), stricter than cover letters.
+
+Follow-up notes: one call, then a claim-free template on a guard failure (no retry; a
+plain note is fine here). Lines are checked one by one because a greeting line has no
+sentence end and "Hi" then read as a mid-sentence capital. Probed on realistic notes,
+the guard flagged weekdays, months, salutations ("Hiring Team") and the candidate's own
+name; those are typed facts now. A row with no tailored run can still draft: with no
+bullets, any claim falls back to the template. Drafting records nothing; only Mark as
+sent writes `followup_sent` ("followup_drafted" stays unused).
+
+Due logic uses UTC days because send dates come from UTC status timestamps; local
+`date.today()` showed "89 days" for a row sent 90 days ago in the evening (PT). An
+`employer_timeline` counts as a reply but stops blocking once its date passes. The stale
+sweep writes `ghosted`, never `rejected`, after a confirmation, and re-checks each row
+inside its `store.update` so a reply recorded meanwhile is skipped.
+
+Not measured with the eval harness: prep and notes are advisory text the student reads
+before using, behind guards; no prompt the tailored resume depends on changed.

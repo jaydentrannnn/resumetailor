@@ -325,6 +325,8 @@ def test_ollama_stages_excludes_hybrids_anthropic_rewrite():
         "cover",
         "review",
         "answer",
+        "prep",
+        "followup",
     }
     assert config.ollama_stages("claude") == ()
     assert config.ollama_stages("lmstudio") == ()

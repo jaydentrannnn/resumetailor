@@ -12,6 +12,7 @@ export * from "./libraries";
 export * from "./applySettings";
 export * from "./applications";
 export * from "./outcomes";
+export * from "./afterSend";
 export * from "./sources";
 export * from "./modelQueue";
 export * from "./coverLetter";

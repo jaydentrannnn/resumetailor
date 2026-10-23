@@ -120,6 +120,10 @@ def _application_out(
     payload["hiring"] = outcomes.hiring_progress(app).model_dump()
     if list_row:  # the table reads `hiring`; the detail view loads the full record
         payload["outcome_events"], payload["attempts"] = [], []
+    elif outcomes.sent_on(app) is not None:
+        from resume_tailor.apply.funnel import followup_due
+
+        payload["follow_up"] = followup_due.state(app, followup_due.today()).model_dump()
     out = ApplicationOut.model_validate(payload)
     if slim_fill is not None:
         # Assigned after validation: validated, the dict would parse back into a full

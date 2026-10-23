@@ -265,6 +265,7 @@ app.add_middleware(security.RequestGateMiddleware)
 
 # Imported after `app` exists and its middleware is added, deliberately.
 from resume_tailor.web.routes import (  # noqa: E402, I001
+    after_send as _after_send_routes,
     answers as _answers_routes,
     applications as _applications_routes,
     automation as _automation_routes,
@@ -294,9 +295,10 @@ from resume_tailor.web.routes import (  # noqa: E402, I001
 
 # Registration order is route-matching order: keep it the order these areas had in
 # the single-file app (config, jobs, applications, resume, template, libraries, profiles).
+# `after_send` precedes applications: its `/api/applications/follow-ups` is not an id.
 for _router in (
-    _config_routes, _jobs_routes, _applications_routes, _outcomes_routes, _resume_routes,
-    _template_routes, _libraries_routes, _workspaces_routes, _diagnostics_routes,
+    _config_routes, _jobs_routes, _after_send_routes, _applications_routes, _outcomes_routes,
+    _resume_routes, _template_routes, _libraries_routes, _workspaces_routes, _diagnostics_routes,
     _secrets_routes, _setup_routes, _system_routes, _onboarding_routes,
     _jd_routes, _answers_routes, _automation_routes, _discovery_routes,
     _extension_routes, _update_routes, _reference_routes, _search_presets_routes,

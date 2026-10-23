@@ -133,6 +133,8 @@ export type ApplicationRow = {
   outcome_events?: import("./outcomes").OutcomeEvent[];
   /** What was sent each time (empty on list rows). */
   attempts?: import("./outcomes").SubmissionAttempt[];
+  /** What to send next, if anything; detail responses only. */
+  follow_up?: import("./afterSend").FollowUpState | null;
   screen: {
     passed: boolean;
     coverage: number;

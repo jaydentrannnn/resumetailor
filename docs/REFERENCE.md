@@ -753,6 +753,36 @@ funnel and are only counted (`uncounted`). The pipeline banner shows the top fiv
 under its stages (`SkillGapLines.tsx`, option `pipeline_banner.show_gaps`; not in the
 compact line).
 
+**Interview prep and follow-ups.** Both read what the employer received through
+`apply/funnel/sent_copy.load`: the latest live attempt's copy, or, for a row sent before
+attempts existed, its run folder (`based_on` says which). A reused run's requirements are
+dropped (they were another posting's). `pipeline/interview_prep.prepare` (purpose `prep`,
+`_PREP_PROMPT_VERSION`) takes a round (recruiter screen, technical, behavioral, final),
+the requirements, the sent bullets and cover letter, the must-haves the resume lacks
+(coverage `resume is None`) and earlier outcome notes; it returns likely questions tagged
+by source, STAR stories citing bullet ids, and questions to ask. A story citing no sent
+bullet, or whose parts fail `coverletter.check_claims` against only its cited bullets (no
+posting numbers), is left out with a note. Gap questions get no drafted answer (the 4d
+gap-bridge carve-out was not shipped). `probe_points` (no LLM) lists sent bullets with a
+number or an ownership verb. `POST /api/applications/{id}/interview-prep` (409 with no
+tailored run) saves `APPLICATIONS_OUTPUT_DIR/<id>/interview_prep/<stage>.json`; the GET
+lists them. `pipeline/followup_note.draft` (purpose `followup`) writes a 60–120 word
+follow-up or thank-you for email, LinkedIn or a portal; each line passes `check_claims`
+against the sent bullets plus typed facts (name, recipient, company, role, send date,
+event notes, salutations, days, months), else a claim-free template replaces it with a
+warning. A row with no run still gets a note (with no bullets, any claim falls back).
+Nothing is recorded until the student presses Mark as sent (`followup_sent`).
+`apply/funnel/followup_due.state` (pure; UTC days, like send dates) offers a follow-up at
+10+ days with no employer reply, under 2 sent and 7+ days since the last, and no
+`employer_timeline` date still ahead; a thank-you after an interview event with nothing
+sent since; and `stale` at 60+ days silent. `ApplicationOut.follow_up` carries it on the
+detail response; `GET /api/applications/follow-ups` lists due and stale rows for the
+Apply page's Follow up line, and `POST /api/applications/no-reply` records `ghosted` on
+rows still stale (never `rejected`). Routes live in `web/routes/after_send.py`, registered
+before `applications` so `follow-ups` is not read as an id, and run on the Light model
+(`job_routing.pinned_role("light")`). UI: `FollowUpTile`, `InterviewPrepTile` (shown once
+an interview is recorded) in the Outcome tab; `FollowUpsNotice` on the Apply page.
+
 For postings stuck in `needs_browser` (HTTP + CDP could not extract enough JD text), the
 Claude Desktop skill in `docs/skills/apply-from-queue/` is the manual fallback — it opens
 the posting, starts `tailor_application` with the copied JD text, then `mark_application`.

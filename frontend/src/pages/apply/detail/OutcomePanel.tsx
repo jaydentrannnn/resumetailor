@@ -9,6 +9,8 @@ import { Button, StatusChip, Tile } from "../../../components/ui";
 import { hiringTone, OUTCOME_LABELS } from "../../../lib/applicationStatus";
 import { describe } from "../../../lib/errors";
 import { useToast } from "../../../lib/toast";
+import { FollowUpTile } from "./FollowUpTile";
+import { InterviewPrepTile } from "./InterviewPrepTile";
 import { OutcomeForm, type OutcomeInput } from "./OutcomeForm";
 import { SentAttempts } from "./SentAttempts";
 
@@ -33,8 +35,9 @@ function eventStatus(event: OutcomeEvent, all: OutcomeEvent[]): string {
 }
 
 /**
- * Outcome: how far the application got, a form to record what happened (it works on
- * Done rows), every recorded event with Edit and Remove (both keep history), and the
+ * Outcome: how far the application got, a follow-up or thank-you when one is due,
+ * interview prep once an interview is recorded, a form to record what happened (it works
+ * on Done rows), every recorded event with Edit and Remove (both keep history), and the
  * files that were sent.
  */
 export function OutcomePanel({
@@ -86,6 +89,8 @@ export function OutcomePanel({
             .join(" · ") || "Record an interview, an offer or a reply below."}
         </p>
       </Tile>
+      <FollowUpTile app={app} onSaved={onSaved} />
+      <InterviewPrepTile app={app} />
       <Tile title={editing ? "Correct this event" : "Record what happened"}>
         <OutcomeForm
           key={`${editing?.id ?? "new"}-${saves}`}

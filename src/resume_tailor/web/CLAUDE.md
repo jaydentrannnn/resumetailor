@@ -43,6 +43,8 @@ same text (`tests/tooling/test_agent_docs.py` enforces it).
 - `routes/` — one router module per area; `routes/run_lookup.py` is the shared run/artifact
   lookup (helpers, no router) used by `jobs` and `applications`. Routers: `jobs`,
   `applications`, `outcomes` (what happened after sending; works on archived rows),
+  `after_send` (interview prep, follow-up notes, "no reply" marks; registered before
+  `applications`),
   `extension`, `resume`,
   `template`, `libraries`, `config`, `workspaces`, `system`, `setup`, `answers`,
   `automation`, `discovery`, `jd`, `onboarding`, `secrets`, `diagnostics`, `update`, `reference`

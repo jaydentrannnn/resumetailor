@@ -27,7 +27,7 @@ the Claude Desktop fallback for `needs_browser` postings.
 
 **The LLM produces plain strings and nothing else. It never sees, receives, or emits XML,
 styling, template markup, or anything about layout.** Only `jd.py`, `rewrite.py` (with
-`relevance.py`, `followups.py`, `bullet_merge.py`), `facets.py`, `expand.py`, `skills.py`, `coverletter.py`, `review.py`, `propose.py`, `tag_infer.py` — plus
+`relevance.py`, `followups.py`, `bullet_merge.py`), `facets.py`, `expand.py`, `skills.py`, `coverletter.py`, `review.py`, `propose.py`, `tag_infer.py`, `interview_prep.py`, `followup_note.py` — plus
 the apply funnel's `apply/answers/` `answer.py`, `model_resolver.py`, `hybrid_resolver.py`
 (form-field labels/options and resume text, never document XML), and the eval-only
 `scripts/evals/` `judge.py`, `hybrid_extract.py` and `review_scope.py` (never shipped) — call the API,
@@ -36,7 +36,7 @@ the only module that touches the document (mechanically, via `docxtpl`); `conver
 owns PDF conversion. Six stages on every clean run: JD extraction, relevance scoring,
 facet selection, bullet rewriting, experience expansion, skills selection. Opt-in: cover
 letter, hiring-manager review (advisory, never auto-applied), vocabulary proposals (never
-in-pipeline). Bounded follow-ups: `followups._polish`, `followups._retry_fabrications`, one
+in-pipeline); after sending, interview prep and follow-up notes (shown, never sent). Bounded follow-ups: `followups._polish`, `followups._retry_fabrications`, one
 cover-letter guard retry; `--merge` adds one call after a measured overflow.
 
 If you are about to send document XML to the model, or ask it to emit a `.docx` fragment,
@@ -130,7 +130,7 @@ Docs cite bare module names (`fit.py`, `render.py`); the few that repeat across 
 |---|---|
 | `config`, `workspace` | top-level modules — config globals rebound per workspace |
 | `cli/` | the `tailor.py` CLI: `args` (flags), `run` (one invocation, `_CliRun` steps) |
-| `pipeline/` | `jd`, `rewrite` (+ `rewrite_prompts`, `bullet_checks`), `facets` (+ `facets_models`, `facets_budget`, `facets_labels`, `facets_resolve`), `expand`, `skills`, `coverletter` (+ `coverletter_models`, `coverletter_style`, `coverletter_format`), `review`, `propose`, `tag_infer` (the LLM callers; prompts and LLM calls stay in the named module), `fit` (`fit()` + `_FitRun.run`; layers `fit_state` → `fit_shrink` → `fit_topup`; helpers `fit_types`, `fit_lines`, `fit_selection`), `merge`, `include`, `report`, `estimate`, `events`, `runs`, `jd_input`, `jdsim`, `posting_guard` (strips hidden posting text, flags lines aimed at AI; no LLM) |
+| `pipeline/` | `jd`, `rewrite` (+ `rewrite_prompts`, `bullet_checks`), `facets` (+ `facets_models`, `facets_budget`, `facets_labels`, `facets_resolve`), `expand`, `skills`, `coverletter` (+ `coverletter_models`, `coverletter_style`, `coverletter_format`), `review`, `propose`, `tag_infer`, `interview_prep`, `followup_note` (the LLM callers; prompts and LLM calls stay in the named module), `fit` (`fit()` + `_FitRun.run`; layers `fit_state` → `fit_shrink` → `fit_topup`; helpers `fit_types`, `fit_lines`, `fit_selection`), `merge`, `include`, `report`, `estimate`, `events`, `runs`, `jd_input`, `jdsim`, `posting_guard` (strips hidden posting text, flags lines aimed at AI; no LLM) |
 | `document/` | `render`, `convert`, `docx_text`, `docx_normalize`, `template_*` (analysis helpers: `analysis_types`, `contact_detect`, `entry_structure`, `field_candidates`, `header_fields`, `section_mapping`, `table_layout`, `profile_validation`), `cover_template`, `default_templates`, `calibrate`, `rerender`, `thumbnails`, `pdf_text_check` (the exported PDF's text read back) — no LLM, ever |
 | `content/` | `data` (the master-resume model), `data_transfer`, `edu_dates`, `libraries` (+ `library_models`; one built-in dictionary + app-wide user additions), `bullet_tags` (computed match tags), `industries`, `style`, `labels`, `onboarding`, `resume_versions` |
 | `importing/` | `resume_import` (.docx entry; `import_common`, `import_contact`, `import_entries`, `import_merge_match`, `import_merge`, `import_layout`), `resume_import_pdf` (PDF entry + its LLM call; `pdf_patterns`, `pdf_lines`, `pdf_structure`, `pdf_build`) |

@@ -3,7 +3,7 @@ import type { OutcomeEvent, OutcomeType } from "../../../api";
 import { Button } from "../../../components/ui";
 import { OUTCOME_LABELS } from "../../../lib/applicationStatus";
 
-// "Follow-up drafted" is written by the follow-up tool, not picked by hand.
+// Only a sent follow-up counts; "drafted" is not something to record by hand.
 const CHOICES = (Object.keys(OUTCOME_LABELS) as OutcomeType[]).filter(
   (type) => type !== "followup_drafted",
 );

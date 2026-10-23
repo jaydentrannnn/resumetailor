@@ -1,10 +1,16 @@
 // @vitest-environment jsdom
 import { cleanup, fireEvent, render, screen } from "@testing-library/react";
-import { afterEach, describe, expect, it, vi } from "vitest";
-import type { ApplicationRow, OutcomeEvent } from "../../../api";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+import type { ApplicationRow, InterviewPrep, OutcomeEvent } from "../../../api";
 import { OutcomePanel } from "./OutcomePanel";
 
-const api = vi.hoisted(() => ({ recordOutcome: vi.fn(), correctOutcome: vi.fn() }));
+const api = vi.hoisted(() => ({
+  recordOutcome: vi.fn(),
+  correctOutcome: vi.fn(),
+  getInterviewPreps: vi.fn(),
+  makeInterviewPrep: vi.fn(),
+  draftFollowUp: vi.fn(),
+}));
 const toast = vi.hoisted(() => ({ success: vi.fn(), error: vi.fn() }));
 vi.mock("../../../api", () => api);
 vi.mock("../../../lib/toast", () => ({ useToast: () => toast }));
@@ -14,6 +20,7 @@ afterEach(() => {
   cleanup();
   vi.clearAllMocks();
 });
+beforeEach(() => api.getInterviewPreps.mockResolvedValue({ preps: [] }));
 
 const event = (patch: Partial<OutcomeEvent>): OutcomeEvent => ({
   id: "e1",
@@ -104,5 +111,92 @@ describe("OutcomePanel", () => {
     render(<OutcomePanel app={app({ attempts: [attempt] })} onSaved={vi.fn()} />);
     expect(screen.getByText(/what you uploaded isn't confirmed/)).toBeTruthy();
     expect(screen.getByText("tailored.pdf")).toBeTruthy();
+  });
+
+  it("prepares a round from what was sent and shows its questions and stories", async () => {
+    const prep: InterviewPrep = {
+      stage: "technical",
+      questions: [{ question: "How did you use Tableau?", source: "gap", about: "Tableau" }],
+      stories: [
+        {
+          question: "Tell me about a project.",
+          bullet_ids: ["b1"],
+          situation: "",
+          task: "",
+          action: "Built the dashboard.",
+          result: "",
+        },
+      ],
+      ask: ["What does the team own?"],
+      probe_points: [{ bullet_id: "b1", text: "Cut latency by 30%.", reasons: ["number"] }],
+      warnings: ["A story was left out: it cited no bullet from this resume."],
+      based_on: "Submitted copy (attempt 1)",
+      model: "ollama:x",
+      made_at: "2026-10-21T10:00:00+00:00",
+    };
+    api.makeInterviewPrep.mockResolvedValue(prep);
+    render(<OutcomePanel app={app()} onSaved={vi.fn()} />);
+    fireEvent.click(await screen.findByRole("radio", { name: "Technical" }));
+    fireEvent.click(screen.getByRole("button", { name: "Prepare for technical" }));
+    await screen.findByText("How did you use Tableau?");
+    expect(api.makeInterviewPrep).toHaveBeenCalledWith("a", "technical");
+    expect(screen.getByText("Not on your resume")).toBeTruthy();
+    expect(screen.getByText("Built the dashboard.")).toBeTruthy();
+    expect(screen.getByText("Cut latency by 30%.")).toBeTruthy();
+    expect(screen.getByText(/cited no bullet/)).toBeTruthy();
+    expect(screen.getByRole("button", { name: "Prepare again" })).toBeTruthy();
+  });
+
+  it("has no prep before an interview, and drafts a due follow-up then records it sent", async () => {
+    const sent = app({
+      hiring: {
+        stage: "applied",
+        closed: null,
+        responded: false,
+        stage_dates: {},
+        label: "Applied",
+      },
+      follow_up: {
+        sent_on: "2026-10-01",
+        days_since_sent: 21,
+        follow_ups_sent: 0,
+        due: "follow_up",
+        stale: false,
+        reason: "",
+      },
+    });
+    api.draftFollowUp.mockResolvedValue({
+      kind: "follow_up",
+      channel: "linkedin",
+      subject: "",
+      body: "Hello, checking in.",
+      source: "llm",
+      warnings: [],
+      model: "ollama:x",
+    });
+    api.recordOutcome.mockResolvedValue(sent);
+    render(<OutcomePanel app={sent} onSaved={vi.fn()} />);
+    expect(screen.queryByText("Interview prep")).toBeNull();
+    expect(screen.getByText("Sent 21 days ago, no reply yet")).toBeTruthy();
+    fireEvent.click(screen.getByRole("radio", { name: "LinkedIn" }));
+    fireEvent.change(screen.getByLabelText("To (optional)"), { target: { value: "Priya" } });
+    fireEvent.click(screen.getByRole("button", { name: "Draft note" }));
+    const note = (await screen.findByLabelText("Drafted note")) as HTMLTextAreaElement;
+    expect(note.value).toBe("Hello, checking in.");
+    expect(api.draftFollowUp).toHaveBeenCalledWith("a", {
+      kind: "follow_up",
+      channel: "linkedin",
+      recipient: "Priya",
+    });
+    fireEvent.click(screen.getByRole("button", { name: "Mark as sent" }));
+    await vi.waitFor(() =>
+      expect(api.recordOutcome).toHaveBeenCalledWith(
+        "a",
+        expect.objectContaining({
+          type: "followup_sent",
+          note: "Follow-up by LinkedIn",
+        }),
+      ),
+    );
   });
 });

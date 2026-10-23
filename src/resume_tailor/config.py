@@ -353,6 +353,9 @@ EFFORT = "medium"
 #: rewrites are fabrication-checked and never auto-applied — see `review.review_bullets`.
 #: `answer` drafts free-text application-form answers (guarded by `coverletter.check_claims`);
 #: the only LLM call inside `resume_tailor.apply`.
+#: `prep` drafts interview prep from what was sent (`interview_prep.prepare`) and
+#: `followup` a short follow-up or thank-you note (`followup.draft`); both are guarded
+#: against the sent bullets and only ever shown, never sent.
 PURPOSES = (
     "extract",
     "score",
@@ -363,6 +366,8 @@ PURPOSES = (
     "cover",
     "review",
     "answer",
+    "prep",
+    "followup",
 )
 
 #: Providers `parse_spec` recognises as a leading segment. Anything else is read as a bare
@@ -455,6 +460,10 @@ DEFAULT_EFFORT: dict[str, str] = {
     "review": os.environ.get("LLM_EFFORT_REVIEW", "low"),
     # Application-form free text; guard-checked like cover, short answers.
     "answer": os.environ.get("LLM_EFFORT_ANSWER", "low"),
+    # Questions plus restated bullets; every story is guard-checked.
+    "prep": os.environ.get("LLM_EFFORT_PREP", "low"),
+    # A few sentences under the same claim guard as answers.
+    "followup": os.environ.get("LLM_EFFORT_FOLLOWUP", "low"),
 }
 
 #: Recommended effort that depends on the provider, used unless `LLM_EFFORT_<STAGE>` is
@@ -469,7 +478,7 @@ PROVIDER_DEFAULT_EFFORT: dict[str, dict[str, str]] = {
 _EFFORT_FROM_ENV = frozenset(p for p in DEFAULT_EFFORT if os.environ.get(f"LLM_EFFORT_{p.upper()}"))
 
 #: The steps Settings → AI model → Advanced lets a user tune, and the stages each covers.
-#: `review` is not offered and always uses its recommended effort.
+#: `review`, `prep` and `followup` are not offered and always use their recommended effort.
 EFFORT_STEPS: dict[str, tuple[str, ...]] = {
     "analysis": ("extract", "score", "facets", "skills"),
     "rewrite": ("rewrite",),
@@ -581,6 +590,9 @@ MODEL_PROFILES: dict[str, dict[str, str]] = {
         "review": _OLLAMA_DEFAULT,
         # Application answers are guard-checked and short — free backend.
         "answer": _OLLAMA_DEFAULT,
+        # Interview prep and follow-ups are guarded and advisory — free backend.
+        "prep": _OLLAMA_DEFAULT,
+        "followup": _OLLAMA_DEFAULT,
     },
 }
 

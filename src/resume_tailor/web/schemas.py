@@ -14,6 +14,7 @@ from .. import config
 from ..apply.answers.profile import ApplicantProfile
 from ..apply.funnel.attention import AttentionItem
 from ..apply.funnel.eligibility import EligibilitySettings
+from ..apply.funnel.followup_due import FollowUpState
 from ..apply.funnel.outcomes import HiringProgress
 from ..apply.funnel.screen import ScreenResult, ScreenSettings
 from ..apply.funnel.store_models import (
@@ -1597,6 +1598,8 @@ class ApplicationOut(BaseModel):
     attempts: list[SubmissionAttempt] = Field(default_factory=list)
     #: Derived from the events and legacy statuses (`outcomes.hiring_progress`).
     hiring: HiringProgress = Field(default_factory=HiringProgress)
+    #: What to send next, if anything (`followup_due.state`); the detail view only.
+    follow_up: FollowUpState | None = None
 
 
 class OutcomeRequest(BaseModel):

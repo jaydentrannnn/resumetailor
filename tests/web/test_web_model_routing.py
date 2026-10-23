@@ -47,6 +47,8 @@ def test_ollama_model_setting_repoints_only_the_ollama_stages(client, monkeypatc
         "cover": "gemma4",
         "review": "gemma4",
         "answer": "gemma4",
+        "prep": "gemma4",
+        "followup": "gemma4",
     }
     config.resolve("claude")
 
