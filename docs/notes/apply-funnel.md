@@ -2591,3 +2591,11 @@ before using, behind guards; no prompt the tailored resume depends on changed.
 - An ATS sender or a role title alone never matches: half the inbox comes from greenhouse-mail.io. A company name, its own mail domain or a requisition id must point at the row; a tie is shown as unclear with the tied rows to pick from.
 - "Application received" mail confirms a `submit_unconfirmed` row as `submitted` with a "Confirmed by email" note, which `attempts.method_for` reads as manual, so the attempt stays unconfirmed (the app did not upload those files). On a row already submitted, accepting it changes nothing: the first sandbox pass appended a second `submitted` history entry.
 - The Gmail query is never `in:inbox` (filters and archiving hide most ATS mail) and folds subdomains (`from:lever.co` already matches hire.lever.co).
+
+## Pay benchmarks (2026-10-23, "Later" tier L3)
+
+- Measured before shipping over the owner's 1,048 saved application postings (read-only): ranges found in 495 (47%); 594 ranges, 381 hourly, 183 yearly, 24 monthly, 6 weekly; USD 557, GBP 22, CAD 15. All 30 randomly sampled hits were right. Of the 40 postings with a currency sign but no hit, the sample was funding or revenue, `$0.00` placeholders, lump sums ("$12,000 for 10 weeks") and housing stipends.
+- That read found three misses, now fixed. "Salary" was treated as a yearly marker, which dropped every "Salary Range: $22.93 - $40.14" hourly range. "Compensation Minimum: $25 Compensation Maximum: $39" was read as two single figures. A label line ending in ":" cut the period word off from the figure on the next line.
+- There is no `pay_index.json`. Hashing every jd.txt would read the files anyway, so the cache is in memory, keyed by path, size and mtime.
+- "Near" is the same state code, labelled "in TX", not "near Austin, TX". The first sandbox pass showed Dallas and Houston under "near Austin".
+- Hourly, yearly and other periods are never converted (no 2080-hour year) and never share a percentile. openpyxl is the one new dependency (MIT, pure Python).

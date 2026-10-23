@@ -827,6 +827,45 @@ outcome event (`source="mcp"`, dated by the email, note `From email “<subject>
 did not upload it); a row already submitted is left alone. "Accept all matched" skips
 flagged and unmatched emails. There is no MCP accept.
 
+**Pay benchmarks.** The `research/` package holds facts about the market. None of it is
+ever resume support: no fabrication-guard source, no bullet tags, no prompt context.
+- `pay_parse.posted_ranges` (pure) reads base-pay figures and ranges with their currency
+  (USD, CAD, GBP, EUR, AUD) and period (hour, week, month, year), plus the sentence each
+  came from. It reads a minimum and maximum written apart as one range. It skips bonus,
+  equity, relocation, housing, funding, revenue and per-mile figures, and anything in
+  millions. With no period word it infers one from the size only (7–300 an hour,
+  15,000–1,000,000 a year). A worded period the figure cannot be gives way to its size.
+  "Salary" alone is not a period word. It is separate from
+  `apply/answers/salary.parse_pay`, which answers forms and is unchanged.
+- `pay_level` gets a role family (first match in a fixed order) and a level (intern,
+  new grad, mid, senior, staff, manager) from the whole title.
+- `pay_index` collects every row's listing `salary` plus its saved `jd.txt`. Parsing is
+  cached in memory per file (path, size, mtime); there is no index file.
+- `pay_import` reads CSV or XLSX (`openpyxl`, ≤ 5 MB, ≤ 20,000 rows) through a column
+  mapping the student confirms. A row with no role, currency, period, or low+high or
+  median is rejected with a reason. Datasets are app-wide JSON in
+  `DATA_ROOT/pay_data/<id>.json`, each with its name, source, as-of date and rejected
+  count.
+- `pay_bench.benchmark` returns up to three groups, each excluding the posting itself:
+  - other roles at the same company;
+  - the same family and level in the posting's state (or city when no state);
+  - the same family and level anywhere.
+
+  Each group is split by currency and period, never converted or mixed. Percentiles
+  (p25/median/p75 over midpoints, or a row's median) appear from 5 figures. Below that the
+  figures are listed.
+- Routes (`web/routes/pay.py`):
+  - `GET /api/applications/{id}/pay`;
+  - `POST /api/pay/datasets/preview` (multipart, nothing saved);
+  - `POST /api/pay/datasets` (file plus `mapping` JSON, `name`, `source`, `as_of`);
+  - `GET /api/pay/datasets`;
+  - `DELETE /api/pay/datasets/{id}`.
+- UI:
+  - a "Pay" row on an application's Overview, with the source sentence on hover;
+  - a "Pay for similar roles" tile (`detail/PayTile.tsx`, `lib/pay.ts`), worded as
+    posted ranges and never as an offer estimate;
+  - Settings › Data & backups › "Pay data" (`PayDataCard`, `PayImportDialog`).
+
 For postings stuck in `needs_browser` (HTTP + CDP could not extract enough JD text), the
 Claude Desktop skill in `docs/skills/apply-from-queue/` is the manual fallback — it opens
 the posting, starts `tailor_application` with the copied JD text, then `mark_application`.

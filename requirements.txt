@@ -19,6 +19,8 @@ pypdfium2>=4.30
 # PDF resume import (resume_import_pdf.py): positioned text and font names. MIT, pure
 # Python on pdfminer.six. Not PyMuPDF, whose AGPL licence cannot ship in a closed app.
 pdfplumber>=0.11
+# Pay data import (research/pay_import.py): .xlsx files. MIT, pure Python.
+openpyxl>=3.1
 pydantic>=2.9
 python-dotenv>=1.0
 # Web UI (src/resume_tailor/web). Not required for the CLI.

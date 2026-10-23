@@ -17,6 +17,7 @@ import { describe } from "../../lib/errors";
 import { formatBytes } from "../../lib/format";
 import { useToast } from "../../lib/toast";
 import { useWorkspaceState } from "../../state/workspaceState";
+import { PayDataCard } from "./PayDataCard";
 import { ResetSettingsCard } from "./ResetSettingsCard";
 
 const PROFILE_ONLY = (
@@ -181,6 +182,8 @@ export function DataSection() {
           />
         </SettingRow>
       </Card>
+
+      <PayDataCard />
 
       <Card title="Saved AI results">
         <SettingRow

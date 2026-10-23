@@ -66,6 +66,8 @@ docstring-parser==0.18.0
     # via anthropic
 docxtpl==0.20.2
     # via -r requirements.txt
+et-xmlfile==2.0.0
+    # via openpyxl
 fastapi==0.141.1
     # via -r requirements.txt
 fastuuid==0.14.0
@@ -185,6 +187,8 @@ oauthlib==4.0.0
     # via requests-oauthlib
 openai==2.54.0
     # via litellm
+openpyxl==3.1.5
+    # via -r requirements.txt
 packaging==26.3
     # via
     #   huggingface-hub

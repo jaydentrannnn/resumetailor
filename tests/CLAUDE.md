@@ -30,8 +30,9 @@ same text (`tests/tooling/test_agent_docs.py` enforces it).
   `pytest -m owner`). Staged template builds fall back in-process when the subprocess
   fails — see `tests/web/helpers.py::_resume_upload_with_profile`.
 - **Layout mirrors `src/resume_tailor/`**: `pipeline/`, `document/`, `content/`,
-  `importing/`, `infra/`, `cli/`, `web/` (+ `conftest.py` `client` fixture, `helpers.py`),
-  `apply/<subpackage>/`; plus `extension/` (the browser extension), `tooling/` (scripts).
+  `importing/`, `infra/`, `research/`, `cli/`, `web/` (+ `conftest.py` `client` fixture,
+  `helpers.py`), `apply/<subpackage>/`; plus `extension/` (the browser extension),
+  `tooling/` (scripts).
   Cross-cutting tests (`config`, `workspace`, no-PII, storage) stay at the top. Folders
   have no `__init__.py`, so **test basenames must stay unique**; shared data lives in
   `fixtures/` (reach it with `Path(__file__).parents[N]`, N = depth below `tests/`).

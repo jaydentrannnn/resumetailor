@@ -1,10 +1,13 @@
-import type { ApplicationRow, JobStatus } from "../../../api";
+import type { ApplicationPay, ApplicationRow, JobStatus } from "../../../api";
 import { DataList, StatusChip, Tile } from "../../../components/ui";
 import { applicationStatusLabel } from "../../../lib/applicationStatus";
+import { payRange } from "../../../lib/pay";
+import { useApplicationPay } from "../../../lib/useApplicationPay";
 import { ReportCard } from "../../run/ReportCard";
 import { siteName } from "../../CapturedStubs";
 import { PostedDate } from "../PostedDate";
 import { FitNotes } from "./FitNotes";
+import { PayTile } from "./PayTile";
 import { ReferralLinks } from "./ReferralLinks";
 
 /** Overview: the application's facts, why it was screened out, and the tailor report. */
@@ -20,6 +23,7 @@ export function OverviewPanel({ app, job }: { app: ApplicationRow; job: JobStatu
     ? `${matched}/${total} (${Math.round((matched / total) * 100)}%) ${page != null ? "on the tailored page" : "in your resume, before tailoring"}`
     : "Not assessed";
   const sources = [...new Set(app.sources)];
+  const pay = useApplicationPay(app.source_job_id);
   return (
     <div className="space-y-4">
       <Tile title="Overview">
@@ -43,6 +47,7 @@ export function OverviewPanel({ app, job }: { app: ApplicationRow; job: JobStatu
               ),
             },
             ...(sources.length ? [{ label: "Found by", value: sources.join(", ") }] : []),
+            ...(pay ? [{ label: "Pay", value: <PostedPay pay={pay} /> }] : []),
           ]}
         />
         {app.status === "screened_out" && screen && (
@@ -67,8 +72,23 @@ export function OverviewPanel({ app, job }: { app: ApplicationRow; job: JobStatu
         <ReferralLinks app={app} />
         {app.error && <p className="mt-4 text-sm text-danger">{app.error}</p>}
       </Tile>
+      <PayTile pay={pay} />
       {job?.report && <ReportCard report={job.report} />}
     </div>
+  );
+}
+
+/** What the posting states about pay; the sentence it came from shows on hover. */
+function PostedPay({ pay }: { pay: ApplicationPay }) {
+  if (!pay.posted.length) return <span className="text-ink-muted">Not stated</span>;
+  return (
+    <span className="flex flex-wrap gap-x-3 font-mono text-[13px]">
+      {pay.posted.map((range, index) => (
+        <span key={index} title={range.excerpt}>
+          {payRange(range.low, range.high, range.currency, range.period)}
+        </span>
+      ))}
+    </span>
   );
 }
 

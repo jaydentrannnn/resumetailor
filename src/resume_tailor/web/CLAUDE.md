@@ -45,7 +45,8 @@ same text (`tests/tooling/test_agent_docs.py` enforces it).
   `applications`, `outcomes` (what happened after sending; works on archived rows),
   `after_send` (interview prep, follow-up notes, "no reply" marks, the offline report;
   registered before `applications`), `mail_updates` (job emails Claude Desktop read, as
-  proposals the student accepts),
+  proposals the student accepts), `pay` (an application's posted pay and pay for similar
+  roles; imported pay data),
   `extension`, `resume`,
   `template`, `libraries`, `config`, `workspaces`, `system`, `setup`, `answers`,
   `automation`, `discovery`, `jd`, `onboarding`, `secrets`, `diagnostics`, `update`, `reference`

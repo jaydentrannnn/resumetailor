@@ -238,6 +238,14 @@ def _isolated_model_queue(tmp_path, monkeypatch):
     monkeypatch.setattr(model_queue, "queue", model_queue.RequestQueue())
 
 
+@pytest.fixture(autouse=True)
+def _isolated_pay_data(tmp_path, monkeypatch):
+    """Imported pay data is app-wide (`DATA_ROOT/pay_data`); keep it per test."""
+    from resume_tailor.research import pay_import
+
+    monkeypatch.setattr(pay_import, "datasets_dir", lambda: tmp_path / "pay_data")
+
+
 @pytest.fixture(scope="session")
 def built_template(tmp_path_factory) -> Path:
     """Build the tagged template from `tests.fixtures._full_featured_resume` once for

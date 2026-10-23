@@ -6,6 +6,9 @@ import { OverviewPanel } from "./OverviewPanel";
 
 // The report card needs a whole run report; these tests are about the blocks above it.
 vi.mock("../../run/ReportCard", () => ({ ReportCard: () => null }));
+// Pay has its own test (`PayTile.test.tsx`).
+vi.mock("./PayTile", () => ({ PayTile: () => null }));
+vi.mock("../../../lib/useApplicationPay", () => ({ useApplicationPay: () => null }));
 
 // No `test.globals`, so Testing Library's automatic cleanup never registers.
 afterEach(cleanup);

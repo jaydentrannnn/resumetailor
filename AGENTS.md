@@ -135,6 +135,7 @@ Docs cite bare module names (`fit.py`, `render.py`); the few that repeat across 
 | `content/` | `data` (the master-resume model), `data_transfer`, `edu_dates`, `libraries` (+ `library_models`; one built-in dictionary + app-wide user additions), `bullet_tags` (computed match tags), `industries`, `style`, `labels`, `onboarding`, `resume_versions` |
 | `importing/` | `resume_import` (.docx entry; `import_common`, `import_contact`, `import_entries`, `import_merge_match`, `import_merge`, `import_layout`), `resume_import_pdf` (PDF entry + its LLM call; `pdf_patterns`, `pdf_lines`, `pdf_structure`, `pdf_build`) |
 | `infra/` | `llm`, `fake_llm`, `logs`, `secret_store`, `atomic` (unique-temp atomic writes), `housekeeping`, `desktop_main`, `desktop_update` |
+| `research/` | facts about the market, never resume support: `pay_parse` (posted pay ranges with currency and period), `pay_level` (role family and level from a title), `pay_index` (ranges across saved postings), `pay_import` (CSV/XLSX pay data, app-wide), `pay_bench` (pay for similar roles) — no LLM |
 | `apply/`, `web/`, `mcp_server/`, `storage/`, `library_seeds/` | see their own `CLAUDE.md` / docstrings |
 
 ## Code organization
