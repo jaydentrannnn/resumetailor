@@ -364,7 +364,15 @@ early career, so a years floor in their JD is a flag, not a reject. A bare "Anal
 The work-restriction block patterns (`screen.check_blocks`: citizenship, security clearance,
 user extras) run in the same no-LLM stage (`daily_rows.prefilter_screen`) and record a named
 reason (`citizenship_required` / `clearance_required`) plus the matching JD sentence in
-`ScreenResult.evidence`. After extraction, `screen()` rejects on seniority only — an
+`ScreenResult.evidence`. The same stage checks spoken languages (`language_gate.check`
+against `profile.load_languages()`): a language the posting requires (a fluency or
+requirement cue next to the name, not in an optional clause or under a "Preferred"
+heading) that the profile does not list rejects (`language_required:<name>`, label
+"<name> required", sentence in evidence); one listed as not fluent when fluency is asked,
+or any language when the profile lists none, is only a flag (`language_level:` /
+`language_unlisted:`). English is assumed unless listed as not fluent; "Spanish or
+Portuguese" is satisfied by either; nationality adjectives ("a Dutch university") and
+"Polish the UI" are not languages. After extraction, `screen()` rejects on seniority only — an
 intern/new-grad/entry title overrides the model's label (`seniority_mismatch` flag).
 `screen.screen_label` turns any stored reason (legacy regex-source strings included) into
 the 2–3 word `screen_label` the Status column shows. Every screened-out row with saved JD

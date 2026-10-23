@@ -9,11 +9,12 @@ from datetime import UTC, datetime
 from pathlib import Path
 
 from resume_tailor import config
+from resume_tailor.apply.answers import profile
 from resume_tailor.apply.discovery import fetch_jd
 from resume_tailor.apply.discovery.source_rows import SourceRow
 from resume_tailor.apply.funnel import eligibility as eligibility_mod
+from resume_tailor.apply.funnel import language_gate, store, store_models
 from resume_tailor.apply.funnel import screen as screen_mod
-from resume_tailor.apply.funnel import store, store_models
 from resume_tailor.apply.funnel.screen import ScreenResult
 from resume_tailor.pipeline import coverage as coverage_mod
 from resume_tailor.pipeline.posting_guard import GuardFindings
@@ -29,7 +30,8 @@ _MIN_USABLE_JD_CHARS = 100
 def prefilter_screen(
     jd_text: str, role: str, settings: ApplySettings, *, seniority: str = ""
 ) -> ScreenResult:
-    """The no-LLM part of screening: eligibility rules plus work-restriction blocks.
+    """The no-LLM part of screening: eligibility rules, work-restriction blocks and the
+    spoken languages the posting requires (against the applicant profile's).
 
     Runs before JD extraction, so a posting it rejects costs no model call. A re-check
     passes the row's stored ``seniority`` so a screen-stage rejection is re-judged
@@ -38,12 +40,15 @@ def prefilter_screen(
     elig = eligibility_mod.check_text(jd_text, settings.eligibility, role=role)
     blocks, evidence = screen_mod.check_blocks(jd_text, settings.screen)
     senior, senior_flags = screen_mod.seniority_reasons(seniority, role, settings.screen)
-    reasons = [*elig.reasons, *blocks, *senior]
+    spoken, spoken_flags, spoken_evidence = language_gate.check(
+        jd_text, profile.load_languages()
+    )
+    reasons = [*elig.reasons, *blocks, *senior, *spoken]
     return ScreenResult(
         passed=not reasons,
         reasons=reasons,
-        flags=[*elig.flags, *senior_flags],
-        evidence=evidence,
+        flags=[*elig.flags, *senior_flags, *spoken_flags],
+        evidence=[*evidence, *spoken_evidence],
         seniority=seniority,
     )
 

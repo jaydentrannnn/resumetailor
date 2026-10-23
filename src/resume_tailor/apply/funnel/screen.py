@@ -87,7 +87,7 @@ def _coverage(requirements: JobRequirements, known_tags: Iterable[str]) -> _Cove
     return _Coverage(matched=matched, total=len(must), ratio=matched / len(must))
 
 
-def _sentence_around(text: str, start: int, end: int) -> str:
+def sentence_around(text: str, start: int, end: int) -> str:
     """The sentence containing ``text[start:end]``, whitespace-collapsed and trimmed."""
     left = max((m.end() for m in _SENTENCE_END.finditer(text, 0, start)), default=0)
     after = _SENTENCE_END.search(text, end)
@@ -126,7 +126,7 @@ def check_blocks(
         if match is None:
             continue
         reasons.append(_NAMED_BLOCKS.get(pattern) or f"blocked by pattern {pattern!r}")
-        evidence.append(_sentence_around(text, match.start(), match.end()))
+        evidence.append(sentence_around(text, match.start(), match.end()))
     return reasons, evidence
 
 
@@ -232,6 +232,7 @@ def screen(
 _LABELS: list[tuple[re.Pattern[str], str]] = [
     (re.compile(r"citizenship_required|citizen", re.I), "Citizenship required"),
     (re.compile(r"clearance", re.I), "Clearance required"),
+    (re.compile(r"^language_required:(.+)$"), "{0} required"),
     (re.compile(r"advanced_degree"), "Grad degree only"),
     (re.compile(r"^school_only:"), "Other school only"),
     (re.compile(r"^title_senior$"), "Senior title"),

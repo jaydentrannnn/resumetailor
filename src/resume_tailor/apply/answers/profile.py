@@ -405,6 +405,22 @@ def load_profile() -> tuple[ApplicantProfile, bool]:
     return profile, False
 
 
+def load_languages() -> list[LanguageEntry] | None:
+    """The profile's spoken languages for screening, without touching the secret store.
+
+    An absent profile lists none (``[]``); an unreadable one gives None, so the language
+    screen is skipped rather than guessed.
+    """
+    path = _path()
+    if not path.is_file():
+        return []
+    try:
+        raw = json.loads(path.read_text(encoding="utf-8"))
+        return [LanguageEntry.model_validate(entry) for entry in raw.get("languages") or []]
+    except (OSError, ValueError, AttributeError):
+        return None
+
+
 def save_profile(profile: ApplicantProfile) -> ApplicantProfile:
     """Write ``applicant_profile.json`` atomically and return the saved model.
 

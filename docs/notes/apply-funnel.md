@@ -2474,3 +2474,21 @@ Choices:
   dates are counted per posting in the browser, and outcomes have their own dates).
 - **List rows drop events and attempts** (the table reads `hiring` only); the detail
   view returns the full record.
+
+## 2026-10-22 — Spoken-language gate in the prefilter
+
+`apply/funnel/language_gate.py` (pure) runs inside `daily_rows.prefilter_screen`, so it
+reaches the nightly run, extension captures and "Re-check eligibility" alike. Only a
+language the profile does not list rejects; a not-fluent entry or an empty language list
+is a flag, because the profile is often incomplete and a wrong reject hides a posting the
+user never sees. Requirement means a cue within 80 chars in the same clause (fluent,
+bilingual, native-level, business-level, C1/C2, JLPT N1/N2, HSK 5/6, required, must,
+proficient, "written and verbal"); any optional word in the clause or a "Preferred …"
+heading above it cancels it. Names are matched capitalised and must be followed by
+nothing, punctuation or a language-ish word, which drops "a Dutch university" and
+"Japanese clients"; "Polish the UI" is excluded explicitly. `profile.load_languages()`
+reads only the JSON (no secret-store touch) per prefilter call; an unreadable profile
+skips the gate. Measured on 1,013 unique saved postings with the owner's profile
+(English + Vietnamese): one hit, "Bilingual (English / Spanish).", which is a real
+requirement; the only false positive found ("enrolled at a Dutch university") led to the
+adjective rule.
