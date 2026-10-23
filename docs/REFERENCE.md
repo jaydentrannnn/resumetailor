@@ -1920,7 +1920,8 @@ the arms on the same cases. It is eval-only: nothing under `src/` imports
 - **Decision rules** are code (`REWRITE_CHECKS`, `EXPAND_CHECKS`, `COVER_CHECKS`,
   `REVIEW_CHECKS`, `report_extract.rules`), so `summary.md` prints PASS/FAIL/INCOMPLETE,
   never a judgement call.
-- **Variant experiments** (`cover`, `review`) compare `current` against a candidate on
+- **Variant experiments** (`cover`, `cover-company`, `review`, `review-note`) compare
+  `current` against a candidate on
   the same model and effort, using each saved run's own `bullets.json`. `cover` vs `gaps`
   (`variants.gaps`) offers up to two unmet must-haves (not a known skill and never named
   in the resume's text) as `<unmet_requirements>`, adds `GAP_RULE`, and lets the claim
@@ -1929,8 +1930,12 @@ the arms on the same cases. It is eval-only: nothing under `src/` imports
   in a first-person claim sentence without a cue (`gap_claimed`). `review` vs `scope`
   (`evals/review_scope.py`, an eval-only LLM caller) adds per-bullet scope risk with a
   guarded softer wording, and consistency notes across bullets and the run's cover letter;
-  its metric is the share of suggestions the guard drops. The production seam is
-  `coverletter._user_message`. Neither variant shipped (results in
+  its metric is the share of suggestions the guard drops. `review` vs `note`
+  (`review_scoped(variant="note")`, stage `review-note`) asks for the scope flag and its
+  note only, over the production review's exact user message; it shipped on 2026-10-23,
+  so `review._SYSTEM` is now `_BASE_SYSTEM + _SCOPE_RULES` and `.review.md` prints "May be
+  questioned: <note>" (the review stays CLI-only, `--review`). The production seam for
+  the cover variants is `coverletter._user_message`. The others did not ship (results in
   `docs/notes/cover-letter-and-claims.md` and `docs/notes/pipeline-and-guards.md`).
 - **Cost.** At `medium`, rewrite on gemini-3.8-flash is ~$0.06 and ~140 s per posting; at
   `low` it is ~$0.007 and ~16 s. Smoke-test with `--limit 10` first.

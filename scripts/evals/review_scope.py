@@ -36,7 +36,17 @@ class ScopedReviewLLM(BaseModel):
     consistency: list[str] = Field(default_factory=list)
 
 
-SYSTEM = review._SYSTEM + """
+class NotedVerdict(review.BulletVerdict):
+    scope_risk: Literal["none", "stretch"] = "none"
+    scope_note: str = ""
+
+
+class NotedReviewLLM(BaseModel):
+    scope_read: str = ""
+    bullets: list[NotedVerdict] = Field(default_factory=list)
+
+
+SYSTEM = review._BASE_SYSTEM + """
 Also, for each bullet:
 - scope_risk: "stretch" when the wording may claim more ownership, scale or impact than \
 the bullet's own facts show, so an interviewer could catch it; otherwise "none".
@@ -48,6 +58,11 @@ Across all bullets, and the cover letter when one is given:
 - consistency: short notes on statements that contradict each other (dates, roles, \
 numbers, tools, team sizes). Leave it empty when there are none.
 """
+
+#: Variant B ("note"): the stretch flag and its note only. The rewrite instructions are
+#: untouched and no softer text is generated, so nothing new reaches the guard. It passed
+#: on 2026-10-23 and shipped: production's prompt is now exactly this.
+NOTE_SYSTEM = review._SYSTEM
 
 
 def _guarded(source: Bullet, text: str) -> tuple[str, str]:
@@ -66,10 +81,15 @@ def review_scoped(
     requirements: JobRequirements,
     bullets: dict[str, str],
     cover_paragraphs: Sequence[str] = (),
+    *,
+    variant: Literal["scope", "note"] = "scope",
 ) -> dict[str, Any]:
-    """One broader review pass; the record shape `stages.review_record` also produces."""
+    """One broader review pass; the record shape `stages.review_record` also produces.
+    `variant="note"` asks for the stretch flag and note only, over the production
+    review's exact user message (no cover letter, no consistency, no softer text)."""
+    note = variant == "note"
     notes = "\n".join(f"  - {n}" for n in requirements.domain_notes) or "  (none)"
-    cover = "\n\n".join(p.strip() for p in cover_paragraphs if p.strip())
+    cover = "" if note else "\n\n".join(p.strip() for p in cover_paragraphs if p.strip())
     user = (
         f"<role>{requirements.title} ({requirements.seniority})</role>\n\n"
         f"<what_the_role_involves>\n{notes}\n</what_the_role_involves>\n\n"
@@ -80,9 +100,9 @@ def review_scoped(
     response = llm.client_for("review").messages.parse(
         model=config.model_for("review"),
         max_tokens=config.max_tokens_for("review"),
-        system=SYSTEM,
+        system=NOTE_SYSTEM if note else SYSTEM,
         messages=[{"role": "user", "content": user}],
-        output_format=ScopedReviewLLM,
+        output_format=NotedReviewLLM if note else ScopedReviewLLM,
         output_config={"effort": config.effort_for("review")},
     )
     parsed = response.parsed_output
@@ -97,14 +117,15 @@ def review_scoped(
         replacement, dropped = (
             _guarded(source, item.replacement) if item.verdict == "rewrite" else ("", ""))
         stretch = item.scope_risk == "stretch"
-        softer, softer_dropped = _guarded(source, item.softer_replacement) if stretch else ("", "")
+        offered_softer = "" if note else item.softer_replacement
+        softer, softer_dropped = _guarded(source, offered_softer) if stretch else ("", "")
         rows.append({
             "id": item.id, "verdict": item.verdict, "reason": item.reason.strip(),
             "replacement": replacement, "dropped_note": dropped,
             "offered": bool(item.replacement.strip()) and item.verdict == "rewrite",
             "scope_risk": item.scope_risk, "scope_note": item.scope_note.strip() if stretch else "",
             "softer": softer, "softer_dropped": softer_dropped,
-            "softer_offered": stretch and bool(item.softer_replacement.strip()),
+            "softer_offered": stretch and bool(offered_softer.strip()),
         })
-    return {"scope_read": parsed.scope_read.strip(), "bullets": rows,
-            "consistency": [c.strip() for c in parsed.consistency if c.strip()]}
+    consistency = [] if note else [c.strip() for c in parsed.consistency if c.strip()]
+    return {"scope_read": parsed.scope_read.strip(), "bullets": rows, "consistency": consistency}

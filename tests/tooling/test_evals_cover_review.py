@@ -117,7 +117,39 @@ def test_scoped_review_guards_both_suggestions(monkeypatch):
     assert row["replacement"] == bullet.text and row["softer"] == ""
     assert row["softer_dropped"].startswith("dropped (fabricated")
     assert "<cover_letter>\nMy cover letter.\n</cover_letter>" in calls[0]["messages"][0]["content"]
-    assert calls[0]["system"].startswith(review_scope.review._SYSTEM)
+    assert calls[0]["system"].startswith(review_scope.review._BASE_SYSTEM)
+
+
+def test_note_variant_is_the_production_review_plus_the_flag(monkeypatch):
+    resume = synthetic_resume()
+    bullet = resume.all_bullets()[0]
+    calls = []
+
+    class _Messages:
+        def parse(self, **kwargs):
+            calls.append(kwargs)
+            shape = kwargs["output_format"]
+            reply = shape(bullets=[{
+                "id": bullet.id, "verdict": "keep", "reason": "fits",
+                "scope_risk": "stretch", "scope_note": "Team size unclear",
+            }]) if shape is review_scope.NotedReviewLLM else shape()
+            return SimpleNamespace(parsed_output=reply, stop_reason="end_turn")
+
+    monkeypatch.setattr(review_scope.llm, "client_for",
+                        lambda purpose: SimpleNamespace(messages=_Messages()))
+    bullets = {bullet.id: bullet.text}
+    record = review_scope.review_scoped(resume, _requirements("SQL"), bullets,
+                                        ["My cover letter."], variant="note")
+    review_scope.review.review_bullets(resume, _requirements("SQL"), bullets)
+    noted, current = calls
+    assert noted["messages"] == current["messages"]
+    assert noted["system"] == current["system"]  # shipped: production is variant B
+    assert "softer" not in noted["system"] and "consistency" not in noted["system"]
+    [row] = record["bullets"]
+    assert (row["scope_risk"], row["scope_note"], row["softer_offered"]) == (
+        "stretch", "Team size unclear", False)
+    assert record["consistency"] == []
+    assert metrics.review_metrics(record)["stretch"] == 1
 
 
 def test_judge_prompts_show_both_sides():
@@ -195,3 +227,9 @@ def test_the_site_guess_needs_the_page_to_name_the_company(monkeypatch):
     assert stages._guess_site("Acme Analytics, Inc.", named) == "https://www.acmeanalytics.com/"
     assert stages._guess_site("Acme Analytics", _Fetcher("<p>Domain for sale</p>")) == ""
     assert stages._guess_site("Acme Analytics", _Fetcher(None)) == ""
+
+
+def test_every_variant_stage_has_a_judge_rubric():
+    import eval_models
+
+    assert set(eval_models._VARIANTS) <= set(judge._RUBRIC)

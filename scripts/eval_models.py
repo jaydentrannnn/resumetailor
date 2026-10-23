@@ -66,11 +66,13 @@ _METRICS = {
     "review": ["guard_dropped_rate", "findings", "cuts", "rewrites", "stretch", "consistency"],
 }
 _METRICS["cover-company"] = _METRICS["cover"]
+_METRICS["review-note"] = _METRICS["review"]
 #: Variant experiments: `(baseline arm, candidate arm, Replay method per arm)`.
 _VARIANTS = {
     "cover": ("current", "gaps", {"current": "cover", "gaps": "cover_gaps"}),
     "cover-company": ("current", "company", {"current": "cover", "company": "cover_company"}),
     "review": ("current", "scope", {"current": "review", "scope": "review_scope"}),
+    "review-note": ("current", "note", {"current": "review", "note": "review_note"}),
 }
 #: The profile each fetched group runs against (a finance resume for finance postings).
 _GROUP_WORKSPACE = {"finance": "nina", "nontech": "default"}
@@ -85,8 +87,8 @@ def _parse_spec(raw: str | None):
 def _args(argv: list[str] | None) -> argparse.Namespace:
     parser = argparse.ArgumentParser(description=__doc__.splitlines()[0])
     parser.add_argument("stage", choices=[
-        "rewrite", "expand", "extract", "cover", "cover-company", "review", "fetch", "judge",
-        "judge-key", "report"])
+        "rewrite", "expand", "extract", "cover", "cover-company", "review", "review-note",
+        "fetch", "judge", "judge-key", "report"])
     parser.add_argument("--arms", help="effort arms, baseline first (default medium,low)")
     parser.add_argument("--limit", default="10", help="saved postings to sample, or 'all'")
     parser.add_argument("--control", type=int, default=0,
@@ -131,7 +133,7 @@ def _summary(eval_dir: Path) -> str:
         grouped = report.by_arm(records)
         checks = {"rewrite": report.REWRITE_CHECKS, "expand": report.EXPAND_CHECKS,
                   "cover": report.COVER_CHECKS, "cover-company": report.COVER_CHECKS,
-                  "review": report.REVIEW_CHECKS}[stage]
+                  "review": report.REVIEW_CHECKS, "review-note": report.REVIEW_CHECKS}[stage]
         rules = report.gate(grouped, verdicts, base, cand, checks=checks)
         errors = sum(1 for r in records if r.get("status") == "error")
         text = report.markdown(f"{stage}: {base} vs {cand}", grouped, _METRICS[stage],

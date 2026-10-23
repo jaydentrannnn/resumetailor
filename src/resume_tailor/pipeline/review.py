@@ -31,6 +31,9 @@ class BulletVerdict(BaseModel):
     reason: str = ""
     #: Optional replacement text when verdict is ``rewrite``. Guarded before display.
     replacement: str = ""
+    #: "stretch" when an interviewer could question the claim's ownership, scale or impact.
+    scope_risk: Literal["none", "stretch"] = "none"
+    scope_note: str = ""
 
 
 class ReviewLLM(BaseModel):
@@ -50,6 +53,9 @@ class ReviewedBullet:
     replacement: str = ""
     #: Set when a rewrite suggestion was dropped for fabricating.
     dropped_note: str = ""
+    #: What an interviewer could question, when the claim may be a stretch. Advisory text
+    #: about the bullet; nothing is generated in its place.
+    scope_note: str = ""
 
 
 @dataclass
@@ -62,7 +68,7 @@ class ReviewResult:
     model: str = ""
 
 
-_SYSTEM = """\
+_BASE_SYSTEM = """\
 You are a hiring manager synthesised from the job posting below. Review the candidate's \
 tailored resume bullets for THIS role only.
 
@@ -79,6 +85,15 @@ reviewing. A rewrite may only rephrase what that bullet already says.
 - Prefer cut over rewrite when the bullet is off-topic; prefer keep when it already \
 mirrors the posting honestly.
 """
+#: The stretch flag, as measured on 2026-10-23 (`scripts/evals/review_scope.py`, variant
+#: "note": the blind judge preferred it 22-3, 5 ties). No softer text is asked for.
+_SCOPE_RULES = """
+Also, for each bullet:
+- scope_risk: "stretch" when the wording may claim more ownership, scale or impact than \
+the bullet's own facts show, so an interviewer could catch it; otherwise "none".
+- scope_note: one line saying what could be questioned, only when scope_risk is "stretch".
+"""
+_SYSTEM = _BASE_SYSTEM + _SCOPE_RULES
 
 
 def _format_bullets(bullets: dict[str, str]) -> str:
@@ -166,6 +181,7 @@ def review_bullets(
                 reason=item.reason.strip(),
                 replacement=replacement,
                 dropped_note=dropped_note,
+                scope_note=item.scope_note.strip() if item.scope_risk == "stretch" else "",
             )
         )
 

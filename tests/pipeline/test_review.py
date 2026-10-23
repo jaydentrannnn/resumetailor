@@ -5,6 +5,7 @@ from __future__ import annotations
 import pytest
 
 from resume_tailor import config
+from resume_tailor.pipeline import report as review_report
 from resume_tailor.pipeline import review
 from resume_tailor.pipeline.jd import JobRequirements, Keyword
 from resume_tailor.pipeline.review import BulletVerdict, ReviewLLM
@@ -127,3 +128,23 @@ def test_clean_rewrite_is_shown(review_calls):
     result = review.review_bullets(resume, _reqs(), bullets)
     assert result.bullets[0].replacement == source_text
     assert result.bullets[0].dropped_note == ""
+
+
+def test_a_stretch_note_is_shown_and_a_note_without_the_flag_is_not(review_calls):
+    """The stretch flag carries a one-line note into the result and the report."""
+    resume = synthetic_resume()
+    bullets = {b.id: b.text for b in resume.all_bullets()}
+    first, second = list(bullets)[:2]
+    calls = review_calls(
+        ReviewLLM(bullets=[
+            BulletVerdict(id=first, verdict="keep", reason="Fits", scope_risk="stretch",
+                          scope_note=" Sole ownership of the pipeline may be probed. "),
+            BulletVerdict(id=second, verdict="keep", reason="Fits", scope_note="stray"),
+        ])
+    )
+    result = review.review_bullets(resume, _reqs(), bullets)
+    assert [b.scope_note for b in result.bullets] == [
+        "Sole ownership of the pipeline may be probed.", ""]
+    assert "scope_risk" in calls[0]["system"]
+    assert "    May be questioned: Sole ownership of the pipeline may be probed." in (
+        review_report.format_review(result).splitlines())

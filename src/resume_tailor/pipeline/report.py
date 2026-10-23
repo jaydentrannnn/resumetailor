@@ -705,6 +705,8 @@ def format_review(result) -> str:
             lines.append(f"    → {item.replacement}")
         if item.dropped_note:
             lines.append(f"    ({item.dropped_note})")
+        if item.scope_note:
+            lines.append(f"    May be questioned: {item.scope_note}")
     for warning in result.warnings:
         lines.append(f"  WARNING: {warning}")
     return "\n".join(lines)

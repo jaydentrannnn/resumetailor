@@ -861,3 +861,12 @@ reach across bullets ("Docker Compose", "APIs") or reword numbers ("1000"). Not 
 `review.py` is unchanged. Consistency findings were rare (3 in 30 cases). Next variant
 worth one run: the stretch flag and note only, no generated softer text and the rewrite
 instructions untouched, so nothing new reaches the guard.
+
+## Review scope variant B: stretch flag and note, shipped (2026-10-23, "Later" tier L6)
+
+Variant B (`review_scope.review_scoped(variant="note")`, stage `review-note`) adds only `scope_risk` and a one-line `scope_note` to the production review: same user message, no softer wording, no consistency notes. 30 cases + 3-case control, Light model Vertex gemini-3.8-flash, judge gpt-5-mini (Azure) in both orders (`output/eval/review-note`).
+- Judge: note won 22, lost 3, tied 5 (sign test p < 0.001); the control lost 2 of 3. Wins cite specific, actionable cautions (e.g. a 12% ARR increase attributed to intern chatbot work, "Architected" on an internship project). One loss cites a reason naming a vendor the bullet never mentions.
+- Coded rule passed within the control's drift: suggestions dropped by the guard 0.178 -> 0.350 per case (CI -0.03 to +0.37; control +0.167 on 3 cases). In counts: 8 of 38 offered rewrites dropped vs 15 of 47. Rewrites rose (1.10 -> 1.57 per case) and cuts fell; 10 of the 15 drops add "UI" to one recurring bullet of the same resume. Dropped rewrites are never shown, only noted.
+- 34 stretch notes in 30 cases; read them all. They are specific but repeat across postings when the same claim recurs.
+- Shipped: `review._SYSTEM = _BASE_SYSTEM + _SCOPE_RULES` (the measured text, verbatim), `ReviewedBullet.scope_note`, and "May be questioned: <note>" in `.review.md`. The note is unguarded advisory text about the student's own bullet; nothing is generated in its place. The hiring-manager review is CLI-only (`--review`), so the planned `BulletReview.tsx` line has nowhere to go: that component is the manual bullet editor, not this review.
+- No version constant: the review has no cache. Variant A's eval prompt now builds on `_BASE_SYSTEM` so it stays reproducible.

@@ -294,7 +294,9 @@ class Replay:
             "bullets": [{"id": b.id, "verdict": b.verdict, "reason": b.reason,
                          "replacement": b.replacement, "dropped_note": b.dropped_note,
                          "offered": b.verdict == "rewrite"
-                         and bool(b.replacement or b.dropped_note)}
+                         and bool(b.replacement or b.dropped_note),
+                         "scope_risk": "stretch" if b.scope_note else "none",
+                         "scope_note": b.scope_note}
                         for b in result.bullets],
         }
         return {**record, "metrics": metrics.review_metrics(record)}
@@ -304,6 +306,12 @@ class Replay:
         cover = corpus._read_json(case.job_dir / "cover.json") if case.job_dir else {}
         record = review_scope.review_scoped(self.resume, self._requirements(case),
                                             self.tailored(case), cover.get("paragraphs") or ())
+        return {**record, "metrics": metrics.review_metrics(record)}
+
+    def review_note(self, case: Case) -> dict[str, Any]:
+        """Variant B: the current review plus a stretch flag and note, nothing else."""
+        record = review_scope.review_scoped(self.resume, self._requirements(case),
+                                            self.tailored(case), variant="note")
         return {**record, "metrics": metrics.review_metrics(record)}
 
     def judge_inputs(self, stage: str, case: Case, a: dict, b: dict) -> tuple:
@@ -317,7 +325,7 @@ class Replay:
             facts = self.frozen_facts.get(case.case_id, []) if stage == "cover-company" else []
             return (judge.cover_prompt(requirements.title, must, shown, facts),
                     a["paragraphs"], b["paragraphs"])
-        if stage == "review":
+        if stage in ("review", "review-note"):
             return judge.review_prompt(requirements.title, must, self.tailored(case)), a, b
         if stage == "rewrite":
             return judge.rewrite_prompt(requirements.title, must, self.judge_sources(
