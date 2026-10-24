@@ -50,6 +50,8 @@ class FakeImap:
     def __init__(self, host, port, ssl_context=None, timeout=None):
         if host == "down.example":
             raise OSError("connection refused")
+        if port == 995:  # A POP3 server: its greeting is not IMAP.
+            raise imaplib.IMAP4.error(None)
         self.calls: list[tuple] = []
         self.selected = ""
         FakeImap.instances.append(self)
@@ -129,6 +131,9 @@ def test_a_refused_login_and_an_unreachable_server_are_told_apart(fake):
     down = ACCOUNT.model_copy(update={"host": "down.example"})
     with pytest.raises(mail_imap.MailConnectError, match="Could not reach down.example"):
         mail_imap.test(down, "secret")
+    pop = ACCOUNT.model_copy(update={"port": 995})
+    with pytest.raises(mail_imap.MailConnectError, match="not as an IMAP server. Port 995 is for POP3"):
+        mail_imap.test(pop, "secret")
     assert mail_imap.test(ACCOUNT, "secret") == 2  # INBOX and Junk
 
 

@@ -12,6 +12,9 @@ suite("errors.describe", () => {
     expect(describe(new Error("Could not reach http://localhost:11434/v1: x")).detail).toContain(
       "http://localhost:11434",
     );
+    // The mail check's own wording is shown as sent, never as an AI-model failure.
+    const mail = "Could not reach mail.example.com on port 993. Check the server name and port.";
+    expect(describe(new Error(mail))).toMatchObject({ code: "unknown", detail: mail });
     expect(describe("LibreOffice binary not found at 'soffice'.").code).toBe("soffice_missing");
     const missing = describe("http://h/v1 has no model 'llama3.1'. Pull it with ...");
     expect(missing.code).toBe("model_missing");

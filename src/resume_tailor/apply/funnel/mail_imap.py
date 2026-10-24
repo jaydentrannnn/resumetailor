@@ -220,7 +220,13 @@ def _batches(items: list[bytes]) -> Iterator[list[bytes]]:
 def _open(account: MailAccount, password: str) -> _Box:
     try:
         box = _Box(account)
-    except (OSError, ssl.SSLError, imaplib.IMAP4.error) as exc:
+    except imaplib.IMAP4.error as exc:  # Something answered, but not an IMAP server.
+        pop = " Port 995 is for POP3." if account.port == 995 else ""
+        raise MailConnectError(
+            f"{account.host} answered on port {account.port}, but not as an IMAP server.{pop} "
+            "IMAP over TLS uses port 993."
+        ) from exc
+    except OSError as exc:  # ssl.SSLError included.
         raise MailConnectError(
             f"Could not reach {account.host} on port {account.port}. Check the server name "
             "and port (993 for IMAP over TLS)."

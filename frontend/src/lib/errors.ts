@@ -75,7 +75,8 @@ const RULES: Rule[] = [
   },
   {
     code: "llm_unreachable",
-    match: /Could not reach/i,
+    // A model server's URL only: the mail check's "Could not reach <host> on port" is not one.
+    match: /Could not reach https?:\/\//i,
     title: "Can't reach the AI model",
     detail: (raw) =>
       `Nothing answered at ${hostOf(raw)}. If you use Ollama, make sure it is running, then try again.`,

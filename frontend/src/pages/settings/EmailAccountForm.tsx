@@ -12,6 +12,9 @@ import { useToast } from "../../lib/toast";
 import { CheckResultLine } from "./CheckResultLine";
 
 /** Server, username and a write-only password for the mailbox the app reads. */
+/** Ports people copy from a POP3 setup (Outlook's "incoming server"); IMAP is 993 or 143. */
+const POP3_PORTS = ["995", "110"];
+
 export function EmailAccountForm({
   account,
   onSaved,
@@ -96,7 +99,15 @@ export function EmailAccountForm({
     <div>
       <SettingRow
         label="Server"
-        description="Your mail provider's IMAP server, for example mail.example.com."
+        description={
+          POP3_PORTS.includes(port) ? (
+            <span className="text-attn">
+              Port {port} is for POP3. The app reads mail over IMAP, usually port 993.
+            </span>
+          ) : (
+            "Your mail provider's IMAP server, for example mail.example.com."
+          )
+        }
       >
         <input
           aria-label="IMAP server"
