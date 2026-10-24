@@ -785,12 +785,13 @@ a scheduled interview's date has passed) with nothing sent since; and `stale` at
 days silent with no pending employer timeline. An undated legacy timeline gets seven
 days from its recorded date; the Outcome form requires an expected reply date for new
 timelines. `ApplicationOut.follow_up` carries it on the detail response;
-`GET /api/applications/follow-ups` lists due and stale rows for the
-Apply page's Follow up line, and `POST /api/applications/no-reply` records `ghosted` on
-rows still stale (never `rejected`). Routes live in `web/routes/after_send.py`, registered
+`GET /api/applications/follow-ups` lists due and stale rows and
+`POST /api/applications/no-reply` records `ghosted` on rows still stale (never
+`rejected`); no UI calls either since the Apply-page Follow up line was removed
+(2026-10-23). Routes live in `web/routes/after_send.py`, registered
 before `applications` so `follow-ups` is not read as an id, and run on the Light model
 (`job_routing.pinned_role("light")`). UI: `FollowUpTile`, `InterviewPrepTile` (shown once
-an interview is recorded) in the Outcome tab; `FollowUpsNotice` on the Apply page.
+an interview is recorded) in the Outcome tab.
 
 **Offline report.** `apply/funnel/report_html.build` (pure) renders the registry as one
 self-contained HTML file: inline CSS and SVG, no scripts or external assets, every value
@@ -826,7 +827,7 @@ rejection after an offer, an interview on a closed row, a date already recorded)
 `apply/funnel/mail_inbox` keeps one proposal per message in `mail_inbox.json` beside the
 registry: a 500-character excerpt cleaned by `posting_guard.guard`, every message id ever
 seen (re-posting adds nothing), and `last_synced`. Nothing reaches an application until
-the student accepts it on the Apply page (`EmailUpdatesNotice`, `GET /api/mail/proposals`,
+the student accepts it on the Tracker card (`useTrackerBoard`, `GET /api/mail/proposals`,
 `POST …/{id}/accept {signal?, app_id?}` or `…/dismiss`); the type and the application can
 be changed first, and an unmatched email lists every open application. Accept adds an
 outcome event (`source="mcp"`, dated by the email, note `From email “<subject>”`) inside

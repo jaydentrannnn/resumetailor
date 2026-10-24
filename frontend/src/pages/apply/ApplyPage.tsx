@@ -14,8 +14,6 @@ import { useWorkspaceState } from "../../state/workspaceState";
 import { ApplicationsPanel } from "./ApplicationsPanel";
 import { ApplyHeader } from "./ApplyHeader";
 import { ApplySettingsDrawer } from "./ApplySettingsDrawer";
-import { EmailUpdatesNotice } from "./EmailUpdatesNotice";
-import { FollowUpsNotice } from "./FollowUpsNotice";
 import { NightlyRunStrip } from "./NightlyRunStrip";
 import { OperationBanner } from "./OperationBanner";
 import { BannerCustomizeDialog } from "./progress/BannerCustomizeDialog";
@@ -148,8 +146,6 @@ export function ApplyPage() {
         />
       )}
       <NightlyRunStrip daily={op.daily} />
-      <FollowUpsNotice revision={revision} onChanged={refresh} />
-      <EmailUpdatesNotice revision={revision} onChanged={refresh} />
       {!tabDecided ? (
         <Skeleton className="h-48" />
       ) : (

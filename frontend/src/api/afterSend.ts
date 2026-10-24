@@ -44,18 +44,6 @@ export type FollowUpState = {
   reason: string;
 };
 
-export type FollowUpRow = {
-  application_id: string;
-  company: string;
-  role: string;
-  sent_on: string;
-  days_since_sent: number;
-  due: "follow_up" | "thank_you" | null;
-  stale: boolean;
-};
-
-export type FollowUpsDue = { due: FollowUpRow[]; stale: FollowUpRow[] };
-
 export type NoteChannel = "email" | "linkedin" | "portal";
 
 /** A drafted note; `source` is "template" when the draft failed the claim check. */
@@ -92,20 +80,5 @@ export function draftFollowUp(
   return request(rowPath(sourceJobId, "follow-up"), {
     method: "POST",
     body: JSON.stringify(body),
-  });
-}
-
-/** Sent applications due a follow-up or thank-you, and those silent for 60+ days. */
-export function getFollowUpsDue(): Promise<FollowUpsDue> {
-  return request("/api/applications/follow-ups");
-}
-
-/** Record "no reply" on rows that are still silent; never "rejected". */
-export function markNoReply(
-  applicationIds: string[],
-): Promise<{ updated: string[]; skipped: Record<string, string> }> {
-  return request("/api/applications/no-reply", {
-    method: "POST",
-    body: JSON.stringify({ application_ids: applicationIds }),
   });
 }
