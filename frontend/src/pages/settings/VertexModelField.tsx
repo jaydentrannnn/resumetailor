@@ -14,6 +14,7 @@ export function VertexModelField({ model }: { model: RoleModel }) {
       }))}
       placeholder="Choose a model"
       customLabel="Custom model ID"
+      customBeside
       onChange={(model_name) => patch({ model_name })}
     />
   );

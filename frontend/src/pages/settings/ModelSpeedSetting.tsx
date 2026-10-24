@@ -88,7 +88,7 @@ export function ModelSpeedSetting() {
     <>
       <SettingRow
         label="Request concurrency"
-        layout="split"
+        layout="action"
         description={
           help ??
           "Maximum simultaneous requests to each server. Extra requests wait for a free slot."

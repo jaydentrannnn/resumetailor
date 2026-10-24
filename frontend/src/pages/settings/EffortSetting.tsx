@@ -34,7 +34,7 @@ export function EffortSetting() {
     <>
       <SettingRow
         label="Reasoning effort"
-        layout="split"
+        layout="action"
         description="How much the model thinks before answering. Higher can word things better but is slower and costs more."
       >
         <Segmented

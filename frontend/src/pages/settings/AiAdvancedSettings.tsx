@@ -12,7 +12,7 @@ export function AiAdvancedSettings() {
       <EffortSetting />
       <SettingRow
         label="Job posting reads"
-        layout="split"
+        layout="action"
         description="How many times the AI reads each posting and compares notes. More reads catch more requirements but take longer."
       >
         <select
@@ -30,7 +30,7 @@ export function AiAdvancedSettings() {
       <ModelSpeedSetting />
       <SettingRow
         label="Resumes at once"
-        layout="split"
+        layout="action"
         description="How many tailoring runs may work at the same time. Above 4 suits paid cloud models; a model on this computer still answers one request at a time."
       >
         <select

@@ -47,12 +47,16 @@ export function TrackerFilters({
         />
       </label>
       <label className="flex items-center gap-1.5 text-ink-2">
-        <input type="checkbox" checked={filters.email} onChange={(e) => set({ email: e.target.checked })} />
+        <input
+          type="checkbox"
+          checked={filters.email}
+          onChange={(e) => set({ email: e.target.checked })}
+        />
         With email updates
       </label>
       {hidden.length > 0 && (
         <span className="flex flex-wrap items-center gap-1.5 text-ink-muted">
-          Hidden:
+          Hidden columns:
           {TRACKER_COLUMNS.filter((c) => hidden.includes(c.id)).map((c) => (
             <button
               key={c.id}
@@ -61,7 +65,7 @@ export function TrackerFilters({
               aria-label={`Show ${c.label}`}
               onClick={() => onShow(c.id)}
             >
-              + {c.label}
+              Show {c.label}
             </button>
           ))}
         </span>

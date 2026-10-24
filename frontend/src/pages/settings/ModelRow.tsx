@@ -68,31 +68,37 @@ export function ModelRow({
             </select>
           </label>
           {selection.provider === "vertex_ai" ? (
-            <VertexModelField model={model} />
+            // Three pairs: who and how it is paid, which model, where it runs.
+            <>
+              <PlanField selection={selection} patch={patch} />
+              <VertexModelField model={model} />
+              <VertexFields model={model} id={id} />
+            </>
           ) : (
-            <label className="block min-w-0 text-sm font-medium">
-              Model
-              <input
-                className="field mt-1 font-mono"
-                value={selection.model_name}
-                placeholder={fallback}
-                list={models.length ? `${id}-models` : undefined}
-                onChange={(e) => patch({ model_name: e.target.value })}
-              />
-              {models.length > 0 && (
-                <datalist id={`${id}-models`}>
-                  {models.map((name) => (
-                    <option key={name} value={name} />
-                  ))}
-                </datalist>
+            <>
+              <label className="block min-w-0 text-sm font-medium">
+                Model
+                <input
+                  className="field mt-1 font-mono"
+                  value={selection.model_name}
+                  placeholder={fallback}
+                  list={models.length ? `${id}-models` : undefined}
+                  onChange={(e) => patch({ model_name: e.target.value })}
+                />
+                {models.length > 0 && (
+                  <datalist id={`${id}-models`}>
+                    {models.map((name) => (
+                      <option key={name} value={name} />
+                    ))}
+                  </datalist>
+                )}
+              </label>
+              {selection.provider === "custom" && (
+                <CustomServerFields selection={selection} patch={patch} />
               )}
-            </label>
+              <PlanField selection={selection} patch={patch} />
+            </>
           )}
-          {selection.provider === "custom" && (
-            <CustomServerFields selection={selection} patch={patch} />
-          )}
-          {selection.provider === "vertex_ai" && <VertexFields model={model} id={id} />}
-          <PlanField selection={selection} patch={patch} />
         </div>
         <RowNotes model={model} />
         {privacy && privacy !== LOCAL_PRIVACY && (

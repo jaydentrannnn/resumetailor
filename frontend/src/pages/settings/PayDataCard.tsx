@@ -6,7 +6,7 @@ import {
   type PayDataset,
   type PayPreview,
 } from "../../api";
-import { Button, Card, StatusChip } from "../../components/ui";
+import { Button, Card, SettingRow, StatusChip } from "../../components/ui";
 import { describe } from "../../lib/errors";
 import { useToast } from "../../lib/toast";
 import { PayImportDialog } from "./PayImportDialog";
@@ -94,22 +94,11 @@ export function PayDataCard() {
 
   return (
     <Card title="Pay data" actions={ALL_PROFILES}>
-      <div className="space-y-3">
-        <p className="max-w-[80ch] text-xs text-ink-muted">
-          Pay ranges from a CSV or Excel file, compared with posted ranges on each application's
-          Overview. Never part of your resume.
-        </p>
-        {datasets && datasets.length > 0 && (
-          <ul className="divide-y divide-line">
-            {datasets.map((dataset) => (
-              <DatasetRow
-                key={dataset.id}
-                dataset={dataset}
-                onDelete={() => void remove(dataset)}
-              />
-            ))}
-          </ul>
-        )}
+      <SettingRow
+        label="Pay ranges"
+        description="From a CSV or Excel file, compared with posted ranges on each application's Overview. Never part of your resume."
+        layout="action"
+      >
         <input
           ref={input}
           type="file"
@@ -120,7 +109,14 @@ export function PayDataCard() {
         <Button variant="plain" disabled={reading} onClick={() => input.current?.click()}>
           {reading ? "Reading…" : "Import a file…"}
         </Button>
-      </div>
+      </SettingRow>
+      {datasets && datasets.length > 0 && (
+        <ul className="mt-3 divide-y divide-line">
+          {datasets.map((dataset) => (
+            <DatasetRow key={dataset.id} dataset={dataset} onDelete={() => void remove(dataset)} />
+          ))}
+        </ul>
+      )}
       {pending && (
         <PayImportDialog
           file={pending.file}

@@ -16,9 +16,9 @@ describe("railTarget", () => {
   it("maps Ctrl/Cmd+1…6 to the rail's pages and Ctrl+, to Settings", () => {
     expect(railTarget(key("1"))).toBe("/");
     expect(railTarget(key("2"))).toBe("/applications");
-    expect(railTarget(key("3"))).toBe("/resume");
-    expect(railTarget(key("5", { ctrlKey: false, metaKey: true }))).toBe("/profile");
-    expect(railTarget(key("6"))).toBe("/tracker");
+    expect(railTarget(key("3"))).toBe("/tracker");
+    expect(railTarget(key("4"))).toBe("/resume");
+    expect(railTarget(key("6", { ctrlKey: false, metaKey: true }))).toBe("/profile");
     expect(railTarget(key(","))).toBe("/settings");
   });
 
@@ -42,8 +42,14 @@ describe("railTarget", () => {
 
   it("adds a new required page to the end of an older saved order", () => {
     const items = visibleRailItems({ order: ["/profile", "/"], hidden: [] });
-    expect(items.map((i) => i.to).slice(0, 2)).toEqual(["/profile", "/"]);
-    expect(items.at(-1)?.to).toBe("/tracker");
+    expect(items.map((i) => i.to)).toEqual([
+      "/profile",
+      "/",
+      "/applications",
+      "/tracker",
+      "/resume",
+      "/template",
+    ]);
   });
 });
 

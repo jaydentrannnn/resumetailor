@@ -26,7 +26,8 @@ export function VertexFields({ model, id }: { model: RoleModel; id: string }) {
   const regions = selected?.locations.length ? selected.locations : LOCATIONS;
   return (
     <>
-      <label className="block min-w-0 text-sm font-medium">
+      {/* Starts its own row even when the model row has no custom ID beside it. */}
+      <label className="block min-w-0 text-sm font-medium sm:col-start-1">
         Google Cloud project ID
         <input
           className="field mt-1 font-mono"
