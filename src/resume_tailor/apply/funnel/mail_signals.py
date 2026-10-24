@@ -271,9 +271,12 @@ def _score(mail: Mail, app: store_models.Application) -> tuple[int, list[str]]:
     company = _words(identity.normalize_company(app.company))
     significant = [w for w in company if w not in _STOP]
     domain = mail.from_domain
-    own_domain = (bool(significant) and len(significant[0]) >= 4
+    # A hiring system's own company (Workday) is named in, and sends from the domain of,
+    # every email it carries for other employers: only its requisition id can match it.
+    vendor = " ".join(significant) in ATS_DOMAINS.values()
+    own_domain = (bool(significant) and len(significant[0]) >= 4 and not vendor
                   and significant[0] in domain.replace("-", ""))
-    footer = " ".join(significant) in _FOOTER_NAMES
+    footer = " ".join(significant) in _FOOTER_NAMES or vendor
     if significant and _phrase_in(company, text_words) and (own_domain or not footer):
         score += 3
         reasons.append("company named")

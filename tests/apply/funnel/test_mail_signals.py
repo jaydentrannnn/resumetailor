@@ -88,6 +88,17 @@ def test_a_footer_link_to_linkedin_is_not_linkedin_writing():
     assert mail_signals.match(own, rows).app_id == "li"
 
 
+def test_a_hiring_systems_own_company_is_not_every_email_it_carries():
+    rows = [_app("wd", "Workday", role="Machine Learning Engineer Intern", ats="workday"),
+            _app("ex", "Expedia Group", role="Software Development Engineer 1", ats="workday")]
+    gm = _mail("GM <gm@myworkday.com>", "Your interest in 2027 Summer Intern at GM",
+               "We've decided to move forward with other candidates. Powered by Workday.")
+    assert mail_signals.match(gm, rows).app_id is None
+    expedia = _mail("Expedia <expedia@myworkday.com>", "Thank you for your interest in Expedia Group",
+                    "Powered by Workday.")
+    assert mail_signals.match(expedia, rows).app_id == "ex"
+
+
 def test_check_flags_a_proposal_that_contradicts_the_record():
     offer = store_models.OutcomeEvent(id="o", type="offer", occurred_on="2026-10-01",
                                       recorded_at="2026-10-01T00:00:00+00:00")
