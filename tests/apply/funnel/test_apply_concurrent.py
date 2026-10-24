@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import asyncio
 import threading
 import time
 
@@ -18,6 +19,7 @@ def apply_env(tmp_path, monkeypatch):
     monkeypatch.setattr(config, "APPLICATIONS_OUTPUT_DIR", tmp_path / "output")
     monkeypatch.setattr(operations, "_ACTIVE", {})
     monkeypatch.setattr(operations, "_CONTROLS", {})
+    monkeypatch.setattr(operations, "_AT_WORK", set())
     monkeypatch.setattr(operations.browser, "extension_mode", lambda: False)
     monkeypatch.setattr(operations.submit_guard, "is_paused", lambda: False)
     monkeypatch.setattr(operations, "_captured_settings", lambda _request: ApplySettings())
@@ -33,6 +35,8 @@ def apply_env(tmp_path, monkeypatch):
         )
         for key in ("one", "two", "three", "four")
     }
+    for key, row in rows.items():  # each has a review tab
+        row.fill = store_models.FillResult(status="awaiting_review", browser_target_id=f"tab-{key}")
     monkeypatch.setattr(operations.store, "get", rows.get)
     gates = {key: threading.Event() for key in rows}
     filled: list[str] = []
@@ -173,3 +177,77 @@ def test_a_finished_operation_holds_nothing(apply_env):
     done = _finished(fill)
     assert done.held_ids == [] and done.waiting == []
     assert operations.active() is None and operations.active_all() == []
+
+
+@pytest.fixture
+def slow_review(monkeypatch):
+    """Inspect actions that stay on their tab until ``release`` is set."""
+    from resume_tailor.apply.funnel import review
+
+    release = threading.Event()
+    started: list[str] = []
+
+    async def refresh(application_id):
+        started.append(application_id)
+        await asyncio.to_thread(release.wait, 3)
+
+    monkeypatch.setattr(review, "refresh", refresh)
+    yield type("Review", (), {"release": release, "started": started})
+    release.set()
+
+
+def test_two_review_actions_never_share_a_tab(apply_env, slow_review):
+    """v1.25.0 checked only fills in flight: a second correction ran on the same tab."""
+    first = operations.start_review_action("one", action="inspect")
+    _until(lambda: slow_review.started == ["one"])
+    with pytest.raises(RuntimeError, match="owns the browser"):
+        operations.start_review_action("one", action="inspect")
+    other = operations.start_review_action("two", action="inspect")  # its own tab
+    slow_review.release.set()
+    assert _finished(first).state == _finished(other).state == "completed"
+    assert _finished(operations.start_review_action("one", action="inspect")).completed == 1
+
+
+def test_a_review_action_waits_for_the_fill_on_its_tab(apply_env, monkeypatch):
+    filling, release = threading.Event(), threading.Event()
+
+    def fake_fill(_application_id, **_kwargs):
+        filling.set()
+        assert release.wait(3)
+        return store_models.FillResult(status="awaiting_review", ready_to_submit=True)
+
+    monkeypatch.setattr(operations.fill, "fill_application", fake_fill)
+    fill = _start("fill", ["one"])
+    assert filling.wait(3)
+    with pytest.raises(RuntimeError, match="owns the browser"):
+        operations.start_review_action("one", action="inspect")
+    release.set()
+    _finished(fill)
+
+
+def test_a_fill_waits_for_the_review_action_on_its_tab(apply_env, slow_review, monkeypatch):
+    monkeypatch.setattr(
+        operations, "_captured_settings", lambda _request: ApplySettings(max_parallel_fills=1)
+    )
+    on_two, release = threading.Event(), threading.Event()
+    filled: list[str] = []
+
+    def fake_fill(application_id, **_kwargs):
+        filled.append(application_id)
+        if application_id == "two":
+            on_two.set()
+            assert release.wait(3)
+        return store_models.FillResult(status="awaiting_review", ready_to_submit=True)
+
+    monkeypatch.setattr(operations.fill, "fill_application", fake_fill)
+    fill = _start("fill", ["two", "one"])
+    assert on_two.wait(3)
+    review = operations.start_review_action("one", action="inspect")  # "one" is pending
+    _until(lambda: slow_review.started == ["one"])
+    release.set()
+    time.sleep(0.3)
+    assert filled == ["two"]  # "one" waits for the review to leave its tab
+    slow_review.release.set()
+    _finished(review)
+    assert _finished(fill).completed == 2
+    assert filled == ["two", "one"]

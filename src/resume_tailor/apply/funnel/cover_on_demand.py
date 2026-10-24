@@ -37,6 +37,9 @@ _COVER_FILES = ("cover.pdf", "cover.docx")
 _LOCK = threading.Lock()
 #: Letters written while Fill answers the rest of the form (`start`).
 _POOL = ThreadPoolExecutor(max_workers=2, thread_name_prefix="cover-letter")
+#: Background letters not finished yet, queued or writing (`busy`).
+_RUNNING = 0
+_RUNNING_LOCK = threading.Lock()
 
 CoverMode = Literal["off", "required", "optional", "every"]
 
@@ -95,8 +98,44 @@ def ensure(pkt: Packet) -> bool:
 def start(pkt: Packet) -> Future[bool]:
     """`ensure` in the background, in the caller's context (its model routing): the
     letter and its PDF take about a minute, which the form's other answers need not
-    wait for (Twitch, 2026-10). Touches no browser."""
-    return config.submit_in_context(_POOL, ensure, pkt)
+    wait for (Twitch, 2026-10). Touches no browser.
+
+    A fill that runs out of time stops waiting, but the letter keeps going. It stays
+    pinned to the profile it started in, and `busy` holds a profile switch until it is
+    done: v1.24.0 read the live profile's paths, so a switch in between wrote the packet
+    into the other profile's output folder."""
+    global _RUNNING
+    # Outside a run, paths come from the process default, which a switch rebinds.
+    pinned = None if config.in_run_context() else config.default_context()
+    with _RUNNING_LOCK:
+        _RUNNING += 1
+    try:
+        return config.submit_in_context(_POOL, _ensure_pinned, pkt, pinned)
+    except BaseException:
+        _finished()
+        raise
+
+
+def busy() -> bool:
+    """Whether a background letter is still queued or being written."""
+    with _RUNNING_LOCK:
+        return _RUNNING > 0
+
+
+def _ensure_pinned(pkt: Packet, pinned: config.RunContext | None) -> bool:
+    try:
+        if pinned is None:
+            return ensure(pkt)
+        with config.use_context(pinned):
+            return ensure(pkt)
+    finally:
+        _finished()
+
+
+def _finished() -> None:
+    global _RUNNING
+    with _RUNNING_LOCK:
+        _RUNNING -= 1
 
 
 def resolve(pkt: Packet, mode: CoverMode, *, required: bool) -> tuple[Action, bool]:

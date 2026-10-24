@@ -9,7 +9,7 @@ from fastapi import APIRouter, HTTPException
 from resume_tailor import (
     workspace,
 )
-from resume_tailor.apply.funnel import daily_progress
+from resume_tailor.apply.funnel import cover_on_demand, daily_progress
 from resume_tailor.apply.funnel import operations as apply_operations
 from resume_tailor.model_selection import migrated_models
 from resume_tailor.web import section_title_sync, template_info, template_ops
@@ -102,6 +102,12 @@ def activate_workspace(workspace_id: str) -> WorkspaceActivateResponse:
             raise HTTPException(
                 status_code=409,
                 detail="Cannot switch profiles while an Apply operation is running.",
+            )
+        # A fill that ran out of time leaves its cover letter writing into this profile.
+        if cover_on_demand.busy():
+            raise HTTPException(
+                status_code=409,
+                detail="Cannot switch profiles while a cover letter is still being written.",
             )
         try:
             workspace.activate(workspace_id)

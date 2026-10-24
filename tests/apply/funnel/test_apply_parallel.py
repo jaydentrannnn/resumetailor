@@ -16,6 +16,7 @@ def batch(monkeypatch):
     operations._CONTROLS.clear()
     operations._ACTIVE.clear()
     monkeypatch.setattr(operations, "_persist", lambda _operation: None)
+    monkeypatch.setattr(operations, "_AT_WORK", set())
     monkeypatch.setattr(operations.browser, "extension_mode", lambda: False)
     monkeypatch.setattr(operations.submit_guard, "is_paused", lambda: False)
     monkeypatch.setattr(
@@ -443,3 +444,54 @@ def test_fills_held_back_by_the_model_limit_are_refilled_once_at_the_end(batch, 
     assert operation.needs_input == operation.blocked == 0
     assert operation.processed == 1
     assert [item.kind for item in operation.attention] == ["ready_for_review"]
+
+
+def _model_limited_then_ready(seen=None):
+    def fake_fill(application_id, **kwargs):
+        operations.store.get(application_id).status = "awaiting_review"
+        if kwargs["fill_mode"] == "continue":
+            if seen is not None:
+                seen.append((
+                    operations.op_slots.pool("fill").held("test"),
+                    application_id in operations._AT_WORK,
+                ))
+            return store_models.FillResult(status="awaiting_review", ready_to_submit=True)
+        return store_models.FillResult(
+            status="awaiting_review", handoff_reason=operations._MODEL_UNAVAILABLE,
+        )
+
+    return fake_fill
+
+
+def test_a_refill_takes_a_fill_slot_and_its_tab_like_any_fill(batch, monkeypatch):
+    """v1.25.0 refilled straight from `_process_item`, after the row was released: no
+    shared Fill slot, no Workday site gate, nothing to keep another task off the tab."""
+    seen: list[tuple[int, bool]] = []
+    monkeypatch.setattr(operations.fill, "fill_application", _model_limited_then_ready(seen))
+    monkeypatch.setattr(operations, "_model_exhausted", lambda _settings: False)
+    operation = batch(ids=("one", "two"), settings=ApplySettings(max_parallel_fills=1))
+    assert seen == [(1, True), (1, True)]
+    assert operation.processed == 2 and operation.needs_input == 0
+    assert operations._AT_WORK == set()
+
+
+def test_a_refill_leaves_a_row_another_task_took_meanwhile(batch, monkeypatch):
+    calls: list[str] = []
+    fill = _model_limited_then_ready()
+
+    def fake_fill(application_id, **kwargs):
+        calls.append(kwargs["fill_mode"])
+        return fill(application_id, **kwargs)
+
+    def recovered(_settings):
+        # A correction took "one" once this batch had counted and released it.
+        operations._ACTIVE["other"] = operations.ApplyOperation(
+            operation_id="other", action="correct", held_ids=["one"]
+        )
+        return False
+
+    monkeypatch.setattr(operations.fill, "fill_application", fake_fill)
+    monkeypatch.setattr(operations, "_model_exhausted", recovered)
+    operation = batch(ids=("one",))
+    assert calls == ["initial"]
+    assert (operation.processed, operation.blocked, operation.needs_input) == (1, 1, 1)

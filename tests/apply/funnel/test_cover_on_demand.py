@@ -251,3 +251,37 @@ def test_fallback_cover_input_keeps_required_metadata(tmp_path, required):
     assert run._file_inputs() == [{
         "selector": "input[type='file']#cover_letter", "label": "Cover Letter", "required": required,
     }]
+
+
+def test_a_background_letter_stays_with_its_profile(tmp_path, monkeypatch):
+    """v1.24.0: a letter a timed-out fill left running rebuilt its packet in the profile
+    switched to meanwhile. It is pinned to its own, and `busy` until it is done."""
+    first, second = tmp_path / "first", tmp_path / "second"
+    monkeypatch.setattr(config, "OUTPUT_DIR", first)
+    release = threading.Event()
+    seen: list[Path] = []
+
+    def regenerate(job_id: str):
+        assert release.wait(3)
+        seen.append(config.OUTPUT_DIR)
+        job_dir = config.OUTPUT_DIR / "jobs" / job_id
+        job_dir.mkdir(parents=True, exist_ok=True)
+        (job_dir / "cover.pdf").write_bytes(b"%PDF")
+
+    def write_packet(job_id: str):
+        seen.append(config.OUTPUT_DIR)
+        cover = config.OUTPUT_DIR / "jobs" / job_id / "cover.pdf"
+        return SimpleNamespace(
+            artifacts={"cover_pdf": str(cover)}, cover_letter="Body.", preparation="fresh"
+        )
+
+    monkeypatch.setattr(job_followups, "regenerate_cover_letter", regenerate)
+    monkeypatch.setattr(cover_on_demand.packet_mod, "write_packet", write_packet)
+    future = cover_on_demand.start(_packet())
+    assert cover_on_demand.busy()
+    monkeypatch.setattr(config, "OUTPUT_DIR", second)  # another profile is active now
+    release.set()
+    assert future.result(timeout=3)
+    assert seen == [first, first]
+    assert (first / "jobs" / "j1" / "cover.pdf").is_file() and not second.exists()
+    assert not cover_on_demand.busy()

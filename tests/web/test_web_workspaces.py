@@ -395,6 +395,22 @@ def test_activate_workspace_409_while_an_apply_operation_runs(client, tmp_path, 
     assert config.active_workspace_id() == "default"
 
 
+def test_activate_workspace_409_while_a_cover_letter_is_written(client, tmp_path, monkeypatch):
+    """A fill that ran out of time leaves its cover letter writing into this profile."""
+    from resume_tailor.apply.funnel import cover_on_demand  # noqa: PLC0415
+
+    c, _q = client
+    _point_workspaces_at(tmp_path, monkeypatch)
+    real_bootstrap()
+    c.post("/api/workspaces", json={"label": "Second"})
+    monkeypatch.setattr(cover_on_demand, "busy", lambda: True)
+
+    res = c.post("/api/workspaces/second/activate")
+    assert res.status_code == 409
+    assert "cover letter" in res.json()["detail"].lower()
+    assert config.active_workspace_id() == "default"
+
+
 @pytest.mark.parametrize("entry", ["start", "start_review_action"])
 def test_apply_operation_starts_under_the_workspace_lock(monkeypatch, entry):
     """Both Apply entry points hold `template_ops.LOCK` (the lock `activate_workspace`

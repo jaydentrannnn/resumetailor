@@ -16,6 +16,7 @@ import threading
 import time
 import uuid
 from collections import deque
+from collections.abc import Callable
 from concurrent.futures import ThreadPoolExecutor
 from contextlib import contextmanager
 from dataclasses import dataclass, field
@@ -195,6 +196,11 @@ _ACTIVE: dict[str, ApplyOperation] = {}
 _CONTROLS: dict[str, _Controls] = {}
 #: A registry edit (`registry_edit_idle`) is in progress; nothing starts meanwhile.
 _EDITING = False
+#: Applications whose tab a worker is on now: a Fill or Prepare item from the moment its
+#: dispatcher takes it, a review action from its start. Claimed under `_LOCK`, so two
+#: never act on one tab (v1.25.0 looked at `in_flight`, which a review action never
+#: fills: two corrections ran on one tab and could overwrite each other).
+_AT_WORK: set[str] = set()
 
 
 def _ctl(operation: ApplyOperation) -> _Controls:
@@ -955,31 +961,27 @@ def _leave_waiting(operation: ApplyOperation, application_id: str) -> None:
     _event(operation, "filling", "Left for you to finish", application_id)
 
 
+def _claim(operation: ApplyOperation, application_id: str) -> bool:
+    """Take an application's tab for a dispatched item: False while another operation
+    holds the application (a review action on its tab)."""
+    with _LOCK:
+        if application_id in _AT_WORK or application_id in _held_elsewhere(operation):
+            return False
+        _AT_WORK.add(application_id)
+        return True
+
+
+def _unclaim(application_id: str) -> None:
+    with _LOCK:
+        _AT_WORK.discard(application_id)
+
+
 def _dispatch_items(
     operation: ApplyOperation,
     request: ApplyOperationRequest,
     settings: ApplySettings,
     applicant_snapshot: profile.ApplicantProfile | None,
 ) -> None:
-    ctl = _ctl(operation)
-    if operation.action == "prepare":
-        capacity = JobSettings.model_validate(
-            workspace.load_settings()["defaults"]
-        ).max_concurrent_jobs
-        workers = capacity
-    else:
-        capacity = 1 if browser.extension_mode() else settings.max_parallel_fills
-        workers = 1 if request.blocker_mode == "pause" else capacity
-    workers = min(workers, len(operation.application_ids))
-    # Shared with every batch of this kind running beside this one.
-    slots = op_slots.pool("prepare" if operation.action == "prepare" else "fill")
-    # A paused Prepare item goes back on the front, to run again on Resume; a stuck fill
-    # goes on the back, to come back later.
-    pending = deque(operation.application_ids)
-    #: application id -> monotonic time before which a waiting fill is not taken.
-    not_before: dict[str, float] = {}
-    comebacks: dict[str, int] = {}
-    dispatch_lock = threading.Lock()
     reserved = 0
     # A submit whose confirmation never showed may well have gone out: it uses a slot.
     unconfirmed = 0
@@ -1007,6 +1009,59 @@ def _dispatch_items(
 
     # Fill only: one application per Workday site at a time (see fill_hosts).
     gate = fill_hosts.HostGate() if operation.action == "fill" else None
+    _dispatch_round(
+        operation, request, settings, applicant_snapshot, list(operation.application_ids),
+        reserve_submit, release_submit, gate,
+    )
+    retry = _reclaim_model_limited(operation, request, settings)
+    if retry is not None:
+        # Through the dispatcher again, not straight to `_process_item` (v1.25.0): the
+        # shared Fill slots, one fill per Workday site and a tab a review action is on
+        # all hold for a refill too. No comebacks are left: a stuck refill ends in
+        # Needs you.
+        again, ids = retry
+        _dispatch_round(
+            operation, again, settings, applicant_snapshot, ids,
+            reserve_submit, release_submit, gate,
+            comebacks_used=come_back.MAX_COMEBACKS,
+            on_take=lambda application_id: _recount(operation, application_id),
+        )
+
+
+def _dispatch_round(
+    operation: ApplyOperation,
+    request: ApplyOperationRequest,
+    settings: ApplySettings,
+    applicant_snapshot: profile.ApplicantProfile | None,
+    ids: list[str],
+    reserve_submit: Callable[[], bool],
+    release_submit: Callable[[bool, str], None],
+    gate: fill_hosts.HostGate | None,
+    *,
+    comebacks_used: int = 0,
+    on_take: Callable[[str], None] | None = None,
+) -> None:
+    """Run ``ids`` on the batch's workers until each is done. ``on_take`` runs as each
+    item is taken, before it is filled."""
+    ctl = _ctl(operation)
+    if operation.action == "prepare":
+        capacity = JobSettings.model_validate(
+            workspace.load_settings()["defaults"]
+        ).max_concurrent_jobs
+        workers = capacity
+    else:
+        capacity = 1 if browser.extension_mode() else settings.max_parallel_fills
+        workers = 1 if request.blocker_mode == "pause" else capacity
+    workers = min(workers, len(ids))
+    # Shared with every batch of this kind running beside this one.
+    slots = op_slots.pool("prepare" if operation.action == "prepare" else "fill")
+    # A paused Prepare item goes back on the front, to run again on Resume; a stuck fill
+    # goes on the back, to come back later.
+    pending = deque(ids)
+    #: application id -> monotonic time before which a waiting fill is not taken.
+    not_before: dict[str, float] = {}
+    comebacks: dict[str, int] = dict.fromkeys(ids, comebacks_used)
+    dispatch_lock = threading.Lock()
     site_free = threading.Condition(dispatch_lock)
 
     def ready(application_id: str) -> bool:
@@ -1092,6 +1147,16 @@ def _dispatch_items(
                     # filling; wait for one to finish (or for Pause/Cancel).
                     site_free.wait(timeout=0.5)
                     continue
+                if not _claim(operation, application_id):
+                    # A review action took its tab after `ready` looked; it waits for it.
+                    pending.appendleft(application_id)
+                    if gate is not None:
+                        gate.release(application_id)
+                    slots.release(operation.operation_id)
+                    site_free.wait(timeout=0.5)
+                    continue
+                if on_take is not None:
+                    on_take(application_id)
                 again = not_before.pop(application_id, None) is not None
                 ctl.retry_now.discard(application_id)
                 # A comeback is that site's own verification wait; it goes on.
@@ -1117,6 +1182,7 @@ def _dispatch_items(
                         again=again,
                     )
             finally:
+                _unclaim(application_id)
                 slots.release(operation.operation_id)
                 if gate is not None:
                     with dispatch_lock:
@@ -1141,9 +1207,6 @@ def _dispatch_items(
         futures = [config.submit_in_context(executor, process_next) for _ in range(workers)]
         for future in futures:
             future.result()
-    _retry_model_limited(
-        operation, request, settings, applicant_snapshot, reserve_submit, release_submit
-    )
 
 
 def _model_exhausted(settings: ApplySettings) -> bool:
@@ -1196,42 +1259,43 @@ def _stored_submit_status(application_id: str) -> str:
     return next((s for s in ("submitted", "submit_unconfirmed") if s in statuses), "")
 
 
-def _retry_model_limited(
-    operation: ApplyOperation,
-    request: ApplyOperationRequest,
-    settings: ApplySettings,
-    applicant_snapshot: profile.ApplicantProfile | None,
-    reserve_submit: Any,
-    release_submit: Any,
-) -> None:
-    """Once, at the end of a Fill: Continue the fills the model's limit held back, when
-    its quota has recovered by then."""
-    ctl = _ctl(operation)
-    if operation.action != "fill" or not operation.model_limited or ctl.cancel.is_set():
-        return
+def _reclaim_model_limited(
+    operation: ApplyOperation, request: ApplyOperationRequest, settings: ApplySettings
+) -> tuple[ApplyOperationRequest, list[str]] | None:
+    """Once, at the end of a Fill: the fills the model's limit held back, taken back for
+    one Continue fill when its quota has recovered by then; None when there are none.
+
+    Each was released when it was counted, so a task that took it since keeps it."""
+    if operation.action != "fill" or not operation.model_limited or _ctl(operation).cancel.is_set():
+        return None
     if _model_exhausted(settings):
         _event(operation, "model_limit", "The AI model is still at its limit; not refilling")
-        return
-    again = request.model_copy(update={"fill_mode": "continue", "blocker_mode": "continue"})
+        return None
     ids, operation.model_limited = list(operation.model_limited), []
-    _event(operation, "model_limit", f"Model available again; refilling {len(ids)} application(s)")
+    taken: list[str] = []
     for application_id in ids:
-        if ctl.cancel.is_set():
-            return
         app = store.get(application_id)
         if app is None or app.status not in {"awaiting_review", "awaiting_otp"}:
             continue
         with _LOCK:
-            # This application was counted once already; the rerun replaces that result.
-            operation.blocked -= 1
-            operation.needs_input -= 1
-            operation.processed -= 1
-            attention_mod.remove(operation.attention, application_id)
-        # No dispatcher is left to requeue a comeback: a stuck refill ends in Needs you.
-        _process_item(
-            operation, again, settings, applicant_snapshot, application_id,
-            reserve_submit, release_submit, comebacks=come_back.MAX_COMEBACKS,
-        )
+            if application_id in _held_elsewhere(operation):
+                continue
+            operation.held_ids.append(application_id)
+        taken.append(application_id)
+    if not taken:
+        return None
+    _event(operation, "model_limit", f"Model available again; refilling {len(taken)} application(s)")
+    return request.model_copy(update={"fill_mode": "continue", "blocker_mode": "continue"}), taken
+
+
+def _recount(operation: ApplyOperation, application_id: str) -> None:
+    """A refill is starting: this application was counted once already, and the rerun
+    replaces that result."""
+    with _LOCK:
+        operation.blocked -= 1
+        operation.needs_input -= 1
+        operation.processed -= 1
+        attention_mod.remove(operation.attention, application_id)
 
 
 def _worker(
@@ -1398,13 +1462,11 @@ def _start_review_locked(
     with _LOCK:
         if daily_progress.daily_busy():
             raise RuntimeError("Another Apply workflow owns the browser")
-        # Beside a running batch this is fine (its own tab), unless a fill is working on
-        # this application right now.
-        filling = {
-            item.application_id for other in _ACTIVE.values() for item in other.in_flight
-        }
-        if _start_refusal(action) or source_job_id in filling:
+        # Beside a running batch this is fine (its own tab), unless a fill or another
+        # review action is on this application's tab right now.
+        if _start_refusal(action) or source_job_id in _AT_WORK:
             raise RuntimeError("Another Apply operation owns the browser")
+        _AT_WORK.add(source_job_id)
         operation = ApplyOperation(
             operation_id=uuid.uuid4().hex,
             action=action,
@@ -1467,4 +1529,5 @@ def _review_worker(
     finally:
         operation.processed = 1
         operation.finished_at = _now()
+        _unclaim(source_job_id)
         _unregister(operation)
