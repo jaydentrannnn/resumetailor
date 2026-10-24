@@ -75,6 +75,16 @@ def test_an_uncommitted_dropdown_is_not_an_answer():
     assert harvest.from_fields(fields) == []
 
 
+def test_a_workday_row_holds_an_entry_not_an_answer():
+    """Leidos (2026-10-24): "Company* = VNPT Group" saved from one row filled the next."""
+    fields = [
+        _field("Company*", "VNPT Group", constraints={"id": "workExperience-4--companyName"}),
+        _field("Year", "2027", constraints={"id": "education-5--lastYearAttended-dateSectionYear-input"}),
+        _field("Company you admire most?", "Acme", constraints={"id": "q1"}),
+    ]
+    assert harvest.from_fields(fields) == [harvest.Typed("Company you admire most?", "Acme")]
+
+
 def test_listener_entries_are_read_by_label():
     raw = {"Which team interests you?*": {"value": " Payments ", "kind": "text"}, "Empty": {}}
     typed = harvest.from_listener(raw)
@@ -108,8 +118,10 @@ def test_listener_records_typed_text_radios_and_selects(page):
         <label><input type="radio" name="r" value="n">No</label></fieldset>
       <label for="s">Office</label><select id="s"><option>Austin</option><option>Remote</option></select>
       <label for="p">Password</label><input id="p" type="password">
+      <label for="workExperience-4--companyName">Company*</label><input id="workExperience-4--companyName">
     """)
     page.evaluate(harvest.LISTENER_JS)
+    page.fill("[id='workExperience-4--companyName']", "VNPT Group")
     page.fill("#t", "Payments")
     page.check("text=No")
     page.select_option("#s", "Remote")

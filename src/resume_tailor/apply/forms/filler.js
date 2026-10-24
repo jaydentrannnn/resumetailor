@@ -1113,6 +1113,12 @@
     if (el.getAttribute("data-automation-id") === "beecatcher" || honeypot(el)) continue;
     // A dropdown's validity stand-in is reported with its dropdown (`twinRequired`).
     if (twinOwner(el)) continue;
+    // Workday's employment, education and language rows belong to `workday_repeaters`,
+    // which matches each row to one resume entry. A profile fact ("Job Title" -> the
+    // current title) or a remembered answer ("Year") is no row's value: Leidos
+    // (2026-10-24) got the newest title, the home city and a graduation date in the VNPT
+    // row. Readiness (`filler_readiness.js`) still checks these rows.
+    if (/^(?:workExperience|education|language)-\d+--/.test(el.id || "")) continue;
     const code = codeBoxes(el);
     if (code) {
       if (el !== code[0]) continue;

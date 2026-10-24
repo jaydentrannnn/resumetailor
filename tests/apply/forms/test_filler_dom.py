@@ -523,3 +523,36 @@ def test_revalidating_a_rejected_choice_never_changes_it(page):
     page.locator("#age-yes").check()
     page.evaluate(_READINESS, {"revalidate": True})
     assert page.locator("#age-yes").is_checked() and not page.locator("#age-no").is_checked()
+
+
+# A blank Workday Work Experience row (Leidos, 2026-10-24) beside a question of its own.
+_WORKDAY_ROW = """
+<div data-automation-id="formField-jobTitle"><label for="workExperience-21--jobTitle">Job Title*</label>
+  <input id="workExperience-21--jobTitle" aria-required="true"></div>
+<div data-automation-id="formField-companyName"><label for="workExperience-21--companyName">Company*</label>
+  <input id="workExperience-21--companyName" aria-required="true"></div>
+<div data-automation-id="formField-location"><label for="workExperience-21--location">Location</label>
+  <input id="workExperience-21--location"></div>
+<div data-automation-id="formField-startDate">
+  <label for="workExperience-21--startDate-dateSectionMonth-input">Month</label>
+  <input id="workExperience-21--startDate-dateSectionMonth-input" aria-required="true">
+  <label for="workExperience-21--startDate-dateSectionYear-input">Year</label>
+  <input id="workExperience-21--startDate-dateSectionYear-input" aria-required="true"></div>
+<div data-automation-id="formField-currentTitle"><label for="title">Current Job Title</label>
+  <input id="title"></div>
+"""
+
+
+def test_workday_rows_are_left_to_the_row_filler(page):
+    """A row's Job Title is that entry's, not the profile's current title; nor is the home
+    city its Location, nor a remembered "Year" its date (`workday_repeaters` fills rows)."""
+    page.set_content(_WORKDAY_ROW)
+    result = _fill(page, {"current_title": "AI Chatbot Engineer Intern", "location": "Irvine, CA"})
+    assert [(item["selector"], item["value"]) for item in result["filled"]] == [
+        ("#title", "AI Chatbot Engineer Intern"),
+    ]
+    assert not any("workExperience" in str(item.get("selector")) for item in result["leftovers"])
+    assert result["required_empty"] == []
+    assert page.locator("[id='workExperience-21--jobTitle']").input_value() == ""
+    # The rows still count before submitting.
+    assert page.evaluate(_READINESS, {})["required_empty"] == ["Job Title*", "Company*", "Month", "Year"]

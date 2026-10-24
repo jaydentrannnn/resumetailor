@@ -53,6 +53,9 @@ _NEVER = re.compile(
     r"driver.?s licen[cs]e number|signature|initials",
     re.IGNORECASE,
 )
+#: One part of a split date ("Month", "Year*"): the label names no question, so an answer
+#: saved under it fills whichever date asks next (a graduation year in a job's From).
+_DATE_PART = re.compile(r"^\W*(?:month|year|day|mm|dd|yy|yyyy)\W*$", re.IGNORECASE)
 #: Canonical field keys owned by the profile's equal-opportunity section.
 _EEO_KEYS = frozenset(
     {"gender", "race", "race_detail", "ethnicity", "hispanic", "hispanic_latino", "veteran",
@@ -214,7 +217,7 @@ def storable(label: str, *, canonical_key: str = "", input_type: str = "") -> bo
         return False
     if input_type.casefold() == "password":
         return False
-    if _NEVER.search(label) is not None:
+    if _NEVER.search(label) is not None or _DATE_PART.match(label):
         return False
     return profile_key(label, canonical_key) is None
 

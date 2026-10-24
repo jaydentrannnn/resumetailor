@@ -91,9 +91,11 @@ LISTENER_JS = r"""
     value = clean(value).slice(0, 5000);
     if (label && value) window.__rtTyped[label] = { value, kind };
   };
+  // A Workday employment/education/language row holds one resume entry, not an answer.
+  const row = (el) => /^(?:workExperience|education|language)-\d+--/.test((el && el.id) || '');
   document.addEventListener('change', (event) => {
     const el = event.target;
-    if (!el || !el.tagName) return;
+    if (!el || !el.tagName || row(el)) return;
     const type = (el.type || '').toLowerCase();
     if (['password', 'file', 'hidden', 'checkbox'].includes(type)) return;
     if (type === 'radio') {
@@ -110,7 +112,7 @@ LISTENER_JS = r"""
     if (!option) return;
     const owner = document.querySelector(
       '[aria-expanded="true"][aria-haspopup="listbox"], [aria-expanded="true"][role="combobox"]');
-    if (owner) put(labelOf(owner), text(option), 'choice');
+    if (owner && !row(owner)) put(labelOf(owner), text(option), 'choice');
   }, true);
   return true;
 }
@@ -173,11 +175,19 @@ def answered_all(
     return needed <= have
 
 
+#: A Workday employment, education or language row control (``workExperience-21--jobTitle``):
+#: its value is one resume entry's, so "Company" or "Year" typed there answers no question
+#: (Leidos, 2026-10-24: a row's "VNPT Group" and "2027" came back in another row).
+_WORKDAY_ROW = re.compile(r"^(?:workExperience|education|language)-\d+--")
+
+
 def from_fields(fields: Iterable[Any]) -> list[Typed]:
     """Answers in scanned fields (`scanner.FieldObservation`)."""
     found = []
     for field in fields:
         if field.control_kind in _SKIP_KINDS or not field.current_value.strip():
+            continue
+        if _WORKDAY_ROW.match(str(field.constraints.get("id") or "")):
             continue
         if field.control_kind == "combobox" and field.selection_state != "committed":
             continue

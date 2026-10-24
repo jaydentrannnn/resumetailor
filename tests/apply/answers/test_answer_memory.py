@@ -90,6 +90,14 @@ def test_sensitive_answers_are_never_stored(label, kwargs):
     assert memory.recall(label, **{k: v for k, v in kwargs.items() if k == "canonical_key"}) is None
 
 
+@pytest.mark.parametrize("label", ["Month", "Year*", "YYYY", " Day "])
+def test_a_date_part_alone_is_never_an_answer(label):
+    """A Workday "Year" (a graduation year once) filled a job's From date (2026-10-24)."""
+    assert memory.remember(label, "2027", ats="workday") is None
+    assert memory.recall(label, ats="workday") is None
+    assert memory.remember("Year you expect to graduate", "2027") is not None
+
+
 def test_a_second_correction_replaces_the_first():
     memory.remember("Preferred team?", "Risk")
     memory.remember("Preferred team", "Payments")
