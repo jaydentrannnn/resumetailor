@@ -314,6 +314,11 @@ class ApplySettings(BaseModel):
     auto_submit_max_per_day: int = Field(default=25, ge=0)
     auto_submit_max_per_company_per_day: int = Field(default=2, ge=0)
     blocker_mode: Literal["pause", "continue"] = "continue"
+    #: A fill stuck on questions moves to the back of its batch and comes back as a
+    #: Continue fill once the applicant has answered, or after `come_back_after_min`
+    #: minutes (`apply.funnel.come_back`). Off: it is left in Needs you at once.
+    come_back_stuck: bool = True
+    come_back_after_min: int = Field(default=3, ge=1, le=30)
     reuse_threshold: float = 0.72
     #: When Apply writes a cover letter (`apply.funnel.cover_on_demand.plan`): ``off``
     #: never (a required field is left for review); ``required`` during Fill, only for a
@@ -1730,9 +1735,11 @@ class ApplyOperationRequest(BaseModel):
 
 
 class ApplyOperationControlRequest(BaseModel):
-    """Control a running or paused Apply operation."""
+    """Control a running or paused Apply operation. ``retry_now`` and ``leave`` act on
+    one application waiting to come back (``application_id``)."""
 
-    action: Literal["pause", "resume", "skip", "cancel"]
+    action: Literal["pause", "resume", "skip", "cancel", "retry_now", "leave"]
+    application_id: str = ""
 
 
 class ApplyOperationResponse(BaseModel):
@@ -1778,6 +1785,11 @@ class ApplyOperationResponse(BaseModel):
     blocker_mode: Literal["pause", "continue"] = "continue"
     events: list[dict[str, Any]] = Field(default_factory=list)
     excluded: dict[str, list[str]] = Field(default_factory=dict)
+    #: Applications this operation still owns (pending, in flight or waiting to come
+    #: back); another batch cannot take them.
+    held_ids: list[str] = Field(default_factory=list)
+    #: Stuck fills waiting to come back (`come_back.WaitingItem`).
+    waiting: list[dict[str, Any]] = Field(default_factory=list)
 
 
 class ReviewCorrectionRequest(BaseModel):

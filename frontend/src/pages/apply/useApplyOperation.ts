@@ -22,16 +22,21 @@ import {
   setNotifyPreference,
 } from "../../lib/applyNotify";
 import { pollSignature, shouldRefreshTables } from "../../lib/applyPoll";
+import { exclusiveTaskRunning, heldIds, waitingIds } from "../../lib/applyPage";
 import { browserView } from "../../lib/browserState";
 import { useToast } from "../../lib/toast";
 import type { OperationControl } from "./OperationBanner";
 
 export const ACTIVE_STATES = ["queued", "running", "paused"];
 
+const byStart = (a: ApplyOperation, b: ApplyOperation) =>
+  (a.started_at || a.updated_at).localeCompare(b.started_at || b.updated_at);
+
 /**
- * The page's live state: the current (or last) Apply task, the nightly run, browser
- * reachability and desktop notifications. One adaptive poll reads the task and the
- * nightly run; it refreshes the tables only when either changes.
+ * The page's live state: the running Apply tasks (several Prepare and Fill batches may
+ * run side by side; else the last one), the nightly run, browser reachability and
+ * desktop notifications. One adaptive poll reads the tasks and the nightly run; it
+ * refreshes the tables only when either changes.
  */
 export function useApplyOperation({
   workspaceId,
@@ -54,7 +59,10 @@ export function useApplyOperation({
   showError: (title: string, reason: unknown) => void;
 }) {
   const toast = useToast();
-  const [operation, setOperation] = useState<ApplyOperation | null>(null);
+  // Shown as banners: the running tasks, oldest first, else the last one.
+  const [operations, setOperations] = useState<ApplyOperation[]>([]);
+  // Every task fetched by the last poll, including ones that just finished (notifications).
+  const [seenOperations, setSeenOperations] = useState<ApplyOperation[]>([]);
   const [daily, setDaily] = useState<DailyStatus | null>(null);
   const dailyRunning = daily?.running ?? false;
   const [browserStatus, setBrowserStatus] = useState<BrowserStatus | null>(null);
@@ -63,7 +71,10 @@ export function useApplyOperation({
   // Ready, or the app will start it when Fill needs it.
   const browserUsable = browser.state !== "unavailable";
   const [notify, setNotify] = useState(notifyPreference);
-  const active = dailyRunning || (!!operation && ACTIVE_STATES.includes(operation.state));
+  const active = dailyRunning || operations.some((op) => ACTIVE_STATES.includes(op.state));
+  const exclusiveBusy = exclusiveTaskRunning(operations, dailyRunning);
+  const held = heldIds(operations);
+  const waiting = waitingIds(operations);
 
   // The poll reads these through refs so it never restarts (and forgets what it saw)
   // when the tab changes or the rows change.
@@ -81,8 +92,8 @@ export function useApplyOperation({
   }, []);
   // The open-tabs poll notices the browser opening or closing; a task starting or ending
   // may have launched it.
-  const operationState = operation?.state;
-  useEffect(checkBrowser, [checkBrowser, workspaceId, tabsReachable, operationState]);
+  const operationStates = operations.map((op) => op.state).join(",");
+  useEffect(checkBrowser, [checkBrowser, workspaceId, tabsReachable, operationStates]);
 
   async function startBrowser() {
     setLaunching(true);
@@ -98,24 +109,35 @@ export function useApplyOperation({
   useEffect(() => {
     let live = true;
     let seen: string | null = null;
+    let lastActive = new Set<string>();
     // Resolves to whether anything is in flight, which sets the next poll's delay.
     async function poll(): Promise<boolean> {
-      const [operations, day] = await Promise.all([listApplyOperations(), getDailyStatus()]);
+      const [listed, day] = await Promise.all([listApplyOperations(), getDailyStatus()]);
       if (!live) return false;
       setDaily(day);
-      const current = operations.find((op) => ACTIVE_STATES.includes(op.state)) ?? operations[0];
-      const latest = current ? await getApplyOperation(current.operation_id) : null;
+      const running = listed.filter((op) => ACTIVE_STATES.includes(op.state));
+      // Also the ones that were running last time, to see them finish.
+      const wanted = listed.filter(
+        (op) => ACTIVE_STATES.includes(op.state) || lastActive.has(op.operation_id),
+      );
+      const fetched = await Promise.all(
+        (wanted.length ? wanted : listed.slice(0, 1)).map((op) =>
+          getApplyOperation(op.operation_id),
+        ),
+      );
       if (!live) return false;
-      setOperation(latest);
+      const nowRunning = fetched.filter((op) => ACTIVE_STATES.includes(op.state)).sort(byStart);
+      setOperations(nowRunning.length ? nowRunning : fetched.slice(-1));
+      setSeenOperations(fetched);
+      lastActive = new Set(running.map((op) => op.operation_id));
       const snapshot = {
-        operationId: latest?.operation_id ?? null,
-        state: latest?.state ?? null,
+        operationId: fetched.map((op) => op.operation_id).join(",") || null,
+        state: nowRunning.length ? "running" : (fetched[0]?.state ?? null),
         dailyRunning: day.running,
       };
       if (shouldRefreshTables(seen, snapshot, inFlightRef.current)) refreshRef.current();
       seen = pollSignature(snapshot);
-      const operationActive = ACTIVE_STATES.includes(latest?.state ?? "");
-      return operationActive || day.running || inFlightRef.current;
+      return nowRunning.length > 0 || day.running || inFlightRef.current;
     }
     const { stop, wake } = startAdaptivePoll(poll);
     wakePollRef.current = wake;
@@ -138,16 +160,18 @@ export function useApplyOperation({
       // A Find jobs runs the same pass with `fetch_only`; it isn't the nightly run.
       dailyRunning: daily.running && !daily.fetch_only,
       dailySummary: daily.summary,
-      operationId: operation?.operation_id ?? null,
-      operationState: operation?.state ?? null,
-      operationAction: operation?.action ?? null,
-      readyForReview: operation?.ready_for_review ?? operation?.completed ?? 0,
+      operations: seenOperations.map((op) => ({
+        id: op.operation_id,
+        state: op.state,
+        action: op.action,
+        readyForReview: op.ready_for_review ?? op.completed ?? 0,
+      })),
     };
     const messages = applyNotifications(lastSnapshot.current, snapshot);
     lastSnapshot.current = snapshot;
     if (!notify || !notificationsSupported() || Notification.permission !== "granted") return;
     for (const body of messages) new Notification("ResumeTailor", { body, tag: body });
-  }, [review, daily, operation, notify]);
+  }, [review, daily, seenOperations, notify]);
 
   async function changeNotify(on: boolean) {
     if (on && notificationsSupported() && Notification.permission === "default")
@@ -162,9 +186,18 @@ export function useApplyOperation({
     setNotifyPreference(on && granted);
   }
 
-  function control(action: OperationControl) {
-    if (!operation) return;
-    void controlApplyOperation(operation.operation_id, action)
+  /** A task started or changed here: show it at once, before the next poll. */
+  const setOperation = useCallback((next: ApplyOperation) => {
+    setOperations((current) => {
+      const running = current.filter(
+        (op) => op.operation_id !== next.operation_id && ACTIVE_STATES.includes(op.state),
+      );
+      return [...running, next].sort(byStart);
+    });
+  }, []);
+
+  function control(operationId: string, action: OperationControl, applicationId = "") {
+    void controlApplyOperation(operationId, action, applicationId)
       .then(setOperation)
       .catch((reason) => showError("Could not change the task", reason))
       .finally(wake);
@@ -182,11 +215,14 @@ export function useApplyOperation({
   }
 
   return {
-    operation,
+    operations,
     setOperation,
     daily,
     dailyRunning,
     active,
+    exclusiveBusy,
+    held,
+    waiting,
     browser,
     browserStatus,
     browserUsable,

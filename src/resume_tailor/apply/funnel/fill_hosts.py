@@ -9,6 +9,9 @@ side by side while same-site applications run one after another (2026-10-12).
 A site whose account is waiting for email verification is also remembered: the rest of
 the batch on that site is handed back at once instead of spending a Sign In attempt that
 can only fail until the applicant clicks the verification link.
+
+The busy sites are shared by every Fill batch running at once (`op_slots.WORKDAY_BUSY`);
+the verification memory stays with the batch that saw it.
 """
 
 from __future__ import annotations
@@ -17,7 +20,7 @@ from collections import deque
 from collections.abc import Callable
 
 from resume_tailor.apply.ats import workday_auth
-from resume_tailor.apply.funnel import store, store_models
+from resume_tailor.apply.funnel import op_slots, store, store_models
 
 
 def workday_host(app: store_models.Application | None) -> str:
@@ -33,7 +36,8 @@ def workday_host(app: store_models.Application | None) -> str:
 class HostGate:
     """Tracks which Workday sites are busy or waiting for email verification.
 
-    Not thread-safe on its own: callers hold the dispatcher's lock around every call.
+    Callers hold the dispatcher's lock around every call; the busy sites, shared with
+    other batches, are also guarded by `op_slots.SITE_LOCK`.
     """
 
     def __init__(
@@ -42,7 +46,7 @@ class HostGate:
         # Looked up at call time so tests that patch ``store.get`` reach the gate too.
         self._lookup = lookup or (lambda application_id: store.get(application_id))
         self._hosts: dict[str, str] = {}
-        self.busy: set[str] = set()
+        self.busy = op_slots.WORKDAY_BUSY
         #: site -> label of the application whose account awaits email verification.
         self.awaiting_verification: dict[str, str] = {}
 
@@ -51,20 +55,27 @@ class HostGate:
             self._hosts[application_id] = workday_host(self._lookup(application_id))
         return self._hosts[application_id]
 
-    def take(self, pending: deque[str]) -> str | None:
-        """Pop the first pending id whose site is free; None while every one is busy."""
-        for index, application_id in enumerate(pending):
-            host = self.host(application_id)
-            if host and host in self.busy:
-                continue
-            del pending[index]
-            if host:
-                self.busy.add(host)
-            return application_id
+    def take(
+        self, pending: deque[str], ready: Callable[[str], bool] = lambda _id: True
+    ) -> str | None:
+        """Pop the first pending id that is ``ready`` and whose site is free; None while
+        there is none."""
+        with op_slots.SITE_LOCK:
+            for index, application_id in enumerate(pending):
+                if not ready(application_id):
+                    continue
+                host = self.host(application_id)
+                if host and host in self.busy:
+                    continue
+                del pending[index]
+                if host:
+                    self.busy.add(host)
+                return application_id
         return None
 
     def release(self, application_id: str) -> None:
-        self.busy.discard(self.host(application_id))
+        with op_slots.SITE_LOCK:
+            self.busy.discard(self.host(application_id))
 
     def record_result(self, application_id: str, label: str) -> None:
         """Remember a site whose account now waits for the applicant's email link."""

@@ -5,6 +5,7 @@ import type {
   AttentionItem,
   InFlightItem,
   JobStatus,
+  WaitingItem,
 } from "../api";
 import { runProgress } from "./runProgress";
 import { canFillAfterReview } from "./applicationRows";
@@ -225,6 +226,9 @@ export function pendingControl(op: ApplyOperation): { pausing: boolean; cancelli
 /** "Tailoring 3 of 12 · Acme" for the operation banner. */
 export function operationHeadline(op: ApplyOperation): string {
   const verb = ACTION_VERB[op.action] ?? op.action;
+  const waiting = op.waiting?.length ?? 0;
+  if (op.state === "running" && waiting > 0 && !op.in_flight?.length)
+    return `${verb} · ${waiting} waiting on your answers`;
   if ((op.in_flight?.length ?? 0) > 1) {
     return `${op.action === "prepare" ? "Preparing" : "Filling"} ${op.in_flight!.length} at once`;
   }
@@ -400,4 +404,63 @@ export function attentionSummary(items: AttentionItem[]): string {
     )
     .join(" · ");
   return `Needs attention (${items.length})${breakdown ? ` · ${breakdown}` : ""}`;
+}
+
+export const ACTIVE_OPERATION_STATES = new Set(["queued", "running", "paused"]);
+
+/** The rows the running Apply tasks still own: pending, in flight or waiting to come
+ * back. Another task cannot take them; one a task has finished is free at once. */
+export function heldIds(operations: ApplyOperation[]): Set<string> {
+  return new Set(
+    operations
+      .filter((op) => ACTIVE_OPERATION_STATES.has(op.state))
+      .flatMap((op) => op.held_ids ?? []),
+  );
+}
+
+export function isHeld(row: { source_job_id: string }, held: Set<string>): boolean {
+  return held.has(row.source_job_id);
+}
+
+/** Find jobs and the nightly run still run alone; anything else may start beside a
+ * running Prepare or Fill. */
+export function exclusiveTaskRunning(operations: ApplyOperation[], dailyRunning: boolean): boolean {
+  return (
+    dailyRunning ||
+    operations.some((op) => op.action === "find" && ACTIVE_OPERATION_STATES.has(op.state))
+  );
+}
+
+/** "Comes back in 2:31 ...", or "Answered — ..." once every question it left is answered. */
+export function waitingLine(item: WaitingItem, nowMs: number): string {
+  if (item.answered) return "Answered — continuing once you stop typing";
+  const left = Math.max(0, Math.round((Date.parse(item.due_at) - nowMs) / 1000));
+  if (!Number.isFinite(left) || left === 0) return "Coming back now";
+  const minutes = Math.floor(left / 60);
+  const seconds = String(left % 60).padStart(2, "0");
+  return `Comes back in ${minutes}:${seconds}, or as soon as you've answered`;
+}
+
+/** Why a row's Prepare/Fill action is off while it belongs to a running task, or "". */
+export function heldNote(
+  row: { source_job_id: string },
+  held: Set<string>,
+  waiting: Set<string>,
+): string {
+  if (waiting.has(row.source_job_id))
+    return "The running Fill comes back to this by itself; use Retry now on its banner";
+  if (held.has(row.source_job_id)) return "A running Apply task has this application";
+  return "";
+}
+
+/** Shown on workflow actions while Find jobs or the nightly run has Apply to itself. */
+export const EXCLUSIVE_NOTE = "Available when Find jobs or the nightly run finishes";
+
+/** Applications waiting to come back in the running Fill tasks. */
+export function waitingIds(operations: ApplyOperation[]): Set<string> {
+  return new Set(
+    operations
+      .filter((op) => ACTIVE_OPERATION_STATES.has(op.state))
+      .flatMap((op) => (op.waiting ?? []).map((item) => item.application_id)),
+  );
 }

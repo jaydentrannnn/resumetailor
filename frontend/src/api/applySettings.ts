@@ -93,6 +93,10 @@ export type ApplySettings = {
   auto_submit_max_per_company_per_day: number;
   auto_submit_enabled: boolean;
   blocker_mode: "pause" | "continue";
+  /** A fill stuck on questions moves to the back and comes back once answered, or after
+   * `come_back_after_min` minutes. */
+  come_back_stuck: boolean;
+  come_back_after_min: number;
   reuse_threshold: number;
   /** When Apply writes a cover letter; see `CoverLetterSetting`. */
   cover_letter_mode: CoverLetterMode;

@@ -93,7 +93,7 @@ export function ApplyPage() {
     selectedBrowser: settings.apply.browser ?? null,
     showError,
   });
-  const { active, browserUsable } = op;
+  const { active, browserUsable, exclusiveBusy, held, waiting } = op;
   // Re-read each source's health whenever a run starts or finishes.
   const sourcesStatus = useSourcesStatus(active);
   const { busy, findOptions, setFindOptions, actions } = useApplyRowActions({
@@ -101,6 +101,9 @@ export function ApplyPage() {
     tables: [queue, review, archive],
     openTabs,
     active,
+    exclusiveBusy,
+    held,
+    waiting,
     browserUsable,
     workspaceId,
     refresh,
@@ -110,7 +113,7 @@ export function ApplyPage() {
   });
   const readyCount = (queue.data?.counts.ready ?? 0) + (review.data?.total ?? 0);
   const anySource = settings.apply.sources.some((source) => source.enabled);
-  const flags = { busy, active, browserUsable };
+  const flags = { busy, exclusiveBusy, held, browserUsable };
   const find = () => actions.start("find");
 
   return (
@@ -127,7 +130,17 @@ export function ApplyPage() {
         onTab={setTab}
         onSettings={() => setBannerOpen(true)}
       />
-      {op.operation && <OperationBanner operation={op.operation} onControl={op.control} />}
+      {op.operations.map((operation) => (
+        <OperationBanner
+          key={operation.operation_id}
+          operation={operation}
+          onControl={(action, applicationId) =>
+            op.control(operation.operation_id, action, applicationId)
+          }
+          onOpenTab={actions.focusTabById}
+          pinned={op.operations.length === 1}
+        />
+      ))}
       <ProfileGapsNotice gaps={profileGaps} />
       {!browserUsable && readyCount > 0 && (
         <AttentionRow

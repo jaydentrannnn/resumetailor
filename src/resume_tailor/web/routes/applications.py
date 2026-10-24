@@ -659,7 +659,9 @@ def control_apply_operation(
     body: ApplyOperationControlRequest,
 ) -> ApplyOperationResponse:
     try:
-        return _operation_out(apply_operations.control(operation_id, body.action))
+        return _operation_out(
+            apply_operations.control(operation_id, body.action, body.application_id)
+        )
     except KeyError as exc:
         raise HTTPException(status_code=404, detail="Unknown Apply operation") from exc
     except RuntimeError as exc:

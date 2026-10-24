@@ -1,4 +1,10 @@
-"""Persistent coordinator for explicit Find, Prepare, and Fill operations."""
+"""Persistent coordinator for explicit Find, Prepare, and Fill operations.
+
+Prepare and Fill batches may run side by side, each owning its own rows (`held_ids`)
+and its own Pause/Resume/Skip/Cancel (`_Controls`); their workers share each kind's
+slots fairly (`op_slots`). Find runs alone. A fill stuck on questions waits at the back
+of its batch to come back (`come_back`).
+"""
 
 from __future__ import annotations
 
@@ -12,6 +18,7 @@ import uuid
 from collections import deque
 from concurrent.futures import ThreadPoolExecutor
 from contextlib import contextmanager
+from dataclasses import dataclass, field
 from datetime import UTC, datetime
 from pathlib import Path
 from typing import Any, Literal
@@ -25,9 +32,11 @@ from resume_tailor.apply.forms import fill, submit_guard
 from resume_tailor.apply.funnel import attention as attention_mod
 from resume_tailor.apply.funnel import (
     answer_harvest,
+    come_back,
     daily,
     daily_progress,
     fill_hosts,
+    op_slots,
     preparation,
     store,
     store_models,
@@ -146,6 +155,11 @@ class ApplyOperation(BaseModel):
     model_limited: list[str] = Field(default_factory=list)
     #: The one operation-level "model at its limit" notice was shown.
     model_limit_noticed: bool = False
+    #: Applications this operation still owns: pending, in flight or waiting to come
+    #: back. Another batch cannot take them; a finished one is free at once.
+    held_ids: list[str] = Field(default_factory=list)
+    #: Stuck fills waiting to come back (`come_back`).
+    waiting: list[come_back.WaitingItem] = Field(default_factory=list)
 
 
 #: `FillResult.handoff_reason` of a fill whose required answers waited on the model.
@@ -156,30 +170,103 @@ _MODEL_UNAVAILABLE = "autofill model unavailable"
 _DURABLE_CORRECTIONS_KEPT = 200
 
 _LOCK = threading.RLock()
-_RUN_LOCK = threading.Lock()
+
+
+@dataclass
+class _Controls:
+    """One operation's Pause/Resume/Skip/Cancel: each batch has its own, so a control on
+    one never reaches another running beside it."""
+
+    cancel: threading.Event = field(default_factory=threading.Event)
+    resume: threading.Event = field(default_factory=threading.Event)
+    skip: threading.Event = field(default_factory=threading.Event)
+    #: The applicant pressed Pause: stop before the next application (never mid-form).
+    pause: threading.Event = field(default_factory=threading.Event)
+    #: Pause or Cancel during Prepare: every item stops now (cancelling its tailor job)
+    #: instead of finishing first; a paused one runs again from the start on Resume.
+    hold: threading.Event = field(default_factory=threading.Event)
+    #: Waiting applications to bring back now, or to leave in Needs you (`come_back`).
+    retry_now: set[str] = field(default_factory=set)
+    leave: set[str] = field(default_factory=set)
+
+
+#: Operations running now, by id, oldest first (the live objects their workers update).
+_ACTIVE: dict[str, ApplyOperation] = {}
+_CONTROLS: dict[str, _Controls] = {}
+#: A registry edit (`registry_edit_idle`) is in progress; nothing starts meanwhile.
+_EDITING = False
+
+
+def _ctl(operation: ApplyOperation) -> _Controls:
+    with _LOCK:
+        return _CONTROLS.setdefault(operation.operation_id, _Controls())
 
 
 @contextmanager
 def registry_edit_idle():
     """Exclude explicit and daily Apply workers during a registry mutation."""
-    if not _RUN_LOCK.acquire(blocking=False):
-        raise RuntimeError("Another Apply operation is running")
+    global _EDITING
+    with _LOCK:
+        if _ACTIVE or _EDITING:
+            raise RuntimeError("Another Apply operation is running")
+        _EDITING = True
     try:
         with daily.registry_edit_idle():
             yield
     finally:
-        _RUN_LOCK.release()
+        with _LOCK:
+            _EDITING = False
 
 
-_ACTIVE_ID: str | None = None
-_CANCEL = threading.Event()
-_RESUME = threading.Event()
-_SKIP = threading.Event()
-#: The applicant pressed Pause: stop before the next application (never mid-form).
-_PAUSE = threading.Event()
-#: Pause or Cancel during Prepare: every item stops now (cancelling its tailor job)
-#: instead of finishing first; a paused one runs again from the start on Resume.
-_HOLD = threading.Event()
+def _register(operation: ApplyOperation) -> None:
+    with _LOCK:
+        _ACTIVE[operation.operation_id] = operation
+        _CONTROLS[operation.operation_id] = _Controls()
+
+
+def _unregister(operation: ApplyOperation) -> None:
+    """The operation ended: its rows are free and its controls gone."""
+    with _LOCK:
+        operation.held_ids = []
+        operation.waiting = []
+        _ACTIVE.pop(operation.operation_id, None)
+        _CONTROLS.pop(operation.operation_id, None)
+    _persist(operation)
+
+
+def _held_elsewhere(operation: ApplyOperation | None = None) -> set[str]:
+    """Applications the running operations other than ``operation`` still own."""
+    with _LOCK:
+        return {
+            application_id
+            for other in _ACTIVE.values()
+            if other is not operation
+            for application_id in other.held_ids
+        }
+
+
+def _start_refusal(action: str) -> str:
+    """Why an operation of ``action`` cannot start beside the ones running, or ""."""
+    with _LOCK:
+        if _EDITING:
+            return "Another Apply operation is running"
+        running = list(_ACTIVE.values())
+    if daily_progress.daily_busy():
+        return "Another Apply workflow is already running"
+    if not running:
+        return ""
+    if action == "find" or any(other.action == "find" for other in running):
+        return f"Apply operation {running[-1].operation_id} is already active"
+    # The extension's relay has one connection to the browser, and a Prepare may open
+    # a posting there: only batches of the same kind share it.
+    if browser.extension_mode() and any(
+        other.action != action or action not in ("prepare", "fill") for other in running
+    ):
+        return (
+            "With the browser extension, one kind of Apply task runs at a time; "
+            "start this when the current one finishes"
+        )
+    return ""
 
 
 def _path() -> Path:
@@ -321,7 +408,7 @@ def _set_find_progress(operation: ApplyOperation, progress: daily_progress.FindP
 
 
 def get(operation_id: str) -> ApplyOperation | None:
-    if _ACTIVE_ID is None:
+    if not _ACTIVE:
         list_recent()
     with _LOCK:
         return _load().get(operation_id)
@@ -331,7 +418,7 @@ def list_recent() -> list[ApplyOperation]:
     with _LOCK:
         operations = _load()
         changed = False
-        if _ACTIVE_ID is None:
+        if not _ACTIVE:
             for operation in operations.values():
                 if operation.state in {"queued", "running", "paused"}:
                     operation.state = "interrupted"
@@ -359,9 +446,17 @@ def list_recent() -> list[ApplyOperation]:
 
 
 def active() -> ApplyOperation | None:
+    """The most recently started operation still running, or None when none is."""
     with _LOCK:
-        operation_id = _ACTIVE_ID
-    return get(operation_id) if operation_id else None
+        ids = list(_ACTIVE)
+    return get(ids[-1]) if ids else None
+
+
+def active_all() -> list[ApplyOperation]:
+    """Every operation running now, oldest first."""
+    with _LOCK:
+        ids = list(_ACTIVE)
+    return [operation for operation_id in ids if (operation := get(operation_id))]
 
 
 def _captured_settings(request: ApplyOperationRequest) -> ApplySettings:
@@ -404,7 +499,6 @@ def start(request: ApplyOperationRequest) -> ApplyOperation:
 
 
 def _start_locked(request: ApplyOperationRequest) -> ApplyOperation:
-    global _ACTIVE_ID
     if request.action != "find" and not request.application_ids:
         raise ValueError(f"{request.action} requires at least one selected application")
     settings_snapshot = _captured_settings(request)
@@ -433,43 +527,42 @@ def _start_locked(request: ApplyOperationRequest) -> ApplyOperation:
         selected = [application_id for application_id in selected if application_id not in excluded]
         if not selected:
             raise ValueError(f"No selected applications can be prepared: {excluded}")
-    if not _RUN_LOCK.acquire(blocking=False):
-        current = active()
-        label = current.operation_id if current else "unknown"
-        raise RuntimeError(f"Apply operation {label} is already active")
-    if daily_progress.daily_busy():
-        _RUN_LOCK.release()
-        raise RuntimeError("Another Apply workflow is already running")
+    if refusal := _start_refusal(request.action):
+        raise RuntimeError(refusal)
     applicant_snapshot = None
-    try:
-        if request.action == "fill":
-            applicant_snapshot, _seeded = profile.load_profile()
-            applicant_snapshot = applicant_snapshot.model_copy(deep=True)
-    except Exception:
-        _RUN_LOCK.release()
-        raise
+    if request.action == "fill":
+        applicant_snapshot, _seeded = profile.load_profile()
+        applicant_snapshot = applicant_snapshot.model_copy(deep=True)
 
-    operation = ApplyOperation(
-        operation_id=uuid.uuid4().hex,
-        action=request.action,
-        application_ids=selected,
-        total=1 if request.action == "find" else len(selected),
-        excluded=excluded,
-        effective_model=_effective_model(request),
-        auto_submit=request.auto_submit,
-        blocker_mode=request.blocker_mode,
-        fill_mode=request.fill_mode,
-        dry_run=request.dry_run,
-        limit=request.limit,
-        max_age_days=request.max_age_days,
-    )
-    _CANCEL.clear()
-    _RESUME.clear()
-    _SKIP.clear()
-    _PAUSE.clear()
-    _HOLD.clear()
     with _LOCK:
-        _ACTIVE_ID = operation.operation_id
+        if refusal := _start_refusal(request.action):
+            raise RuntimeError(refusal)
+        # A row another batch still owns stays with it; one it finished is free.
+        held = _held_elsewhere()
+        for application_id in selected:
+            if application_id in held:
+                excluded[application_id] = ["in_another_task"]
+        selected = [application_id for application_id in selected if application_id not in held]
+        if request.action != "find" and not selected:
+            raise RuntimeError(
+                "The selected applications are already in another running Apply task"
+            )
+        operation = ApplyOperation(
+            operation_id=uuid.uuid4().hex,
+            action=request.action,
+            application_ids=selected,
+            total=1 if request.action == "find" else len(selected),
+            excluded=excluded,
+            effective_model=_effective_model(request),
+            auto_submit=request.auto_submit,
+            blocker_mode=request.blocker_mode,
+            fill_mode=request.fill_mode,
+            dry_run=request.dry_run,
+            limit=request.limit,
+            max_age_days=request.max_age_days,
+            held_ids=list(selected),
+        )
+        _register(operation)
     _persist(operation)
     threading.Thread(
         target=logs.call_in_context,
@@ -490,16 +583,17 @@ def _start_locked(request: ApplyOperationRequest) -> ApplyOperation:
 def _wait_if_paused(operation: ApplyOperation) -> Literal["resume", "skip", "cancel"]:
     if operation.state != "paused":
         return "resume"
-    while not _CANCEL.is_set():
-        if _SKIP.wait(timeout=0.25):
-            _SKIP.clear()
-            _HOLD.clear()
+    ctl = _ctl(operation)
+    while not ctl.cancel.is_set():
+        if ctl.skip.wait(timeout=0.25):
+            ctl.skip.clear()
+            ctl.hold.clear()
             operation.state = "running"
             _event(operation, "resumed", "Skipped blocked application")
             return "skip"
-        if _RESUME.wait(timeout=0.25):
-            _RESUME.clear()
-            _HOLD.clear()
+        if ctl.resume.wait(timeout=0.25):
+            ctl.resume.clear()
+            ctl.hold.clear()
             operation.state = "running"
             _event(operation, "resumed", "Batch resumed")
             return "resume"
@@ -517,7 +611,7 @@ def _wait_while_automation_paused(operation: ApplyOperation) -> bool:
         "Automation is paused. Turn it back on to continue with the next application.",
     )
     _persist(operation)
-    while not _CANCEL.wait(timeout=0.5):
+    while not _ctl(operation).cancel.wait(timeout=0.5):
         if not submit_guard.is_paused():
             operation.state = "running"
             _event(operation, "resumed", "Automation resumed")
@@ -540,6 +634,11 @@ def _hold_for_verification(operation: ApplyOperation, application_id: str, reaso
     _event(operation, "filling", reason, application_id)
 
 
+#: How one item ended, for the dispatcher: finished (counted), stopped by Pause/Cancel
+#: before it finished (it runs again on Resume), or a stuck fill waiting to come back.
+Outcome = Literal["done", "stopped", "come_back"]
+
+
 def _process_item(
     operation: ApplyOperation,
     request: ApplyOperationRequest,
@@ -548,8 +647,12 @@ def _process_item(
     application_id: str,
     reserve_submit: Any,
     release_submit: Any,
-) -> bool:
-    """Run one item; True when Pause/Cancel stopped it before it finished."""
+    *,
+    comebacks: int = 0,
+    again: bool = False,
+) -> Outcome:
+    """Run one item. ``comebacks`` counts the times this fill already came back, and
+    ``again`` is set while it is coming back now (`come_back`)."""
     app = store.get(application_id)
     started_at = _now()
     item = InFlightItem(
@@ -563,142 +666,29 @@ def _process_item(
         operation.current_step_number = 0
         _mirror_item(operation, item)
         _persist(operation)
-    interrupted = False
+    outcome: Outcome = "done"
     try:
         if app is None:
             with _LOCK:
                 operation.failed += 1
                 attention_mod.record(operation.attention, application_id, item.label, "failed", "Application no longer exists")
             _event(operation, "failed", "Application no longer exists", application_id)
-            return False
+            return outcome
         if app.archived_at:
             with _LOCK:
                 operation.excluded[application_id] = ["archived_application"]
             _event(operation, "excluded", "Application is archived", application_id)
-            return False
+            return outcome
         if operation.action == "prepare":
-            _event(operation, "preparing", "Fetching and tailoring application", application_id)
-
-            def progress(message: str) -> None:
-                # A stopped item stays quiet: its late progress would bury "Paused".
-                if not _HOLD.is_set():
-                    _event(operation, "preparing", message, application_id)
-
-            try:
-                result_app = daily.prepare_application(
-                    application_id,
-                    settings=settings,
-                    on_progress=progress,
-                    force_prepare=request.force_prepare,
-                    on_job=lambda job_id: _set_job(operation, job_id, application_id),
-                    should_stop=_HOLD.is_set,
-                )
-            except PrepareInterrupted:
-                interrupted = True
-                return True
-            finally:
-                _set_job(operation, "", application_id)
-            with _LOCK:
-                if result_app.status == "ready" or result_app.status in daily.RETAINED_TAB_STATUSES:
-                    operation.completed += 1
-                elif result_app.status in {"needs_browser", "screened_out"}:
-                    operation.blocked += 1
-                    attention_mod.record(
-                        operation.attention, application_id, item.label, "blocked",
-                        result_app.error
-                        or ("; ".join(result_app.screen.reasons) if result_app.screen else "")
-                        or store_views.review_summary(result_app)
-                        or (result_app.status_history[-1].note if result_app.status_history else "")
-                        or result_app.status.replace("_", " "),
-                    )
-                else:
-                    operation.failed += 1
-                    attention_mod.record(operation.attention, application_id, item.label, "failed", result_app.error or result_app.status.replace("_", " "))
-            if result_app.status in daily.RETAINED_TAB_STATUSES:
-                _event(
-                    operation,
-                    "preparing",
-                    f"[ready] packet refreshed; {result_app.status.replace('_', ' ')} tab retained",
-                    application_id,
-                )
-            return False
-
-        # Resume after a blocker reuses the retained tab and its answers.
-        attempt_mode = request.fill_mode
-        while True:
-            if attempt_mode == "continue":
-                _harvest_typed(operation, application_id)
-            _event(operation, "filling", "Opening application form", application_id)
-            submit_allowed = reserve_submit()
-            answer_harvest.FILLING.add(application_id)
-            try:
-                result = fill.fill_application(
-                    application_id,
-                    settings=settings,
-                    submit_mode="auto_submit" if submit_allowed else "awaiting_review",
-                    fill_mode=attempt_mode,
-                    should_cancel=_CANCEL.is_set,
-                    on_progress=lambda message: _event(
-                        operation, "filling", message, application_id
-                    ),
-                    applicant_profile=applicant_snapshot,
-                    on_deadline=_on_deadline(operation, item),
-                )
-            except BaseException:
-                release_submit(submit_allowed, _stored_submit_status(application_id))
-                raise
-            finally:
-                answer_harvest.FILLING.discard(application_id)
-            release_submit(submit_allowed, result.status)
-            if result.status in {"awaiting_review", "awaiting_otp"}:
-                answer_harvest.watch(application_id)
-            if result.status == "submitted":
-                with _LOCK:
-                    operation.completed += 1
-                break
-            if result.status == "awaiting_review" and result.ready_to_submit:
-                with _LOCK:
-                    operation.completed += 1
-                    operation.ready_for_review += 1
-                    attention_mod.record(operation.attention, application_id, item.label, "ready_for_review", "Ready to submit — final check")
-                break
-            if result.status in {"awaiting_review", "awaiting_otp"}:
-                if result.handoff_reason == _MODEL_UNAVAILABLE:
-                    _note_model_limit(operation, settings, application_id)
-                with _LOCK:
-                    operation.blocked += 1
-                    operation.needs_input += 1
-                    attention_mod.record(
-                        operation.attention,
-                        application_id,
-                        item.label,
-                        "needs_input",
-                        result.handoff_reason
-                        or result.error
-                        or store_views.review_summary(store.get(application_id) or app)
-                        or result.status.replace("_", " "),
-                    )
-                if request.blocker_mode != "pause":
-                    break
-                with _LOCK:
-                    operation.state = "paused"
-                _event(operation, "blocked", "Application needs your attention", application_id)
-                pause_action = _wait_if_paused(operation)
-                if pause_action == "resume":
-                    with _LOCK:
-                        operation.blocked -= 1
-                        operation.needs_input -= 1
-                        attention_mod.remove(operation.attention, application_id)
-                        item.started_at = _now()
-                        item.deadline_at = _deadline_iso()
-                        _mirror_item(operation, item)
-                    attempt_mode = "continue"
-                    continue
-                break
-            with _LOCK:
-                operation.failed += 1
-                attention_mod.record(operation.attention, application_id, item.label, "failed", result.error or result.handoff_reason or result.status.replace("_", " "))
-            break
+            outcome = _prepare_item(operation, request, settings, application_id, item)
+            return outcome
+        if again and _settled_while_waiting(operation, app, application_id, item.label):
+            return outcome
+        outcome = _fill_item(
+            operation, request, settings, applicant_snapshot, application_id, item,
+            reserve_submit, release_submit, comebacks=comebacks, again=again,
+        )
+        return outcome
     except Exception as exc:  # noqa: BLE001 - one item must not erase batch evidence
         with _LOCK:
             operation.failed += 1
@@ -706,13 +696,263 @@ def _process_item(
         _event(operation, "failed", str(exc), application_id)
     finally:
         with _LOCK:
-            if not interrupted:
+            if outcome == "done":
                 operation.processed += 1
             operation.in_flight.remove(item)
             if operation.in_flight:
                 _mirror_item(operation, operation.in_flight[-1])
             _persist(operation)
+    return outcome
+
+
+def _prepare_item(
+    operation: ApplyOperation,
+    request: ApplyOperationRequest,
+    settings: ApplySettings,
+    application_id: str,
+    item: InFlightItem,
+) -> Outcome:
+    """Fetch and tailor one application; ``stopped`` when Pause/Cancel cut it short."""
+    ctl = _ctl(operation)
+    _event(operation, "preparing", "Fetching and tailoring application", application_id)
+
+    def progress(message: str) -> None:
+        # A stopped item stays quiet: its late progress would bury "Paused".
+        if not ctl.hold.is_set():
+            _event(operation, "preparing", message, application_id)
+
+    try:
+        result_app = daily.prepare_application(
+            application_id,
+            settings=settings,
+            on_progress=progress,
+            force_prepare=request.force_prepare,
+            on_job=lambda job_id: _set_job(operation, job_id, application_id),
+            should_stop=ctl.hold.is_set,
+        )
+    except PrepareInterrupted:
+        return "stopped"
+    finally:
+        _set_job(operation, "", application_id)
+    with _LOCK:
+        if result_app.status == "ready" or result_app.status in daily.RETAINED_TAB_STATUSES:
+            operation.completed += 1
+        elif result_app.status in {"needs_browser", "screened_out"}:
+            operation.blocked += 1
+            attention_mod.record(
+                operation.attention, application_id, item.label, "blocked",
+                result_app.error
+                or ("; ".join(result_app.screen.reasons) if result_app.screen else "")
+                or store_views.review_summary(result_app)
+                or (result_app.status_history[-1].note if result_app.status_history else "")
+                or result_app.status.replace("_", " "),
+            )
+        else:
+            operation.failed += 1
+            attention_mod.record(operation.attention, application_id, item.label, "failed", result_app.error or result_app.status.replace("_", " "))
+    if result_app.status in daily.RETAINED_TAB_STATUSES:
+        _event(
+            operation,
+            "preparing",
+            f"[ready] packet refreshed; {result_app.status.replace('_', ' ')} tab retained",
+            application_id,
+        )
+    return "done"
+
+
+def _fill_item(
+    operation: ApplyOperation,
+    request: ApplyOperationRequest,
+    settings: ApplySettings,
+    applicant_snapshot: profile.ApplicantProfile | None,
+    application_id: str,
+    item: InFlightItem,
+    reserve_submit: Any,
+    release_submit: Any,
+    *,
+    comebacks: int,
+    again: bool,
+) -> Outcome:
+    """Fill one application; ``come_back`` when it stuck on questions and waits at the
+    back of the batch (`come_back`). A comeback, or Resume after a blocker, is a
+    Continue fill: it reuses the retained tab and its answers."""
+    ctl = _ctl(operation)
+    attempt_mode = "continue" if again else request.fill_mode
+    while True:
+        if attempt_mode == "continue":
+            _harvest_typed(operation, application_id)
+        _event(operation, "filling", "Opening application form", application_id)
+        submit_allowed = reserve_submit()
+        answer_harvest.FILLING.add(application_id)
+        try:
+            result = fill.fill_application(
+                application_id,
+                settings=settings,
+                submit_mode="auto_submit" if submit_allowed else "awaiting_review",
+                fill_mode=attempt_mode,
+                should_cancel=ctl.cancel.is_set,
+                on_progress=lambda message: _event(
+                    operation, "filling", message, application_id
+                ),
+                applicant_profile=applicant_snapshot,
+                on_deadline=_on_deadline(operation, item),
+            )
+        except BaseException:
+            release_submit(submit_allowed, _stored_submit_status(application_id))
+            raise
+        finally:
+            answer_harvest.FILLING.discard(application_id)
+        release_submit(submit_allowed, result.status)
+        if result.status in {"awaiting_review", "awaiting_otp"}:
+            answer_harvest.watch(application_id)
+        if result.status == "submitted":
+            with _LOCK:
+                operation.completed += 1
+            return "done"
+        if result.status == "awaiting_review" and result.ready_to_submit:
+            with _LOCK:
+                operation.completed += 1
+                operation.ready_for_review += 1
+                attention_mod.record(operation.attention, application_id, item.label, "ready_for_review", "Ready to submit — final check")
+            return "done"
+        if result.status in {"awaiting_review", "awaiting_otp"}:
+            if result.handoff_reason == _MODEL_UNAVAILABLE:
+                _note_model_limit(operation, settings, application_id)
+            if come_back.eligible(
+                result, settings, blocker_mode=request.blocker_mode, comebacks=comebacks,
+                model_unavailable=_MODEL_UNAVAILABLE,
+            ):
+                _wait_to_come_back(operation, settings, application_id, item.label, result, comebacks + 1)
+                return "come_back"
+            with _LOCK:
+                current = store.get(application_id)
+                operation.blocked += 1
+                operation.needs_input += 1
+                attention_mod.record(
+                    operation.attention,
+                    application_id,
+                    item.label,
+                    "needs_input",
+                    result.handoff_reason
+                    or result.error
+                    or (store_views.review_summary(current) if current else "")
+                    or result.status.replace("_", " "),
+                )
+            if request.blocker_mode != "pause":
+                return "done"
+            with _LOCK:
+                operation.state = "paused"
+            _event(operation, "blocked", "Application needs your attention", application_id)
+            pause_action = _wait_if_paused(operation)
+            if pause_action == "resume":
+                with _LOCK:
+                    operation.blocked -= 1
+                    operation.needs_input -= 1
+                    attention_mod.remove(operation.attention, application_id)
+                    item.started_at = _now()
+                    item.deadline_at = _deadline_iso()
+                    _mirror_item(operation, item)
+                attempt_mode = "continue"
+                continue
+            return "done"
+        with _LOCK:
+            operation.failed += 1
+            attention_mod.record(operation.attention, application_id, item.label, "failed", result.error or result.handoff_reason or result.status.replace("_", " "))
+        return "done"
+
+
+def _wait_to_come_back(
+    operation: ApplyOperation,
+    settings: ApplySettings,
+    application_id: str,
+    label: str,
+    result: store_models.FillResult,
+    comebacks: int,
+) -> None:
+    """Show a stuck fill as waiting to come back; the dispatcher requeues it."""
+    come_back.forget(application_id)
+    current = store.get(application_id)
+    reason = (
+        result.handoff_reason
+        or result.error
+        or (store_views.review_summary(current) if current else "")
+        or "Needs your answers"
+    )
+    waiting = come_back.WaitingItem(
+        application_id=application_id,
+        label=label,
+        due_at=_deadline_iso(time.time() + come_back.wait_seconds(settings)),
+        comebacks=comebacks,
+        reason=reason,
+    )
+    with _LOCK:
+        operation.waiting = [w for w in operation.waiting if w.application_id != application_id]
+        operation.waiting.append(waiting)
+    _event(
+        operation,
+        "waiting",
+        f"Needs your answers; coming back in {settings.come_back_after_min} min, "
+        "or as soon as you've answered",
+        application_id,
+    )
+
+
+def _unwait(operation: ApplyOperation, application_id: str) -> come_back.WaitingItem | None:
+    """Take an application off the waiting list; what it showed there."""
+    with _LOCK:
+        waiting = next((w for w in operation.waiting if w.application_id == application_id), None)
+        operation.waiting = [w for w in operation.waiting if w.application_id != application_id]
+        return waiting
+
+
+def _release(operation: ApplyOperation, application_id: str) -> None:
+    """The application is finished here: another batch may take it now."""
+    with _LOCK:
+        if application_id in operation.held_ids:
+            operation.held_ids.remove(application_id)
+
+
+def _settled_while_waiting(
+    operation: ApplyOperation, app: store_models.Application, application_id: str, label: str
+) -> bool:
+    """A waiting application that needs no fill now: the applicant submitted or skipped
+    it by hand (counted as they left it), or its tab is gone (left in Needs you)."""
+    if app.status not in come_back.STILL_WAITING:
+        if app.status == "submitted":
+            with _LOCK:
+                operation.completed += 1
+        _event(
+            operation, "filling",
+            f"Already {app.status.replace('_', ' ')}; not filling it again", application_id,
+        )
+        return True
+    target = store_models.FillResult.model_validate(app.fill).browser_target_id if app.fill else ""
+    open_ids = browser.open_target_ids()
+    if open_ids is not None and target not in open_ids:
+        reason = "The application tab was closed; Continue fill or Start over from Needs you"
+        with _LOCK:
+            operation.blocked += 1
+            operation.needs_input += 1
+            attention_mod.record(operation.attention, application_id, label, "needs_input", reason)
+        _event(operation, "filling", reason, application_id)
+        return True
     return False
+
+
+def _leave_waiting(operation: ApplyOperation, application_id: str) -> None:
+    """The applicant chose to finish a waiting application themselves: Needs you, as
+    with come-back off."""
+    waiting = _unwait(operation, application_id)
+    with _LOCK:
+        operation.processed += 1
+        operation.blocked += 1
+        operation.needs_input += 1
+        attention_mod.record(
+            operation.attention, application_id, waiting.label if waiting else application_id,
+            "needs_input", waiting.reason if waiting else "Needs your answers",
+        )
+    _release(operation, application_id)
+    _event(operation, "filling", "Left for you to finish", application_id)
 
 
 def _dispatch_items(
@@ -721,19 +961,24 @@ def _dispatch_items(
     settings: ApplySettings,
     applicant_snapshot: profile.ApplicantProfile | None,
 ) -> None:
+    ctl = _ctl(operation)
     if operation.action == "prepare":
-        workers = JobSettings.model_validate(
+        capacity = JobSettings.model_validate(
             workspace.load_settings()["defaults"]
         ).max_concurrent_jobs
+        workers = capacity
     else:
-        workers = (
-            1
-            if browser.extension_mode() or request.blocker_mode == "pause"
-            else settings.max_parallel_fills
-        )
+        capacity = 1 if browser.extension_mode() else settings.max_parallel_fills
+        workers = 1 if request.blocker_mode == "pause" else capacity
     workers = min(workers, len(operation.application_ids))
-    # A paused Prepare item goes back on the front, to run again on Resume.
+    # Shared with every batch of this kind running beside this one.
+    slots = op_slots.pool("prepare" if operation.action == "prepare" else "fill")
+    # A paused Prepare item goes back on the front, to run again on Resume; a stuck fill
+    # goes on the back, to come back later.
     pending = deque(operation.application_ids)
+    #: application id -> monotonic time before which a waiting fill is not taken.
+    not_before: dict[str, float] = {}
+    comebacks: dict[str, int] = {}
     dispatch_lock = threading.Lock()
     reserved = 0
     # A submit whose confirmation never showed may well have gone out: it uses a slot.
@@ -764,6 +1009,51 @@ def _dispatch_items(
     gate = fill_hosts.HostGate() if operation.action == "fill" else None
     site_free = threading.Condition(dispatch_lock)
 
+    def ready(application_id: str) -> bool:
+        """Whether a pending application may be taken now: never while another
+        operation holds it (a review action on its tab), a waiting fill once due."""
+        if application_id in _held_elsewhere(operation):
+            return False
+        waited = not_before.get(application_id)
+        return come_back.is_due(
+            waited,
+            time.monotonic(),
+            ready=waited is not None and come_back.ready_to_continue(application_id),
+            retry_now=application_id in ctl.retry_now,
+        )
+
+    def take() -> str | None:
+        if gate is not None:
+            return gate.take(pending, ready)
+        for index, application_id in enumerate(pending):
+            if ready(application_id):
+                del pending[index]
+                return application_id
+        return None
+
+    def leave_requested() -> None:
+        for application_id in list(ctl.leave):
+            ctl.leave.discard(application_id)
+            if application_id in not_before and application_id in pending:
+                pending.remove(application_id)
+                del not_before[application_id]
+                _leave_waiting(operation, application_id)
+
+    def show_answered() -> None:
+        """Mark the waiting fills whose questions are all answered (they come back once
+        the applicant stops typing)."""
+        with _LOCK:
+            changed = False
+            for waiting in operation.waiting:
+                answered = come_back.answered(waiting.application_id)
+                changed = changed or waiting.answered != answered
+                waiting.answered = answered
+            if changed:
+                _persist(operation)
+
+    def stopping() -> bool:
+        return ctl.cancel.is_set() or ctl.pause.is_set()
+
     def process_next() -> None:
         while True:
             with dispatch_lock:
@@ -771,8 +1061,8 @@ def _dispatch_items(
                     return
                 if not _wait_while_automation_paused(operation):
                     return
-                if _PAUSE.is_set() and not _CANCEL.is_set():
-                    _PAUSE.clear()
+                if ctl.pause.is_set() and not ctl.cancel.is_set():
+                    ctl.pause.clear()
                     # A paused Prepare already said so when Pause was pressed.
                     if operation.state != "paused":
                         with _LOCK:
@@ -782,48 +1072,70 @@ def _dispatch_items(
                             "paused_by_user",
                             "Paused. Resume continues with the next application.",
                         )
-                if _CANCEL.is_set() or _wait_if_paused(operation) == "cancel":
+                if ctl.cancel.is_set() or _wait_if_paused(operation) == "cancel":
                     return
+                leave_requested()
                 if not pending:
                     return
-                if gate is None:
-                    application_id = pending.popleft()
-                else:
-                    taken = gate.take(pending)
-                    if taken is None:
-                        # Every pending application is on a site another worker is
-                        # filling; wait for one to finish (or for Pause/Cancel).
-                        site_free.wait(timeout=0.5)
-                        continue
-                    application_id = taken
-                hold = gate.verification_hold(application_id) if gate else ""
+                if not any(ready(application_id) for application_id in pending):
+                    # Only fills waiting to come back are left (or rows a review holds).
+                    show_answered()
+                    site_free.wait(timeout=0.5)
+                    continue
+            if not slots.acquire(operation.operation_id, capacity, stopping):
+                continue  # Pause or Cancel: handled at the top
+            with dispatch_lock:
+                application_id = take()
+                if application_id is None:
+                    slots.release(operation.operation_id)
+                    # Every ready application is on a Workday site another worker is
+                    # filling; wait for one to finish (or for Pause/Cancel).
+                    site_free.wait(timeout=0.5)
+                    continue
+                again = not_before.pop(application_id, None) is not None
+                ctl.retry_now.discard(application_id)
+                # A comeback is that site's own verification wait; it goes on.
+                hold = gate.verification_hold(application_id) if gate and not again else ""
+            if again:
+                _unwait(operation, application_id)
+            outcome: Outcome = "done"
             try:
                 if hold:
                     _hold_for_verification(operation, application_id, hold)
-                    continue
-                # Same-role postings in other locations prepare side by side: each is its
-                # own store row with its own tailor run, so nothing is shared between them.
-                stopped = _process_item(
-                    operation,
-                    request,
-                    settings,
-                    applicant_snapshot,
-                    application_id,
-                    reserve_submit,
-                    release_submit,
-                )
+                else:
+                    # Same-role postings in other locations prepare side by side: each is
+                    # its own store row with its own tailor run, so nothing is shared.
+                    outcome = _process_item(
+                        operation,
+                        request,
+                        settings,
+                        applicant_snapshot,
+                        application_id,
+                        reserve_submit,
+                        release_submit,
+                        comebacks=comebacks.get(application_id, 0),
+                        again=again,
+                    )
             finally:
+                slots.release(operation.operation_id)
                 if gate is not None:
                     with dispatch_lock:
                         gate.release(application_id)
                         site_free.notify_all()
-            if gate is not None:
+            if gate is not None and not hold:
                 label = _label(store.get(application_id), application_id)
                 with dispatch_lock:
                     gate.record_result(application_id, label)
-            if stopped and not _CANCEL.is_set():
-                with dispatch_lock:
+            with dispatch_lock:
+                if outcome == "stopped" and not ctl.cancel.is_set():
                     pending.appendleft(application_id)
+                elif outcome == "come_back":
+                    comebacks[application_id] = comebacks.get(application_id, 0) + 1
+                    not_before[application_id] = time.monotonic() + come_back.wait_seconds(settings)
+                    pending.append(application_id)
+                elif outcome == "done":
+                    _release(operation, application_id)
+                site_free.notify_all()
 
     with ThreadPoolExecutor(max_workers=workers) as executor:
         futures = [config.submit_in_context(executor, process_next) for _ in range(workers)]
@@ -894,7 +1206,8 @@ def _retry_model_limited(
 ) -> None:
     """Once, at the end of a Fill: Continue the fills the model's limit held back, when
     its quota has recovered by then."""
-    if operation.action != "fill" or not operation.model_limited or _CANCEL.is_set():
+    ctl = _ctl(operation)
+    if operation.action != "fill" or not operation.model_limited or ctl.cancel.is_set():
         return
     if _model_exhausted(settings):
         _event(operation, "model_limit", "The AI model is still at its limit; not refilling")
@@ -903,7 +1216,7 @@ def _retry_model_limited(
     ids, operation.model_limited = list(operation.model_limited), []
     _event(operation, "model_limit", f"Model available again; refilling {len(ids)} application(s)")
     for application_id in ids:
-        if _CANCEL.is_set():
+        if ctl.cancel.is_set():
             return
         app = store.get(application_id)
         if app is None or app.status not in {"awaiting_review", "awaiting_otp"}:
@@ -914,9 +1227,10 @@ def _retry_model_limited(
             operation.needs_input -= 1
             operation.processed -= 1
             attention_mod.remove(operation.attention, application_id)
+        # No dispatcher is left to requeue a comeback: a stuck refill ends in Needs you.
         _process_item(
             operation, again, settings, applicant_snapshot, application_id,
-            reserve_submit, release_submit,
+            reserve_submit, release_submit, comebacks=come_back.MAX_COMEBACKS,
         )
 
 
@@ -926,7 +1240,7 @@ def _worker(
     applicant_snapshot: profile.ApplicantProfile | None = None,
     settings_snapshot: ApplySettings | None = None,
 ) -> None:
-    global _ACTIVE_ID
+    ctl = _ctl(operation)
     operation.state = "running"
     operation.started_at = _now()
     _event(operation, "starting", f"Starting {operation.action}")
@@ -962,7 +1276,7 @@ def _worker(
         else:
             _dispatch_items(operation, request, settings, applicant_snapshot)
 
-        if _CANCEL.is_set():
+        if ctl.cancel.is_set():
             operation.state = "cancelled"
             operation.message = "Cancelled"
         elif operation.failed or operation.blocked:
@@ -986,31 +1300,42 @@ def _worker(
         _event(operation, "failed", str(exc))
     finally:
         heartbeat_stop.set()
-        with _LOCK:
-            _ACTIVE_ID = None
-        _RUN_LOCK.release()
+        _unregister(operation)
 
 
-def control(
-    operation_id: str, action: Literal["pause", "resume", "skip", "cancel"]
-) -> ApplyOperation:
-    operation = get(operation_id)
-    if operation is None:
-        raise KeyError(operation_id)
+ControlAction = Literal["pause", "resume", "skip", "cancel", "retry_now", "leave"]
+
+
+def control(operation_id: str, action: ControlAction, application_id: str = "") -> ApplyOperation:
+    """Pause/Resume/Skip/Cancel one operation, or bring one of its waiting fills back
+    now (``retry_now``) or leave it to the applicant (``leave``)."""
     with _LOCK:
-        if operation_id != _ACTIVE_ID or operation.state not in {"queued", "running", "paused"}:
-            raise RuntimeError("Apply operation is no longer active")
-    if action == "cancel":
-        _CANCEL.set()
-        _HOLD.set()
+        operation = _ACTIVE.get(operation_id)
+    if operation is None:
+        if get(operation_id) is None:
+            raise KeyError(operation_id)
+        raise RuntimeError("Apply operation is no longer active")
+    if operation.state not in {"queued", "running", "paused"}:
+        raise RuntimeError("Apply operation is no longer active")
+    ctl = _ctl(operation)
+    if action in ("retry_now", "leave"):
+        with _LOCK:
+            if not any(w.application_id == application_id for w in operation.waiting):
+                raise RuntimeError("That application is not waiting to come back")
+            (ctl.retry_now if action == "retry_now" else ctl.leave).add(application_id)
+        if action == "retry_now":
+            _event(operation, "waiting", "Coming back to it now", application_id)
+    elif action == "cancel":
+        ctl.cancel.set()
+        ctl.hold.set()
         _event(operation, "cancel_requested", "Cancelling…")
     elif action == "pause":
         if operation.action == "find":
             raise RuntimeError("Finding jobs cannot be paused; cancel it instead")
-        _PAUSE.set()
+        ctl.pause.set()
         if operation.action == "prepare":
             # Tailoring stops now; a form fill is never left half-done.
-            _HOLD.set()
+            ctl.hold.set()
             with _LOCK:
                 operation.state = "paused"
             _event(
@@ -1021,9 +1346,9 @@ def control(
         else:
             _event(operation, "pause_requested", "Pausing after the current application…")
     elif action == "skip":
-        _SKIP.set()
+        ctl.skip.set()
     else:
-        _RESUME.set()
+        ctl.resume.set()
     return operation
 
 
@@ -1045,7 +1370,6 @@ def _start_review_locked(
     action: Literal["inspect", "correct"],
     correction: dict[str, Any] | None,
 ) -> ApplyOperation:
-    global _ACTIVE_ID
     app = store.get(source_job_id)
     if app is None:
         raise KeyError(source_job_id)
@@ -1071,23 +1395,28 @@ def _start_review_locked(
                             "Idempotency key was reused with different correction data"
                         )
                     return existing
-    if not _RUN_LOCK.acquire(blocking=False):
-        raise RuntimeError("Another Apply operation owns the browser")
-    if daily_progress.daily_busy():
-        _RUN_LOCK.release()
-        raise RuntimeError("Another Apply workflow owns the browser")
-    operation = ApplyOperation(
-        operation_id=uuid.uuid4().hex,
-        action=action,
-        application_ids=[source_job_id],
-        total=1,
-        current_application_id=source_job_id,
-        current_label=f"{app.company} — {app.role}".strip(" —"),
-        idempotency_key=f"{source_job_id}:{key}" if key else "",
-        request_body_hash=digest,
-    )
     with _LOCK:
-        _ACTIVE_ID = operation.operation_id
+        if daily_progress.daily_busy():
+            raise RuntimeError("Another Apply workflow owns the browser")
+        # Beside a running batch this is fine (its own tab), unless a fill is working on
+        # this application right now.
+        filling = {
+            item.application_id for other in _ACTIVE.values() for item in other.in_flight
+        }
+        if _start_refusal(action) or source_job_id in filling:
+            raise RuntimeError("Another Apply operation owns the browser")
+        operation = ApplyOperation(
+            operation_id=uuid.uuid4().hex,
+            action=action,
+            application_ids=[source_job_id],
+            total=1,
+            current_application_id=source_job_id,
+            current_label=f"{app.company} — {app.role}".strip(" —"),
+            idempotency_key=f"{source_job_id}:{key}" if key else "",
+            request_body_hash=digest,
+            held_ids=[source_job_id],
+        )
+        _register(operation)
     _persist(operation)
     threading.Thread(
         target=logs.call_in_context,
@@ -1103,7 +1432,6 @@ def _review_worker(
     source_job_id: str,
     correction: dict[str, Any] | None,
 ) -> None:
-    global _ACTIVE_ID
     from resume_tailor.apply.funnel import review
 
     operation.state = "running"
@@ -1139,7 +1467,4 @@ def _review_worker(
     finally:
         operation.processed = 1
         operation.finished_at = _now()
-        _persist(operation)
-        with _LOCK:
-            _ACTIVE_ID = None
-        _RUN_LOCK.release()
+        _unregister(operation)

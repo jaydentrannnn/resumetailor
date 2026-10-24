@@ -267,7 +267,31 @@ export type ApplyOperation = {
   blocker_mode: "pause" | "continue";
   events: Array<{ at?: string; stage?: string; message?: string; application_id?: string }>;
   excluded?: Record<string, string[]>;
+  /** Rows this task still owns (pending, in flight or waiting to come back). */
+  held_ids?: string[];
+  /** Stuck fills waiting to come back (`come_back.WaitingItem`). */
+  waiting?: WaitingItem[];
 };
+
+/** A fill stuck on questions, waiting at the back of its batch to come back. */
+export type WaitingItem = {
+  application_id: string;
+  label: string;
+  /** When the timer brings it back (ISO). */
+  due_at: string;
+  comebacks: number;
+  reason: string;
+  /** Every required question it left is answered; it comes back once typing stops. */
+  answered: boolean;
+};
+
+export type OperationControlAction =
+  | "pause"
+  | "resume"
+  | "skip"
+  | "cancel"
+  | "retry_now"
+  | "leave";
 
 export function startApplyOperation(options: {
   action: "find" | "prepare" | "fill";
@@ -335,11 +359,12 @@ export function correctApplicationField(
 
 export function controlApplyOperation(
   operationId: string,
-  action: "pause" | "resume" | "skip" | "cancel",
+  action: OperationControlAction,
+  applicationId = "",
 ): Promise<ApplyOperation> {
   return request(`/api/applications/operations/${encodeURIComponent(operationId)}/control`, {
     method: "POST",
-    body: JSON.stringify({ action }),
+    body: JSON.stringify({ action, application_id: applicationId }),
   });
 }
 

@@ -5,9 +5,14 @@ export interface ApplySnapshot {
   otp: string[];
   dailyRunning: boolean;
   dailySummary: Record<string, unknown> | null;
-  operationId: string | null;
-  operationState: string | null;
-  operationAction: string | null;
+  /** The Apply tasks seen (several Prepare and Fill batches may run side by side). */
+  operations: OperationSnapshot[];
+}
+
+export interface OperationSnapshot {
+  id: string;
+  state: string;
+  action: string;
   readyForReview: number;
 }
 
@@ -34,15 +39,17 @@ export function applyNotifications(prev: ApplySnapshot | null, next: ApplySnapsh
     const s = next.dailySummary ?? {};
     out.push(`Nightly run finished: ${num(s.new_rows)} found, ${num(s.tailored)} tailored`);
   }
-  if (
-    prev.operationId &&
-    prev.operationId === next.operationId &&
-    ACTIVE.has(prev.operationState ?? "") &&
-    !ACTIVE.has(next.operationState ?? "") &&
-    next.operationAction !== "find"
-  ) {
-    const verb = next.operationAction === "fill" ? "Filling" : "Tailoring";
-    out.push(`${verb} finished: ${next.readyForReview} ready for you`);
+  for (const before of prev.operations) {
+    const after = next.operations.find((op) => op.id === before.id);
+    if (
+      after &&
+      ACTIVE.has(before.state) &&
+      !ACTIVE.has(after.state) &&
+      after.action !== "find"
+    ) {
+      const verb = after.action === "fill" ? "Filling" : "Tailoring";
+      out.push(`${verb} finished: ${after.readyForReview} ready for you`);
+    }
   }
   return out;
 }

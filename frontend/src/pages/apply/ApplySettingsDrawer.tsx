@@ -12,6 +12,7 @@ import type { BrowserView } from "../../lib/browserState";
 import { BrowserPicker, ConnectionStatus } from "./BrowserConnection";
 import { CoverLetterSetting } from "./CoverLetterSetting";
 import { AnswerPreferences } from "./AnswerPreferences";
+import { ComeBackSetting } from "./ComeBackSetting";
 
 /**
  * Platforms that may auto-submit. Workday, LinkedIn, Indeed, Handshake and SmartRecruiters
@@ -198,6 +199,11 @@ export function ApplySettingsDrawer({
               Tabs filled at once. More tabs raise the chance of bot checks.
             </p>
           </div>
+          <ComeBackSetting
+            on={apply.come_back_stuck}
+            minutes={apply.come_back_after_min}
+            onChange={patch}
+          />
         </Section>
 
         <Section title="Auto-submit">

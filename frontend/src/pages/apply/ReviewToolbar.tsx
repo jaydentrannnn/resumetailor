@@ -1,13 +1,15 @@
 import type { ApplicationRow } from "../../api";
 import { Button } from "../../components/ui";
 import { canContinueFill, canReopenFill, type OpenTabs } from "../../lib/applicationRows";
+import { EXCLUSIVE_NOTE, isHeld } from "../../lib/applyPage";
 
 /** Needs you tab, selection bar: Continue fill and Start over for the checked rows. */
 export function ReviewToolbar({
   selected,
   openTabs,
   busy,
-  active,
+  exclusiveBusy,
+  held,
   browserUsable,
   onContinue,
   onReopen,
@@ -15,17 +17,21 @@ export function ReviewToolbar({
   selected: ApplicationRow[];
   openTabs: OpenTabs;
   busy: boolean;
-  active: boolean;
+  /** Find jobs or the nightly run has Apply to itself. */
+  exclusiveBusy: boolean;
+  /** Rows a running task still owns (a Fill coming back to them, say): left out. */
+  held: Set<string>;
   browserUsable: boolean;
   onContinue: (ids: string[]) => void;
   onReopen: (rows: ApplicationRow[]) => void;
 }) {
-  const continueIds = selected
+  const free = selected.filter((row) => !isHeld(row, held));
+  const continueIds = free
     .filter((row) => canContinueFill(row, openTabs))
     .map((row) => row.source_job_id);
-  const reopenRows = selected.filter(canReopenFill);
+  const reopenRows = free.filter(canReopenFill);
   const notConnected = "The browser isn't available — see Apply settings";
-  const idleNote = active ? "Available when the current Apply task finishes" : undefined;
+  const idleNote = exclusiveBusy ? EXCLUSIVE_NOTE : undefined;
   return (
     <>
       {selected.length > continueIds.length && (
@@ -36,7 +42,7 @@ export function ReviewToolbar({
       <Button
         variant="attention"
         size="sm"
-        disabled={busy || active || !continueIds.length || !browserUsable}
+        disabled={busy || exclusiveBusy || !continueIds.length || !browserUsable}
         title={
           idleNote ??
           (browserUsable
@@ -49,7 +55,7 @@ export function ReviewToolbar({
       </Button>
       <Button
         size="sm"
-        disabled={busy || active || !reopenRows.length || !browserUsable}
+        disabled={busy || exclusiveBusy || !reopenRows.length || !browserUsable}
         title={
           idleNote ??
           (browserUsable ? "Open the postings again and fill from the start" : notConnected)

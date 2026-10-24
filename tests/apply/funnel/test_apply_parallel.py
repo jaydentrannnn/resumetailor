@@ -13,11 +13,8 @@ from resume_tailor.web.schemas import ApplyOperationRequest, ApplySettings, JobS
 
 @pytest.fixture
 def batch(monkeypatch):
-    operations._CANCEL.clear()
-    operations._PAUSE.clear()
-    operations._RESUME.clear()
-    operations._SKIP.clear()
-    operations._HOLD.clear()
+    operations._CONTROLS.clear()
+    operations._ACTIVE.clear()
     monkeypatch.setattr(operations, "_persist", lambda _operation: None)
     monkeypatch.setattr(operations.browser, "extension_mode", lambda: False)
     monkeypatch.setattr(operations.submit_guard, "is_paused", lambda: False)
@@ -62,11 +59,8 @@ def batch(monkeypatch):
         return operation
 
     yield run
-    operations._CANCEL.clear()
-    operations._PAUSE.clear()
-    operations._RESUME.clear()
-    operations._SKIP.clear()
-    operations._HOLD.clear()
+    operations._CONTROLS.clear()
+    operations._ACTIVE.clear()
 
 
 def test_fill_uses_exactly_two_workers(batch, monkeypatch):
@@ -330,11 +324,11 @@ def test_pause_holds_new_dispatch_after_in_flight_fills(batch, monkeypatch):
     )
     worker.start()
     both_started.wait()
-    operations._PAUSE.set()
+    operations._CONTROLS["test"].pause.set()
     release.set()
     assert paused.wait(3)
     assert "three" not in visited
-    operations._RESUME.set()
+    operations._CONTROLS["test"].resume.set()
     worker.join(3)
     assert not worker.is_alive()
     assert results[0].completed == 3
@@ -354,7 +348,7 @@ def _controlled_prepare(monkeypatch, ids, replies):
         application_ids=list(ids),
         total=len(ids),
     )
-    monkeypatch.setattr(operations, "_ACTIVE_ID", "test")
+    monkeypatch.setitem(operations._ACTIVE, "test", operation)
     monkeypatch.setattr(operations, "get", lambda _id: operation)
     monkeypatch.setattr(operations.daily, "prepare_application", replies)
     worker = threading.Thread(

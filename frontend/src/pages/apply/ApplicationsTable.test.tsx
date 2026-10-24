@@ -44,6 +44,9 @@ const row = (status: string, archived = false, id = "one"): ApplicationRow => ({
 const actions: TableActions = {
   busy: false,
   active: false,
+  exclusiveBusy: false,
+  held: new Set<string>(),
+  waiting: new Set<string>(),
   browserUsable: true,
   openTabs: { reachable: true, target_ids: [] },
   start: vi.fn(),
@@ -65,6 +68,7 @@ function show(
   selectedRows: ApplicationRow[] = [],
   patch: Partial<ApplicationRow> = {},
   review = false,
+  extra: Partial<TableActions> = {},
 ) {
   const state = {
     data: {
@@ -92,7 +96,7 @@ function show(
       <ApplicationsTable
         scope={archived ? "archive" : review ? "review" : "queue"}
         state={state}
-        actions={actions}
+        actions={{ ...actions, ...extra }}
         empty="Empty"
         onClearSearch={vi.fn()}
       />
@@ -140,6 +144,27 @@ describe("ApplicationsTable actions", () => {
       expect(screen.queryByRole("menuitem", { name: /Tailor files again/ })).toBeNull();
     },
   );
+});
+
+describe("ApplicationsTable beside a running batch", () => {
+  it("keeps Fill on a ready row another batch has finished with", () => {
+    show("ready", false, [], {}, false, { active: true, held: new Set(["other"]) });
+    const [fill] = screen.getAllByRole("button", { name: "Fill" });
+    expect((fill as HTMLButtonElement).disabled).toBe(false);
+  });
+
+  it("turns Fill off on a row a running batch still owns", () => {
+    show("ready", false, [], {}, false, { active: true, held: new Set(["one"]) });
+    const [fill] = screen.getAllByRole("button", { name: "Fill" });
+    expect((fill as HTMLButtonElement).disabled).toBe(true);
+    expect(fill.getAttribute("title")).toMatch(/running Apply task/);
+  });
+
+  it("turns Fill off while Find jobs or the nightly run has Apply to itself", () => {
+    show("ready", false, [], {}, false, { active: true, exclusiveBusy: true });
+    const [fill] = screen.getAllByRole("button", { name: "Fill" });
+    expect((fill as HTMLButtonElement).disabled).toBe(true);
+  });
 });
 
 describe("ApplicationsTable ready rows and long text", () => {

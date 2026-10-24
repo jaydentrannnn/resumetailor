@@ -33,6 +33,9 @@ export function useApplyRowActions({
   tables,
   openTabs,
   active,
+  exclusiveBusy,
+  held,
+  waiting,
   browserUsable,
   workspaceId,
   refresh,
@@ -44,6 +47,9 @@ export function useApplyRowActions({
   tables: ApplicationTableState[];
   openTabs: OpenTabs;
   active: boolean;
+  exclusiveBusy: boolean;
+  held: Set<string>;
+  waiting: Set<string>;
   browserUsable: boolean;
   workspaceId: string;
   refresh: () => void;
@@ -284,9 +290,18 @@ export function useApplyRowActions({
     }
   }
 
-  const actions: TableActions = {
+  function focusTabById(sourceJobId: string) {
+    void focusApplicationReviewTab(sourceJobId).catch((reason) =>
+      showError("Could not open the tab", reason),
+    );
+  }
+
+  const actions: TableActions & { focusTabById: (sourceJobId: string) => void } = {
     busy,
     active,
+    exclusiveBusy,
+    held,
+    waiting,
     browserUsable,
     openTabs,
     start: (action, ids, mode, force) => void start(action, ids, mode, force),
@@ -297,10 +312,8 @@ export function useApplyRowActions({
     retry: (row) => void retry(row),
     mark: (row, status) => void mark(row, status),
     skip: (rows) => void skip(rows),
-    focusTab: (row) =>
-      void focusApplicationReviewTab(row.source_job_id).catch((reason) =>
-        showError("Could not open the tab", reason),
-      ),
+    focusTab: (row) => focusTabById(row.source_job_id),
+    focusTabById,
     detail: (row, detailTab = "overview") => ({
       pathname: `/applications/${encodeURIComponent(row.source_job_id)}`,
       search: `?tab=${detailTab}`,

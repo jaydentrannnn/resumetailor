@@ -102,9 +102,9 @@ def test_operation_progress_is_persisted_and_old_operations_still_load(tmp_path,
 @pytest.mark.parametrize("outcome", ["completed", "completed_with_issues", "failed", "cancelled"])
 def test_find_worker_relays_progress_and_retains_it_at_finish(tmp_path, monkeypatch, outcome):
     monkeypatch.setattr(config, "APPLICATIONS_OUTPUT_DIR", tmp_path)
-    monkeypatch.setattr(operations, "_ACTIVE_ID", "find")
-    monkeypatch.setattr(operations, "_CANCEL", threading.Event())
-    monkeypatch.setattr(operations, "_RUN_LOCK", threading.Lock())
+    op = operations.ApplyOperation(operation_id="find", action="find")
+    monkeypatch.setattr(operations, "_ACTIVE", {"find": op})
+    monkeypatch.setattr(operations, "_CONTROLS", {})
     progress = daily_progress.FindProgress(phase="processing", processed=3, total=8, current="Acme")
 
     def run(**kwargs):
@@ -114,15 +114,13 @@ def test_find_worker_relays_progress_and_retains_it_at_finish(tmp_path, monkeypa
         if outcome == "failed":
             raise RuntimeError("Interrupted search")
         if outcome == "cancelled":
-            operations._CANCEL.set()
+            operations._ctl(op).cancel.set()
         return daily_progress.DailySummary(
             errors=["One source failed"] if outcome == "completed_with_issues" else [],
         )
 
     monkeypatch.setattr(daily, "run_daily", run)
-    op = operations.ApplyOperation(operation_id="find", action="find")
     request = operations.ApplyOperationRequest(action="find", model_provider="ollama", model_name="test")
-    assert operations._RUN_LOCK.acquire(blocking=False)
     operations._worker(
         op, request, settings_snapshot=ApplySettings(),
     )

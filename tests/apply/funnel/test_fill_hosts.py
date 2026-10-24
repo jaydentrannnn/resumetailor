@@ -8,7 +8,7 @@ from collections import Counter
 
 import pytest
 
-from resume_tailor.apply.funnel import fill_hosts, operations, store_models
+from resume_tailor.apply.funnel import fill_hosts, op_slots, operations, store_models
 from resume_tailor.web.schemas import ApplyOperationRequest, ApplySettings
 
 _SITES = {
@@ -21,9 +21,9 @@ _SITES = {
 
 @pytest.fixture
 def apps(monkeypatch):
-    for flag in (operations._CANCEL, operations._PAUSE, operations._RESUME,
-                 operations._SKIP, operations._HOLD):
-        flag.clear()
+    operations._CONTROLS.clear()
+    operations._ACTIVE.clear()
+    op_slots.WORKDAY_BUSY.clear()
     monkeypatch.setattr(operations, "_persist", lambda _operation: None)
     monkeypatch.setattr(operations.browser, "extension_mode", lambda: False)
     monkeypatch.setattr(operations.submit_guard, "is_paused", lambda: False)

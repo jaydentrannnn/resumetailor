@@ -258,3 +258,19 @@ def test_settings_include_gpa_seed_never_overrides_an_explicit_choice(
     # The fixture resume's show_gpa is False, but an explicitly saved `gpa: True`
     # must win — this profile has already been through the include-aware save path.
     assert res.json()["settings"]["include"]["gpa"] is True
+
+
+def test_come_back_to_stuck_fills_is_on_by_default_and_saves_off(client, tmp_path, monkeypatch):
+    c, _ = client
+    _point_settings_at(tmp_path, monkeypatch)
+    apply = c.get("/api/settings").json()["settings"]["apply"]
+    assert (apply["come_back_stuck"], apply["come_back_after_min"]) == (True, 3)
+
+    apply.update(come_back_stuck=False, come_back_after_min=5)
+    res = c.put("/api/settings", json={"settings": {"apply": apply}})
+    assert res.status_code == 200, res.text
+    saved = c.get("/api/settings").json()["settings"]["apply"]
+    assert (saved["come_back_stuck"], saved["come_back_after_min"]) == (False, 5)
+
+    apply.update(come_back_after_min=0)
+    assert c.put("/api/settings", json={"settings": {"apply": apply}}).status_code == 422

@@ -17,9 +17,11 @@ import {
   retryTitle,
 } from "../../lib/applicationRows";
 import {
+  EXCLUSIVE_NOTE,
   REVIEW_STATUSES,
   TERMINAL_STATUSES,
   canRetailor,
+  heldNote,
   readyBlockLabel,
   reviewReason,
 } from "../../lib/applyPage";
@@ -44,6 +46,10 @@ const retryVariant = (status: string): ButtonVariant =>
 /** The row's overflow menu: files, links and every action that is not the primary one. */
 function rowMenu(row: ApplicationRow, archived: boolean, actions: TableActions): MenuItem[] {
   const { busy, active, openTabs } = actions;
+  // Prepare/Fill actions run beside other tasks; only this row's own task blocks them.
+  const workflowOff = busy || actions.exclusiveBusy || actions.held.has(row.source_job_id);
+  const workflowNote =
+    heldNote(row, actions.held, actions.waiting) || (actions.exclusiveBusy ? EXCLUSIVE_NOTE : "");
   const items: MenuItem[] = [];
   if (row.job_id)
     items.push({
@@ -70,22 +76,24 @@ function rowMenu(row: ApplicationRow, archived: boolean, actions: TableActions):
   if (canRetailor(row))
     items.push({
       label: "Tailor files again",
-      disabled: busy || active,
+      disabled: workflowOff,
       action: () => actions.retailor([row]),
-      description: "Available when Apply is idle",
+      description: workflowNote || undefined,
     });
   const tabOpen = !!row.fill?.browser_target_id && !isTabClosed(row, openTabs);
   if (tabOpen) items.push({ label: "Open application tab", action: () => actions.focusTab(row) });
   if (canContinueFill(row, openTabs))
     items.push({
       label: "Continue fill",
-      disabled: busy || active || !canFillAfterReview(row),
+      disabled: workflowOff || !canFillAfterReview(row),
+      description: workflowNote || undefined,
       action: () => actions.start("fill", [row.source_job_id], "continue"),
     });
   if (canReopenFill(row))
     items.push({
       label: "Start over",
-      disabled: busy || active,
+      disabled: workflowOff,
+      description: workflowNote || undefined,
       action: () => actions.reopen([row]),
     });
   if (["awaiting_review", "awaiting_otp", "submit_unconfirmed"].includes(row.status))
@@ -119,6 +127,9 @@ function RowAction({
   navigate: NavigateFunction;
 }) {
   const { busy, active, browserUsable, openTabs } = actions;
+  const workflowOff = busy || actions.exclusiveBusy || actions.held.has(row.source_job_id);
+  const workflowNote =
+    heldNote(row, actions.held, actions.waiting) || (actions.exclusiveBusy ? EXCLUSIVE_NOTE : "");
   const needsYou = !archived && REVIEW_STATUSES.has(row.status);
   const reason = needsYou ? reviewReason(row) : null;
   const retryLabel =
@@ -169,11 +180,12 @@ function RowAction({
         type="button"
         className={action("attention")}
         title={
-          browserUsable
+          workflowNote ||
+          (browserUsable
             ? "Continue the fill (a closed tab is reopened with the saved draft)"
-            : needsBrowser
+            : needsBrowser)
         }
-        disabled={busy || active || !browserUsable}
+        disabled={workflowOff || !browserUsable}
         onClick={() => actions.start("fill", [row.source_job_id], "continue")}
       >
         Continue
@@ -184,8 +196,8 @@ function RowAction({
       <button
         type="button"
         className={action("attention")}
-        title="Open the posting again and fill it from the start"
-        disabled={busy || active || !browserUsable}
+        title={workflowNote || "Open the posting again and fill it from the start"}
+        disabled={workflowOff || !browserUsable}
         onClick={() => actions.reopen([row])}
       >
         Start over
@@ -196,8 +208,8 @@ function RowAction({
       <button
         type="button"
         className={action("success")}
-        title={browserUsable ? "Open the posting and fill the form" : needsBrowser}
-        disabled={busy || active || !browserUsable}
+        title={workflowNote || (browserUsable ? "Open the posting and fill the form" : needsBrowser)}
+        disabled={workflowOff || !browserUsable}
         onClick={() => actions.start("fill", [row.source_job_id])}
       >
         Fill

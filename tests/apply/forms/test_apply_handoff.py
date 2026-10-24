@@ -44,7 +44,7 @@ def test_workday_requires_real_email(tmp_path, monkeypatch):
 def test_interrupted_fill_restores_retryable_status(tmp_path, monkeypatch):
     monkeypatch.setattr(config, "APPLICATIONS_PATH", tmp_path / "applications.json")
     monkeypatch.setattr(config, "APPLICATIONS_OUTPUT_DIR", tmp_path / "output")
-    monkeypatch.setattr(operations, "_ACTIVE_ID", None)
+    monkeypatch.setattr(operations, "_ACTIVE", {})
     app = store_models.Application(
         source="test",
         source_job_id="app-1",
@@ -69,7 +69,7 @@ def test_interrupted_fill_restores_retryable_status(tmp_path, monkeypatch):
 def test_interrupted_submission_is_not_refilled(tmp_path, monkeypatch):
     monkeypatch.setattr(config, "APPLICATIONS_PATH", tmp_path / "applications.json")
     monkeypatch.setattr(config, "APPLICATIONS_OUTPUT_DIR", tmp_path / "output")
-    monkeypatch.setattr(operations, "_ACTIVE_ID", None)
+    monkeypatch.setattr(operations, "_ACTIVE", {})
     app = store_models.Application(
         source="test",
         source_job_id="app-1",

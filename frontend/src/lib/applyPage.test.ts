@@ -18,6 +18,12 @@ import {
   readyBlockLabel,
   resolveApplyTab,
   reviewReason,
+  exclusiveTaskRunning,
+  heldIds,
+  heldNote,
+  isHeld,
+  waitingIds,
+  waitingLine,
 } from "./applyPage";
 
 const row = (patch: Partial<ApplicationRow>): ApplicationRow => ({
@@ -365,5 +371,70 @@ describe("Tailor files and Tailor again", () => {
   ])("sorts %s", (_name, patch, files, again) => {
     expect(canTailorFiles(row(patch))).toBe(files);
     expect(hasTailoredFiles(row(patch))).toBe(again);
+  });
+});
+
+describe("batches side by side", () => {
+  const prepare = op({
+    operation_id: "p",
+    action: "prepare",
+    state: "running",
+    held_ids: ["a", "b"],
+  });
+  const fill = op({
+    operation_id: "f",
+    action: "fill",
+    state: "running",
+    held_ids: ["c"],
+    waiting: [
+      {
+        application_id: "c",
+        label: "Acme · Analyst",
+        due_at: "2026-01-01T00:03:00Z",
+        comebacks: 1,
+        reason: "",
+        answered: false,
+      },
+    ],
+  });
+  const done = op({ operation_id: "d", action: "fill", state: "completed", held_ids: ["z"] });
+
+  it("holds only the rows running tasks still own", () => {
+    expect([...heldIds([prepare, fill, done])].sort()).toEqual(["a", "b", "c"]);
+    expect(isHeld(row({ source_job_id: "a" }), heldIds([prepare]))).toBe(true);
+    expect(isHeld(row({ source_job_id: "z" }), heldIds([prepare, done]))).toBe(false);
+  });
+
+  it("lists the applications waiting to come back", () => {
+    expect([...waitingIds([prepare, fill])]).toEqual(["c"]);
+  });
+
+  it("explains why a held row's action is off", () => {
+    const held = heldIds([prepare, fill]);
+    const waiting = waitingIds([prepare, fill]);
+    expect(heldNote(row({ source_job_id: "c" }), held, waiting)).toMatch(/comes back/);
+    expect(heldNote(row({ source_job_id: "a" }), held, waiting)).toMatch(/running Apply task/);
+    expect(heldNote(row({ source_job_id: "q" }), held, waiting)).toBe("");
+  });
+
+  it("treats only Find and the nightly run as exclusive", () => {
+    expect(exclusiveTaskRunning([prepare, fill], false)).toBe(false);
+    expect(exclusiveTaskRunning([prepare], true)).toBe(true);
+    expect(exclusiveTaskRunning([op({ action: "find", state: "running" })], false)).toBe(true);
+    expect(exclusiveTaskRunning([op({ action: "find", state: "completed" })], false)).toBe(false);
+  });
+
+  it("counts down to the comeback, or says it is answered", () => {
+    const item = fill.waiting![0];
+    const now = Date.parse("2026-01-01T00:00:29Z");
+    expect(waitingLine(item, now)).toBe("Comes back in 2:31, or as soon as you've answered");
+    expect(waitingLine(item, Date.parse("2026-01-01T00:04:00Z"))).toBe("Coming back now");
+    expect(waitingLine({ ...item, answered: true }, now)).toMatch(/^Answered/);
+  });
+
+  it("headlines a fill that is only waiting on answers", () => {
+    expect(operationHeadline({ ...fill, in_flight: [] })).toBe(
+      "Filling · 1 waiting on your answers",
+    );
   });
 });

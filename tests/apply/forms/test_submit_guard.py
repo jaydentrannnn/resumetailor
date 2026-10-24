@@ -269,7 +269,7 @@ def test_operation_waits_while_automation_is_paused(monkeypatch):
         def is_set(self):
             return False
 
-    monkeypatch.setattr(operations, "_CANCEL", _Cancel())
+    monkeypatch.setattr(operations._ctl(op), "cancel", _Cancel())  # noqa: SLF001
     assert operations._wait_while_automation_paused(op) is True  # noqa: SLF001
     assert op.state == "running"
     assert [e["stage"] for e in op.events][-2:] == ["automation_paused", "resumed"]
@@ -286,7 +286,7 @@ def test_cancelled_while_automation_is_paused(monkeypatch):
         def wait(self, timeout):
             return True
 
-    monkeypatch.setattr(operations, "_CANCEL", _Cancelled())
+    monkeypatch.setattr(operations._ctl(op), "cancel", _Cancelled())  # noqa: SLF001
     assert operations._wait_while_automation_paused(op) is False  # noqa: SLF001
 
 

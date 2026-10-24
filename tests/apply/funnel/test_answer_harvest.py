@@ -167,3 +167,41 @@ def test_a_repeated_label_is_never_paired_with_another_rows_field():
 ])
 def test_answers_compare_by_their_kind(given, shown, same):
     assert harvest._same_answer(given, shown) is same
+
+
+def _stuck():
+    return store_models.FillResult(
+        field_outcomes=[
+            {"label": "Which team interests you?", "state": "unanswered", "required": True},
+            {"label": "Favourite colour", "state": "ambiguous", "required": False},
+        ],
+        required_empty=["I agree to the terms*"],
+    )
+
+
+def test_required_left_is_only_the_required_questions():
+    assert harvest.required_left(_stuck()) == {"which team interests you", "i agree to the terms"}
+    assert harvest.required_left(store_models.FillResult(status="awaiting_otp")) == set()
+
+
+def test_answered_all_once_every_required_question_has_an_answer():
+    typed = [harvest.Typed("Which team interests you?*", "Payments")]
+    assert harvest.answered_all(_stuck(), typed) is False  # the box is not ticked yet
+    ticked = [_field("I agree to the terms", "checked", kind="checkbox")]
+    assert harvest.answered_all(_stuck(), typed, ticked) is True  # optional one may stay empty
+    unticked = [_field("I agree to the terms", "", kind="checkbox")]
+    assert harvest.answered_all(_stuck(), typed, unticked) is False
+
+
+def test_answered_all_has_no_say_when_nothing_required_was_left():
+    assert harvest.answered_all(store_models.FillResult(status="awaiting_otp"), []) is None
+
+
+def test_listener_records_when_the_applicant_last_typed(page):
+    page.set_content('<label for="t">Team</label><input id="t">')
+    page.evaluate(harvest.LISTENER_JS)
+    last, _now = page.evaluate(harvest._ACTIVITY_JS)
+    assert last == 0
+    page.fill("#t", "Payments")
+    last, now = page.evaluate(harvest._ACTIVITY_JS)
+    assert 0 < last <= now

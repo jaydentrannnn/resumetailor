@@ -483,6 +483,36 @@ The operation records each active row in `in_flight`; legacy current-item fields
 to show the most recently active row. Pause holds new work until resumed, and automatic
 submits reserve a run-limit slot before a fill starts.
 
+**Batches side by side.** `operations` keeps a registry of active operations (`_ACTIVE`,
+each with its own Pause/Resume/Skip/Cancel controls in `_CONTROLS`), so Prepare and Fill
+batches run together; Pause or Cancel on one never touches another. Each operation lists
+the rows it still owns in `held_ids` (pending, in flight or waiting to come back) and
+releases a row the moment its item finishes, so a row a running Prepare has tailored can go
+straight into a Fill. A start leaves out rows another batch holds (reason `in_another_task`;
+409 when none are left). Find jobs and the nightly run still run alone; extension mode allows
+only batches of the same kind together (one relayed tab, and Prepare can open the posting
+in the browser); Check/Correct on one application is refused while a batch holds it. Each
+kind shares one fair slot pool (`op_slots.SlotPool`): `max_parallel_fills` for Fill (1 in
+extension mode) and `max_concurrent_jobs` for Prepare, split between that kind's running
+batches by fewest slots held, then longest wait; a batch alone gets every slot and no slot
+sits idle. The Workday one-fill-per-site set (`op_slots.WORKDAY_BUSY`) is process-wide.
+`submit_guard.pace` already re-checks the daily caps inside its lock; the per-run auto-submit
+cap stays per operation. Archive, Restore and undo-submitted still need every operation idle
+(`registry_edit_idle`). The Apply page stacks one banner per running operation.
+
+**Come back later** (`come_back.py`; `ApplySettings.come_back_stuck`, default on, and
+`come_back_after_min`, default 3, range 1–30). A fill that stops for review or a one-time
+code (not ready to submit, not a model outage, not "Pause on blocker", tab kept) moves to
+the back of its batch instead of finishing: its slot and Workday site are released, it is
+listed in the operation's `waiting`, and it comes back as a Continue fill (answers typed in
+the tab are saved first by `_harvest_typed`) when its timer runs out, when the user presses
+Retry now, or early once `answer_harvest`'s 20-second watcher sees every required question
+the fill left answered and the page quiet for `come_back.QUIET_S` (30 s, from the page's own
+`__rtLastInput` clock). OTP and CAPTCHA blocks use the timer only. A row settled by hand while
+waiting is dropped (counted submitted when it was); a closed tab or "Leave it" leaves it in
+Needs you. After `MAX_COMEBACKS` (2) it stays in Needs you as before; Cancel drops waiting
+items there too.
+
 **Workday (legacy engine).** `apply/ats/workday_flow.py` recognises each Workday screen from its
 visible `data-automation-id` markers (`classify` is pure; captured screens live in
 `tests/fixtures/workday/screens.json`) and waits for screen changes instead of sleeping:

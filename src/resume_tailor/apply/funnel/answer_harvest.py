@@ -12,6 +12,9 @@ same question should get, so it is collected:
 - from a small listener installed on handoff (`LISTENER_JS`): Workday shows one step at a
   time, so a step the applicant already clicked past is only in what the listener saw.
 
+The same pass tells a fill waiting to come back (`come_back`) whether every required
+question it left now has an answer, and how long since the applicant last typed there.
+
 Only questions the fill left are collected, never a field it answered (a change there is
 a correction, `review.correct`). A question a profile field answers fills that field
 when blank (`answer_memory.save_to_profile`); anything else is remembered with source
@@ -34,7 +37,7 @@ from typing import Any
 
 from resume_tailor import config
 from resume_tailor.apply.answers import answer_memory, rejected_repair
-from resume_tailor.apply.funnel import store, store_models
+from resume_tailor.apply.funnel import come_back, store, store_models
 
 _log = logging.getLogger(__name__)
 
@@ -56,6 +59,10 @@ LISTENER_JS = r"""
   window.__rtTyped = window.__rtTyped || {};
   if (window.__rtTypedInstalled) return true;
   window.__rtTypedInstalled = true;
+  const touch = () => { window.__rtLastInput = Date.now(); };
+  for (const type of ['input', 'change', 'keydown', 'click']) {
+    document.addEventListener(type, touch, true);
+  }
   const clean = (s) => (s || '').replace(/\s+/g, ' ').trim();
   const text = (el) => clean(el && (el.innerText || el.textContent));
   const groupOf = (el) => el.closest(
@@ -109,6 +116,8 @@ LISTENER_JS = r"""
 }
 """
 _READ_JS = "() => window.__rtTyped || {}"
+#: When the applicant last typed or clicked in the frame, and the frame's clock now.
+_ACTIVITY_JS = "() => [window.__rtLastInput || 0, Date.now()]"
 
 
 @dataclass(frozen=True)
@@ -135,6 +144,33 @@ def left_for_you(fill: store_models.FillResult) -> set[str]:
         for item in fill.leftovers
     ]
     return {norm for label in labels if (norm := answer_memory.normalize_label(label))}
+
+
+def required_left(fill: store_models.FillResult) -> set[str]:
+    """Normalized labels of the required questions the fill left for the applicant."""
+    labels: list[str] = [*fill.required_empty]
+    labels += [
+        str(item.get("label") or "") for item in fill.field_outcomes
+        if isinstance(item, dict) and item.get("state") in _LEFT and item.get("required")
+    ]
+    return {norm for label in labels if (norm := answer_memory.normalize_label(label))}
+
+
+def answered_all(
+    fill: store_models.FillResult, typed: Iterable[Typed], fields: Iterable[Any] = ()
+) -> bool | None:
+    """Whether every required question the fill left now has an answer: typed or picked
+    (``typed``), or a box ticked on the page (``fields``). None when it left none (an
+    email code or a CAPTCHA), which only the come-back timer can tell."""
+    needed = required_left(fill)
+    if not needed:
+        return None
+    have = {answer_memory.normalize_label(item.label) for item in typed}
+    have |= {
+        answer_memory.normalize_label(field.label) for field in fields
+        if field.control_kind == "checkbox" and field.current_value.strip()
+    }
+    return needed <= have
 
 
 def from_fields(fields: Iterable[Any]) -> list[Typed]:
@@ -304,6 +340,18 @@ async def _frames_typed(page: Any) -> list[Typed]:
     return typed
 
 
+async def _idle_seconds(page: Any) -> float:
+    """Seconds since the applicant last typed or clicked in ``page`` (any frame);
+    infinite when the listener saw nothing."""
+    idle = float("inf")
+    for frame in page.frames:
+        with contextlib.suppress(Exception):
+            last, now = await frame.evaluate(_ACTIVITY_JS)
+            if last:
+                idle = min(idle, max(0.0, (float(now) - float(last)) / 1000.0))
+    return idle
+
+
 async def install(page: Any) -> None:
     """Install the listener in every frame of ``page`` (idempotent)."""
     for frame in page.frames:
@@ -342,6 +390,11 @@ async def _collect_async(application_id: str) -> int:
             typed = await _frames_typed(page) + from_fields(observed.fields) if left else []
             if left:
                 await install(page)
+                come_back.note(
+                    application_id,
+                    answered=answered_all(fill, typed, observed.fields),
+                    idle_s=await _idle_seconds(page),
+                )
             with template_ops.LOCK:
                 if config.APPLICATIONS_PATH != workspace_path:
                     return 0
@@ -440,6 +493,9 @@ def _tick(state: _Pass) -> None:
                 continue
             browser.close_target(target)
         if app is None or app.status not in _RETAINED or target not in targets:
+            # Submitted or skipped by hand, or its tab closed: a fill waiting to come
+            # back to it stops waiting.
+            come_back.note_settled(application_id)
             with _WATCH_LOCK:
                 _WATCHED.discard(application_id)
             state.urls.pop(application_id, None)

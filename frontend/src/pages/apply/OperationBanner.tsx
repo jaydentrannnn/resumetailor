@@ -1,8 +1,14 @@
 import { useEffect, useState } from "react";
 import { Link } from "react-router-dom";
 import { AttentionList } from "./AttentionList";
+import { WaitingList } from "./WaitingList";
 import { Button, Meter, StatusMark, Tile } from "../../components/ui";
-import { type ApplyOperation, type JobStatus, fetchJob } from "../../api";
+import {
+  type ApplyOperation,
+  type JobStatus,
+  type OperationControlAction,
+  fetchJob,
+} from "../../api";
 import {
   formatEta,
   findProgress,
@@ -41,20 +47,26 @@ function useCurrentJobs(jobIds: string[], active: boolean): Record<string, JobSt
   return jobs;
 }
 
-export type OperationControl = "pause" | "resume" | "skip" | "cancel";
+export type OperationControl = OperationControlAction;
 
 /**
- * The current (or last) Apply task, pinned to the top of the page while it runs: a
- * plain phase ("Tailoring 3 of 12 · Acme"), an estimate of time left, and Pause /
- * Resume / Skip / Cancel. Pause stops tailoring at once (Resume starts it again); a
- * fill pauses between applications, never mid-form.
+ * One Apply task, pinned to the top of the page while it runs (unless several run side
+ * by side): a plain phase ("Tailoring 3 of 12 · Acme"), an estimate of time left, and
+ * Pause / Resume / Skip / Cancel. Pause stops tailoring at once (Resume starts it
+ * again); a fill pauses between applications, never mid-form. Fills waiting on the
+ * applicant's answers are listed under it (`WaitingList`).
  */
 export function OperationBanner({
   operation,
   onControl,
+  onOpenTab,
+  pinned = true,
 }: {
   operation: ApplyOperation;
-  onControl: (action: OperationControl) => void;
+  onControl: (action: OperationControl, applicationId?: string) => void;
+  onOpenTab?: (applicationId: string) => void;
+  /** Stick to the top while it runs; off when several banners are stacked. */
+  pinned?: boolean;
 }) {
   const active = ["queued", "running", "paused"].includes(operation.state);
   const [now, setNow] = useState(Date.now());
@@ -113,7 +125,7 @@ export function OperationBanner({
   return (
     <Tile
       padding="sm"
-      className={`sm:px-5 ${active ? "sticky top-[calc(var(--rt-bar-top)+0.5rem)] z-10" : ""}`}
+      className={`sm:px-5 ${active && pinned ? "sticky top-[calc(var(--rt-bar-top)+0.5rem)] z-10" : ""}`}
       aria-live="polite"
     >
       <div className="grid items-center gap-x-5 gap-y-3 lg:grid-cols-[minmax(0,auto)_minmax(120px,1fr)_auto]">
@@ -208,12 +220,23 @@ export function OperationBanner({
         )}
         {!finding && <Count n={operation.submitted} text="submitted" />}
         {!finding && <Count n={operation.needs_input ?? operation.blocked} text="need input" />}
+        {(operation.waiting?.length ?? 0) > 0 && (
+          <Count n={operation.waiting!.length} text="waiting to come back" />
+        )}
         {operation.failed > 0 && (
           <span className="text-danger">
             <Count n={operation.failed} text="failed" />
           </span>
         )}
       </div>
+      {active && (
+        <WaitingList
+          items={operation.waiting ?? []}
+          now={now}
+          onControl={onControl}
+          onOpenTab={onOpenTab}
+        />
+      )}
       <OperationActivity
         operation={operation}
         events={events}

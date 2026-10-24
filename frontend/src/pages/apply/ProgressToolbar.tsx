@@ -10,7 +10,13 @@ import { SaveFileButton, useSaveOrDownload } from "../../components/FileActions"
 import { saveLabel } from "../../lib/fileActions";
 import { useCommands } from "../../state/commandState";
 import { canFillAfterReview } from "../../lib/applicationRows";
-import { canTailorFiles, fillBlockers, hasTailoredFiles } from "../../lib/applyPage";
+import {
+  EXCLUSIVE_NOTE,
+  canTailorFiles,
+  fillBlockers,
+  hasTailoredFiles,
+  isHeld,
+} from "../../lib/applyPage";
 import { GLOSSARY } from "../../lib/glossary";
 import { sourcesHeadline } from "../../lib/sources";
 import { AgeWindowPicker } from "./AgeWindowPicker";
@@ -139,7 +145,8 @@ export function FindJobsTools({
 export function ProgressBulkActions({
   selected,
   busy,
-  active,
+  exclusiveBusy,
+  held,
   browserUsable,
   onPrepare,
   onRetailor,
@@ -147,24 +154,30 @@ export function ProgressBulkActions({
 }: {
   selected: ApplicationRow[];
   busy: boolean;
-  active: boolean;
+  /** Find jobs or the nightly run has Apply to itself. */
+  exclusiveBusy: boolean;
+  /** Rows a running task still owns: left out until it is done with them. */
+  held: Set<string>;
   browserUsable: boolean;
   onPrepare: (ids: string[]) => void;
   onRetailor: (rows: ApplicationRow[]) => void;
   onFill: (ids: string[]) => void;
 }) {
-  const prepareIds = selected.filter(canTailorFiles).map((row) => row.source_job_id);
-  const retailorRows = selected.filter(hasTailoredFiles);
-  const fillIds = selected
+  // A row a running batch finished (tailored, filled) is free at once; one it still
+  // owns is left out, so Prepare and Fill run side by side on different rows.
+  const free = selected.filter((row) => !isHeld(row, held));
+  const prepareIds = free.filter(canTailorFiles).map((row) => row.source_job_id);
+  const retailorRows = free.filter(hasTailoredFiles);
+  const fillIds = free
     .filter((row) => row.status === "ready" && canFillAfterReview(row))
     .map((row) => row.source_job_id);
-  const idleNote = active ? "Available when the current Apply task finishes" : undefined;
+  const idleNote = exclusiveBusy ? EXCLUSIVE_NOTE : undefined;
   return (
     <>
       <Button
         variant="plain"
         size="sm"
-        disabled={busy || active || !prepareIds.length}
+        disabled={busy || exclusiveBusy || !prepareIds.length}
         title={idleNote ?? GLOSSARY.prepare.help}
         onClick={() => onPrepare(prepareIds)}
       >
@@ -173,7 +186,7 @@ export function ProgressBulkActions({
       <Button
         variant="attention"
         size="sm"
-        disabled={busy || active || !retailorRows.length}
+        disabled={busy || exclusiveBusy || !retailorRows.length}
         title={
           idleNote ?? "Tailor the selected applications again, replacing files that already exist."
         }
@@ -184,7 +197,7 @@ export function ProgressBulkActions({
       <Button
         size="sm"
         variant="success"
-        disabled={busy || active || !fillIds.length || !browserUsable}
+        disabled={busy || exclusiveBusy || !fillIds.length || !browserUsable}
         title={
           idleNote ??
           (browserUsable

@@ -134,6 +134,8 @@ export const DEFAULT_SETTINGS: JobSettings = {
     auto_submit_max_per_company_per_day: 2,
     auto_submit_enabled: false,
     blocker_mode: "continue",
+    come_back_stuck: true,
+    come_back_after_min: 3,
     reuse_threshold: 0.72,
     cover_letter_mode: "required",
     model_provider: "ollama",

@@ -269,7 +269,7 @@ def test_screened_out_row_moves_from_working_to_archived_listing(client):
     assert archived["applications"][0]["archived_at"] == row.archived_at
 
 
-def test_archive_busy_conflict_does_not_write(client):
+def test_archive_busy_conflict_does_not_write(client, monkeypatch):
     c, _q = client
     apply_store.save_all(
         {
@@ -278,13 +278,11 @@ def test_archive_busy_conflict_does_not_write(client):
             )
         }
     )
-    assert operations_mod._RUN_LOCK.acquire(blocking=False)
-    try:
-        result = c.post("/api/applications/archive", json={"application_ids": ["a"], "archived": True})
-        assert result.status_code == 409
-        assert apply_store.get("a").archived_at is None
-    finally:
-        operations_mod._RUN_LOCK.release()
+    busy = operations_mod.ApplyOperation(operation_id="busy", action="fill", state="running")
+    monkeypatch.setitem(operations_mod._ACTIVE, "busy", busy)
+    result = c.post("/api/applications/archive", json={"application_ids": ["a"], "archived": True})
+    assert result.status_code == 409
+    assert apply_store.get("a").archived_at is None
 
 
 def test_applications_list_pages_and_filtered_total(client):
@@ -757,3 +755,42 @@ def test_skill_gaps_route_ranks_the_runs_unbacked_must_haves(client):
     assert (body["counted"], body["uncounted"]) == (1, 1)
     assert [(g["skill"], g["jobs"], g["weight"]) for g in body["gaps"]] == [("Kubernetes", 1, 0.5)]
     assert body["not_shown"] == []
+
+
+def test_control_route_passes_the_waiting_application(client, monkeypatch):
+    c, _q = client
+    operation = operations_mod.ApplyOperation(
+        operation_id="op-1", action="fill", state="running", application_ids=["a"],
+        held_ids=["a"], waiting=[{"application_id": "a", "label": "Acme", "due_at": "x"}],
+    )
+    calls: list[tuple] = []
+
+    def fake_control(operation_id, action, application_id=""):
+        calls.append((operation_id, action, application_id))
+        return operation
+
+    monkeypatch.setattr(operations_mod, "control", fake_control)
+    res = c.post(
+        "/api/applications/operations/op-1/control",
+        json={"action": "retry_now", "application_id": "a"},
+    )
+    assert res.status_code == 200, res.text
+    assert calls == [("op-1", "retry_now", "a")]
+    body = res.json()
+    assert body["held_ids"] == ["a"]
+    assert body["waiting"][0]["application_id"] == "a"
+
+
+def test_starting_beside_a_busy_batch_is_a_conflict(client, monkeypatch):
+    c, _q = client
+
+    def busy(_body):
+        raise RuntimeError("The selected applications are already in another running Apply task")
+
+    monkeypatch.setattr(operations_mod, "start", busy)
+    res = c.post("/api/applications/operations", json={
+        "action": "fill", "application_ids": ["a"], "model_provider": "ollama",
+        "model_name": "test",
+    })
+    assert res.status_code == 409
+    assert "another running Apply task" in res.json()["detail"]

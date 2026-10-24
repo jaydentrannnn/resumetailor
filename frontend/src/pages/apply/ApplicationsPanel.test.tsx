@@ -45,6 +45,9 @@ const table = () =>
 const actions = {
   busy: false,
   active: false,
+  exclusiveBusy: false,
+  held: new Set<string>(),
+  waiting: new Set<string>(),
   browserUsable: true,
   openTabs: { reachable: true, target_ids: [] },
 } as unknown as TableActions;

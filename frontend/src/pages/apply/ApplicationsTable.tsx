@@ -16,8 +16,14 @@ export { PostedDate } from "./PostedDate";
 /** Everything a table row can do, owned by the page (it holds the operation state). */
 export interface TableActions {
   busy: boolean;
-  /** An Apply task or the nightly run is in progress: workflow actions wait. */
+  /** An Apply task or the nightly run is in progress: edits to the lists wait. */
   active: boolean;
+  /** Find jobs or the nightly run has Apply to itself: every workflow action waits. */
+  exclusiveBusy: boolean;
+  /** Rows a running task still owns, and those waiting to come back in a Fill; their
+   * Prepare/Fill actions wait (`lib/applyPage.ts` `heldNote`). */
+  held: Set<string>;
+  waiting: Set<string>;
   browserUsable: boolean;
   openTabs: OpenTabs;
   start: (

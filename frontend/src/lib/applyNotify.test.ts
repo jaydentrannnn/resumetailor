@@ -6,11 +6,9 @@ const base: ApplySnapshot = {
   otp: [],
   dailyRunning: false,
   dailySummary: null,
-  operationId: null,
-  operationState: null,
-  operationAction: null,
-  readyForReview: 0,
+  operations: [],
 };
+const fill = { id: "o", state: "running", action: "fill", readyForReview: 0 };
 
 describe("applyNotifications", () => {
   it("stays quiet on first load and when nothing changed", () => {
@@ -34,15 +32,19 @@ describe("applyNotifications", () => {
     ).toEqual(["Nightly run finished: 12 found, 8 tailored"]);
     expect(
       applyNotifications(
-        { ...base, operationId: "o", operationState: "running", operationAction: "fill" },
-        {
-          ...base,
-          operationId: "o",
-          operationState: "completed",
-          operationAction: "fill",
-          readyForReview: 3,
-        },
+        { ...base, operations: [fill] },
+        { ...base, operations: [{ ...fill, state: "completed", readyForReview: 3 }] },
       ),
     ).toEqual(["Filling finished: 3 ready for you"]);
+  });
+
+  it("reports each batch that finishes while another keeps running", () => {
+    const prepare = { id: "p", state: "running", action: "prepare", readyForReview: 0 };
+    expect(
+      applyNotifications(
+        { ...base, operations: [prepare, fill] },
+        { ...base, operations: [prepare, { ...fill, state: "completed", readyForReview: 2 }] },
+      ),
+    ).toEqual(["Filling finished: 2 ready for you"]);
   });
 });
