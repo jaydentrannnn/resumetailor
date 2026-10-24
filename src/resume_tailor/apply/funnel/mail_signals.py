@@ -144,6 +144,10 @@ _CONFIRMED_SENT = outcomes.SENT - {"submit_unconfirmed"}
 _WORD = re.compile(r"[a-z0-9]+")
 _STOP = frozenset({"the", "and", "of", "for", "at", "a", "an", "to", "in", "intern",
                    "internship", "summer", "fall", "spring", "winter", "co", "group"})
+# Sites nearly every hiring email links to ("Follow us on LinkedIn"): their name in the
+# text says nothing about who wrote, so it counts only in mail from their own domain.
+_FOOTER_NAMES = frozenset({"linkedin", "indeed", "glassdoor", "facebook", "instagram",
+                           "twitter", "youtube", "tiktok"})
 
 
 @dataclass
@@ -266,11 +270,14 @@ def _score(mail: Mail, app: store_models.Application) -> tuple[int, list[str]]:
     text_words = _words(f"{mail.display_name}\n{mail.head}")
     company = _words(identity.normalize_company(app.company))
     significant = [w for w in company if w not in _STOP]
-    if significant and _phrase_in(company, text_words):
+    domain = mail.from_domain
+    own_domain = (bool(significant) and len(significant[0]) >= 4
+                  and significant[0] in domain.replace("-", ""))
+    footer = " ".join(significant) in _FOOTER_NAMES
+    if significant and _phrase_in(company, text_words) and (own_domain or not footer):
         score += 3
         reasons.append("company named")
-    domain = mail.from_domain
-    if significant and len(significant[0]) >= 4 and significant[0] in domain.replace("-", ""):
+    if own_domain:
         score += 2
         reasons.append("company's own mail domain")
     reqs = requisition_ids(app.canonical_key, app.ats)

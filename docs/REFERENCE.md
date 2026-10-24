@@ -852,8 +852,9 @@ the subject has job words. HTML goes through `fetch_jd.extract_fragment_text` an
 `mail-sync` thread ticks each minute), for the active profile only (a profile switch
 during a check discards it). It reads from a day before the last check, or from the first
 application sent, and ingests in posts of 50 with `require_match` (an email matching no
-row is ignored unless a hiring system sent it, and so is an acknowledgement for a row
-already confirmed as sent). `classify` matches on normalised text
+row is ignored unless a hiring system sent it, and so is every acknowledgement except one
+naming a single `submit_unconfirmed` row, which confirms it). A footer-link site's name
+(LinkedIn, Indeed…) counts as "company named" only in mail from its own domain. `classify` matches on normalised text
 (NFKC, straight quotes, whitespace collapsed) and skips a phrase inside a conditional
 sentence ("if you are not selected…"); newsletter wording blocks every signal except a
 rejection. A proposal is `confident` when it is a rejection matched to exactly one sent,

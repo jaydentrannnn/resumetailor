@@ -134,8 +134,10 @@ def ingest(
 
     ``require_match`` (the mailbox check, which reads more than hiring mail) ignores an
     email that matched no application unless a hiring system sent it: an "offer" from a
-    shop is not news about an application. It also ignores an acknowledgement for an
-    application already confirmed as sent, which every application gets.
+    shop is not news about an application. It also ignores every acknowledgement ("we
+    received your application"): each application gets one, often several roles at one
+    company could match, and none of it is news. The exception is the one application it
+    names whose submit the app could not confirm; that email confirms it.
     """
     result = IngestResult()
     with _LOCK:
@@ -161,7 +163,8 @@ def ingest(
                 result.ignored += 1
                 continue
             app = next((a for a in apps if a.source_job_id == found.app_id), None)
-            if require_match and signal == "sent" and app is not None and _confirmed(app):
+            if (require_match and signal == "sent"
+                    and not (app is not None and app.status == "submit_unconfirmed")):
                 result.ignored += 1  # "We received your application": nothing new.
                 continue
             flag = mail_signals.check(signal, app, mail.received_on) if app else ""

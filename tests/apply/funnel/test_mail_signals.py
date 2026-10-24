@@ -78,6 +78,16 @@ def test_an_ats_sender_alone_or_an_unrelated_row_never_matches():
     assert mail_signals.match(_mail("jobs@globex.com", "Globex interview"), rows).app_id is None
 
 
+def test_a_footer_link_to_linkedin_is_not_linkedin_writing():
+    rows = [_app("li", "LinkedIn", role="Software Engineer Intern")]
+    other = _mail("Cadence <no-reply@us.greenhouse-mail.io>", "Your Cadence Application",
+                  "We have decided to move forward with other candidates for the Software "
+                  "Engineer Intern position. Follow us on LinkedIn.")
+    assert mail_signals.match(other, rows).app_id is None
+    own = _mail("LinkedIn <careers@linkedin.com>", "Your application to LinkedIn")
+    assert mail_signals.match(own, rows).app_id == "li"
+
+
 def test_check_flags_a_proposal_that_contradicts_the_record():
     offer = store_models.OutcomeEvent(id="o", type="offer", occurred_on="2026-10-01",
                                       recorded_at="2026-10-01T00:00:00+00:00")

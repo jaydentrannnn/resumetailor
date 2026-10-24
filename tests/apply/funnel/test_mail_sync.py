@@ -96,6 +96,24 @@ def test_a_check_ingests_past_one_post_and_records_its_result(monkeypatch):
     assert [p.message_id for p in mail_inbox.load().proposals] == ["r"]
 
 
+def test_the_check_ignores_acknowledgements_unless_one_confirms_a_submit(monkeypatch):
+    apply_store.save_all({
+        "a1": _row("a1", "Acme"), "a2": _row("a2", "Acme", role="Data Engineer Intern"),
+        "g": _row("g", "Globex", status="awaiting_review"),
+        "u": _row("u", "Umbrella", status="submit_unconfirmed"),
+    })
+    _connect()
+    thanks = "Thank you for applying. We received your application."
+    monkeypatch.setattr(mail_sync.mail_imap, "fetch", lambda *_a, **_k: [
+        _mail("acme", "Acme <jobs@acme.com>", "Thanks for applying", thanks),  # two roles
+        _mail("globex", "Globex <jobs@globex.com>", "Thanks for applying", thanks),
+        _mail("umbrella", "Umbrella <jobs@umbrella.com>", "Thanks for applying", thanks),
+    ])
+    result = mail_sync.run()
+    assert (result.ignored, result.matched) == (2, 1)
+    assert [(p.message_id, p.app_id) for p in mail_inbox.load().proposals] == [("umbrella", "u")]
+
+
 def test_a_failed_check_keeps_the_last_good_one_and_says_why(monkeypatch):
     _connect()
 
