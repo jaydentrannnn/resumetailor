@@ -403,3 +403,62 @@ def test_the_entry_step_says_whether_it_clicked_an_apply_control():
     page.evaluate = lambda _script: 0
     fill_buttons.find_and_click_apply(page, "other", outcome=outcome)
     assert outcome == {"entered": True}
+
+
+class _GreenhousePosting(_Page):
+    """A Greenhouse posting: its application form sits below the job description."""
+
+    def locator(self, selector):
+        assert selector == "#first_name, #email"
+        return _MenuItem(self)
+
+    def get_by_role(self, role, **kwargs):
+        raise AssertionError("the form is already on the page: nothing to click")
+
+
+def test_a_greenhouse_posting_holding_its_form_is_not_clicked_into():
+    outcome = {}
+    page = _GreenhousePosting(url="https://job-boards.greenhouse.io/acme/jobs/1")
+    assert fill_buttons.find_and_click_apply(page, "greenhouse", outcome=outcome) is page
+    assert outcome == {"entered": True}
+
+
+class _NoTabYet:
+    def is_done(self):
+        return False
+
+
+class _TabWatch(_Page):
+    """A page an Apply click is watched on for a tab of its own; none ever opens."""
+
+    def __init__(self):
+        super().__init__()
+        self.controls, self.slept, self.waited_out = 3, [], False
+
+    @contextmanager
+    def expect_popup(self, timeout):
+        yield _NoTabYet()
+        self.waited_out = True  # the block ended without giving up on the tab
+
+    def evaluate(self, _script):
+        return self.controls
+
+    def wait_for_timeout(self, ms):
+        self.slept.append(ms)
+
+
+def _shows_the_form(page):
+    page.controls = 12
+
+
+@pytest.mark.parametrize("effect", [_navigates, _shows_the_form])
+def test_an_apply_click_that_acts_on_its_own_page_stops_waiting_for_a_tab(effect):
+    page = _TabWatch()
+    assert fill_buttons._click_and_track_popup(page, object(), lambda: effect(page)) is page  # noqa: SLF001
+    assert page.slept == [] and not page.waited_out
+
+
+def test_an_apply_click_that_does_nothing_waits_for_its_tab_only_so_long():
+    page = _TabWatch()
+    assert fill_buttons._click_and_track_popup(page, object(), lambda: None) is page  # noqa: SLF001
+    assert sum(page.slept) == fill_buttons._POPUP_WAIT_MS and page.waited_out  # noqa: SLF001

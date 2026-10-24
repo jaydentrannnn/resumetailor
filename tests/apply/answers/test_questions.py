@@ -392,3 +392,41 @@ def test_where_did_you_hear_is_the_how_heard_question():
                         options=("Company Website", "Job Board"))
     match = q.classify(question)
     assert match is not None and match.key == "how_heard"
+
+
+@pytest.mark.parametrize(
+    "text",
+    [
+        # Twitch on Greenhouse (2026-10), asked beside "previously been employed by Amazon".
+        "Are you a current employee with Amazon or any Amazon subsidiary (outside of Twitch)?",
+        "Are you currently employed by Amazon?",
+        "Do you currently work for Amazon?",
+    ],
+)
+def test_a_current_employee_question_is_answered_from_the_employers(text):
+    question = Question(text, kind="choice", options=YES_NO)
+    never = q.facts_for({}, company="Twitch", employers=["Acme Corp"])
+    assert _answer(question, never) == ("current_worker", "No")
+    # A past employer there may or may not be the current one: not answered.
+    there = q.facts_for({}, company="Twitch", employers=["Amazon"])
+    assert _answer(question, there) == ("current_worker", None)
+
+
+@pytest.mark.parametrize(
+    "text",
+    [
+        "Are you currently employed?",
+        "Are you a current employee of a federal agency?",
+    ],
+)
+def test_other_current_employment_questions_are_not_current_worker(text):
+    match = q.classify(Question(text, kind="choice", options=YES_NO))
+    assert match is None or match.key != "current_worker"
+
+
+def test_open_to_relocation_from_a_list_of_offices_picks_the_jobs_city():
+    """Twitch (2026-10): the options are offices; willing to relocate means this job's city."""
+    facts = q.facts_for({"willing_to_relocate": "Yes", "posting_location": "San Francisco, CA"})
+    offices = ("No", "No, but I'm open to a remote position", "San Francisco, CA", "Irvine, CA")
+    question = Question("Are you open to relocation?", kind="choice", options=offices)
+    assert _answer(question, facts) == ("willing_to_relocate", "San Francisco, CA")

@@ -3,6 +3,7 @@ job, the same rule for uploads and text boxes, and never failing the fill."""
 
 from __future__ import annotations
 
+import threading
 import time
 from pathlib import Path
 from types import SimpleNamespace
@@ -83,6 +84,7 @@ def _fill(tmp_path: Path, *, mode: str) -> fill_answers._FillAnswers:
     run.uploaded_controls = set()
     run.attempted_purposes = set()
     run.verified_purposes = set()
+    run.cover_waiting = []
     run.pkt = _packet()
     run.settings = ApplySettings(cover_letter_mode=mode)
     run.needs_review = []
@@ -129,10 +131,51 @@ def test_a_required_cover_field_gets_a_letter_written_and_uploaded(job, browser,
     job_dir, calls = job
     run = _fill(tmp_path, mode="required")
     run._upload_one(_cover_input(required=True))
+    # Written in the background while the step goes on; attached at the step's end.
+    assert run.cover_waiting == [_cover_input(required=True)] and browser == []
+    run._attach_waiting_covers()
     assert calls == ["j1"]
     assert browser == [str(job_dir / "cover.pdf")]
     assert run.uploads[0]["verified"] is True
     assert run.uploads[0]["reason"] == cover_on_demand.GENERATED_NOTE
+
+
+def test_the_step_goes_on_while_the_letter_is_written(job, browser, tmp_path, monkeypatch):
+    job_dir, calls = job
+    started, release = threading.Event(), threading.Event()
+    slow = job_followups.regenerate_cover_letter
+
+    def regenerate(job_id: str):
+        started.set()
+        release.wait(5)
+        slow(job_id)
+
+    monkeypatch.setattr(job_followups, "regenerate_cover_letter", regenerate)
+    run = _fill(tmp_path, mode="optional")
+    run._upload_one(_cover_input(required=False))
+    # The same input found again by another selector waits on the one letter.
+    run._upload_one({**_cover_input(required=False), "selector": "input[type='file']#cover"})
+    assert started.wait(5) and browser == [] and len(run.cover_waiting) == 1
+    release.set()
+    run._attach_waiting_covers()
+    assert calls == ["j1"] and browser == [str(job_dir / "cover.pdf")]
+    assert [upload["purpose"] for upload in run.uploads] == ["cover_letter"]
+
+
+def test_a_letter_that_failed_in_the_background_is_not_written_again(job, browser, tmp_path,
+                                                                     monkeypatch):
+    attempts: list[str] = []
+
+    def fail(job_id: str):
+        attempts.append(job_id)
+        raise RuntimeError("model unreachable")
+
+    monkeypatch.setattr(job_followups, "regenerate_cover_letter", fail)
+    run = _fill(tmp_path, mode="required")
+    run._upload_one(_cover_input(required=True))
+    run._attach_waiting_covers()
+    assert attempts == ["j1"] and browser == []
+    assert run.uploads[0]["verified"] is False and "cover letter" in run.uploads[0]["error"]
 
 
 def test_with_cover_letters_off_a_required_field_reports_the_missing_letter(job, browser, tmp_path):

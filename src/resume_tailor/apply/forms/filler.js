@@ -801,15 +801,16 @@
     return "";
   }
 
-  /** Helper text shown with a question ("For most recent or in progress degree."). */
-  function helpFor(el) {
+  /** Helper text shown with a question ("For most recent or in progress degree."); a
+   * written answer's keeps more, since it can list what the answer must cover. */
+  function helpFor(el, limit = 300) {
     const described = el.getAttribute("aria-describedby");
     if (described) {
       const text = described.split(/\s+/).map((ref) => rootOf(el).getElementById?.(ref)).filter(Boolean).map(textOf).join(" ");
-      if (text) return text.slice(0, 300);
+      if (text) return text.slice(0, limit);
     }
     const field = el.closest("[class*='field-entry' i], [class*='form-group' i], fieldset");
-    return textOf(field?.querySelector("[class*='description' i], [class*='help-text' i], [class*='hint' i]")).slice(0, 300);
+    return textOf(field?.querySelector("[class*='description' i], [class*='help-text' i], [class*='hint' i]")).slice(0, limit);
   }
 
   /** One question for the fill runner's plan (`questions.py`): what it asks and how. */
@@ -1338,7 +1339,7 @@
       if ((maxLen !== null && maxLen > 200) || (maxLen === null && rows >= 3)) {
         long_text.push({
           label,
-          help: helpFor(el),
+          help: helpFor(el, 1000),
           required,
           selector: sel,
           maxlength: maxLen,

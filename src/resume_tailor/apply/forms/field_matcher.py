@@ -629,6 +629,10 @@ def choice_values(key: str, fields: dict[str, str]) -> list[str]:
         candidates = [fields.get("race_detail", ""), value]
     elif key == "degree_level" and value:
         candidates = [fields.get("degree_name", ""), value]
+    elif key == "willing_to_relocate" and normalize(value) == "yes":
+        # "Are you open to relocation?" answered from a list of offices (Twitch, 2026-10):
+        # willing to relocate is willing to move to this job's own city.
+        candidates = [value, fields.get("posting_location", "")]
     else:
         candidates = fallback_values(key, value)
     return list(dict.fromkeys(candidate for candidate in candidates if candidate))

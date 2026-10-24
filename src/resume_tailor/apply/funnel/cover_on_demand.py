@@ -17,6 +17,7 @@ from __future__ import annotations
 
 import logging
 import threading
+from concurrent.futures import Future, ThreadPoolExecutor
 from typing import Literal
 
 from resume_tailor import config
@@ -34,6 +35,8 @@ SKIPPED_NOTE = "Optional cover-letter field left empty"
 _COVER_FILES = ("cover.pdf", "cover.docx")
 
 _LOCK = threading.Lock()
+#: Letters written while Fill answers the rest of the form (`start`).
+_POOL = ThreadPoolExecutor(max_workers=2, thread_name_prefix="cover-letter")
 
 CoverMode = Literal["off", "required", "optional", "every"]
 
@@ -87,6 +90,13 @@ def ensure(pkt: Packet) -> bool:
     pkt.cover_letter = fresh.cover_letter
     pkt.preparation = fresh.preparation
     return has_cover(pkt)
+
+
+def start(pkt: Packet) -> Future[bool]:
+    """`ensure` in the background, in the caller's context (its model routing): the
+    letter and its PDF take about a minute, which the form's other answers need not
+    wait for (Twitch, 2026-10). Touches no browser."""
+    return config.submit_in_context(_POOL, ensure, pkt)
 
 
 def resolve(pkt: Packet, mode: CoverMode, *, required: bool) -> tuple[Action, bool]:

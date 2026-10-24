@@ -82,6 +82,7 @@ class _FillWizard(fill_answers._FillAnswers, fill_ats_steps._FillAtsSteps):
         # specify" after "Other", a State list after Country): fill what changed, without
         # repeating unresolved model guesses.
         self._rescan_changed_questions(questions_before)
+        self._attach_waiting_covers()
         if self._stop_if_out_of_time("Fill stopped before this form step was complete"):
             return fill_outcomes._BREAK
 
@@ -112,6 +113,7 @@ class _FillWizard(fill_answers._FillAnswers, fill_ats_steps._FillAtsSteps):
         self.verified_purposes: set[tuple[str, int]] = set()
         self.attempted_purposes: set[tuple[str, int]] = set()
         self.other_chosen = False
+        self.cover_waiting = []
         for key in ("leftovers", "long_text", "file_inputs", "required_empty"):
             self.merged[key] = []
         self.step_filled_start = len(self.merged["filled"])

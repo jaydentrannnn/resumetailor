@@ -108,7 +108,7 @@ TEXT_ONLY_KEYS = frozenset({
 YES_NO_KEYS = frozenset({
     "authorized_to_work", "requires_sponsorship", "requires_sponsorship_future",
     "requires_sponsorship_any", "f1_opt_eligible", "over_18", "willing_to_relocate",
-    "noncompete", "drivers_license", "has_preferred_name", "previous_worker",
+    "noncompete", "drivers_license", "has_preferred_name", "previous_worker", "current_worker",
     "work_authorization", "relatives_at_company",
     "currently_enrolled", "degree_by", "returning_to_school", "gpa_at_least",
     "located_or_relocate", "has_prior_internship", "us_citizen", "us_person_status",
@@ -172,6 +172,16 @@ _DERIVED: tuple[tuple[str, str], ...] = (
         r"|(?:current\s+or\s+)?former\s+(?:employee|worker|intern|contractor)"
         r"|worked\s+(?:for|at)\s+.{0,40}before)",
         "previous_worker",
+    ),
+    (
+        # "Are you a current employee with Amazon or any Amazon subsidiary (outside of
+        # Twitch)?" (2026-10); "current or former" stays `previous_worker`.
+        r"^(?![\s\S]*\b(?:government|military|federal|armed forces|public sector)\b)[\s\S]*?(?:"
+        r"\bare you (?:an? )?(?:current|existing) (?:employee|worker|contractor)"
+        r"\s+(?:of|at|for|with)\b"
+        r"|\bare you currently (?:employed|working)\s+(?:by|at|for|with)\b"
+        r"|\bdo you currently work\s+(?:for|at)\b)",
+        "current_worker",
     ),
 )
 
@@ -287,7 +297,7 @@ def _param(key: str, text: str) -> str:
     if key == "has_prior_internship":
         work = re.search(r"\bwork experience|\brelated experience|\bwork history", low)
         return "work" if work else ""
-    if key == "previous_worker":
+    if key in {"previous_worker", "current_worker"}:
         return low
     return ""
 
@@ -490,6 +500,9 @@ def _derived(match: Match, facts: Facts) -> list[str]:
         return [] if titles else ["No"]
     if match.key == "previous_worker":
         return _yes(_named_employer(facts, match.param))
+    if match.key == "current_worker":
+        # Never employed there settles it; a past employer there may or may not be current.
+        return [] if _named_employer(facts, match.param) else ["No"]
     return []
 
 

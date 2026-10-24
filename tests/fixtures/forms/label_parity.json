@@ -132,6 +132,12 @@
   "#\\34 000653003": "Veteran Status*",
   "#\\34 000654003": "Disability status*"
  },
+ "greenhouse_react_select_stack.html": {
+  "#relocate": "Are you open to relocation? *",
+  "#employee": "Are you a current employee with Amazon? *",
+  "#employed": "Have you previously been employed by Amazon? *",
+  "#graduation": "What is your anticipated graduation date? *"
+ },
  "jobvite_apply_form.html": {
   "#jv-field-a1": "First Name*",
   "#jv-field-a2": "Last Name*",

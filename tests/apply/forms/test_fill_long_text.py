@@ -124,3 +124,23 @@ def test_a_bot_check_is_left_for_the_applicant_before_any_writing(monkeypatch, l
     run._answer_one_long_text({"label": label, "help": help_text, "required": True}, label)
     assert run.needs_review == [f"{label}: {fill_answers.form_facts.BOT_CHECK_NOTE}"]
     assert run.typed == []
+
+
+def test_the_helper_text_under_a_question_is_drafted_from(monkeypatch):
+    """Twitch (2026-10): what the answer must cover sits under the label, not in it."""
+    asked: list[str] = []
+
+    def ask(question, **_k):
+        asked.append(question)
+        return answer.AnswerResult(answer="Because.", warnings=[], source="model", offenders=[])
+
+    monkeypatch.setattr(answer, "answer_question", ask)
+    run = _run()
+    label = "Tell us about a project you are proud of."
+    help_text = "Describe:\n the context/problem, what you built, and the impact."
+    run._answer_one_long_text({"label": label, "help": help_text, "required": True}, label)
+    run._answer_one_long_text({"label": QUESTION, "help": "why do you want", "required": True}, QUESTION)
+    assert asked == [
+        f"{label}\nDescribe: the context/problem, what you built, and the impact.",
+        QUESTION,  # helper text that only repeats the label adds nothing
+    ]

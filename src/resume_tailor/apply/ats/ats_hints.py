@@ -248,7 +248,13 @@ SYNONYMS: list[tuple[str, str]] = [
     (r"\bcity\b", "city"),
     (r"\bstate\b|province", "state"),
     (r"zip|postal|post\s*code", "postal_code"),
-    (r"countr(?:y|ies)\s*of\s*citizenship|^\W*citizenship\W*$|nationality", "citizenship"),
+    # A country of citizenship, never the home country: "In which country/region do you
+    # have citizenship?" (Twitch) was answered with the address's country (2026-10).
+    (
+        r"countr(?:y|ies)\s*of\s*citizenship|^\W*citizenship\W*$|nationality"
+        r"|countr(?:y|ies)(?:\s*/\s*regions?)?\b[^?.]{0,40}\bcitizen(?:ship)?\b",
+        "citizenship",
+    ),
     (r"country", "country"),
     (r"website|url", "website"),
     (education.DETAIL_PATTERN, education.DETAIL_KEY),

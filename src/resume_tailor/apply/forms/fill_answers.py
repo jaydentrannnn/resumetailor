@@ -38,6 +38,16 @@ def _dependency_order(item: Any) -> int:
     return _FIRST_KEYS.index(key) if key in _FIRST_KEYS else len(_FIRST_KEYS)
 
 
+def _asked(label: str, help_text: str) -> str:
+    """What a written answer is drafted for: the label, then the helper text the form
+    shows under it, which can list what the answer must cover (Twitch's "Describe: the
+    context/problem, what you built, ..." was never drafted from, 2026-10)."""
+    help_text = " ".join(help_text.split())
+    if not help_text or help_text.casefold() in " ".join(label.split()).casefold():
+        return label
+    return f"{label}\n{help_text}"
+
+
 class _FillAnswers(fill_state._FillState):
     """`_FillRun` steps that attach files and answer what `filler.js` left blank."""
 
@@ -171,6 +181,12 @@ class _FillAnswers(fill_state._FillState):
             if not replacing:
                 return False
         if purpose == "cover_letter":
+            if self._cover_in_background(bool(is_dict and fin.get("required"))):
+                # Attached once the letter is written, at the end of the step. The frame's
+                # other matches for this input stay skipped as attempted meanwhile.
+                self.uploaded_controls.discard(key)
+                self.cover_waiting.append(fin)
+                return False
             action, written = self._cover_letter(bool(is_dict and fin.get("required")))
             if action == "skip":
                 reason = f"Skipped: optional cover letter; setting is {self.settings.cover_letter_mode}"
@@ -250,6 +266,17 @@ class _FillAnswers(fill_state._FillState):
         self.verified_purposes.add((purpose, frame_index))
         self.progress(f"{purpose.replace('_', ' ')} attachment verified")
         return purpose == "resume"
+
+    def _attach_waiting_covers(self) -> None:
+        """Attach the cover letter written in the background to the uploads that waited
+        for it (`_cover_in_background`); `_cover_letter` waits for it to be ready."""
+        waiting, self.cover_waiting = self.cover_waiting, []
+        if waiting:
+            self.progress("attaching the cover letter written for this form")
+        for fin in waiting:
+            frame_index = int(fin.get("frame_index") or 0) if isinstance(fin, dict) else 0
+            self.attempted_purposes.discard(("cover_letter", frame_index))
+            self._upload_one(fin)
 
     def _keep_attached(
         self, record: dict[str, Any], shown: str, sha: str, frame_index: int
@@ -337,7 +364,7 @@ class _FillAnswers(fill_state._FillState):
             return
         try:
             ans = model_fallback.call(lambda: answer.answer_question(
-                label,
+                _asked(label, str(item.get("help") or "")),
                 resume=self.resume,
                 bullets=self.bullets,
                 requirements=self.requirements,

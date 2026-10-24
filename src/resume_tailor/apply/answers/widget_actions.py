@@ -88,14 +88,46 @@ def _owned_menu(page: Any, trigger: Any, opened_before: list[Any] | None = None)
     return menus[0] if len(menus) == 1 else None
 
 
-def _menu_choices(page: Any, trigger: Any, opened_before: list[Any] | None = None) -> list[Any]:
+def _menu_rows(page: Any, trigger: Any, opened_before: list[Any] | None = None) -> Any | None:
+    """The trigger's menu rows as one locator, None when its menu is unclear."""
     menu = _owned_menu(page, trigger, opened_before)
     if menu is None:
-        return []
+        return None
     rows = menu.locator(_OPTION_ROWS)
     if rows.count() == 0 and menu.get_attribute("role") == "listbox":
         rows = menu.locator("li")
-    return rows.all()
+    return rows
+
+
+def _menu_choices(page: Any, trigger: Any, opened_before: list[Any] | None = None) -> list[Any]:
+    rows = _menu_rows(page, trigger, opened_before)
+    return [] if rows is None else rows.all()
+
+
+#: Each row's text, or null for a row not shown (Playwright's own visibility test).
+_ROW_TEXTS_JS = r"""rows => rows.map((row) => {
+  const style = getComputedStyle(row);
+  const box = row.getBoundingClientRect();
+  return style.visibility !== 'hidden' && box.width > 0 && box.height > 0
+    ? (row.innerText || '').trim() : null;
+})"""
+
+
+def _visible_rows(
+    page: Any, trigger: Any, opened_before: list[Any] | None,
+) -> list[tuple[Any, str]]:
+    """The visible rows of the trigger's menu with their text, read in one call: two calls
+    per row made a 240-country phone list cost seconds per read (2026-10). Row by row for
+    a menu the batch cannot read."""
+    with contextlib.suppress(Exception):
+        rows = _menu_rows(page, trigger, opened_before)
+        if rows is not None:
+            texts = rows.evaluate_all(_ROW_TEXTS_JS)
+            if isinstance(texts, list):
+                return [(rows.nth(index), text) for index, text in enumerate(texts)
+                        if isinstance(text, str)]
+    shown = [row for row in _menu_choices(page, trigger, opened_before) if row.is_visible()]
+    return [(row, row.inner_text().strip()) for row in shown]
 
 
 def _choices(
@@ -105,13 +137,34 @@ def _choices(
     empty menu or one showing "Loading…" is read again for up to ``wait_ms``."""
     waited = 0
     while True:
-        rows = [row for row in _menu_choices(page, trigger, opened_before) if row.is_visible()]
-        texts = [row.inner_text().strip() for row in rows]
+        read = _visible_rows(page, trigger, opened_before)
+        rows = [row for row, _text in read]
+        texts = [text for _row, text in read]
         if (rows and not any(_LOADING_ROW.match(text) for text in texts)) or waited >= wait_ms:
             return [(row, text) for row, text in zip(rows, texts, strict=True)
                     if text and not _LOADING_ROW.match(text) and not _EMPTY_ROW.match(text)]
         page.wait_for_timeout(250)
         waited += 250
+
+
+def _says_no_match(page: Any, trigger: Any, opened_before: list[Any] | None) -> bool:
+    """Whether the trigger's menu says nothing matches the typed search: a "No options"
+    row, or the menu closed on it (Greenhouse; a search still loading keeps it open)."""
+    with contextlib.suppress(Exception):
+        if trigger.get_attribute("aria-expanded") == "false":
+            return True
+        menu = _owned_menu(page, trigger, opened_before)
+        return menu is not None and bool(_EMPTY_ROW.match(menu.inner_text().strip()))
+    return False
+
+
+def _close_menu(page: Any, trigger: Any) -> None:
+    """Close the trigger's menu: Escape, once more while it still reads as open."""
+    trigger.press("Escape")
+    with contextlib.suppress(Exception):
+        if trigger.get_attribute("aria-expanded") == "true":
+            page.wait_for_timeout(100)
+            trigger.press("Escape")
 
 
 def _search_box(page: Any, trigger: Any, opened_before: list[Any] | None, is_input: bool) -> Any | None:
@@ -172,7 +225,7 @@ def _select_combobox_option(
                     continue
                 search_box.fill(term)
                 typed_into_trigger |= search_box is trigger and was_empty
-            for _ in range(8 if term else 1):
+            for attempt in range(8 if term else 1):
                 rows = _choices(page, trigger, opened_before, wait_ms=0 if term else 3000)
                 choices = [row for row, _text in rows]
                 option_texts = [text for _row, text in rows]
@@ -193,13 +246,20 @@ def _select_combobox_option(
                     match = choices[option_texts.index(chosen_text)]
                     break
                 if term:
+                    # A menu that says nothing matches the search shows no more rows by
+                    # waiting (a search still loading says "Loading…" instead).
+                    if not rows and attempt and _says_no_match(page, trigger, opened_before):
+                        break
                     page.wait_for_timeout(250)
             if match is not None:
                 break
         if match is None:
-            trigger.press("Escape")
-            if typed_into_trigger:  # typed search text is not an answer to leave behind
+            # Typed search text is not an answer to leave behind. It is cleared before the
+            # menu is closed: React Select reopens its menu on input, and a menu left open
+            # covers the dropdowns below it, so their clicks time out (Twitch, 2026-10).
+            if typed_into_trigger:
                 trigger.fill("")
+            _close_menu(page, trigger)
             return False
         if (key == "phone_country_code" and match.get_attribute("aria-selected") == "true"
                 and _phone_prefix_matches(before, target_value)):

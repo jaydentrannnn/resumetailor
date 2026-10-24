@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import time
 from collections.abc import Callable
+from concurrent.futures import Future
 from typing import Any, Literal
 
 from resume_tailor import config
@@ -61,6 +62,8 @@ class _FillState:
     )
     #: The final submit was sent (or may have been): the employer may have it.
     submit_dispatched = False
+    #: The cover letter being written in the background (`_cover_in_background`).
+    cover_job: Future[bool] | None = None
 
     # Per-run state the step layers set after `__init__` (mostly in `_start_fill` and
     # `_start_step`). Declared here, annotation only, so every layer type-checks.
@@ -69,6 +72,8 @@ class _FillState:
     blank_step_rescanned: bool
     completed_step_outcomes: dict[tuple[int, str], dict[str, Any]]
     country_rechecked: bool
+    #: This step's cover-letter uploads waiting for the letter (`cover_job`).
+    cover_waiting: list[Any]
     entered: bool
     facts: questions.Facts
     final_step_reached: bool
@@ -341,10 +346,33 @@ class _FillState:
             return self.pkt.artifacts.get(f"{purpose}_pdf")
         return self.cover_path
 
+    def _cover_in_background(self, required: bool) -> bool:
+        """Start writing the letter a cover-letter upload needs, if it needs one: True
+        when the upload waits for it (`_attach_waiting_covers`), so the rest of the step
+        is filled meanwhile. Once started, every cover field uses that one letter."""
+        if self.cover_job is not None or cover_on_demand.plan(
+            self.settings.cover_letter_mode, required=required,
+            has_letter=cover_on_demand.has_cover(self.pkt),
+        ) != "write":
+            return False
+        self.progress("writing a cover letter for this form")
+        self.cover_job = cover_on_demand.start(self.pkt)
+        return True
+
     def _cover_letter(self, required: bool) -> tuple[str, bool]:
         """`cover_on_demand.resolve` for one cover-letter field, with a progress line
-        when a letter has to be written."""
+        when a letter has to be written. A letter started in the background is waited
+        for, up to the fill's deadline, and never written a second time."""
         mode = self.settings.cover_letter_mode
+        if self.cover_job is not None:
+            try:
+                written = bool(self.cover_job.result(
+                    timeout=max(0.0, self.deadline - time.monotonic())
+                ))
+            except Exception:  # noqa: BLE001 - out of time, or the write failed
+                written = False
+            action = cover_on_demand.plan(mode, required=required, has_letter=written)
+            return ("missing" if action == "write" else action), written
         if cover_on_demand.plan(
             mode, required=required, has_letter=cover_on_demand.has_cover(self.pkt)
         ) == "write":

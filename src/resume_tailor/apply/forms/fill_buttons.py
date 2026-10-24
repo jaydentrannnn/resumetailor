@@ -35,19 +35,31 @@ def _locator_exists(loc: Any) -> bool:
         pass
     return False
 
+#: How long an entry click may take to open its own tab.
+_POPUP_WAIT_MS = 5000
+
+
+class _NoPopup(Exception):
+    """Raised inside ``expect_popup`` to stop waiting for a tab the click did not open."""
+
+
 def _click_and_track_popup(page: Any, context: Any, click_fn: Callable[[], None]) -> Any:
     """Execute click_fn while watching for popups.
 
     Returns the new active page if a popup was opened. Only a tab this page opened
     counts: parallel fills share the browser's one context, so a context-wide wait
-    would adopt another fill's freshly opened tab.
+    would adopt another fill's freshly opened tab. The wait ends early once the click
+    shows its effect on this page instead (`_acted_in_place`).
     """
     if not context or not hasattr(page, "expect_popup"):
         click_fn()
         return page
     try:
-        with page.expect_popup(timeout=5000) as page_info:
+        with page.expect_popup(timeout=_POPUP_WAIT_MS) as page_info:
+            before = _entry_state(page)
             click_fn()
+            if _acted_in_place(page, page_info, before):
+                raise _NoPopup  # leaving the block with an error cancels the wait
         new_page = page_info.value
         with contextlib.suppress(Exception):
             new_page.wait_for_load_state("domcontentloaded", timeout=45_000)
@@ -55,8 +67,33 @@ def _click_and_track_popup(page: Any, context: Any, click_fn: Callable[[], None]
     except Exception:  # noqa: BLE001
         return page
 
+
+def _acted_in_place(page: Any, page_info: Any, before: tuple[str, int | None]) -> bool:
+    """Whether an entry click went to another URL or showed more form controls on this
+    page before a tab of its own opened: such a click opens no tab, so waiting the rest
+    of `_POPUP_WAIT_MS` for one only delays the fill. False once a tab opens."""
+    url, count = before
+    for _ in range(_POPUP_WAIT_MS // 250):
+        if page_info.is_done():
+            return False
+        now_url, now_count = _entry_state(page)
+        if now_url != url or (count is not None and now_count is not None and now_count > count):
+            return True
+        page.wait_for_timeout(250)
+    return False
+
+
 #: ATSs whose pre-fill hint opens the application form itself (no second entry click).
 _HINT_ENTERS_FORM = frozenset({"smartrecruiters"})
+#: ATSs whose posting page holds the application form itself, found by its own fields:
+#: Greenhouse's Apply only scrolls down to it (two clicks cost a fill 14 s, 2026-10).
+_FORM_ON_POSTING = {"greenhouse": "#first_name, #email"}
+
+
+def _form_on_posting(page: Any, ats: str) -> bool:
+    selector = _FORM_ON_POSTING.get(ats.lower())
+    return bool(selector) and _is_locator_present_and_visible(page.locator(selector).first)
+
 
 def find_and_click_apply(
     page: Any, ats: str, context: Any = None, outcome: dict[str, bool] | None = None,
@@ -65,6 +102,10 @@ def find_and_click_apply(
     ``outcome["entered"]`` says whether an entry control was clicked."""
     current_page = page
     entered = False
+    if _form_on_posting(page, ats):
+        if outcome is not None:
+            outcome["entered"] = True
+        return page
 
     # 1. ATS-specific hints
     for click_sel in ats_hints.ATS_PRE_FILL_CLICKS.get(ats.lower(), []):

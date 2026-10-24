@@ -1,0 +1,113 @@
+<!doctype html>
+<!-- Reduced from Twitch's Greenhouse form (2026-10): stacked React Select dropdowns. Like
+React Select, a menu opens on mousedown and on input, Escape closes an open menu and
+clears the input, and the open menu is drawn over the questions below it. Twitch's hide
+their menu when a search matches nothing (data-hide-empty); others say "No options". -->
+<html>
+<head>
+<meta charset="utf-8">
+<style>
+  body { font: 14px sans-serif; width: 600px; }
+  .field { margin: 12px 0; }
+  .select__control { position: relative; border: 1px solid #888; height: 34px; }
+  .select__input { border: 0; width: 100%; height: 30px; }
+  .select__single-value { position: absolute; left: 4px; top: 8px; pointer-events: none; }
+  .select__menu { position: absolute; top: 36px; left: 0; right: 0; z-index: 10;
+    background: #fff; border: 1px solid #444; }
+  .select__option, .select__menu-notice--no-options { padding: 8px; height: 20px; }
+</style>
+</head>
+<body>
+<div class="field">
+  <label id="relocate-label" for="relocate">Are you open to relocation? *</label>
+  <div class="select__control" data-hide-empty data-options='["No", "No, but I&apos;m open to a remote position", "San Francisco, CA", "Irvine, CA", "Seattle, WA", "New York, NY"]'>
+    <input class="select__input" id="relocate" role="combobox" aria-expanded="false"
+      aria-labelledby="relocate-label" autocomplete="off">
+  </div>
+</div>
+<div class="field">
+  <label id="employee-label" for="employee">Are you a current employee with Amazon? *</label>
+  <div class="select__control" data-options='["Yes", "No"]'>
+    <input class="select__input" id="employee" role="combobox" aria-expanded="false"
+      aria-labelledby="employee-label" autocomplete="off">
+  </div>
+</div>
+<div class="field">
+  <label id="employed-label" for="employed">Have you previously been employed by Amazon? *</label>
+  <div class="select__control" data-options='["Yes", "No"]'>
+    <input class="select__input" id="employed" role="combobox" aria-expanded="false"
+      aria-labelledby="employed-label" autocomplete="off">
+  </div>
+</div>
+<div class="field">
+  <label id="graduation-label" for="graduation">What is your anticipated graduation date? *</label>
+  <div class="select__control" data-options='["Winter 2027", "Spring/Summer 2028", "Other"]'>
+    <input class="select__input" id="graduation" role="combobox" aria-expanded="false"
+      aria-labelledby="graduation-label" autocomplete="off">
+  </div>
+</div>
+<script>
+  for (const control of document.querySelectorAll(".select__control")) {
+    const input = control.querySelector("input");
+    const options = JSON.parse(control.dataset.options);
+    const listId = `react-select-${input.id}-listbox`;
+    const hideEmpty = control.hasAttribute("data-hide-empty");
+    const close = () => {
+      control.querySelector(".select__menu")?.remove();
+      input.setAttribute("aria-expanded", "false");
+      input.removeAttribute("aria-controls");
+    };
+    const choose = (text) => {
+      control.querySelector(".select__single-value")?.remove();
+      const shown = document.createElement("div");
+      shown.className = "select__single-value";
+      shown.textContent = text;
+      control.prepend(shown);
+      input.value = "";
+      close();
+    };
+    const open = () => {
+      close();
+      const menu = document.createElement("div");
+      menu.className = "select__menu";
+      const list = document.createElement("div");
+      list.className = "select__menu-list";
+      list.id = listId;
+      list.setAttribute("role", "listbox");
+      const typed = input.value.trim().toLowerCase();
+      const shown = options.filter((text) => text.toLowerCase().includes(typed));
+      if (!shown.length && hideEmpty) return;
+      for (const text of shown) {
+        const row = document.createElement("div");
+        row.className = "select__option";
+        row.setAttribute("role", "option");
+        row.textContent = text;
+        row.addEventListener("mousedown", (event) => { event.preventDefault(); choose(text); });
+        list.append(row);
+      }
+      if (!shown.length) {
+        const notice = document.createElement("div");
+        notice.className = "select__menu-notice--no-options";
+        notice.textContent = "No options";
+        list.append(notice);
+      }
+      menu.append(list);
+      control.append(menu);
+      input.setAttribute("aria-expanded", "true");
+      input.setAttribute("aria-controls", listId);
+    };
+    input.addEventListener("mousedown", () => {
+      if (input.getAttribute("aria-expanded") !== "true") setTimeout(open, 0);
+    });
+    input.addEventListener("input", open);
+    input.addEventListener("keydown", (event) => {
+      if (event.key === "Escape" && input.getAttribute("aria-expanded") === "true") {
+        input.value = "";
+        close();
+      }
+    });
+    input.addEventListener("blur", () => { input.value = ""; close(); });
+  }
+</script>
+</body>
+</html>

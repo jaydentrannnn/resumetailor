@@ -128,6 +128,9 @@ def test_f1_opt_synonym_precedes_sponsorship():
         ("Are you currently subject to a non-compete agreement?", "noncompete"),
         ("To your knowledge are you currently subject to any non-compete or non-solicitation restrictions?", "noncompete"),
         ("Are you bound by a noncompete or restrictive covenant?", "noncompete"),
+        # Twitch on Greenhouse (2026-10): answered with the address's country.
+        ("In which country/region do you have citizenship?", "citizenship"),
+        ("Which country are you a citizen of?", "citizenship"),
         # Neighbours that must keep their own meaning.
         ("Which country do you live in?", "country"),
         ("Country", "country"),
