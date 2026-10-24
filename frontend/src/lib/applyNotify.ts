@@ -41,12 +41,7 @@ export function applyNotifications(prev: ApplySnapshot | null, next: ApplySnapsh
   }
   for (const before of prev.operations) {
     const after = next.operations.find((op) => op.id === before.id);
-    if (
-      after &&
-      ACTIVE.has(before.state) &&
-      !ACTIVE.has(after.state) &&
-      after.action !== "find"
-    ) {
+    if (after && ACTIVE.has(before.state) && !ACTIVE.has(after.state) && after.action !== "find") {
       const verb = after.action === "fill" ? "Filling" : "Tailoring";
       out.push(`${verb} finished: ${after.readyForReview} ready for you`);
     }

@@ -285,13 +285,7 @@ export type WaitingItem = {
   answered: boolean;
 };
 
-export type OperationControlAction =
-  | "pause"
-  | "resume"
-  | "skip"
-  | "cancel"
-  | "retry_now"
-  | "leave";
+export type OperationControlAction = "pause" | "resume" | "skip" | "cancel" | "retry_now" | "leave";
 
 export function startApplyOperation(options: {
   action: "find" | "prepare" | "fill";

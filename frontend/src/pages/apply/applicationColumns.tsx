@@ -208,7 +208,9 @@ function RowAction({
       <button
         type="button"
         className={action("success")}
-        title={workflowNote || (browserUsable ? "Open the posting and fill the form" : needsBrowser)}
+        title={
+          workflowNote || (browserUsable ? "Open the posting and fill the form" : needsBrowser)
+        }
         disabled={workflowOff || !browserUsable}
         onClick={() => actions.start("fill", [row.source_job_id])}
       >

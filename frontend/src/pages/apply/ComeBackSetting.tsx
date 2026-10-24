@@ -39,9 +39,9 @@ export function ComeBackSetting({
         minutes
       </label>
       <p className="mt-1 text-xs text-ink-muted">
-        A fill that needs your answers moves to the back of the queue and continues once
-        you&apos;ve answered, or after {minutes} minute{minutes === 1 ? "" : "s"}. It comes back
-        twice at most, then waits in Needs you.
+        A fill that needs your answers moves to the back of the queue and continues once you&apos;ve
+        answered, or after {minutes} minute{minutes === 1 ? "" : "s"}. It comes back twice at most,
+        then waits in Needs you.
       </p>
     </div>
   );
