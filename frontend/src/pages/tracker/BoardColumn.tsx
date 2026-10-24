@@ -8,7 +8,8 @@ import { useTracker } from "./trackerContext";
 const PAGE = 50;
 
 /** Eye-with-slash: hide this column. */
-const HIDE_ICON = "M2 8s2.2-4 6-4 6 4 6 4-2.2 4-6 4-6-4-6-4ZM6.5 8a1.5 1.5 0 1 0 3 0a1.5 1.5 0 1 0-3 0M3 13 13 3";
+const HIDE_ICON =
+  "M2 8s2.2-4 6-4 6 4 6 4-2.2 4-6 4-6-4-6-4ZM6.5 8a1.5 1.5 0 1 0 3 0a1.5 1.5 0 1 0-3 0M3 13 13 3";
 
 /**
  * One board column. A sent card dragged from another column drops here; dropping on
@@ -84,13 +85,24 @@ export function BoardColumn({
           onClick={onHide}
           className="rt-row-action inline-flex size-6 min-h-0 items-center justify-center rounded-sm text-ink-muted hover:bg-plain-hover hover:text-ink"
         >
-          <svg aria-hidden viewBox="0 0 16 16" className="size-3.5" fill="none" stroke="currentColor" strokeWidth={1.4}>
+          <svg
+            aria-hidden
+            viewBox="0 0 16 16"
+            className="size-3.5"
+            fill="none"
+            stroke="currentColor"
+            strokeWidth={1.4}
+          >
             <path d={HIDE_ICON} />
           </svg>
         </button>
       </header>
       {asking && (
-        <div role="group" aria-label={`Why did ${asking.company} close?`} className="mx-2 mb-2 space-y-1.5 rounded-sm border border-accent bg-paper p-2 text-xs">
+        <div
+          role="group"
+          aria-label={`Why did ${asking.company} close?`}
+          className="mx-2 mb-2 space-y-1.5 rounded-sm border border-accent bg-paper p-2 text-xs"
+        >
           <p className="text-ink-2">Why did {asking.company} close?</p>
           <div className="flex flex-wrap gap-1.5">
             {closeReasons(asking).map((reason) => (
@@ -124,7 +136,12 @@ export function BoardColumn({
       </ul>
       {cards.length > shown && (
         <div className="px-2 pb-2">
-          <Button size="sm" variant="ghost" className="w-full" onClick={() => setShown((n) => n + PAGE)}>
+          <Button
+            size="sm"
+            variant="ghost"
+            className="w-full"
+            onClick={() => setShown((n) => n + PAGE)}
+          >
             Show {Math.min(PAGE, cards.length - shown)} more
           </Button>
         </div>

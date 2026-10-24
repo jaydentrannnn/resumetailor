@@ -2,7 +2,8 @@ import { request } from "./core";
 import type { MailProposal } from "./mailUpdates";
 
 /** A board column (`apply/funnel/tracker.Column`); `hired` cards sit under offer. */
-export type TrackerColumn = "not_sent" | "applied" | "assessment" | "interview" | "offer" | "closed";
+export type TrackerColumn =
+  "not_sent" | "applied" | "assessment" | "interview" | "offer" | "closed";
 
 /** Why a card closed; a move to Closed names one. */
 export type TrackerReason = "rejected" | "ghosted" | "withdrawn" | "offer_declined";
@@ -51,8 +52,7 @@ export type TrackerBoard = {
 /** What a move changed, so Undo reverses exactly that. */
 export type TrackerReceipt = { added: string[]; voided: string[] };
 
-const cardPath = (id: string, action: string) =>
-  `/api/tracker/${encodeURIComponent(id)}/${action}`;
+const cardPath = (id: string, action: string) => `/api/tracker/${encodeURIComponent(id)}/${action}`;
 
 /** Every Done application as a card, with its pending email updates. */
 export function getTrackerBoard(): Promise<TrackerBoard> {

@@ -29,11 +29,18 @@ export function MailLine() {
           </span>
         ) : (
           <span>
-            {mail.last_checked ? `Email checked ${relativeTime(mail.last_checked)}.` : "Email not checked yet."}
+            {mail.last_checked
+              ? `Email checked ${relativeTime(mail.last_checked)}.`
+              : "Email not checked yet."}
           </span>
         )}
         {!mail.running && (
-          <Button size="sm" variant="plain" loading={busy === "mail-check"} onClick={() => void checkEmail()}>
+          <Button
+            size="sm"
+            variant="plain"
+            loading={busy === "mail-check"}
+            onClick={() => void checkEmail()}
+          >
             Check now
           </Button>
         )}
@@ -42,7 +49,9 @@ export function MailLine() {
   }
   return (
     <p className="flex flex-wrap items-center gap-1.5 text-xs text-ink-muted">
-      {board?.last_synced ? `Email last checked ${shortDate(board.last_synced)}.` : "Email not checked yet."}
+      {board?.last_synced
+        ? `Email last checked ${shortDate(board.last_synced)}.`
+        : "Email not checked yet."}
       <Link to={SETTINGS} className="rt-link">
         Connect an email account
       </Link>

@@ -17,7 +17,12 @@ export const RAIL_ITEMS: RailItem[] = [
   { to: "/", label: "Tailor", end: true, icon: "M3 2h7l3 3v9H3zM6 8h4M6 11h4" },
   { to: "/applications", label: "Apply", icon: "M2 4h12v9H2zM6 4V2.5h4V4", badge: "apply" },
   // Beside Apply: where sent applications go next.
-  { to: "/tracker", label: "Tracker", icon: "M2 2.5h3.5v11H2zM6.25 2.5h3.5v7h-3.5zM10.5 2.5H14v9h-3.5z", badge: "email" },
+  {
+    to: "/tracker",
+    label: "Tracker",
+    icon: "M2 2.5h3.5v11H2zM6.25 2.5h3.5v7h-3.5zM10.5 2.5H14v9h-3.5z",
+    badge: "email",
+  },
   { to: "/resume", label: "Resume", icon: "M3 3h10M3 6.5h10M3 10h6M3 13.5h8" },
   { to: "/template", label: "Template", icon: "M2.5 2h11v12h-11zM2.5 6h11M6.5 6v8" },
   {

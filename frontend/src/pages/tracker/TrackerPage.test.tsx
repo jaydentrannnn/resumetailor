@@ -102,14 +102,19 @@ afterEach(() => {
 describe("TrackerPage", () => {
   it("shows the columns with Not sent hidden until asked for", async () => {
     api.getTrackerBoard.mockResolvedValue(
-      board([card({}), card({ id: "skip", company: "Hooli", column: "not_sent", label: "Skipped", stage: null })]),
+      board([
+        card({}),
+        card({ id: "skip", company: "Hooli", column: "not_sent", label: "Skipped", stage: null }),
+      ]),
     );
     renderPage();
     await screen.findByText("Data Analyst", { selector: "button" });
     expect(column("applied")).toBeTruthy();
     expect(column("not_sent")).toBeNull();
     fireEvent.click(screen.getByRole("button", { name: "Show Not sent" }));
-    expect(within(column("not_sent") as HTMLElement).getByText("Restore on the Apply page")).toBeTruthy();
+    expect(
+      within(column("not_sent") as HTMLElement).getByText("Restore on the Apply page"),
+    ).toBeTruthy();
     fireEvent.click(screen.getByRole("button", { name: "Hide Interviewing" }));
     expect(column("interview")).toBeNull();
   });
@@ -142,15 +147,23 @@ describe("TrackerPage", () => {
     fireEvent.dragStart(cardEl("acme"), { dataTransfer });
     fireEvent.dragOver(column("interview"), { dataTransfer });
     fireEvent.drop(column("interview"), { dataTransfer });
-    await waitFor(() => expect(api.moveTrackerCard).toHaveBeenCalledWith("acme", "interview", undefined));
+    await waitFor(() =>
+      expect(api.moveTrackerCard).toHaveBeenCalledWith("acme", "interview", undefined),
+    );
     await waitFor(() => expect(toast.success).toHaveBeenCalled());
     expect(within(column("interview") as HTMLElement).getByText("Data Analyst")).toBeTruthy();
     const [, , action] = toast.success.mock.calls[0];
     action.onClick();
-    await waitFor(() => expect(api.undoTrackerMove).toHaveBeenCalledWith("acme", { added: ["e1"], voided: [] }));
+    await waitFor(() =>
+      expect(api.undoTrackerMove).toHaveBeenCalledWith("acme", { added: ["e1"], voided: [] }),
+    );
 
-    api.moveTrackerCard.mockRejectedValueOnce(new Error("This stage comes from an older status mark"));
-    await waitFor(() => expect(within(column("applied") as HTMLElement).getByText("Data Analyst")).toBeTruthy());
+    api.moveTrackerCard.mockRejectedValueOnce(
+      new Error("This stage comes from an older status mark"),
+    );
+    await waitFor(() =>
+      expect(within(column("applied") as HTMLElement).getByText("Data Analyst")).toBeTruthy(),
+    );
     fireEvent.dragStart(cardEl("acme"), { dataTransfer });
     fireEvent.dragOver(column("offer"), { dataTransfer });
     fireEvent.drop(column("offer"), { dataTransfer });
@@ -159,9 +172,16 @@ describe("TrackerPage", () => {
   });
 
   it("asks why a card closed, and Escape keeps it where it was", async () => {
-    api.getTrackerBoard.mockResolvedValue(board([card({ stage: "interview", column: "interview" })]));
+    api.getTrackerBoard.mockResolvedValue(
+      board([card({ stage: "interview", column: "interview" })]),
+    );
     api.moveTrackerCard.mockResolvedValue({
-      card: card({ column: "closed", closed: "ghosted", label: "No reply", reached: "Interviewing" }),
+      card: card({
+        column: "closed",
+        closed: "ghosted",
+        label: "No reply",
+        reached: "Interviewing",
+      }),
       receipt: { added: ["e2"], voided: [] },
     });
     renderPage();
@@ -178,7 +198,9 @@ describe("TrackerPage", () => {
     fireEvent.click(screen.getByRole("button", { name: "Actions for Acme" }));
     fireEvent.click(screen.getByRole("menuitem", { name: "Closed…" }));
     fireEvent.click(screen.getByRole("button", { name: "No reply" }));
-    await waitFor(() => expect(api.moveTrackerCard).toHaveBeenCalledWith("acme", "closed", "ghosted"));
+    await waitFor(() =>
+      expect(api.moveTrackerCard).toHaveBeenCalledWith("acme", "closed", "ghosted"),
+    );
   });
 
   it("accepts and dismisses an email on its card", async () => {
@@ -212,7 +234,9 @@ describe("TrackerPage", () => {
     const confirm = screen.getByRole("group", { name: "Confirm email" });
     expect(confirm.textContent).toContain("Invited to interview");
     fireEvent.click(within(confirm).getByRole("button", { name: "Record" }));
-    await waitFor(() => expect(api.acceptMailProposal).toHaveBeenCalledWith("p1", { app_id: "acme" }));
+    await waitFor(() =>
+      expect(api.acceptMailProposal).toHaveBeenCalledWith("p1", { app_id: "acme" }),
+    );
   });
 
   it("moves a card from the list view's Stage select", async () => {
@@ -225,7 +249,9 @@ describe("TrackerPage", () => {
     );
     const select = await screen.findByRole("combobox", { name: "Stage of Acme" });
     fireEvent.change(select, { target: { value: "closed:withdrawn" } });
-    await waitFor(() => expect(api.moveTrackerCard).toHaveBeenCalledWith("acme", "closed", "withdrawn"));
+    await waitFor(() =>
+      expect(api.moveTrackerCard).toHaveBeenCalledWith("acme", "closed", "withdrawn"),
+    );
   });
 
   it("lists automatic closes with Undo until Got it, then only new ones", async () => {
@@ -239,7 +265,9 @@ describe("TrackerPage", () => {
       state: "accepted",
       auto: true,
     });
-    api.getTrackerBoard.mockResolvedValue(board([card({ column: "closed" })], [], { auto_closed: [closed] }));
+    api.getTrackerBoard.mockResolvedValue(
+      board([card({ column: "closed" })], [], { auto_closed: [closed] }),
+    );
     api.undoMailProposal.mockResolvedValue({});
     const { unmount } = renderPage();
     const notice = await screen.findByRole("region", { name: "Closed from email" });
@@ -262,7 +290,13 @@ describe("TrackerPage", () => {
     expect(connect.getAttribute("href")).toBe("/settings?tab=email");
     unmount();
 
-    const mail = { configured: true, username: "me@example.com", last_checked: "", last_error: "", running: false };
+    const mail = {
+      configured: true,
+      username: "me@example.com",
+      last_checked: "",
+      last_error: "",
+      running: false,
+    };
     api.getTrackerBoard.mockResolvedValue(board([card({})], [], { mail }));
     api.checkMailNow.mockResolvedValue({});
     const second = renderPage();
@@ -272,7 +306,9 @@ describe("TrackerPage", () => {
     second.unmount();
 
     api.getTrackerBoard.mockResolvedValue(
-      board([card({})], [], { mail: { ...mail, last_error: "The mail server refused that username or password." } }),
+      board([card({})], [], {
+        mail: { ...mail, last_error: "The mail server refused that username or password." },
+      }),
     );
     renderPage();
     const alert = await screen.findByRole("alert");

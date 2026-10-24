@@ -85,7 +85,7 @@ test("resume: its own page; old Profile links land there", async ({ page }) => {
   await page.goto("/profile/resume");
   await expect(page).toHaveURL(/\/resume$/);
   await expect(page.getByRole("heading", { name: "Resume", level: 1 })).toBeVisible();
-  await page.keyboard.press("Control+5");
+  await page.keyboard.press("Control+6");
   await expect(page).toHaveURL(/\/profile\/personal$/);
   await expect(page.getByRole("link", { name: "Resume content" })).toHaveCount(0);
 });

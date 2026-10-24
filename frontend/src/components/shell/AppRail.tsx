@@ -55,7 +55,10 @@ export function AppRail() {
             </span>
           ) : null}
           {item.badge === "email" && emails ? (
-            <span className={BADGE} aria-label={`${emails} email ${emails === 1 ? "update" : "updates"}`}>
+            <span
+              className={BADGE}
+              aria-label={`${emails} email ${emails === 1 ? "update" : "updates"}`}
+            >
               {emails}
             </span>
           ) : null}

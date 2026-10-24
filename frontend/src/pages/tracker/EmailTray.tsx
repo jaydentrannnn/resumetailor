@@ -16,7 +16,8 @@ export function EmailTray({ proposals }: { proposals: MailProposal[] }) {
   return (
     <section aria-label="Emails to assign" className="rounded-md border border-line bg-panel p-3">
       <h2 className="mb-2 text-xs font-semibold text-ink-2">
-        Emails to assign <span className="font-mono font-normal text-ink-muted">{proposals.length}</span>
+        Emails to assign{" "}
+        <span className="font-mono font-normal text-ink-muted">{proposals.length}</span>
         <span className="ml-2 font-normal text-ink-muted">Drag one onto its application.</span>
       </h2>
       <ul className="flex flex-wrap gap-2">
@@ -39,7 +40,8 @@ export function EmailTray({ proposals }: { proposals: MailProposal[] }) {
                 {proposal.app_id && proposal.company ? ` · ${proposal.company}` : ""}
               </p>
               <p className="truncate text-ink-muted">
-                {proposal.subject || "(no subject)"} · {shortDate(proposal.received_on) || proposal.from_domain}
+                {proposal.subject || "(no subject)"} ·{" "}
+                {shortDate(proposal.received_on) || proposal.from_domain}
               </p>
             </div>
             {proposal.app_id ? (

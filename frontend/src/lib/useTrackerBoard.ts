@@ -86,7 +86,9 @@ export function useTrackerBoard() {
         try {
           const { card: moved, receipt } = await moveTrackerCard(card.id, column, reason);
           setBoard((b) => (b ? withCard(b, moved) : b));
-          const where = reason ? `Closed: ${REASON_LABELS[reason]}` : `Moved to ${COLUMN_LABELS[column]}`;
+          const where = reason
+            ? `Closed: ${REASON_LABELS[reason]}`
+            : `Moved to ${COLUMN_LABELS[column]}`;
           if (receipt.added.length || receipt.voided.length) {
             toast.success(`${card.company}: ${where}`, undefined, {
               label: "Undo",

@@ -31,7 +31,12 @@ const empty: MailAccount = {
   running: false,
   confident_pending: 0,
 };
-const saved: MailAccount = { ...empty, host: "mail.example.com", username: "me@example.com", password_set: true };
+const saved: MailAccount = {
+  ...empty,
+  host: "mail.example.com",
+  username: "me@example.com",
+  password_set: true,
+};
 
 afterEach(() => {
   cleanup();
@@ -47,10 +52,9 @@ describe("EmailSection", () => {
     api.saveMailAccount.mockResolvedValue(saved);
     render(<EmailSection />);
     await screen.findByText(/never marks, moves or deletes mail/);
-    expect(screen.getByRole("switch", { name: "Close confident rejections automatically" })).toHaveProperty(
-      "disabled",
-      true,
-    );
+    expect(
+      screen.getByRole("switch", { name: "Close confident rejections automatically" }),
+    ).toHaveProperty("disabled", true);
     const save = screen.getByRole("button", { name: "Save" });
     expect(save).toHaveProperty("disabled", true);
 
@@ -87,7 +91,9 @@ describe("EmailSection", () => {
       password: "",
     });
 
-    api.testMailAccount.mockRejectedValueOnce(new Error("The mail server refused that username or password."));
+    api.testMailAccount.mockRejectedValueOnce(
+      new Error("The mail server refused that username or password."),
+    );
     fireEvent.click(screen.getByRole("button", { name: "Test connection" }));
     const alert = await screen.findByRole("alert");
     expect(alert.textContent).toContain("Could not connect");
@@ -97,16 +103,32 @@ describe("EmailSection", () => {
 
   it("turns automatic closing on, shows what it would close, checks now and removes", async () => {
     api.getMailAccount.mockResolvedValue({ ...saved, confident_pending: 2 });
-    api.saveMailAccount.mockImplementation(async (body) => ({ ...saved, ...body, password: undefined }));
+    api.saveMailAccount.mockImplementation(async (body) => ({
+      ...saved,
+      ...body,
+      password: undefined,
+    }));
     api.checkMailNow.mockResolvedValue({ ...saved, running: true });
     api.removeMailAccount.mockResolvedValue(empty);
     render(<EmailSection />);
     expect(await screen.findByText(/2 would close now/)).toBeTruthy();
 
-    fireEvent.click(screen.getByRole("switch", { name: "Close confident rejections automatically" }));
-    await waitFor(() => expect(api.saveMailAccount).toHaveBeenCalledWith(expect.objectContaining({ auto_close: true, password: "" })));
-    fireEvent.change(screen.getByRole("combobox", { name: "Check every" }), { target: { value: "0" } });
-    await waitFor(() => expect(api.saveMailAccount).toHaveBeenLastCalledWith(expect.objectContaining({ every_hours: 0 })));
+    fireEvent.click(
+      screen.getByRole("switch", { name: "Close confident rejections automatically" }),
+    );
+    await waitFor(() =>
+      expect(api.saveMailAccount).toHaveBeenCalledWith(
+        expect.objectContaining({ auto_close: true, password: "" }),
+      ),
+    );
+    fireEvent.change(screen.getByRole("combobox", { name: "Check every" }), {
+      target: { value: "0" },
+    });
+    await waitFor(() =>
+      expect(api.saveMailAccount).toHaveBeenLastCalledWith(
+        expect.objectContaining({ every_hours: 0 }),
+      ),
+    );
 
     fireEvent.click(screen.getByRole("button", { name: "Check now" }));
     expect(await screen.findByText("Checking now…")).toBeTruthy();

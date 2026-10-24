@@ -8,7 +8,13 @@ import { useTracker } from "./trackerContext";
  * Rejections the mailbox check closed on its own, each with Undo. "Got it" hides the
  * ones listed on this browser; a later close shows the notice again.
  */
-export function AutoClosedNotice({ proposals, workspaceId }: { proposals: MailProposal[]; workspaceId: string }) {
+export function AutoClosedNotice({
+  proposals,
+  workspaceId,
+}: {
+  proposals: MailProposal[];
+  workspaceId: string;
+}) {
   const { busy, undoAutoClose } = useTracker();
   const [seen, setSeen] = useState<string[]>(() => readSeenAuto(workspaceId));
   const fresh = proposals.filter((p) => !seen.includes(p.id));
@@ -23,7 +29,9 @@ export function AutoClosedNotice({ proposals, workspaceId }: { proposals: MailPr
       <div className="mb-2 flex flex-wrap items-center gap-2">
         <h2 className="text-xs font-semibold text-ink-2">
           {fresh.length} closed from email
-          <span className="ml-2 font-normal text-ink-muted">Rejections the app was sure of. Undo any that are wrong.</span>
+          <span className="ml-2 font-normal text-ink-muted">
+            Rejections the app was sure of. Undo any that are wrong.
+          </span>
         </h2>
         <Button size="sm" variant="plain" className="ml-auto" onClick={gotIt}>
           Got it
@@ -37,7 +45,8 @@ export function AutoClosedNotice({ proposals, workspaceId }: { proposals: MailPr
                 {proposal.company} · {proposal.role}
               </p>
               <p className="truncate text-ink-muted">
-                {proposal.subject || "(no subject)"} · {shortDate(proposal.received_on) || proposal.from_domain}
+                {proposal.subject || "(no subject)"} ·{" "}
+                {shortDate(proposal.received_on) || proposal.from_domain}
               </p>
             </div>
             <Button

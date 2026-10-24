@@ -31,7 +31,8 @@ function dayLabel(iso: string): string {
 function eventStatus(event: OutcomeEvent, all: OutcomeEvent[]): string {
   if (event.voided_at) return all.some((o) => o.replaces === event.id) ? "Corrected" : "Removed";
   if (event.source === "mcp") return "Added by your assistant";
-  if (event.source === "monitor" && event.note.startsWith("Closed from email")) return "Closed from email";
+  if (event.source === "monitor" && event.note.startsWith("Closed from email"))
+    return "Closed from email";
   return `Recorded ${new Date(event.recorded_at).toLocaleDateString()}`;
 }
 

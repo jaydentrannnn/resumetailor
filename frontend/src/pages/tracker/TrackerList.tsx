@@ -56,7 +56,10 @@ function StageSelect({ card }: { card: TrackerCard }) {
 /** The same cards as a sortable table; the Stage select moves a card like a drag. */
 export function TrackerList({ cards }: { cards: TrackerCard[] }) {
   const tracker = useTracker();
-  const [sort, setSort] = useState<{ key: SortKey; down: boolean }>({ key: "last_update", down: true });
+  const [sort, setSort] = useState<{ key: SortKey; down: boolean }>({
+    key: "last_update",
+    down: true,
+  });
   const value = (card: TrackerCard) =>
     sort.key === "column"
       ? String(TRACKER_COLUMNS.findIndex((c) => c.id === card.column))
@@ -72,7 +75,13 @@ export function TrackerList({ cards }: { cards: TrackerCard[] }) {
         <thead className="bg-panel text-xs text-ink-2">
           <tr>
             {HEADERS.map(([key, label]) => (
-              <th key={label} className="px-3 py-2 font-medium" aria-sort={key && sort.key === key ? (sort.down ? "descending" : "ascending") : undefined}>
+              <th
+                key={label}
+                className="px-3 py-2 font-medium"
+                aria-sort={
+                  key && sort.key === key ? (sort.down ? "descending" : "ascending") : undefined
+                }
+              >
                 {key ? (
                   <button
                     type="button"
@@ -94,7 +103,11 @@ export function TrackerList({ cards }: { cards: TrackerCard[] }) {
             <tr key={card.id} className="border-t border-line">
               <td className="px-3 py-2 font-medium text-ink">{card.company}</td>
               <td className="max-w-72 truncate px-3 py-2">
-                <button type="button" className="truncate hover:underline" onClick={() => tracker.open(card)}>
+                <button
+                  type="button"
+                  className="truncate hover:underline"
+                  onClick={() => tracker.open(card)}
+                >
                   {card.role}
                 </button>
               </td>

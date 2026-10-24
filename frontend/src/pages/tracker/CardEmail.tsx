@@ -39,7 +39,12 @@ export function CardEmail({ proposal }: { proposal: MailProposal }) {
       )}
       {proposal.flag && <p className="mt-1 text-attn">Check this: {proposal.flag}</p>}
       <div className="mt-1.5 flex items-center justify-end gap-1.5">
-        <Button size="sm" variant="ghost" disabled={busy} onClick={() => void tracker.dismissEmail(proposal)}>
+        <Button
+          size="sm"
+          variant="ghost"
+          disabled={busy}
+          onClick={() => void tracker.dismissEmail(proposal)}
+        >
           Dismiss
         </Button>
         <Button
@@ -59,10 +64,20 @@ export function CardEmail({ proposal }: { proposal: MailProposal }) {
 }
 
 /** A tray email dropped on this card: say what will be recorded, then record it. */
-export function PendingEmailConfirm({ card, proposal }: { card: TrackerCard; proposal: MailProposal }) {
+export function PendingEmailConfirm({
+  card,
+  proposal,
+}: {
+  card: TrackerCard;
+  proposal: MailProposal;
+}) {
   const tracker = useTracker();
   return (
-    <div className="space-y-1.5 rounded-sm border border-accent bg-panel px-2 py-1.5 text-xs" role="group" aria-label="Confirm email">
+    <div
+      className="space-y-1.5 rounded-sm border border-accent bg-panel px-2 py-1.5 text-xs"
+      role="group"
+      aria-label="Confirm email"
+    >
       <p className="text-ink-2">
         Record “{what(proposal)}” on {card.company}, from “{proposal.subject || "(no subject)"}”?
       </p>

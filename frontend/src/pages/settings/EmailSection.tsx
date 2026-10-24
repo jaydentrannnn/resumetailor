@@ -1,5 +1,11 @@
 import { useCallback, useEffect, useState } from "react";
-import { checkMailNow, getMailAccount, MAIL_CHECK_EVERY, saveMailAccount, type MailAccount } from "../../api";
+import {
+  checkMailNow,
+  getMailAccount,
+  MAIL_CHECK_EVERY,
+  saveMailAccount,
+  type MailAccount,
+} from "../../api";
 import { Button, Card, Skeleton, SettingRow, Switch } from "../../components/ui";
 import { describe } from "../../lib/errors";
 import { relativeTime } from "../../lib/sources";
@@ -12,7 +18,9 @@ function lastCheck(account: MailAccount): string {
   if (account.running) return "Checking now…";
   if (!account.last_checked) return "Not checked yet.";
   const r = account.last_result;
-  const found = r ? ` ${r.matched + r.unclear} job ${r.matched + r.unclear === 1 ? "email" : "emails"} new${r.closed ? `, ${r.closed} closed` : ""}.` : "";
+  const found = r
+    ? ` ${r.matched + r.unclear} job ${r.matched + r.unclear === 1 ? "email" : "emails"} new${r.closed ? `, ${r.closed} closed` : ""}.`
+    : "";
   return `Checked ${relativeTime(account.last_checked)}.${found}`;
 }
 
@@ -42,7 +50,11 @@ export function EmailSection() {
   }, [account, load]);
 
   if (!account) {
-    return loadError ? <p className="text-sm text-danger">{describe(loadError).detail}</p> : <Skeleton className="h-64 w-full" />;
+    return loadError ? (
+      <p className="text-sm text-danger">{describe(loadError).detail}</p>
+    ) : (
+      <Skeleton className="h-64 w-full" />
+    );
   }
   const configured = Boolean(account.host);
 
@@ -51,7 +63,16 @@ export function EmailSection() {
     const next = { ...account, ...change };
     setAccount(next);
     try {
-      setAccount(await saveMailAccount({ host: next.host, port: next.port, username: next.username, password: "", every_hours: next.every_hours, auto_close: next.auto_close }));
+      setAccount(
+        await saveMailAccount({
+          host: next.host,
+          port: next.port,
+          username: next.username,
+          password: "",
+          every_hours: next.every_hours,
+          auto_close: next.auto_close,
+        }),
+      );
     } catch (err) {
       setAccount(account);
       toast.error("Could not save that setting", describe(err).detail);
@@ -85,7 +106,10 @@ export function EmailSection() {
           }}
         />
       </Card>
-      <Card title="Checking" description="Only email from hiring systems or companies you applied to is read past its subject line.">
+      <Card
+        title="Checking"
+        description="Only email from hiring systems or companies you applied to is read past its subject line."
+      >
         <SettingRow label="Check every" layout="action">
           <select
             aria-label="Check every"
@@ -105,8 +129,8 @@ export function EmailSection() {
           label="Close confident rejections automatically"
           description={
             <>
-              A rejection that names the role of one application you sent closes it on the Tracker, with Undo.
-              Everything else waits for you to accept.
+              A rejection that names the role of one application you sent closes it on the Tracker,
+              with Undo. Everything else waits for you to accept.
               {account.confident_pending > 0 && ` ${account.confident_pending} would close now.`}
             </>
           }
@@ -119,13 +143,21 @@ export function EmailSection() {
             onChange={(on) => void patch({ auto_close: on })}
           />
         </SettingRow>
-        <SettingRow label="Last check" description={account.last_error ? undefined : lastCheck(account)} layout="action">
+        <SettingRow
+          label="Last check"
+          description={account.last_error ? undefined : lastCheck(account)}
+          layout="action"
+        >
           {account.last_error && (
             <p role="alert" className="text-xs text-danger">
               {account.last_error}
             </p>
           )}
-          <Button onClick={() => void checkNow()} disabled={!configured || account.running} loading={account.running}>
+          <Button
+            onClick={() => void checkNow()}
+            disabled={!configured || account.running}
+            loading={account.running}
+          >
             Check now
           </Button>
         </SettingRow>

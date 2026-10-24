@@ -61,7 +61,7 @@ def test_prep_retells_a_sent_bullet_and_the_note_passes_its_guard():
     [story] = prep.stories
     assert (story.bullet_ids, story.action) == (list(bullets)[:1], next(iter(bullets.values())))
     note = fake_llm.reply(followup_note.FollowupLLM, "")
-    assert followup_note._offenders(resume, bullets, "", note.body, []) == []
+    assert followup_note._offenders(bullets, note.body, []) == []
 
 
 def test_company_facts_quote_each_source_and_pass_their_guard():

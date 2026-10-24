@@ -80,8 +80,18 @@ export function optimistic(
 ): TrackerCard {
   if (column === "closed") {
     const reached =
-      card.column === "closed" ? card.reached : card.column === "applied" ? "" : COLUMN_LABELS[card.column];
-    return { ...card, column, closed: reason ?? null, label: reason ? REASON_LABELS[reason] : "", reached };
+      card.column === "closed"
+        ? card.reached
+        : card.column === "applied"
+          ? ""
+          : COLUMN_LABELS[card.column];
+    return {
+      ...card,
+      column,
+      closed: reason ?? null,
+      label: reason ? REASON_LABELS[reason] : "",
+      reached,
+    };
   }
   return { ...card, column, closed: null, reached: "", label: COLUMN_LABELS[column] };
 }
@@ -142,6 +152,11 @@ export function shortDate(iso: string | null | undefined, today = new Date()): s
 
 /** Up to two letters for the card's company mark. */
 export function initials(company: string): string {
-  const words = company.replace(/[^\p{L}\p{N} ]/gu, " ").split(/\s+/).filter(Boolean);
-  return (words.length > 1 ? words[0][0] + words[1][0] : (words[0] ?? "?").slice(0, 2)).toUpperCase();
+  const words = company
+    .replace(/[^\p{L}\p{N} ]/gu, " ")
+    .split(/\s+/)
+    .filter(Boolean);
+  return (
+    words.length > 1 ? words[0][0] + words[1][0] : (words[0] ?? "?").slice(0, 2)
+  ).toUpperCase();
 }

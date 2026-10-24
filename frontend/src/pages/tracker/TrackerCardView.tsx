@@ -41,7 +41,12 @@ export function TrackerCardView({
     ...moveTargets(card)
       .filter((id) => id !== card.column || id === "closed")
       .map((id) => ({
-        label: id === "closed" ? (card.column === "closed" ? "Change why it closed…" : "Closed…") : `Move to ${COLUMN_LABELS[id]}`,
+        label:
+          id === "closed"
+            ? card.column === "closed"
+              ? "Change why it closed…"
+              : "Closed…"
+            : `Move to ${COLUMN_LABELS[id]}`,
         action: () => (id === "closed" ? onClose(card) : void tracker.move(card, id)),
       })),
     { label: "Open application", action: () => tracker.open(card) },

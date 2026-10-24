@@ -36,9 +36,15 @@ describe("tracker", () => {
       card({ id: "b", company: "Globex", sent_on: "2026-10-01" }),
       card({ id: "c", company: "Hooli", sent_on: null, column: "not_sent" }),
     ];
-    expect(filterCards(cards, { ...NO_FILTERS, q: "glob analyst" }).map((c) => c.id)).toEqual(["b"]);
-    expect(filterCards(cards, { ...NO_FILTERS, from: "2026-09-15" }).map((c) => c.id)).toEqual(["b"]);
-    expect(filterCards(cards, { ...NO_FILTERS, until: "2026-09-15" }).map((c) => c.id)).toEqual(["a"]);
+    expect(filterCards(cards, { ...NO_FILTERS, q: "glob analyst" }).map((c) => c.id)).toEqual([
+      "b",
+    ]);
+    expect(filterCards(cards, { ...NO_FILTERS, from: "2026-09-15" }).map((c) => c.id)).toEqual([
+      "b",
+    ]);
+    expect(filterCards(cards, { ...NO_FILTERS, until: "2026-09-15" }).map((c) => c.id)).toEqual([
+      "a",
+    ]);
     expect(filterCards(cards, { ...NO_FILTERS, email: true })).toEqual([]);
   });
 
@@ -51,7 +57,11 @@ describe("tracker", () => {
   });
 
   it("offers declining only after an offer, and not the reason it already has", () => {
-    expect(closeReasons(card({ stage: "interview" }))).toEqual(["rejected", "ghosted", "withdrawn"]);
+    expect(closeReasons(card({ stage: "interview" }))).toEqual([
+      "rejected",
+      "ghosted",
+      "withdrawn",
+    ]);
     expect(closeReasons(card({ stage: "offer", closed: "rejected", column: "closed" }))).toEqual([
       "ghosted",
       "withdrawn",
@@ -60,8 +70,16 @@ describe("tracker", () => {
   });
 
   it("shows a move at once and recounts the board", () => {
-    const moved = optimistic(card({ column: "interview", label: "Interviewing" }), "closed", "ghosted");
-    expect([moved.column, moved.label, moved.reached]).toEqual(["closed", "No reply", "Interviewing"]);
+    const moved = optimistic(
+      card({ column: "interview", label: "Interviewing" }),
+      "closed",
+      "ghosted",
+    );
+    expect([moved.column, moved.label, moved.reached]).toEqual([
+      "closed",
+      "No reply",
+      "Interviewing",
+    ]);
     const board: TrackerBoard = {
       cards: [card({})],
       unmatched: [],

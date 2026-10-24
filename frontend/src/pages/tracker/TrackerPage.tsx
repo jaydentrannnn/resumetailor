@@ -3,7 +3,12 @@ import { useNavigate, useSearchParams } from "react-router-dom";
 import type { TrackerCard, TrackerColumn } from "../../api";
 import { CommandBar, EmptyState, Page, Segmented, Skeleton } from "../../components/ui";
 import { describe } from "../../lib/errors";
-import { filterCards, readHidden, writeHidden, type TrackerFilters as Filters } from "../../lib/tracker";
+import {
+  filterCards,
+  readHidden,
+  writeHidden,
+  type TrackerFilters as Filters,
+} from "../../lib/tracker";
 import { useTrackerBoard } from "../../lib/useTrackerBoard";
 import { useCommands } from "../../state/commandState";
 import { useWorkspaceState } from "../../state/workspaceState";
@@ -57,7 +62,9 @@ export function TrackerPage() {
   const { board, loadError } = actions;
   const cards = filterCards(board?.cards ?? [], filters);
   const shown = view === "list" ? cards.filter((c) => !hidden.includes(c.column)) : cards;
-  const emails = (board?.unmatched.length ?? 0) + (board?.cards ?? []).reduce((n, c) => n + c.proposals.length, 0);
+  const emails =
+    (board?.unmatched.length ?? 0) +
+    (board?.cards ?? []).reduce((n, c) => n + c.proposals.length, 0);
 
   const open = (card: TrackerCard) =>
     navigate(
@@ -69,8 +76,20 @@ export function TrackerPage() {
     );
 
   useCommands(() => [
-    { id: "tracker-board", title: "Tracker: board view", group: "Apply", disabled: view === "board", run: () => setParam({ view: "" }) },
-    { id: "tracker-list", title: "Tracker: list view", group: "Apply", disabled: view === "list", run: () => setParam({ view: "list" }) },
+    {
+      id: "tracker-board",
+      title: "Tracker: board view",
+      group: "Apply",
+      disabled: view === "board",
+      run: () => setParam({ view: "" }),
+    },
+    {
+      id: "tracker-list",
+      title: "Tracker: list view",
+      group: "Apply",
+      disabled: view === "list",
+      run: () => setParam({ view: "list" }),
+    },
     {
       id: "tracker-not-sent",
       title: hidden.includes("not_sent") ? "Tracker: show Not sent" : "Tracker: hide Not sent",
@@ -82,11 +101,17 @@ export function TrackerPage() {
 
   const sent = board ? board.cards.length - board.counts.not_sent : 0;
   return (
-    <TrackerContext.Provider value={{ ...actions, drag, setDrag, pendingEmail, setPendingEmail, open }}>
+    <TrackerContext.Provider
+      value={{ ...actions, drag, setDrag, pendingEmail, setPendingEmail, open }}
+    >
       <Page width="wide" className="pb-4">
         <CommandBar
           title="Tracker"
-          state={board ? `${sent} sent · ${board.counts.not_sent} not sent${emails ? ` · ${emails} email ${emails === 1 ? "update" : "updates"}` : ""}` : undefined}
+          state={
+            board
+              ? `${sent} sent · ${board.counts.not_sent} not sent${emails ? ` · ${emails} email ${emails === 1 ? "update" : "updates"}` : ""}`
+              : undefined
+          }
           actions={
             <Segmented
               label="View"
@@ -101,7 +126,9 @@ export function TrackerPage() {
         />
         <TrackerFilters
           filters={filters}
-          onChange={(f) => setParam({ q: f.q, from: f.from, until: f.until, email: f.email ? "1" : "" })}
+          onChange={(f) =>
+            setParam({ q: f.q, from: f.from, until: f.until, email: f.email ? "1" : "" })
+          }
           hidden={hidden}
           onShow={toggle}
         />
@@ -113,7 +140,11 @@ export function TrackerPage() {
         ) : (
           <>
             {/* The tray stands on its own: its emails may be about applications not in Done. */}
-            <AutoClosedNotice key={workspaceId} proposals={board.auto_closed} workspaceId={workspaceId} />
+            <AutoClosedNotice
+              key={workspaceId}
+              proposals={board.auto_closed}
+              workspaceId={workspaceId}
+            />
             <EmailTray proposals={board.unmatched} />
             {board.cards.length === 0 ? (
               <EmptyState title="Nothing in Done yet">
