@@ -1,5 +1,6 @@
 /** Tailoring runs: job settings, progress and reports, run history, artifacts, re-render. */
 
+import type { ApplicationRow } from "./applications";
 import type { ApplySettings } from "./applySettings";
 import type { AiModels } from "../lib/aiModels";
 import { downloadFilename } from "../lib/fileActions";
@@ -309,6 +310,17 @@ export function createJob(
   });
 }
 
+/** Track the posting a finished run was tailored for on Apply, with the run's files. */
+export function sendRunToApply(
+  jobId: string,
+  body: { posting_url: string; company: string; role: string },
+): Promise<{ application: ApplicationRow; created: boolean; reasons: string[] }> {
+  return request(`/api/jobs/${encodeURIComponent(jobId)}/send-to-apply`, {
+    method: "POST",
+    body: JSON.stringify(body),
+  });
+}
+
 export interface RunEstimate {
   calls: number;
   input_tokens: number;
@@ -472,15 +484,15 @@ export interface JdText {
 }
 
 /** Read a posting's text from its URL (resolves job-board redirect links). */
-export function fetchJdFromUrl(url: string): Promise<JdText> {
-  return request("/api/jd/fetch", { method: "POST", body: JSON.stringify({ url }) });
+export function fetchJdFromUrl(url: string, signal?: AbortSignal): Promise<JdText> {
+  return request("/api/jd/fetch", { method: "POST", body: JSON.stringify({ url }), signal });
 }
 
 /** Extract posting text from an uploaded .txt / .pdf / .docx / .html file. */
-export async function extractJdFile(file: File): Promise<JdText> {
+export async function extractJdFile(file: File, signal?: AbortSignal): Promise<JdText> {
   const form = new FormData();
   form.append("file", file);
-  const res = await fetch("/api/jd/extract-file", { method: "POST", body: form });
+  const res = await fetch("/api/jd/extract-file", { method: "POST", body: form, signal });
   if (!res.ok) throw await apiError(res);
   return res.json() as Promise<JdText>;
 }

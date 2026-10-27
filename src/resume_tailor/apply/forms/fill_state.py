@@ -20,6 +20,7 @@ from resume_tailor.apply.funnel import fill_files
 from resume_tailor.apply.funnel import packet as apply_packet
 from resume_tailor.apply.funnel.store_models import FillResult
 from resume_tailor.content import data
+from resume_tailor.infra import wait_clock
 from resume_tailor.web.schemas import ApplySettings
 
 from . import fill_outcomes, fill_page, fill_widgets
@@ -114,6 +115,9 @@ class _FillState:
         #: Told the new deadline (epoch seconds) whenever progress extends it.
         self.on_deadline = on_deadline
         self.started = time.monotonic()
+        #: Time spent queued for a model slot or the PDF converter (`run` opens it);
+        #: the deadline and its hard cap move out by it (audit #28).
+        self.waits: wait_clock.Tally | None = None
         #: Heavy for Fill's model calls, Light once Heavy is at its limit.
         self.model_route = model_fallback.Fallback(
             heavy=settings.model_spec, light=settings.fallback_model_spec,
@@ -287,12 +291,26 @@ class _FillState:
         """Pin Fill's answer model: Heavy, or Light once Heavy is at its limit."""
         return model_fallback.pin(self.model_route)
 
+    def _waited(self) -> float:
+        waits = getattr(self, "waits", None)
+        return waits.total if waits is not None else 0.0
+
+    @property
+    def deadline(self) -> float:
+        """When the fill's own time is up: its budget plus any time spent queued."""
+        base = getattr(self, "_deadline", None)
+        return base if base is None else base + self._waited()
+
+    @deadline.setter
+    def deadline(self, value: float) -> None:
+        self._deadline = value if value is None else value - self._waited()
+
     def hard_deadline(self) -> float:
-        return self.started + fill_outcomes.HARD_CAP_S
+        return self.started + self._waited() + fill_outcomes.HARD_CAP_S
 
     def extend_deadline(self) -> None:
         now = time.monotonic()
-        later = fill_outcomes.extended_deadline(self.deadline, self.started, now)
+        later = fill_outcomes.extended_deadline(self.deadline, self.started + self._waited(), now)
         if later > self.deadline + 1:
             self.deadline = later
             if self.on_deadline:

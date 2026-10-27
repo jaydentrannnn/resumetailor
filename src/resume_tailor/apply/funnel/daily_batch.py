@@ -45,8 +45,10 @@ def _discover_new_rows(
     log_file: Path,
     log: Callable[[str], None],
     on_progress: daily_progress.ProgressCallback | None = None,
+    should_cancel: Callable[[], bool] = lambda: False,
 ) -> list[source_rows.SourceRow]:
-    """Every enabled source's new rows, deduplicated by job id across sources."""
+    """Every enabled source's new rows, deduplicated by job id across sources; a cancel
+    stops before the next source."""
     all_new: list[source_rows.SourceRow] = []
     total_candidates = 0
     already_known = 0
@@ -60,6 +62,11 @@ def _discover_new_rows(
     if on_progress is not None:
         on_progress(daily_progress.FindProgress(phase="discovering", total=len(enabled_sources)))
     for completed, src in enumerate(enabled_sources):
+        if should_cancel():
+            daily_rows._append_log(
+                log_file, f"cancelled after {completed} of {len(enabled_sources)} sources", log
+            )
+            break
         if on_progress is not None:
             on_progress(daily_progress.FindProgress(
                 phase="discovering", processed=completed,
@@ -205,8 +212,10 @@ def _process_rows(
     summary: daily_progress.DailySummary,
     index: store_models.Index,
     on_progress: daily_progress.ProgressCallback | None = None,
+    should_cancel: Callable[[], bool] = lambda: False,
 ) -> None:
-    """Run `_process_one` over the rows on a small pool, one role group at a time."""
+    """Run `_process_one` over the rows on a small pool, one role group at a time. A
+    cancel leaves the postings not yet started alone (they stay new for the next pass)."""
     index_lock = threading.Lock()
     group_locks: dict[str, threading.Lock] = {}
     if on_progress is not None:
@@ -215,6 +224,8 @@ def _process_rows(
     def process_row(row: source_rows.SourceRow, prior: Any = None) -> None:
         if prior is not None:
             prior.result()
+        if should_cancel():
+            return
         group_key = identity.group_key(row.company, row.role)
         with group_locks[group_key]:
             daily_progress._progress_set(

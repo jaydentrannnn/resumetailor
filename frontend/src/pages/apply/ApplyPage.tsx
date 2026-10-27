@@ -122,6 +122,7 @@ export function ApplyPage() {
       <ApplyHeader
         apply={settings.apply}
         browser={op.browser}
+        sync={op.sync}
         onSettings={() => setDrawerOpen(true)}
       />
       <ProgressBanner

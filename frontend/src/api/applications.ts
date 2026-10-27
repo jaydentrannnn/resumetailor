@@ -655,6 +655,11 @@ export type ClosingTab = { id: string; company: string; due_in: number };
  * Open browser tab ids; `reachable: false` means tab state is unknown. `closing` lists the
  * finished applications' tabs counting down to close.
  */
+/** The registry's change counter (moves on every write) for the active profile. */
+export function getApplicationsRevision(): Promise<{ revision: number; workspace_id: string }> {
+  return request("/api/applications/revision");
+}
+
 export function getOpenTabs(): Promise<{
   reachable: boolean;
   target_ids: string[];

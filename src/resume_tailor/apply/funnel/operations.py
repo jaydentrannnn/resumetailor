@@ -1500,6 +1500,8 @@ def _worker(
     threading.Thread(
         target=heartbeat, name=f"apply-heartbeat-{operation.operation_id[:8]}", daemon=True
     ).start()
+    # What finished before a Cancel took effect, for the banner (audit #24).
+    cancelled_note = "Cancelled"
     try:
         settings = settings_snapshot or _captured_settings(request)
         if operation.action == "find":
@@ -1514,8 +1516,13 @@ def _worker(
                 fetch_only=True,
                 log=lambda message: _event(operation, "discovering", message),
                 on_progress=lambda progress: _set_find_progress(operation, progress),
+                should_cancel=ctl.cancel.is_set,
             )
             operation.processed = operation.completed = 1
+            if result.reason == "cancelled":
+                cancelled_note = (
+                    f"Cancelled after {result.processed} of {result.new_rows} new postings"
+                )
             operation.attention = result.attention
             if result.errors:
                 operation.failed = len(result.errors)
@@ -1524,7 +1531,6 @@ def _worker(
 
         if ctl.cancel.is_set():
             operation.state = "cancelled"
-            operation.message = "Cancelled"
         elif operation.failed or operation.blocked:
             operation.state = "completed_with_issues"
         else:
@@ -1533,7 +1539,13 @@ def _worker(
         operation.current_job_id = ""
         operation.current_label = ""
         operation.finished_at = _now()
-        _event(operation, "done", operation.state.replace("_", " ").title())
+        _event(
+            operation,
+            "done",
+            cancelled_note
+            if operation.state == "cancelled"
+            else operation.state.replace("_", " ").title(),
+        )
     except Exception as exc:  # noqa: BLE001
         operation.state = "failed"
         operation.current_job_id = ""

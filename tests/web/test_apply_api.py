@@ -807,3 +807,13 @@ def test_starting_beside_a_busy_batch_is_a_conflict(client, monkeypatch):
     })
     assert res.status_code == 409
     assert "another running Apply task" in res.json()["detail"]
+
+
+def test_applications_revision_follows_registry_writes(client):
+    c, _q = client
+    first = c.get("/api/applications/revision").json()
+    assert first["workspace_id"] == config.active_workspace_id()
+    apply_store.upsert(
+        store_models.Application(source="t", source_job_id="r1", company="Acme", role="Analyst")
+    )
+    assert c.get("/api/applications/revision").json()["revision"] > first["revision"]

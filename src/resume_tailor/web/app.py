@@ -305,6 +305,7 @@ from resume_tailor.web.routes import (  # noqa: E402, I001
     resume as _resume_routes,
     search_presets as _search_presets_routes,
     secrets as _secrets_routes,
+    send_to_apply as _send_to_apply_routes,
     setup as _setup_routes,
     system as _system_routes,
     template as _template_routes,
@@ -319,7 +320,7 @@ from resume_tailor.web.routes import (  # noqa: E402, I001
 # the single-file app (config, jobs, applications, resume, template, libraries, profiles).
 # `after_send` precedes applications: its `/api/applications/follow-ups` is not an id.
 for _router in (
-    _config_routes, _jobs_routes, _after_send_routes, _applications_routes, _outcomes_routes,
+    _config_routes, _jobs_routes, _send_to_apply_routes, _after_send_routes, _applications_routes, _outcomes_routes,
     _resume_routes, _template_routes, _libraries_routes, _workspaces_routes, _diagnostics_routes,
     _secrets_routes, _setup_routes, _system_routes, _onboarding_routes,
     _jd_routes, _answers_routes, _automation_routes, _discovery_routes,

@@ -18,7 +18,7 @@ from resume_tailor.apply.answers import profile as profile_mod
 from resume_tailor.apply.driver import browser, watchdog
 from resume_tailor.apply.funnel import store
 from resume_tailor.apply.funnel.store_models import FillResult
-from resume_tailor.infra import model_queue
+from resume_tailor.infra import model_queue, wait_clock
 from resume_tailor.web.schemas import ApplySettings, JobSettings
 
 from . import fill_diagnostics, fill_entry, fill_finish, fill_widgets, fill_wizard, submit_guard
@@ -111,7 +111,13 @@ class _FillRun(fill_entry._FillEntry, fill_wizard._FillWizard, fill_finish._Fill
 
     def run(self) -> FillResult:
         started = time.monotonic()
-        with model_queue.count_requests() as requests:
+        # A fill has someone waiting on it: its model requests go ahead of tailoring, and
+        # time queued behind other work does not count against its deadline (audit #28).
+        with (
+            model_queue.count_requests() as requests,
+            model_queue.interactive(),
+            wait_clock.track(self.progress) as self.waits,
+        ):
             result = self._run()
         return self._record_diagnostics(result, time.monotonic() - started, requests[0])
 

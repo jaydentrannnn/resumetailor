@@ -4,7 +4,7 @@ import type { ApplicationRow } from "../../api";
 import { DataTable, Pagination } from "../../components/TableControls";
 import { Button, SelectionBar } from "../../components/ui";
 import type { OpenTabs } from "../../lib/applicationRows";
-import { TERMINAL_STATUSES } from "../../lib/applyPage";
+import { bulkMarkable } from "../../lib/applicationActions";
 import { useRunState } from "../../state/runState";
 import { applicationColumns } from "./applicationColumns";
 import { TableFilters } from "./TableFilters";
@@ -41,6 +41,8 @@ export interface TableActions {
   mark: (row: ApplicationRow, status: "submitted" | "skipped") => void;
   /** Skip every row given (bulk); the page moves them to Done and offers Undo. */
   skip: (rows: ApplicationRow[]) => void;
+  /** Mark every row given submitted (bulk, after a confirm), with Undo. */
+  markSubmitted: (rows: ApplicationRow[]) => void;
   focusTab: (row: ApplicationRow) => void;
   detail: (row: ApplicationRow, tab?: string) => To;
   rememberScroll: () => void;
@@ -107,7 +109,8 @@ export function ApplicationsTable({
   const selectedIds = state.selectedRows.map((row) => row.source_job_id);
   const onScreen = new Set(rows.map((row) => row.source_job_id));
   const elsewhere = selectedIds.filter((id) => !onScreen.has(id)).length;
-  const skippable = state.selectedRows.filter((row) => !TERMINAL_STATUSES.has(row.status));
+  // Rows a running task holds are left out; one at a time, a row's menu takes them over.
+  const markable = bulkMarkable(state.selectedRows, actions.held);
 
   return (
     <div className="space-y-3">
@@ -141,15 +144,25 @@ export function ApplicationsTable({
             {archived ? "Restore" : "Archive"}
           </Button>
           {!archived && (
-            <Button
-              size="sm"
-              variant="danger"
-              disabled={busy || !skippable.length}
-              title="Mark the selected applications as skipped and move them to Done"
-              onClick={() => actions.skip(skippable)}
-            >
-              Skip ({skippable.length})
-            </Button>
+            <>
+              <Button
+                size="sm"
+                disabled={busy || !markable.length}
+                title="You sent these yourself: mark them submitted and move them to Done"
+                onClick={() => actions.markSubmitted(markable)}
+              >
+                Mark submitted ({markable.length})
+              </Button>
+              <Button
+                size="sm"
+                variant="danger"
+                disabled={busy || !markable.length}
+                title="Mark the selected applications as skipped and move them to Done"
+                onClick={() => actions.skip(markable)}
+              >
+                Skip ({markable.length})
+              </Button>
+            </>
           )}
         </SelectionBar>
         {/* The table sits on the tile itself: no second box around it. */}

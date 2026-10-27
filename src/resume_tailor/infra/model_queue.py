@@ -32,6 +32,7 @@ import httpx2
 from pydantic import BaseModel, Field, field_validator
 
 from resume_tailor import config
+from resume_tailor.infra import wait_clock
 from resume_tailor.pipeline.events import ProgressCallback, emit
 
 log = logging.getLogger(__name__)
@@ -94,6 +95,8 @@ class _Pool:
     cooldowns: deque[float] = field(default_factory=deque)
     #: Set when the provider's quota looks used up (a per-day quota, or repeated 429s).
     exhausted_until: float = 0
+    #: Waiting tickets of interactive requests (a Fill), admitted ahead of batch ones.
+    interactive: set[object] = field(default_factory=set)
     rate_limited_today: int = 0
     day: str = ""
     quota: str = ""
@@ -138,6 +141,22 @@ def parse_rate_limit(body: str) -> RateLimit:
 _OBSERVER: ContextVar[tuple[ProgressCallback | None, Callable[[], None] | None]] = ContextVar(
     "model_queue_observer", default=(None, None)
 )
+
+
+#: Set inside `interactive()`: this context's requests go ahead of batch work.
+_INTERACTIVE: ContextVar[bool] = ContextVar("model_queue_interactive", default=False)
+
+
+@contextmanager
+def interactive() -> Iterator[None]:
+    """Admit this context's model requests ahead of batch work (tailoring) waiting for
+    the same endpoint: a fill has a person and a browser tab waiting on it (audit #28).
+    Among themselves interactive requests keep their order, as batch ones do."""
+    token = _INTERACTIVE.set(True)
+    try:
+        yield
+    finally:
+        _INTERACTIVE.reset(token)
 
 
 #: Model requests admitted inside the current `count_requests` block (one fill's count).
@@ -351,7 +370,15 @@ class RequestQueue:
                     "Model request queue is full; try again after pending work finishes"
                 )
             ticket = object()
-            pool.waiting.append(ticket)
+            if _INTERACTIVE.get():
+                ahead = next(
+                    (i for i, t in enumerate(pool.waiting) if t not in pool.interactive),
+                    len(pool.waiting),
+                )
+                pool.waiting.insert(ahead, ticket)
+                pool.interactive.add(ticket)
+            else:
+                pool.waiting.append(ticket)
             return key, pool, ticket
 
     def _admit(self, key: str, pool: _Pool, ticket: object, deadline: float) -> bool:
@@ -366,6 +393,7 @@ class RequestQueue:
             and time.monotonic() >= pool.cooldown_until
         ):
             pool.waiting.popleft()
+            pool.interactive.discard(ticket)
             pool.active += 1
             self._condition.notify_all()
             return True
@@ -377,25 +405,29 @@ class RequestQueue:
                 pool.active -= 1
             elif ticket in pool.waiting:
                 pool.waiting.remove(ticket)
+            pool.interactive.discard(ticket)
             self._condition.notify_all()
 
-    def _waiting(self, key: str) -> None:
+    def _waiting(self, key: str, pool: _Pool, ticket: object) -> None:
         callback, _ = _OBSERVER.get()
-        emit(callback, "model_wait", "Waiting for model capacity", endpoint=key)
+        with self._condition:
+            ahead = pool.waiting.index(ticket) if ticket in pool.waiting else 0
+        message = "Waiting for model capacity" + (f" ({ahead} ahead)" if ahead else "")
+        emit(callback, "model_wait", message, endpoint=key, ahead=ahead)
 
     @contextmanager
     def slot(self, url: str, origin: str = "", *, deadline: float | None = None) -> Iterator[None]:
         deadline = deadline if deadline is not None else time.monotonic() + config.LLM_TIMEOUT
         key, pool, ticket = self._enqueue(url, origin)
         admitted = False
-        announced = False
         try:
             with self._condition:
-                while not (admitted := self._admit(key, pool, ticket, deadline)):
-                    if not announced:
-                        self._waiting(key)
-                        announced = True
-                    self._condition.wait(min(0.1, max(0, deadline - time.monotonic())))
+                admitted = self._admit(key, pool, ticket, deadline)
+            if not admitted:
+                self._waiting(key, pool, ticket)
+                with wait_clock.waiting(), self._condition:
+                    while not (admitted := self._admit(key, pool, ticket, deadline)):
+                        self._condition.wait(min(0.1, max(0, deadline - time.monotonic())))
             _count_request()
             yield
         finally:
@@ -406,17 +438,18 @@ class RequestQueue:
         deadline = deadline if deadline is not None else time.monotonic() + config.LLM_TIMEOUT
         key, pool, ticket = self._enqueue(url, origin)
         admitted = False
-        announced = False
         try:
-            while True:
-                with self._condition:
-                    admitted = self._admit(key, pool, ticket, deadline)
-                if admitted:
-                    break
-                if not announced:
-                    self._waiting(key)
-                    announced = True
-                await asyncio.sleep(min(0.05, max(0, deadline - time.monotonic())))
+            with self._condition:
+                admitted = self._admit(key, pool, ticket, deadline)
+            if not admitted:
+                self._waiting(key, pool, ticket)
+                with wait_clock.waiting():
+                    while True:
+                        with self._condition:
+                            admitted = self._admit(key, pool, ticket, deadline)
+                        if admitted:
+                            break
+                        await asyncio.sleep(min(0.05, max(0, deadline - time.monotonic())))
             _count_request()
             yield
         finally:

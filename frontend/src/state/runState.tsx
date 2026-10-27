@@ -549,7 +549,10 @@ export function RunProvider({ children }: { children: ReactNode }) {
       storeJobId(activeId, job_id);
       setQueuePosition(queue_position);
     } catch (err) {
+      // The run never started: say so (not "Queued" forever) and keep the posting text,
+      // so Retry sends it again (audit #15).
       setError(err instanceof Error ? err.message : String(err));
+      setStatus("failed");
       setBusy(false);
     }
   }, [jdText, settings, busy, activeId]);

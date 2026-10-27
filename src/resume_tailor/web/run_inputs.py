@@ -59,6 +59,27 @@ def recorded(run_dir: Path) -> dict[str, str]:
     return inputs if isinstance(inputs, dict) else {}
 
 
+def stale(run_dir: Path) -> list[str]:
+    """Which of "resume" and "template" moved on since the run recorded them; empty for
+    a run that recorded none (made before runs did) or a resume that cannot be read."""
+    inputs = recorded(run_dir)
+    if not inputs:
+        return []
+    from resume_tailor.content import data  # noqa: PLC0415
+
+    changed: list[str] = []
+    try:
+        resume = _hash(data.load().model_dump(mode="json"))
+    except Exception:  # noqa: BLE001 - the run's own files are still what was reviewed
+        resume = inputs.get("resume", "")
+    if inputs.get("resume") and inputs["resume"] != resume:
+        changed.append("resume")
+    template = _template()
+    if inputs.get("template") and template and inputs["template"] != template:
+        changed.append("template")
+    return changed
+
+
 def save_snapshot(resume: MasterResume, run_dir: Path) -> None:
     (run_dir / SNAPSHOT).write_text(resume.model_dump_json(by_alias=True), encoding="utf-8")
 

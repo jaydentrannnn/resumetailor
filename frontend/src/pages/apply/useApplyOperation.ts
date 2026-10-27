@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import {
   controlApplyOperation,
+  getApplicationsRevision,
   getApplyOperation,
   getBrowserStatus,
   getDailyStatus,
@@ -32,11 +33,15 @@ export const ACTIVE_STATES = ["queued", "running", "paused"];
 const byStart = (a: ApplyOperation, b: ApplyOperation) =>
   (a.started_at || a.updated_at).localeCompare(b.started_at || b.updated_at);
 
+/** Whether the poll reaches the server, and when it last did (for "Reconnecting…"). */
+export type PollSync = { reconnecting: boolean; updatedAt: number | null };
+
 /**
  * The page's live state: the running Apply tasks (several Prepare and Fill batches may
  * run side by side; else the last one), the nightly run, browser reachability and
- * desktop notifications. One adaptive poll reads the tasks and the nightly run; it
- * refreshes the tables only when either changes.
+ * desktop notifications. One adaptive poll reads the tasks, the nightly run and the
+ * registry's revision; it refreshes the tables only when one of them changes, so a row
+ * changed while nothing runs here (the extension, a watcher) still shows (audit #17).
  */
 export function useApplyOperation({
   workspaceId,
@@ -71,6 +76,7 @@ export function useApplyOperation({
   // Ready, or the app will start it when Fill needs it.
   const browserUsable = browser.state !== "unavailable";
   const [notify, setNotify] = useState(notifyPreference);
+  const [sync, setSync] = useState<PollSync>({ reconnecting: false, updatedAt: null });
   const active = dailyRunning || operations.some((op) => ACTIVE_STATES.includes(op.state));
   const exclusiveBusy = exclusiveTaskRunning(operations, dailyRunning);
   const held = heldIds(operations);
@@ -109,11 +115,29 @@ export function useApplyOperation({
   useEffect(() => {
     let live = true;
     let seen: string | null = null;
+    let seenRevision: string | null = null;
     let lastActive = new Set<string>();
     // Resolves to whether anything is in flight, which sets the next poll's delay.
     async function poll(): Promise<boolean> {
-      const [listed, day] = await Promise.all([listApplyOperations(), getDailyStatus()]);
+      try {
+        const busy = await read();
+        if (live) setSync({ reconnecting: false, updatedAt: Date.now() });
+        return busy;
+      } catch (reason) {
+        if (live) setSync((current) => ({ ...current, reconnecting: true }));
+        throw reason;
+      }
+    }
+    async function read(): Promise<boolean> {
+      const [listed, day, registry] = await Promise.all([
+        listApplyOperations(),
+        getDailyStatus(),
+        getApplicationsRevision(),
+      ]);
       if (!live) return false;
+      const revision = `${registry.workspace_id}:${registry.revision}`;
+      const registryMoved = seenRevision !== null && seenRevision !== revision;
+      seenRevision = revision;
       setDaily(day);
       const running = listed.filter((op) => ACTIVE_STATES.includes(op.state));
       // Also the ones that were running last time, to see them finish.
@@ -135,7 +159,8 @@ export function useApplyOperation({
         state: nowRunning.length ? "running" : (fetched[0]?.state ?? null),
         dailyRunning: day.running,
       };
-      if (shouldRefreshTables(seen, snapshot, inFlightRef.current)) refreshRef.current();
+      if (registryMoved || shouldRefreshTables(seen, snapshot, inFlightRef.current))
+        refreshRef.current();
       seen = pollSignature(snapshot);
       return nowRunning.length > 0 || day.running || inFlightRef.current;
     }
@@ -226,6 +251,7 @@ export function useApplyOperation({
     browser,
     browserStatus,
     browserUsable,
+    sync,
     checkBrowser,
     launchBrowser: { run: () => void startBrowser(), busy: launching },
     wake,

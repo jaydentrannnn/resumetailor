@@ -869,3 +869,15 @@ def test_app_id_resolves_every_alias_to_the_source_id(apps_path):
     assert store.app_id("gh:acme:1") == "simplify-123"
     assert store.app_id("simplify-123") == "simplify-123"
     assert store.app_id("nope") is None
+
+
+def test_revision_moves_on_every_write_and_not_on_reads(apps_path):
+    """The Apply list and an application's page reload only when it moves (audit #17)."""
+    start = store.revision()
+    store.upsert(_sample_app())
+    after_insert = store.revision()
+    store.get("job-1")
+    store.load_all()
+    assert store.revision() == after_insert > start
+    store.patch("job-1", notes="called back")
+    assert store.revision() > after_insert

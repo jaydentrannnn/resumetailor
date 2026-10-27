@@ -216,12 +216,15 @@ def run_daily(
     fetch_only: bool = False,
     log: Callable[[str], None] = print,
     on_progress: daily_progress.ProgressCallback | None = None,
+    should_cancel: Callable[[], bool] = lambda: False,
 ) -> daily_progress.DailySummary:
     """Execute one discover → fetch → screen → tailor pass over this run's new postings.
 
     Never fills or submits: autofill and auto-submit happen only from Fill. Applications
     already known (e.g. found by an earlier Find jobs) are left for the user to Prepare.
     ``fetch_only`` (Find jobs) stops each row after the JD fetch and no-LLM prefilter.
+    ``should_cancel`` is checked before each source and each posting (audit #24): what
+    finished stays, the rest is left for the next pass, and ``reason`` says "cancelled".
     Idempotent on known ids."""
     if not daily_progress._DAILY_LOCK.acquire(blocking=False):
         return daily_progress.DailySummary(
@@ -275,7 +278,7 @@ def run_daily(
         daily_rows._append_log(log_file, f"=== daily run {date} ===", log)
         all_new = daily_batch._discover_new_rows(
             settings, summary=summary, log_file=log_file, log=log,
-            on_progress=on_progress,
+            on_progress=on_progress, should_cancel=should_cancel,
         )
         cap = limit if limit is not None else settings.max_new_per_day
         to_process = daily_batch._rows_to_process(all_new, cap=cap)
@@ -302,8 +305,11 @@ def run_daily(
             summary=summary,
             index=index,
             on_progress=on_progress,
+            should_cancel=should_cancel,
         )
         daily_progress._progress_set(processed=len(to_process), current="")
+        if should_cancel():
+            summary.reason = "cancelled"
         if not dry_run:
             store.fold_stranded()
 

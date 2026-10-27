@@ -511,6 +511,13 @@ def keep_application_tab(source_job_id: str) -> dict[str, Any]:
     return {"kept": True, "was_closing": tab_close.keep(app.source_job_id)}
 
 
+@router.get("/api/applications/revision")
+def get_applications_revision() -> dict[str, Any]:
+    """The registry's change counter for this profile: the Apply list and an application's
+    page poll it and reload only when it moved (a fill, the nightly run, the extension)."""
+    return {"revision": apply_store.revision(), "workspace_id": config.active_workspace_id()}
+
+
 @router.get("/api/applications/progress", response_model=store_stats.ProgressStats)
 def get_application_progress() -> store_stats.ProgressStats:
     """Send times and stage counts for the Apply page's progress banner (read-only)."""

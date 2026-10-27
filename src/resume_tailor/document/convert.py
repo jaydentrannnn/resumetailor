@@ -32,7 +32,7 @@ from contextlib import contextmanager
 from pathlib import Path
 
 from .. import config
-from ..infra import telemetry
+from ..infra import telemetry, wait_clock
 
 
 #: Per-thread private Word instance kept alive between `keep_active` conversions.
@@ -280,7 +280,10 @@ def convert(
 
     try:
         with telemetry.span("pdf_lock_wait"):
-            _CONVERSION_LOCK.acquire()
+            if not _CONVERSION_LOCK.acquire(blocking=False):
+                # Another job is converting: a fill gets this time back (`wait_clock`).
+                with wait_clock.waiting("Waiting for PDF converter"):
+                    _CONVERSION_LOCK.acquire()
         try:
             with telemetry.span("pdf_engine"):
                 impl(docx_path, pdf_path, keep_active=keep_active)

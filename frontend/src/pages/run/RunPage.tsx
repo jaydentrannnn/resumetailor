@@ -14,6 +14,7 @@ import { ProgressPanel } from "./ProgressPanel";
 import { RunOptions } from "./RunOptions";
 import { type ResultPane, RunResults, runMeta } from "./RunResults";
 import { RunSaveNotice } from "./RunSaveNotice";
+import { SendToApply } from "./SendToApply";
 
 type Pane = "job" | ResultPane;
 type View = "tailor" | "history";
@@ -104,13 +105,18 @@ export function RunPage() {
         title="Tailor"
         state={jobId && view === "tailor" ? runMeta(entry, run.report?.title) : null}
         actions={
-          <Tabs
-            label="Tailor view"
-            variant="segmented"
-            items={VIEWS}
-            value={view}
-            onChange={setView}
-          />
+          <>
+            {jobId && status === "succeeded" && !busy && view === "tailor" && (
+              <SendToApply jobId={jobId} title={run.report?.title ?? ""} />
+            )}
+            <Tabs
+              label="Tailor view"
+              variant="segmented"
+              items={VIEWS}
+              value={view}
+              onChange={setView}
+            />
+          </>
         }
       />
       {view === "history" ? (

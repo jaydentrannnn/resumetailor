@@ -1,10 +1,8 @@
 import { useState } from "react";
 import { useLocation } from "react-router-dom";
 import {
-  acknowledgeApplicationResume,
   archiveApplications,
   focusApplicationReviewTab,
-  getApplication,
   retryApplication,
   setApplicationStatus,
   startApplyOperation,
@@ -13,6 +11,7 @@ import {
   type ApplyOperation,
   type ApplySettings,
 } from "../../api";
+import { operationRequest, resumeWarningsAccepted } from "../../lib/applicationActions";
 import { rememberApplicationListScroll } from "../../lib/applicationNavigation";
 import { isTabClosed, type OpenTabs } from "../../lib/applicationRows";
 import { canRetailor } from "../../lib/applyPage";
@@ -30,10 +29,15 @@ function hasOpenTab(row: ApplicationRow, openTabs: OpenTabs): boolean {
   return !!row.fill?.browser_target_id && !isTabClosed(row, openTabs);
 }
 
+function plural(n: number): string {
+  return `${n} application${n === 1 ? "" : "s"}`;
+}
+
 /**
  * Everything the page starts or changes on rows: Find / Prepare / Fill (with the resume
- * warning check), Reopen, Tailor again, Archive / Restore, Skip with Undo, Retry, Mark
- * and Undo submitted. `actions` is what each table row is handed.
+ * warning check), Reopen, Tailor again, Archive / Restore, Skip and Mark submitted with
+ * Undo, Retry, Undo submitted. `actions` is what each table row is handed; whatever acts
+ * on rows clears them from the selection.
  */
 export function useApplyRowActions({
   apply,
@@ -71,6 +75,9 @@ export function useApplyRowActions({
   const toast = useToast();
   const location = useLocation();
   const [busy, setBusy] = useState(false);
+  const deselect = (ids: string[]) => {
+    for (const table of tables) table.deselect(ids);
+  };
   // The one-search-only options of the next Find jobs; none of them is saved.
   const [findOptions, setFindOptions] = useState<FindOptions>({
     limit: "",
@@ -95,52 +102,17 @@ export function useApplyRowActions({
         );
         return;
       }
-      if (action === "fill") {
-        const current = await Promise.all(ids.map((id) => getApplication(id)));
-        const flagged = current.filter((item) => item.application.resume_review?.required);
-        if (flagged.some((item) => !item.application.resume_review?.quality.verified)) {
-          toast.error(
-            "Prepare these resumes again",
-            "Resume quality could not be verified. Open the application details to review.",
-          );
-          return;
-        }
-        if (flagged.length) {
-          const accepted = await confirm({
-            title: "Review resume warnings before Fill",
-            message: flagged
-              .map(
-                ({ application: app }) =>
-                  `${app.company} — ${app.role}:\n${app.resume_review!.warnings.join("\n")}`,
-              )
-              .join("\n\n"),
-            confirmLabel: "Use these resumes anyway",
-          });
-          if (!accepted) return;
-          await Promise.all(
-            flagged.map(({ application: app }) =>
-              acknowledgeApplicationResume(app.source_job_id, app.resume_review!.revision),
-            ),
-          );
-        }
-      }
+      if (action === "fill" && !(await resumeWarningsAccepted(ids, confirm, toast))) return;
       const { limit, dryRun, ageDays } = findOptions;
       setOperation(
         await startApplyOperation({
-          action,
-          application_ids: ids,
-          fill_mode: mode,
-          force_prepare: force,
+          ...operationRequest(apply, action, ids, mode, force),
           limit: Number(limit) > 0 ? Number(limit) : null,
           max_age_days: action === "find" ? ageDays : null,
           dry_run: action === "find" && dryRun,
-          auto_submit: apply.auto_submit_enabled,
-          blocker_mode: "continue",
-          model_provider: apply.model_provider,
-          model_name: apply.model_name || "default",
-          model_selection: apply.model_selection,
         }),
       );
+      deselect(ids);
     } catch (reason) {
       showError("Could not start", reason);
     } finally {
@@ -201,9 +173,8 @@ export function useApplyRowActions({
     try {
       const result = await archiveApplications(ids, archived);
       if (result.updated.length) {
-        for (const table of tables) table.deselect(result.updated);
-        const n = result.updated.length;
-        const title = `${n} application${n === 1 ? "" : "s"} ${archived ? "moved to Done" : "restored"}`;
+        deselect(result.updated);
+        const title = `${plural(result.updated.length)} ${archived ? "moved to Done" : "restored"}`;
         if (undoable)
           toast.success(title, undefined, {
             label: "Undo",
@@ -225,13 +196,27 @@ export function useApplyRowActions({
     }
   }
 
-  /** Skip the rows in one go; like Archive, Undo puts them back instead of asking first. */
-  async function skip(rows: ApplicationRow[]) {
+  /**
+   * Mark the rows skipped or submitted in one go. Like Archive, Undo puts them back
+   * instead of asking first; a bulk Mark submitted (a claim about each row) asks.
+   */
+  async function markAll(rows: ApplicationRow[], status: "submitted" | "skipped") {
     if (!rows.length) return;
+    const submitted = status === "submitted";
+    if (
+      submitted &&
+      rows.length > 1 &&
+      !(await confirm({
+        title: `Mark ${plural(rows.length)} submitted?`,
+        message: "Only mark the applications you sent yourself. Each one moves to Done.",
+        confirmLabel: "Mark submitted",
+      }))
+    )
+      return;
     setBusy(true);
     try {
       const results = await Promise.allSettled(
-        rows.map((row) => setApplicationStatus(row.source_job_id, "skipped")),
+        rows.map((row) => setApplicationStatus(row.source_job_id, status)),
       );
       const done: string[] = [];
       const failures: string[] = [];
@@ -240,23 +225,51 @@ export function useApplyRowActions({
         else failures.push(`${rows[index].company}: ${describe(result.reason).detail}`);
       });
       if (done.length) {
-        for (const table of tables) table.deselect(done);
-        const n = done.length;
-        const tabOpen = rows.some(
-          (row) => done.includes(row.source_job_id) && hasOpenTab(row, openTabs),
-        );
+        deselect(done);
+        // A skipped row's tab closes after a countdown; a submitted mark the app did not
+        // see keeps its tab.
+        const tabOpen =
+          !submitted &&
+          rows.some((row) => done.includes(row.source_job_id) && hasOpenTab(row, openTabs));
+        const who = rows.length === 1 ? rows[0].company : plural(done.length);
         toast.success(
-          `${n} application${n === 1 ? "" : "s"} skipped`,
+          `${who} marked ${status}`,
           tabOpen ? `Moved to Done. ${TAB_CLOSES_NOTE}` : "Moved to Done.",
-          { label: "Undo", onClick: () => void unskip(done) },
+          {
+            label: "Undo",
+            onClick: () => void (submitted ? unsubmit(done) : unskip(done)),
+          },
         );
         announceTabsChanged();
       }
-      if (failures.length) toast.error("Some applications were not skipped", failures.join("; "));
+      if (failures.length)
+        toast.error(`Some applications were not marked ${status}`, failures.join("; "));
       refresh();
     } finally {
       setBusy(false);
     }
+  }
+
+  /** One row from its menu or page. A row a running task holds is taken over: say so. */
+  async function mark(row: ApplicationRow, status: "submitted" | "skipped") {
+    if (
+      held.has(row.source_job_id) &&
+      !(await confirm({
+        title: status === "submitted" ? "Mark submitted now?" : "Skip it now?",
+        message: "A running Apply task has this application. It stops working on it first.",
+        confirmLabel: status === "submitted" ? "Mark submitted" : "Skip",
+      }))
+    )
+      return;
+    await markAll([row], status);
+  }
+
+  /** Undo of a Mark submitted: each row goes back to where it was. */
+  async function unsubmit(ids: string[]) {
+    const results = await Promise.allSettled(ids.map((id) => undoSubmitted(id)));
+    const failed = results.filter((result) => result.status === "rejected").length;
+    if (failed) toast.error("Some applications could not be moved back", `${failed} still marked`);
+    refresh();
   }
 
   /** Skipping moves a row to Done; restoring it from Done is what undoes the skipped mark. */
@@ -279,6 +292,7 @@ export function useApplyRowActions({
     setBusy(true);
     try {
       await retryApplication(row.source_job_id);
+      deselect([row.source_job_id]);
       refresh();
     } catch (reason) {
       showError("Could not retry", reason);
@@ -287,29 +301,11 @@ export function useApplyRowActions({
     }
   }
 
-  async function mark(row: ApplicationRow, status: "submitted" | "skipped") {
-    try {
-      const updated = await setApplicationStatus(row.source_job_id, status);
-      // Submitting and skipping move the row to Done server-side; say so. A skipped row's
-      // tab closes after a countdown; a submitted mark the app did not see keeps its tab.
-      if (updated.archived_at)
-        toast.success(
-          `${row.company} marked ${status === "submitted" ? "submitted" : "skipped"}`,
-          status === "skipped" && hasOpenTab(row, openTabs)
-            ? `Moved to Done. ${TAB_CLOSES_NOTE}`
-            : "Moved to Done.",
-        );
-      announceTabsChanged();
-      refresh();
-    } catch (reason) {
-      showError("Could not update the status", reason);
-    }
-  }
-
   async function undo(row: ApplicationRow) {
     setBusy(true);
     try {
       await undoSubmitted(row.source_job_id);
+      deselect([row.source_job_id]);
       refresh();
     } catch (reason) {
       showError("Could not move application back", reason);
@@ -339,7 +335,8 @@ export function useApplyRowActions({
     undo: (row) => void undo(row),
     retry: (row) => void retry(row),
     mark: (row, status) => void mark(row, status),
-    skip: (rows) => void skip(rows),
+    skip: (rows) => void markAll(rows, "skipped"),
+    markSubmitted: (rows) => void markAll(rows, "submitted"),
     focusTab: (row) => focusTabById(row.source_job_id),
     focusTabById,
     detail: (row, detailTab = "overview") => ({

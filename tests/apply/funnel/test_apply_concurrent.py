@@ -251,3 +251,20 @@ def test_a_fill_waits_for_the_review_action_on_its_tab(apply_env, slow_review, m
     _finished(review)
     assert _finished(fill).completed == 2
     assert filled == ["two", "one"]
+
+
+def test_cancel_reaches_a_running_find_and_says_what_finished(apply_env, monkeypatch):
+    """Audit #24: Find hands its Cancel to the pass, which stops between postings."""
+
+    def run_daily(**kwargs):
+        _until(kwargs["should_cancel"])
+        return operations.daily_progress.DailySummary(reason="cancelled", processed=2, new_rows=5)
+
+    monkeypatch.setattr(operations.daily, "run_daily", run_daily)
+    find = operations.start(
+        ApplyOperationRequest(action="find", model_provider="ollama", model_name="test")
+    )
+    operations.control(find.operation_id, "cancel")
+    done = _finished(find)
+    assert done.state == "cancelled"
+    assert done.message == "Cancelled after 2 of 5 new postings"

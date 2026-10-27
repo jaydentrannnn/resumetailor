@@ -208,3 +208,60 @@ def test_count_requests_counts_admitted_requests_in_its_own_context_only():
     with q.slot(endpoint):  # outside the block: not this fill's request
         pass
     assert counted == [3]
+
+
+def test_a_fill_is_admitted_ahead_of_tailoring_and_gets_its_wait_back():
+    """Audit #28: interactive requests queue ahead of batch ones on the same endpoint,
+    and the time a fill spent queued is tallied for its deadline."""
+    from resume_tailor.infra import wait_clock
+
+    q = model_queue.queue
+    endpoint = "http://localhost:11434/v1/"  # local: one request at a time
+    order: list[str] = []
+    started = threading.Event()
+    release = threading.Event()
+    tallies: list[wait_clock.Tally] = []
+
+    def holder():
+        with q.slot(endpoint, "ollama"):
+            started.set()
+            assert release.wait(2)
+
+    def request(name, interactive):
+        with wait_clock.track() as tally, (model_queue.interactive() if interactive else _none()):
+            if interactive:
+                tallies.append(tally)
+            with q.slot(endpoint, "ollama"):
+                order.append(name)
+
+    def _none():
+        import contextlib
+
+        return contextlib.nullcontext()
+
+    first = threading.Thread(target=holder)
+    first.start()
+    assert started.wait(1)
+    batch = threading.Thread(target=request, args=("tailor", False))
+    batch.start()
+    time.sleep(0.05)
+    fill = threading.Thread(target=request, args=("fill", True))
+    fill.start()
+    time.sleep(0.15)
+    release.set()
+    for thread in (first, batch, fill):
+        thread.join(2)
+    assert order == ["fill", "tailor"]
+    assert tallies[0].total >= 0.1
+
+
+def test_overlapping_waits_count_once():
+    from resume_tailor.infra import wait_clock
+
+    with wait_clock.track() as tally:
+        with wait_clock.waiting():
+            with wait_clock.waiting():
+                time.sleep(0.05)
+            time.sleep(0.05)
+    assert 0.09 <= tally.total < 0.3
+    assert wait_clock.waiting() is not None  # no tally open: a no-op

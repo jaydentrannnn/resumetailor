@@ -332,6 +332,13 @@ def get(key: str) -> store_models.Application | None:
         return _checkout(apps[found]) if found is not None else None
 
 
+def revision() -> int:
+    """The registry's change counter: it moves on every write, so a page that polls it
+    reloads its rows only when something changed (audit #17)."""
+    with _LOCK:
+        return db.generation(_db(), _TABLE)
+
+
 def app_id(key: str) -> str | None:
     """The one id every owner records for the row ``key`` names: its ``source_job_id``.
 

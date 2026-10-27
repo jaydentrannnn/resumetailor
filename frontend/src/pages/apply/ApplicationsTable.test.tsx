@@ -57,6 +57,7 @@ const actions: TableActions = {
   retry: vi.fn(),
   mark: vi.fn(),
   skip: vi.fn(),
+  markSubmitted: vi.fn(),
   focusTab: vi.fn(),
   detail: (item) => `/applications/${item.source_job_id}`,
   rememberScroll: vi.fn(),
@@ -112,6 +113,15 @@ describe("ApplicationsTable actions", () => {
       screen.getAllByRole("menuitem", { name: "Not submitted — move back" }).length,
     ).toBeGreaterThan(0);
   });
+
+  it.each(["filling", "ready", "fill_failed", "tailor_failed"])(
+    "offers Mark submitted and Skip on a %s row (audit #2)",
+    (status) => {
+      show(status);
+      expect(screen.getAllByRole("menuitem", { name: "Mark submitted" }).length).toBeGreaterThan(0);
+      expect(screen.getAllByRole("menuitem", { name: "Skip" }).length).toBeGreaterThan(0);
+    },
+  );
 
   it("labels an archived submitted row's restore action", () => {
     show("submitted", true);
@@ -241,6 +251,18 @@ describe("ApplicationsTable bulk bar", () => {
       expect.objectContaining({ source_job_id: "one" }),
       expect.objectContaining({ source_job_id: "three" }),
     ]);
+  });
+
+  it("marks the unfinished selected rows submitted, leaving out rows a task holds (audit #1)", () => {
+    show("ready", false, [...picked, row("filling", false, "four")], {}, false, {
+      held: new Set(["three"]),
+    });
+    fireEvent.click(screen.getByRole("button", { name: "Mark submitted (2)" }));
+    expect(actions.markSubmitted).toHaveBeenCalledWith([
+      expect.objectContaining({ source_job_id: "one" }),
+      expect.objectContaining({ source_job_id: "four" }),
+    ]);
+    expect(screen.getByRole("button", { name: "Skip (2)" })).toBeTruthy();
   });
 
   it("has no Skip on the Done tab", () => {

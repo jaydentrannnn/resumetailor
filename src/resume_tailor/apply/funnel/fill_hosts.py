@@ -8,7 +8,10 @@ side by side while same-site applications run one after another (2026-10-12).
 
 A site whose account is waiting for email verification is also remembered: the rest of
 the batch on that site is handed back at once instead of spending a Sign In attempt that
-can only fail until the applicant clicks the verification link.
+can only fail until the applicant clicks the verification link. The hold belongs to the
+application that hit it and lasts only while that row still waits for verification: once
+it moves on (verified and filled, submitted or skipped by hand) the site is free again
+(audit #22).
 
 The busy sites are shared by every Fill batch running at once (`op_slots.WORKDAY_BUSY`);
 the verification memory stays with the batch that saw it.
@@ -47,8 +50,8 @@ class HostGate:
         self._lookup = lookup or (lambda application_id: store.get(application_id))
         self._hosts: dict[str, str] = {}
         self.busy = op_slots.WORKDAY_BUSY
-        #: site -> label of the application whose account awaits email verification.
-        self.awaiting_verification: dict[str, str] = {}
+        #: site -> (id, label) of the application whose account awaits email verification.
+        self.awaiting_verification: dict[str, tuple[str, str]] = {}
 
     def host(self, application_id: str) -> str:
         if application_id not in self._hosts:
@@ -78,19 +81,32 @@ class HostGate:
             self.busy.discard(self.host(application_id))
 
     def record_result(self, application_id: str, label: str) -> None:
-        """Remember a site whose account now waits for the applicant's email link."""
+        """Remember a site whose account now waits for the applicant's email link; a
+        holder that finished otherwise frees its site."""
         host = self.host(application_id)
         app = self._lookup(application_id)
-        if host and app is not None and app.status == "awaiting_otp":
-            self.awaiting_verification.setdefault(host, label)
+        if not host or app is None:
+            return
+        if app.status == "awaiting_otp":
+            self.awaiting_verification.setdefault(host, (application_id, label))
+        elif self.awaiting_verification.get(host, ("", ""))[0] == application_id:
+            del self.awaiting_verification[host]
 
     def verification_hold(self, application_id: str) -> str:
-        """Why this application must wait for an earlier one's email verification, or ""."""
+        """Why this application must wait for an earlier one's email verification, or "".
+
+        Read from the holder's live row: a hold whose application no longer waits for
+        verification is dropped here, before it can hand anything back."""
         host = self.host(application_id)
-        earlier = self.awaiting_verification.get(host, "") if host else ""
-        if not earlier:
+        holder = self.awaiting_verification.get(host) if host else None
+        if holder is None:
+            return ""
+        holder_id, label = holder
+        current = self._lookup(holder_id)
+        if current is None or current.status != "awaiting_otp":
+            del self.awaiting_verification[host]
             return ""
         return (
-            f"Workday account on {host} is waiting for email verification ({earlier}). "
+            f"Workday account on {host} is waiting for email verification ({label}). "
             "Click the link in Workday's email, then Fill this application again."
         )

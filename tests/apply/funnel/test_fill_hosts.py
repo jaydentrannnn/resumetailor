@@ -119,3 +119,24 @@ def test_events_keep_each_applications_history(apps):
     assert owners["itron-1"] == 1
     assert operation.events[0]["stage"] == "pause_requested"
     assert operation.events[-1]["message"] == "quiet one"
+
+
+def test_a_verification_hold_ends_when_its_application_moves_on(apps):
+    """Audit #22: verified and submitted (or skipped by hand), the site is free again."""
+    gate = fill_hosts.HostGate()
+    apps["aptiv-1"].status = "awaiting_otp"
+    gate.record_result("aptiv-1", "aptiv-1 Intern")
+    held = gate.verification_hold("aptiv-2")
+    assert "aptiv-1 Intern" in held and "email verification" in held
+    apps["aptiv-1"].status = "submitted"
+    assert gate.verification_hold("aptiv-2") == ""
+    assert gate.awaiting_verification == {}
+
+
+def test_a_holder_filled_again_frees_its_site(apps):
+    gate = fill_hosts.HostGate()
+    apps["aptiv-1"].status = "awaiting_otp"
+    gate.record_result("aptiv-1", "aptiv-1 Intern")
+    apps["aptiv-1"].status = "awaiting_review"
+    gate.record_result("aptiv-1", "aptiv-1 Intern")
+    assert gate.awaiting_verification == {}

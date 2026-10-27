@@ -8,19 +8,18 @@ import {
   applicationStatusTone,
   hiringTone,
 } from "../../lib/applicationStatus";
+import { canMark, nextAction, retryAction } from "../../lib/applicationActions";
 import {
   canContinueFill,
   canContinueWithNewFiles,
   canFillAfterReview,
   canReopenFill,
   isTabClosed,
-  retryShortLabel,
   retryTitle,
 } from "../../lib/applicationRows";
 import {
   EXCLUSIVE_NOTE,
   REVIEW_STATUSES,
-  TERMINAL_STATUSES,
   canRetailor,
   heldNote,
   readyBlockLabel,
@@ -104,10 +103,20 @@ function rowMenu(row: ApplicationRow, archived: boolean, actions: TableActions):
       description: workflowNote || undefined,
       action: () => actions.reopen([row]),
     });
-  if (["awaiting_review", "awaiting_otp", "submit_unconfirmed"].includes(row.status))
-    items.push({ label: "Mark submitted", action: () => actions.mark(row, "submitted") });
-  if (!TERMINAL_STATUSES.has(row.status))
-    items.push({ label: "Skip", action: () => actions.mark(row, "skipped"), danger: true });
+  // Any unfinished row, a filling one too: the server stops its task first (audit #2).
+  if (canMark(row)) {
+    items.push({
+      label: "Mark submitted",
+      disabled: busy,
+      action: () => actions.mark(row, "submitted"),
+    });
+    items.push({
+      label: "Skip",
+      disabled: busy,
+      action: () => actions.mark(row, "skipped"),
+      danger: true,
+    });
+  }
   return [
     ...items,
     {
@@ -140,30 +149,9 @@ function RowAction({
     heldNote(row, actions.held, actions.waiting) || (actions.exclusiveBusy ? EXCLUSIVE_NOTE : "");
   const needsYou = !archived && REVIEW_STATUSES.has(row.status);
   const reason = needsYou ? reviewReason(row) : null;
-  const retryLabel =
-    !archived &&
-    !TERMINAL_STATUSES.has(row.status) &&
-    !REVIEW_STATUSES.has(row.status) &&
-    row.retry_kind
-      ? retryShortLabel(row.retry_kind, row.status)
-      : null;
+  const retryLabel = retryAction(row, archived);
   const blocked = !archived && !!readyBlockLabel(row);
-  const kind: "continue" | "reopen" | "review" | "fill" | "retry" | "view" =
-    archived || TERMINAL_STATUSES.has(row.status)
-      ? "view"
-      : needsYou
-        ? canContinueFill(row, openTabs)
-          ? "continue"
-          : isTabClosed(row, openTabs) && canReopenFill(row)
-            ? "reopen"
-            : "review"
-        : row.status === "ready" && canFillAfterReview(row)
-          ? "fill"
-          : blocked
-            ? "review"
-            : retryLabel
-              ? "retry"
-              : "view";
+  const kind = nextAction(row, openTabs, archived);
   // The primary action is left out of the menu; Review stays one menu item away
   // when Continue or Start over takes its place.
   const primaryLabel =

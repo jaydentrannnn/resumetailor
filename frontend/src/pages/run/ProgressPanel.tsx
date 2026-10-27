@@ -31,6 +31,8 @@ export function ProgressPanel() {
     cancelRun,
     cancelling,
     history,
+    startJob,
+    jdText,
   } = useRunState();
   const progress = useMemo(() => runProgress(events, status, busy), [events, status, busy]);
   const steps = useMemo(
@@ -115,6 +117,11 @@ export function ProgressPanel() {
             >
               {error}
             </p>
+          )}
+          {failed && !busy && jdText.trim() && (
+            <Button size="sm" className="mt-3" onClick={() => void startJob()}>
+              Retry
+            </Button>
           )}
           {(busy || events.length > 0) && (
             <div className="mt-5 flex flex-wrap items-start gap-3">

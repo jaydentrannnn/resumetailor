@@ -1757,3 +1757,19 @@ def test_source_status_write_failure_never_breaks_the_run(apply_paths, monkeypat
     monkeypatch.setattr("os.replace", broken_replace)
     summary = _status_run(apply_paths, monkeypatch, lambda src: ([fresh], []), ["watch"])
     assert summary.new_rows == 1
+
+
+def test_a_cancelled_pass_stops_before_the_next_posting(stub_pipeline, apply_paths):
+    """Audit #24: Cancel is checked between postings; what is left stays for later."""
+    checks: list[int] = []
+
+    def should_cancel() -> bool:
+        checks.append(1)
+        return len(checks) > 1  # the one source is read, then Cancel is pressed
+
+    summary = daily.run_daily(
+        settings=ApplySettings(enabled=True, max_new_per_day=5), should_cancel=should_cancel
+    )
+    assert summary.new_rows == 1
+    assert summary.processed == 0
+    assert summary.reason == "cancelled"

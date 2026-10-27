@@ -15,6 +15,7 @@ import { JobDescriptionPanel, OverviewPanel } from "./apply/detail/OverviewPanel
 import { FilesPanel, ReviewPanel } from "./apply/detail/ReviewPanel";
 import { TimelinePanel } from "./apply/detail/TimelinePanel";
 import { useApplicationDetail } from "./apply/detail/useApplicationDetail";
+import { useDetailCommands } from "./apply/detail/useDetailCommands";
 
 /**
  * One application: header with its status and actions, then Overview / Outcome (once
@@ -30,6 +31,7 @@ export function ApplicationDetailPage() {
   const view = useApplicationDetail(applicationId, activeId);
   const wide = useMediaQuery(WIDE);
   const { app, detail, job, error, busy, tab } = view;
+  const commands = useDetailCommands(app, openTabs, view.reload, () => view.setTab("review"));
   if (error && !detail)
     return (
       <Page width="wide">
@@ -61,6 +63,7 @@ export function ApplicationDetailPage() {
         app={app}
         tabOpen={!!app.fill?.browser_target_id && !app.archived_at && !tabClosed}
         busy={busy}
+        commands={commands}
         onBack={() => navigate(view.back)}
         onFocusTab={view.focusTab}
         onMove={() => void view.move()}

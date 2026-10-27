@@ -1,6 +1,6 @@
 // @vitest-environment jsdom
 import { afterEach, describe, expect, it, vi } from "vitest";
-import { cleanup, render, screen } from "@testing-library/react";
+import { cleanup, fireEvent, render, screen } from "@testing-library/react";
 import { MemoryRouter } from "react-router-dom";
 
 const state = vi.hoisted(() => ({ value: {} as Record<string, unknown> }));
@@ -27,6 +27,8 @@ const base = {
   busy: true,
   queuePosition: null,
   cancelRun: async () => {},
+  jdText: "",
+  startJob: async () => {},
   cancelling: false,
   history: [],
   historyLoaded: true,
@@ -47,6 +49,22 @@ describe("ProgressPanel", () => {
     render(<ProgressPanel />);
     expect(screen.getByRole("alert").textContent).toBe("Model unreachable");
     expect(screen.getByText("(failed)")).toBeTruthy();
+  });
+
+  it("offers Retry with the same posting when a run could not start (audit #15)", () => {
+    const startJob = vi.fn(async () => {});
+    state.value = {
+      ...base,
+      status: "failed",
+      busy: false,
+      events: [],
+      error: "Could not reach the server",
+      jdText: "Senior engineer",
+      startJob,
+    };
+    render(<ProgressPanel />);
+    fireEvent.click(screen.getByRole("button", { name: "Retry" }));
+    expect(startJob).toHaveBeenCalled();
   });
 
   it("points an estimated page fit at the Template page before any run", () => {

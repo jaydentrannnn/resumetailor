@@ -1,4 +1,4 @@
-import { type ReactNode, useRef, useState } from "react";
+import { type ReactNode, useEffect, useRef, useState } from "react";
 import { extractJdFile, fetchJdFromUrl, type JdText } from "../../api";
 import { Tabs } from "../../components/Tabs";
 import { Button, Tile } from "../../components/ui";
@@ -11,8 +11,9 @@ type Mode = "paste" | "url" | "file";
  * The job posting, three ways: paste it, fetch it from a link, or read it from a
  * file. Fetching and reading only fill the text box; the student checks the text
  * before tailoring, so a bad extraction is visible rather than silently used. A file
- * dropped anywhere on the tile is read the same way. `footer` (the cost estimate)
- * closes the tile.
+ * dropped anywhere on the tile is read the same way. Switching the way, or leaving the
+ * page, cancels a fetch still running, so a late answer never replaces the text.
+ * `footer` (the cost estimate) closes the tile.
  */
 export function JobInput({
   jdText,
@@ -31,34 +32,50 @@ export function JobInput({
   const [error, setError] = useState<string | null>(null);
   const [origin, setOrigin] = useState<{ label: string; warnings: string[] } | null>(null);
   const fileRef = useRef<HTMLInputElement>(null);
+  const pending = useRef<AbortController | null>(null);
+  useEffect(() => () => pending.current?.abort(), []);
 
-  function accept(result: JdText, label: string) {
-    setJdText(result.text);
-    setOrigin({ label, warnings: result.warnings });
-    setMode("paste");
+  function cancelPending() {
+    pending.current?.abort();
+    pending.current = null;
+    setBusy(false);
   }
 
-  async function run(task: () => Promise<void>) {
+  /** Run one fetch or read; it fills the text box only if it is still the current one. */
+  async function run(task: (signal: AbortSignal) => Promise<JdText>, label: (r: JdText) => string) {
+    pending.current?.abort();
+    const controller = new AbortController();
+    pending.current = controller;
     setBusy(true);
     setError(null);
     try {
-      await task();
+      const result = await task(controller.signal);
+      if (controller.signal.aborted) return;
+      setJdText(result.text);
+      setOrigin({ label: label(result), warnings: result.warnings });
+      setMode("paste");
     } catch (err) {
-      setError(describe(err).detail);
+      if (!controller.signal.aborted) setError(describe(err).detail);
     } finally {
-      setBusy(false);
+      if (pending.current === controller) {
+        pending.current = null;
+        setBusy(false);
+      }
     }
   }
 
   const fetchUrl = () =>
-    run(async () => {
-      const result = await fetchJdFromUrl(url.trim());
-      accept(result, `Fetched from ${hostOf(result.final_url || url)}`);
-    });
+    run(
+      (signal) => fetchJdFromUrl(url.trim(), signal),
+      (result) => `Fetched from ${hostOf(result.final_url || url)}`,
+    );
 
   const readFile = (file: File | null) => {
     if (!file) return;
-    void run(async () => accept(await extractJdFile(file), `Read from ${file.name}`));
+    void run(
+      (signal) => extractJdFile(file, signal),
+      () => `Read from ${file.name}`,
+    );
     if (fileRef.current) fileRef.current.value = "";
   };
 
@@ -88,6 +105,7 @@ export function JobInput({
           ]}
           value={mode}
           onChange={(id) => {
+            cancelPending();
             setMode(id as Mode);
             setError(null);
           }}
@@ -117,7 +135,7 @@ export function JobInput({
                 />
                 <Button
                   onClick={() => void fetchUrl()}
-                  disabled={disabled || !url.trim()}
+                  disabled={disabled || busy || !url.trim()}
                   loading={busy}
                 >
                   {busy ? "Reading…" : "Get posting"}

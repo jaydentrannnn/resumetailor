@@ -7,6 +7,7 @@ import {
   fetchJob,
   focusApplicationReviewTab,
   getApplication,
+  getApplicationsRevision,
   getApplyOperation,
   refreshApplicationReview,
   type ApplicationRow,
@@ -14,6 +15,7 @@ import {
   type JobStatus,
   type Packet,
 } from "../../../api";
+import { startAdaptivePoll } from "../../../lib/adaptivePoll";
 import { IN_FLIGHT_STATUSES } from "../../../lib/applyPoll";
 
 export type Detail = {
@@ -35,11 +37,15 @@ export const DETAIL_TABS = [
 // Links saved before the tabs were renamed.
 const TAB_ALIASES: Record<string, string> = { documents: "files", content: "answers" };
 
+/** A tailor run still working: followed until it settles. */
+const RUN_IN_FLIGHT = new Set(["queued", "running"]);
+
 /**
  * One application's details: the record, its tailor run, the tab in the URL, and the
  * actions on it (archive/restore, accept a flagged resume, refresh or correct the form
  * review, open its browser tab). A tailor retry or fill in flight is followed until it
- * settles; a response for an application no longer on screen is dropped.
+ * settles, and the run is read again whenever the row's run or status changes (audit
+ * #16); a response for an application no longer on screen is dropped.
  */
 export function useApplicationDetail(applicationId: string | undefined, workspaceId: unknown) {
   const location = useLocation();
@@ -62,17 +68,8 @@ export function useApplicationDetail(applicationId: string | undefined, workspac
     setJob(null);
     setError(null);
     getApplication(applicationId)
-      .then(async (result) => {
-        if (current !== sequence.current) return;
-        setDetail(result);
-        if (result.application.job_id) {
-          try {
-            const run = await fetchJob(result.application.job_id);
-            if (current === sequence.current) setJob(run);
-          } catch {
-            /* Saved application details remain available without a run. */
-          }
-        }
+      .then((result) => {
+        if (current === sequence.current) setDetail(result);
       })
       .catch((reason) => {
         if (current === sequence.current) setError(String(reason));
@@ -83,23 +80,59 @@ export function useApplicationDetail(applicationId: string | undefined, workspac
     };
   }, [applicationId, workspaceId]);
   const app = detail?.application;
+  const jobId = app?.job_id ?? null;
+  const status = app?.status;
 
-  // A tailor retry or a fill moves the row on a background thread: follow it until it settles.
-  const inFlight = !!app && IN_FLIGHT_STATUSES.has(app.status);
+  // The run is read for the row's current run and again whenever its status moves (a
+  // retry re-tailors under the same id), then followed while it is still working.
   useEffect(() => {
-    if (!inFlight || !applicationId) return;
+    if (!jobId) {
+      setJob(null);
+      return;
+    }
     const current = sequence.current;
-    const id = window.setInterval(() => {
-      getApplication(applicationId)
-        .then((result) => {
-          if (current === sequence.current) setDetail(result);
+    let live = true;
+    let timer = 0;
+    const load = () =>
+      fetchJob(jobId)
+        .then((run) => {
+          if (!live || current !== sequence.current) return;
+          setJob(run);
+          if (RUN_IN_FLIGHT.has(run.status)) timer = window.setTimeout(load, 3000);
         })
         .catch(() => {
-          /* keep the last copy */
+          /* Saved application details remain available without a run. */
         });
-    }, 3000);
-    return () => window.clearInterval(id);
-  }, [inFlight, applicationId]);
+    void load();
+    return () => {
+      live = false;
+      window.clearTimeout(timer);
+    };
+  }, [jobId, status]);
+
+  // Follow the registry (audit #17): read the row again whenever any application changed
+  // (a fill, the nightly run, the extension), and on every poll while a tailor retry or
+  // a fill is moving it — every 2 s then, every 15 s otherwise.
+  const inFlight = !!app && IN_FLIGHT_STATUSES.has(app.status);
+  const inFlightRef = useRef(inFlight);
+  inFlightRef.current = inFlight;
+  useEffect(() => {
+    if (!applicationId) return;
+    const current = sequence.current;
+    let seen: string | null = null;
+    const { stop } = startAdaptivePoll(async () => {
+      const registry = await getApplicationsRevision();
+      if (current !== sequence.current) return false;
+      const revision = `${registry.workspace_id}:${registry.revision}`;
+      if ((seen !== null && revision !== seen) || inFlightRef.current) {
+        const result = await getApplication(applicationId);
+        if (current === sequence.current) setDetail(result);
+      }
+      seen = revision;
+      return inFlightRef.current;
+    });
+    return stop;
+  }, [applicationId, workspaceId]);
 
   const from = (location.state as { from?: string } | null)?.from;
   const back = from ?? (app?.archived_at ? "/applications?tab=done" : "/applications");
@@ -147,22 +180,29 @@ export function useApplicationDetail(applicationId: string | undefined, workspac
     }
   }
 
+  /** Read the application again (after an action from its header). */
+  async function reload() {
+    if (!applicationId) return;
+    const current = sequence.current;
+    try {
+      const updated = await getApplication(applicationId);
+      if (current === sequence.current) setDetail(updated);
+    } catch (reason) {
+      if (current === sequence.current) setError(String(reason));
+    }
+  }
+
+  /** Archive or restore, then show what the server did: a refusal names its reason, and
+   * restoring a submitted application also undoes its submitted mark (audit #18). */
   async function move() {
     if (!app) return;
     setBusy(true);
+    setError(null);
     try {
-      await archiveApplications([app.source_job_id], !app.archived_at);
-      setDetail((previous) =>
-        previous
-          ? {
-              ...previous,
-              application: {
-                ...previous.application,
-                archived_at: app.archived_at ? null : new Date().toISOString(),
-              },
-            }
-          : previous,
-      );
+      const result = await archiveApplications([app.source_job_id], !app.archived_at);
+      const refused = result.errors[app.source_job_id];
+      if (refused) setError(`${app.archived_at ? "Not restored" : "Not archived"}: ${refused}`);
+      await reload();
     } catch (reason) {
       setError(String(reason));
     } finally {
@@ -235,6 +275,7 @@ export function useApplicationDetail(applicationId: string | undefined, workspac
     back,
     docsRevision,
     refreshEditedResume,
+    reload,
     move,
     refreshReview,
     correct,
