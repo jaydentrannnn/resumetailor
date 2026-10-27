@@ -8,7 +8,7 @@ from resume_tailor.apply.answers import form_facts
 from resume_tailor.apply.answers import questions as q
 
 FACTS = q.facts_for({
-    "auto_accept_routine_acknowledgements": "Yes", "authorized_to_work": "Yes",
+    "auto_accept_notices": "Yes", "auto_accept_agreements": "Yes", "authorized_to_work": "Yes",
     "requires_sponsorship": "No", "requires_sponsorship_future": "No",
     "requires_sponsorship_any": "No", "willing_to_relocate": "Yes", "noncompete": "No",
 })
@@ -36,7 +36,7 @@ def test_statements_are_answered_as_worded(text, box, choice):
 
 
 def test_a_statement_with_no_profile_fact_is_left_for_the_applicant():
-    facts = q.facts_for({"auto_accept_routine_acknowledgements": "Yes"})
+    facts = q.facts_for({"auto_accept_notices": "Yes", "auto_accept_agreements": "Yes"})
     assert _plan("I am not authorized to work in the United States.", facts)[0] is None
 
 

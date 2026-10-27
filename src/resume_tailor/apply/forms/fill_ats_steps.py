@@ -8,7 +8,7 @@ from datetime import date
 from typing import Any
 
 from resume_tailor import config
-from resume_tailor.apply.answers import answer_memory, hybrid_resolver, model_fallback
+from resume_tailor.apply.answers import answer_memory, form_facts, hybrid_resolver, model_fallback
 from resume_tailor.apply.ats import (
     smartrecruiters_flow,
     smartrecruiters_page,
@@ -262,7 +262,7 @@ class _FillAtsSteps(fill_state._FillState):
 
         merged = self.merged
         consent_filled, consent_review = form_routes.accept_workday_sync(
-            self.page, allow_routine=self.profile.auto_accept_routine_acknowledgements,
+            self.page, consent=form_facts.Consent.of(self.profile),
             notices=self.classify_notices,
         )
         merged["filled"].extend({**item, "frame_index": 0} for item in consent_filled)

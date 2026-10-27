@@ -41,7 +41,7 @@ def predict(cases: list[dict], *, tie_breaker: bool = False) -> dict[str, dict]:
     from resume_tailor.apply.answers import form_facts, questions
     from resume_tailor.apply.forms import form_routes
 
-    facts = questions.facts_for({"auto_accept_routine_acknowledgements": "Yes"})
+    facts = questions.facts_for({"auto_accept_notices": "Yes", "auto_accept_agreements": "Yes"})
     # A baseline tree predates the tie-breaker: it is called the way that tree allows.
     readable = hasattr(form_facts, "notice_key")
     verdicts: dict[str, str] = {}
@@ -64,7 +64,7 @@ def predict(cases: list[dict], *, tie_breaker: bool = False) -> dict[str, dict]:
         plan = questions.plan_for(items, facts, **plan_extra)
         row = {"label": text, "context": text, "required": True, "enabled": True,
                "visible": True}
-        accepted, _left = form_routes.consent_candidates([row], allow_routine=True,
+        accepted, _left = form_routes.consent_candidates([row], consent=form_facts.Consent(True, True),
                                                          **route_extra)
         leftover = {"type": "checkbox", "required": True, "selector": "#box", "label": text}
         paths = {

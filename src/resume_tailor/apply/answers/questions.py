@@ -623,10 +623,12 @@ def _answers(match: Match | None, question: Question, facts: Facts) -> list[str]
         kind = form_facts.acknowledgement(question.text, question.help_text)
         if kind == "optional":
             return _DECLINE
-        opted_in = facts.fields.get("auto_accept_routine_acknowledgements") == "Yes"
-        return ["Yes"] if kind == "routine" and opted_in else []
+        consent = form_facts.Consent.from_fields(facts.fields)
+        accepted = kind == "routine" and consent.accepts(question.text, question.help_text)
+        return ["Yes"] if accepted else []
     if match.key == form_facts.TYPED_CONSENT:
-        if facts.fields.get("auto_accept_routine_acknowledgements") != "Yes":
+        # A typed word or signature binds the applicant: agreements only (audit #32).
+        if not form_facts.Consent.from_fields(facts.fields).agreements:
             return []
         if match.param == "full_name":
             name = facts.fields.get("full_name") or " ".join(
@@ -818,7 +820,7 @@ def plan_for(
     """
     items = list(items)
     verdicts: dict[str, str] = {}
-    if notices is not None and facts.fields.get("auto_accept_routine_acknowledgements") == "Yes":
+    if notices is not None and form_facts.Consent.from_fields(facts.fields):
         pending = [
             pair for pair in (
                 (str(item.get("label") or ""), str(item.get("help") or item.get("help_text") or ""))

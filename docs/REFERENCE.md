@@ -349,9 +349,15 @@ resolver's choice key) and learned question types (`classify_questions` results 
 keys only; eligibility, sponsorship, legal and EEO types are never stored). The hybrid
 resolver and Workday prompts consult it before the model.
 
-**Fill settings added 2026-10.** `auto_accept_routine_acknowledgements` ("Agree to required
-notices and consents", default on) agrees to required process notices and typed consents
-(`form_facts.typed_consent`); statements of fact stay profile answers. `authorization_countries`
+**Fill settings added 2026-10.** Two consents replaced `auto_accept_routine_acknowledgements`
+(its value became the first, `ApplicantProfile._split_acknowledgements`):
+`auto_accept_notices` ("Agree to required notices", default on: privacy, EEO, data and
+screening notices) and `auto_accept_agreements` ("Agree to terms, certifications and
+signatures", default off: terms, arbitration, accuracy certifications and typed consents,
+`form_facts.agreement` / `typed_consent`). `form_facts.Consent` carries both. Statements of
+fact stay profile answers; `government_employee` and `conflict_of_interest` are unset until
+answered, so Fill leaves them for the applicant (a stored default "No" was cleared once by
+`load_profile`, `answers_version`). `authorization_countries`
 is a list; a posting elsewhere is answered "not authorized / needs sponsorship". The fill
 deadline starts at 240 s and extends 75 s on forward progress up to 600 s
 (`forms/fill_outcomes`). Each AI model row has a plan (Free / Pay as you go / API subscription

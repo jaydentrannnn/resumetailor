@@ -626,7 +626,7 @@ async def fill_application(
                     inspection_errors.extend(settled.errors)
                     if isinstance(adapter, adapters.WorkdayAdapter):
                         accepted, unresolved = await form_routes.accept_workday_async(
-                            page, allow_routine=applicant.auto_accept_routine_acknowledgements,
+                            page, consent=form_facts.Consent.of(applicant),
                             notices=read_notices,
                         )
                         for item in accepted:

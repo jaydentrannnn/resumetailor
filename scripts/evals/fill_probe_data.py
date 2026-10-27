@@ -158,7 +158,7 @@ PROFILE = ApplicantProfile(
     security_clearance="none",
     drivers_license=True,
     eeo=EEOAnswers(),
-    auto_accept_routine_acknowledgements=True,
+    auto_accept_notices=True, auto_accept_agreements=True,
 )
 
 SKILLS = ["Python", "React", "PyTorch", "TypeScript"]

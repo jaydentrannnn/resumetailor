@@ -76,7 +76,7 @@ PROFILE_FACTS = q.Facts(
         "government_employee": "No",
         "conflict_of_interest": "No",
         "relatives_at_company": "No",
-        "auto_accept_routine_acknowledgements": "Yes",
+        "auto_accept_notices": "Yes", "auto_accept_agreements": "Yes",
         "first_name": "Ada",
         "last_name": "Lovelace",
     },

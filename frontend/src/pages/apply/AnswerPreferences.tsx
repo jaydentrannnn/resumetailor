@@ -4,6 +4,22 @@ import { putApplicantProfile, type ApplicantProfile } from "../../api";
 import { Switch } from "../../components/ui";
 import { useApplicantProfile } from "../../state/applicantProfileState";
 
+/** The two standing consents (audit #32): what each covers, and its default. */
+const CONSENTS = [
+  [
+    "auto_accept_notices",
+    "Agree to required notices",
+    "Privacy, EEO and data notices, and consent to background and drug screening. Advertising opt-ins stay No.",
+    true,
+  ],
+  [
+    "auto_accept_agreements",
+    "Agree to terms, certifications and signatures",
+    "Terms and conditions, arbitration, statements that your application is true and complete, and typed e-signatures. Off: Fill leaves them for you.",
+    false,
+  ],
+] as const;
+
 export function AnswerPreferences() {
   const profile = useApplicantProfile();
   const [busy, setBusy] = useState(false);
@@ -25,16 +41,18 @@ export function AnswerPreferences() {
   }
   return (
     <fieldset disabled={busy} className="space-y-3">
-      <label className="flex items-center justify-between gap-3">
-        <span>Agree to required notices and consents</span>
-        <Switch
-          checked={profile.saved.auto_accept_routine_acknowledgements ?? true}
-          onChange={(value) => void save({ auto_accept_routine_acknowledgements: value })}
-        />
-      </label>
-      <p className="text-xs text-ink-muted">
-        Required privacy, screening, and similar notices. Advertising opt-ins stay No.
-      </p>
+      {CONSENTS.map(([key, label, covers, fallback]) => (
+        <div key={key} className="space-y-1">
+          <label className="flex items-center justify-between gap-3">
+            <span>{label}</span>
+            <Switch
+              checked={profile.saved![key] ?? fallback}
+              onChange={(value) => void save({ [key]: value })}
+            />
+          </label>
+          <p className="text-xs text-ink-muted">{covers}</p>
+        </div>
+      ))}
       {(
         [
           ["consider_other_positions", "Consider me for other positions"],

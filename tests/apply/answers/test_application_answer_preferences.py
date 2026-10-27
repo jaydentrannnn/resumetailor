@@ -97,7 +97,7 @@ def test_all_five_exact_pg_questions(text, key, options, expected):
         consider_other_positions=True,
         minimum_qualifications_answer=True,
         how_heard="LinkedIn",
-        auto_accept_routine_acknowledgements=True,
+        auto_accept_notices=True, auto_accept_agreements=True,
     )
     assert _answer(text, _facts(profile), options) == (key, expected)
 
@@ -110,7 +110,7 @@ def test_all_five_exact_pg_questions(text, key, options, expected):
     "Do you have experience implementing SMS consent flows?",
 ])
 def test_optional_topics_do_not_turn_factual_experience_into_declined_consent(text):
-    facts = _facts(ApplicantProfile(auto_accept_routine_acknowledgements=True))
+    facts = _facts(ApplicantProfile(auto_accept_notices=True, auto_accept_agreements=True))
     assert form_facts.acknowledgement(text) != "optional"
     assert _answer(text, facts)[0] != form_facts.ACKNOWLEDGEMENT
 
@@ -126,7 +126,7 @@ def test_optional_topics_do_not_turn_factual_experience_into_declined_consent(te
     "SMS opt-in",
 ])
 def test_actual_optional_communications_remain_declined(text):
-    facts = _facts(ApplicantProfile(auto_accept_routine_acknowledgements=True))
+    facts = _facts(ApplicantProfile(auto_accept_notices=True, auto_accept_agreements=True))
     assert form_facts.acknowledgement(text) == "optional"
     assert _answer(text, facts)[1] == "No"
 
@@ -134,7 +134,7 @@ def test_actual_optional_communications_remain_declined(text):
 def test_required_privacy_consent_still_uses_explicit_notice_preference():
     text = "I consent to the processing of my personal data for this application"
     assert form_facts.acknowledgement(text) == "routine"
-    assert _answer(text, _facts(ApplicantProfile(auto_accept_routine_acknowledgements=True))) == (
+    assert _answer(text, _facts(ApplicantProfile(auto_accept_notices=True, auto_accept_agreements=True))) == (
         form_facts.ACKNOWLEDGEMENT, "Yes",
     )
 
@@ -144,7 +144,7 @@ def test_required_privacy_consent_still_uses_explicit_notice_preference():
     [(OTHER_POSITIONS, "consider_other_positions"), (QUALIFICATIONS, "minimum_qualifications")],
 )
 def test_missing_preference_never_follows_notice_consent_or_education(text, key):
-    facts = _facts(ApplicantProfile(auto_accept_routine_acknowledgements=True))
+    facts = _facts(ApplicantProfile(auto_accept_notices=True, auto_accept_agreements=True))
     assert key not in facts.fields
     assert _answer(text, facts) == (key, None)
 
@@ -158,7 +158,7 @@ def test_explicit_no_wins_over_notice_consent(text, key):
         ApplicantProfile(
             consider_other_positions=False,
             minimum_qualifications_answer=False,
-            auto_accept_routine_acknowledgements=True,
+            auto_accept_notices=True, auto_accept_agreements=True,
         )
     )
     assert _answer(text, facts) == (key, "No")

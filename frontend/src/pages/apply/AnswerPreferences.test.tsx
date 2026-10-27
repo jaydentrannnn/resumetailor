@@ -23,7 +23,8 @@ function profile(patch: Partial<ApplicantProfile> = {}): ApplicantProfile {
     last_name: "Applicant",
     city: "Saved City",
     how_heard: "LinkedIn",
-    auto_accept_routine_acknowledgements: true,
+    auto_accept_notices: true,
+    auto_accept_agreements: false,
     consider_other_positions: null,
     minimum_qualifications_answer: null,
     ...patch,
@@ -90,10 +91,17 @@ describe("Apply answering preferences", () => {
     expect(
       (
         screen.getByRole("switch", {
-          name: "Agree to required notices and consents",
+          name: "Agree to required notices",
         }) as HTMLInputElement
       ).checked,
     ).toBe(true);
+    expect(
+      (
+        screen.getByRole("switch", {
+          name: "Agree to terms, certifications and signatures",
+        }) as HTMLInputElement
+      ).checked,
+    ).toBe(false);
     expect(screen.getByText("Advertising-partner sharing:").textContent).toContain("No");
     expect(putApplicantProfile).not.toHaveBeenCalled();
   });
@@ -115,21 +123,31 @@ describe("Apply answering preferences", () => {
       false,
       null,
     ]);
-    expect(state().saved.auto_accept_routine_acknowledgements).toBe(true);
+    expect(state().saved.auto_accept_notices).toBe(true);
   });
 
   it("saves required-consent preference without implicitly enabling qualification or recruiting answers", async () => {
     mount();
     const consent = await screen.findByRole("switch", {
-      name: "Agree to required notices and consents",
+      name: "Agree to required notices",
     });
     fireEvent.click(consent);
-    await waitFor(() => expect(state().saved.auto_accept_routine_acknowledgements).toBe(false));
+    await waitFor(() => expect(state().saved.auto_accept_notices).toBe(false));
     expect(state().saved.minimum_qualifications_answer).toBeNull();
     expect(state().saved.consider_other_positions).toBeNull();
     expect(putApplicantProfile).toHaveBeenCalledWith(
-      expect.objectContaining({ auto_accept_routine_acknowledgements: false }),
+      expect.objectContaining({ auto_accept_notices: false }),
     );
+  });
+
+  it("agrees to terms and signatures only when switched on", async () => {
+    mount();
+    const agreements = await screen.findByRole("switch", {
+      name: "Agree to terms, certifications and signatures",
+    });
+    fireEvent.click(agreements);
+    await waitFor(() => expect(state().saved.auto_accept_agreements).toBe(true));
+    expect(state().saved.auto_accept_notices).toBe(true);
   });
 
   it("preserves a pending profile draft while saving consecutive Apply preferences", async () => {

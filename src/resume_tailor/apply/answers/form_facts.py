@@ -6,6 +6,8 @@ import contextlib
 import re
 from collections.abc import Iterable, Iterator
 from contextvars import ContextVar
+from dataclasses import dataclass
+from typing import Any
 
 HIGH_SCHOOL = "high_school_graduation_year"
 SKILLS = "programming_languages"
@@ -250,6 +252,51 @@ _CLAIM_TOPIC = re.compile(
     r"|currently\s+employed|(?:years?|work|professional|relevant|prior|previous)\s+(?:of\s+)?"
     r"experience|experience\s+(?:with|in)\b|\bskills?\b"
 )
+
+
+#: A routine notice that binds the applicant (audit #32): terms, arbitration and waivers,
+#: a certification that the application is true, a signature. Agreed to only when the
+#: applicant opts in (`ApplicantProfile.auto_accept_agreements`); privacy, EEO, data and
+#: screening notices are the plain notices (`auto_accept_notices`).
+_AGREEMENT = re.compile(
+    r"\bterms\b|\bconditions\b|\bt\s*&\s*c\b|arbitrat|class[- ]action|\bwaive|\bjury\b"
+    r"|at[- ]will|\bagreements?\b|\bbinding\b|code\s+of\s+conduct|non[- ]?disclosure"
+    r"|certif(?:y|ies|ied|ication)|attest|truthful|accura(?:te|cy)|\btrue\b|\bfalse\b"
+    r"|falsif|misrepresent|omission|signature|e-?sign|electronic(?:ally)?\s+sign"
+    r"|\bsign(?:ed|ing)?\b"
+)
+
+
+def agreement(text: str, help_text: str = "") -> bool:
+    """Whether a notice binds the applicant (terms, arbitration, a certification of
+    accuracy, a signature) rather than informing them (privacy, EEO, data, screening)."""
+    return bool(_AGREEMENT.search(f"{text} {help_text}".casefold()))
+
+
+@dataclass(frozen=True)
+class Consent:
+    """The applicant's standing choices for routine notices: plain ``notices`` and
+    binding ``agreements`` (`agreement`). Falsy when neither is accepted."""
+
+    notices: bool = False
+    agreements: bool = False
+
+    def accepts(self, text: str, help_text: str = "") -> bool:
+        return self.agreements if agreement(text, help_text) else self.notices
+
+    def __bool__(self) -> bool:
+        return self.notices or self.agreements
+
+    @classmethod
+    def of(cls, profile: Any) -> Consent:
+        """From an `ApplicantProfile`."""
+        return cls(bool(profile.auto_accept_notices), bool(profile.auto_accept_agreements))
+
+    @classmethod
+    def from_fields(cls, fields: dict[str, str]) -> Consent:
+        """From packet fields ("Yes"/"No")."""
+        return cls(fields.get("auto_accept_notices") == "Yes",
+                   fields.get("auto_accept_agreements") == "Yes")
 
 
 def _strip(part: str) -> str:

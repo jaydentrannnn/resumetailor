@@ -143,8 +143,9 @@ def build_fields(profile: ApplicantProfile, resume: MasterResume) -> dict[str, s
             us_person = status in {"citizen", "permanent_resident"}
             fields["us_person_status"] = "Yes" if us_person else "No"
     _maybe_set(fields, "citizenship", profile.citizenship or None)
-    fields["government_employee"] = _yes_no(profile.government_employee)
-    fields["conflict_of_interest"] = _yes_no(profile.conflict_of_interest)
+    # Unanswered: left for the applicant, never a guessed "No" (audit #31).
+    _maybe_set(fields, "government_employee", _yes_no(profile.government_employee))
+    _maybe_set(fields, "conflict_of_interest", _yes_no(profile.conflict_of_interest))
     # An explicit Yes/No wins; otherwise the visa status implies one (`sponsorship_from_visa`).
     implied = profile_mod.sponsorship_from_visa(profile.visa_status)
     sponsor_now = profile.requires_sponsorship_now
@@ -161,9 +162,8 @@ def build_fields(profile: ApplicantProfile, resume: MasterResume) -> dict[str, s
     _maybe_set(fields, "visa_status", profile_mod.VISA_LABELS.get(profile.visa_status))
     _maybe_set(fields, "over_18", _yes_no(profile.over_18))
     _maybe_set(fields, "relatives_at_company", _yes_no(profile.relatives_at_company))
-    fields["auto_accept_routine_acknowledgements"] = (
-        _yes_no(profile.auto_accept_routine_acknowledgements)
-    )
+    fields["auto_accept_notices"] = _yes_no(profile.auto_accept_notices)
+    fields["auto_accept_agreements"] = _yes_no(profile.auto_accept_agreements)
     _maybe_set(fields, "consider_other_positions", _yes_no(profile.consider_other_positions))
     _maybe_set(fields, "minimum_qualifications", _yes_no(profile.minimum_qualifications_answer))
     total = experience_years.calculate(resume, profile.experience_basis, profile.experience_years_custom)

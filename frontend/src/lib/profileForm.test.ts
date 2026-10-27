@@ -64,7 +64,7 @@ describe("validateProfile", () => {
       validateProfile({ ...base, high_school_graduation_year: "23" }).high_school_graduation_year,
     ).toBeTruthy();
     expect(groupForField("high_school_graduation_year")).toBe(groupForField("class_year"));
-    expect(tabForField("auto_accept_routine_acknowledgements")).toBe("application");
+    expect(tabForField("auto_accept_agreements")).toBe("application");
   });
   it("accepts blanks and well-formed values", () => {
     expect(validateProfile(base)).toEqual({});

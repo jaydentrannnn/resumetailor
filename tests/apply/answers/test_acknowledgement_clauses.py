@@ -86,7 +86,7 @@ def test_the_plan_reads_an_unclear_notice_by_the_models_verdict(verdict, value):
         asked.extend(pending)
         return {form_facts.notice_key(*pair): verdict for pair in pending}
 
-    facts = questions.facts_for({"auto_accept_routine_acknowledgements": "Yes"})
+    facts = questions.facts_for({"auto_accept_notices": "Yes", "auto_accept_agreements": "Yes"})
     items = [{"qid": "box", "label": UNCLEAR, "kind": "checkbox"},
              {"qid": "other", "label": "I agree to the Privacy Policy", "kind": "checkbox"}]
     plan = questions.plan_for(items, facts, notices=notices)
@@ -125,7 +125,7 @@ def _row(label, context=""):
     "I agree to the terms and acknowledge that this is a remote internship.",  # unclear
 ])
 def test_consent_routes_tick_only_routine_notices(label):
-    accepted, left = form_routes.consent_candidates([_row(label)], allow_routine=True)
+    accepted, left = form_routes.consent_candidates([_row(label)], consent=form_facts.Consent(True, True))
     assert accepted == [] and left == [label]
     leftover = {"type": "checkbox", "required": True, "selector": "#box", "label": label}
     assert not form_routes.is_required_consent(leftover)
@@ -135,17 +135,17 @@ def test_the_consent_route_ticks_an_unclear_notice_only_on_a_routine_verdict():
     rows = [_row(UNCLEAR)]
     assert form_routes.unclear_notices(rows) == [(UNCLEAR, "")]
     key = form_facts.notice_key(UNCLEAR)
-    accepted, _left = form_routes.consent_candidates(rows, allow_routine=True,
+    accepted, _left = form_routes.consent_candidates(rows, consent=form_facts.Consent(True, True),
                                                     verdicts={key: "routine"})
     assert len(accepted) == 1
-    accepted, left = form_routes.consent_candidates(rows, allow_routine=True,
+    accepted, left = form_routes.consent_candidates(rows, consent=form_facts.Consent(True, True),
                                                    verdicts={key: "fact"})
     assert accepted == [] and left == [UNCLEAR]
 
 
 def test_the_consent_route_reads_the_description_apart_from_the_caption():
     accepted, _left = form_routes.consent_candidates([_row("I agree", PRIVACY)],
-                                                    allow_routine=True)
+                                                    consent=form_facts.Consent(True, True))
     assert len(accepted) == 1
 
 

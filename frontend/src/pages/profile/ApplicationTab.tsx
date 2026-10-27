@@ -38,6 +38,9 @@ function blankLabelFor(key: keyof ApplicantProfile, draft: ApplicantProfile): st
       const auto = classYearFor(draft.graduation_date);
       return auto ? `Auto: ${auto}` : "Auto from expected graduation";
     }
+    case "government_employee":
+    case "conflict_of_interest":
+      return "Ask me on each form";
     default:
       return undefined;
   }
@@ -46,8 +49,10 @@ function blankLabelFor(key: keyof ApplicantProfile, draft: ApplicantProfile): st
 /** Explanations that are not "what a blank value means" (those live inside the control). */
 function hintFor(key: keyof ApplicantProfile): ReactNode {
   switch (key) {
-    case "auto_accept_routine_acknowledgements":
-      return "Agrees to required privacy, background-check, arbitration and similar notices, including typed signatures. Statements about you are answered from your facts; optional opt-ins stay No.";
+    case "auto_accept_notices":
+      return "Privacy, EEO and data notices, and consent to background and drug screening. Statements about you are answered from your facts; optional opt-ins stay No.";
+    case "auto_accept_agreements":
+      return "Terms and conditions, arbitration, statements that your application is true and complete, and typed e-signatures. Off: Fill leaves them for you.";
     case "visa_status":
       return "Sets the sponsorship answers below unless you choose them yourself.";
     case "hours_per_week_available":

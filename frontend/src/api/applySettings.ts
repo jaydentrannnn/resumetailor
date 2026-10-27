@@ -258,7 +258,10 @@ export type ApplicantProfile = {
   /** Blank = derived from the graduation date. */
   class_year?: "" | "freshman" | "sophomore" | "junior" | "senior" | "graduate";
   high_school_graduation_year?: string;
-  auto_accept_routine_acknowledgements?: boolean;
+  /** Privacy, EEO and data notices, screening consent. */
+  auto_accept_notices?: boolean;
+  /** Terms, arbitration, accuracy certifications, typed e-signatures; off by default. */
+  auto_accept_agreements?: boolean;
   consider_other_positions?: boolean | null;
   minimum_qualifications_answer?: boolean | null;
   experience_basis?: ExperienceBasis;

@@ -46,7 +46,7 @@ def test_captured_greenhouse_questions_fill_supported_facts(page):
         "high_school_graduation_year": "2023",
         "class_year": "Senior",
         "relatives_at_company": "No",
-        "auto_accept_routine_acknowledgements": "Yes",
+        "auto_accept_notices": "Yes", "auto_accept_agreements": "Yes",
         "phone_country_code": "+1",
         "phone_country_region": "United States",
     }
@@ -127,7 +127,7 @@ def test_privacy_notice_with_certification_option_is_agreed():
     question = questions.Question('I agree to the privacy notice', kind='choice',
         options=('Yes, I certify this application is accurate', 'No'))
     assert questions.answers(questions.classify(question), question,
-        questions.Facts({'auto_accept_routine_acknowledgements': 'Yes'})) == ['Yes']
+        questions.Facts({'auto_accept_notices': 'Yes', 'auto_accept_agreements': 'Yes'})) == ['Yes']
 
 
 def test_high_school_default_uses_earliest_undergraduate_start_and_override():
@@ -351,7 +351,7 @@ def test_async_scanner_and_actions_fill_same_greenhouse_gaps(tmp_path):
                     "high_school_graduation_year": "2023",
                     "class_year": "Senior",
                     "relatives_at_company": "No",
-                    "auto_accept_routine_acknowledgements": "Yes",
+                    "auto_accept_notices": "Yes", "auto_accept_agreements": "Yes",
                 }
                 pkt = Packet(
                     job_id="test", built_at="", fields=fields, master_skills=["Python", "C++"]

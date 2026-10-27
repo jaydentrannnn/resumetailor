@@ -7,6 +7,7 @@ from datetime import date
 
 from pydantic import BaseModel
 
+from resume_tailor.apply.answers import form_facts
 from resume_tailor.apply.answers.profile import ApplicantProfile
 
 _WORK_AUTH_LABELS: dict[str, str] = {
@@ -118,8 +119,9 @@ PROFILE_FIELDS: dict[str, ProfileFieldInfo] = {
         label="High-school graduation year", section=_EDUCATION,
     ),
     "relatives_at_company": ProfileFieldInfo(label="Relatives at the company", section=_VOLUNTARY),
-    "auto_accept_routine_acknowledgements": ProfileFieldInfo(
-        label="Agree to required notices and consents", section=_SAVED,
+    "auto_accept_notices": ProfileFieldInfo(label="Agree to required notices", section=_SAVED),
+    "auto_accept_agreements": ProfileFieldInfo(
+        label="Agree to terms, certifications and signatures", section=_SAVED,
     ),
     "consider_other_positions": ProfileFieldInfo(label="Consider me for other positions", section="Answering questions"),
     "minimum_qualifications": ProfileFieldInfo(label="General minimum qualifications", section="Answering questions"),
@@ -167,9 +169,12 @@ _PROFILE_EDUCATION_KEYS = frozenset({
     "class_year", "school_email", "highest_education_obtained", "high_school_graduation_year",
 })
 
+_CONSENT_KEYS = frozenset({"auto_accept_notices", "auto_accept_agreements"})
+
+
 def profile_path(section: str, key: str = "") -> str:
     """The page (a Profile tab, or Resume) that holds ``section`` (or, for education, ``key``)."""
-    if section == "Answering questions" or key == "auto_accept_routine_acknowledgements":
+    if section == "Answering questions" or key in _CONSENT_KEYS:
         return "/apply"
     if section == _EDUCATION and key not in _PROFILE_EDUCATION_KEYS:
         return "/resume"
@@ -343,7 +348,8 @@ def missing_profile(blank: list[dict], filled_labels: set[str]) -> list[dict]:
     for item in blank:
         key = str(item.get("key") or "")
         if key == "routine_acknowledgement":
-            key = "auto_accept_routine_acknowledgements"
+            label = str(item.get("label") or "")
+            key = "auto_accept_agreements" if form_facts.agreement(label) else "auto_accept_notices"
         if key not in PROFILE_FIELDS:
             # Not a profile field: the preferred-name tick, resume-derived employer, ...
             continue

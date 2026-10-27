@@ -129,6 +129,12 @@ _PICK = re.compile(
 _IF_NOT = re.compile(r"\bif\b[^,.?]*?(?:\bnot\b|n't\b)[^,.?]*,", re.I)
 
 
+#: Basis keys a model answer cites for an accepted notice (the first is the pre-split name).
+_CONSENT_KEYS = frozenset({
+    "auto_accept_routine_acknowledgements", "auto_accept_notices", "auto_accept_agreements",
+})
+
+
 def _to_pick(question: questions.Question) -> str:
     """The sentences of a multiple-choice ``question`` that say what to pick (all of them
     when none does), without its negated fallbacks or the options' own words ("I am not
@@ -327,11 +333,14 @@ def supported(
             field_matcher.normalize(re.sub(r"\s*\([^)]*\)\s*$", "", item)) in names
             for item in picked
         )
-    if (action.basis_kind in {"profile", "packet"}
-            and action.basis_key.strip() == "auto_accept_routine_acknowledgements"):
-        # The applicant's standing agreement to routine notices, for one the detector
-        # itself reads as routine.
-        agreed = _value(_lookup(profile, "auto_accept_routine_acknowledgements")) == "Yes"
+    if action.basis_kind in {"profile", "packet"} and action.basis_key.strip() in _CONSENT_KEYS:
+        # The applicant's standing choice for routine notices (agreements apart), for one
+        # the detector itself reads as routine.
+        consent = form_facts.Consent(
+            _value(_lookup(profile, "auto_accept_notices")) == "Yes",
+            _value(_lookup(profile, "auto_accept_agreements")) == "Yes",
+        )
+        agreed = consent.accepts(question.text, question.help_text)
         affirmative = field_matcher.affirmative_option(list(question.options))
         return agreed and form_facts.acknowledgement(question.text, question.help_text) == (
             "routine"

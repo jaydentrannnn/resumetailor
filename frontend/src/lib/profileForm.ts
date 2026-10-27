@@ -52,7 +52,8 @@ export const PROFILE_LABELS: Partial<Record<keyof ApplicantProfile | string, str
   graduation_date: "Expected graduation",
   class_year: "Class standing",
   high_school_graduation_year: "High-school graduation year",
-  auto_accept_routine_acknowledgements: "Agree to required notices and consents",
+  auto_accept_notices: "Agree to required notices",
+  auto_accept_agreements: "Agree to terms, certifications and signatures",
   gpa_display: "GPA shown on forms",
   school_email: "School email",
   security_clearance: "Security clearance",
@@ -319,7 +320,8 @@ export const BOOLEAN_FIELDS = new Set<string>([
 /** Plain on/off settings (never blank on the server). */
 export const CHECKBOX_FIELDS = new Set<string>([
   "portfolio_only_when_asked",
-  "auto_accept_routine_acknowledgements",
+  "auto_accept_notices",
+  "auto_accept_agreements",
 ]);
 
 /** Gap keys (`packet.PROFILE_FIELDS`) whose profile field is named differently. */

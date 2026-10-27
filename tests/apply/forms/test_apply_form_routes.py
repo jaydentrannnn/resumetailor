@@ -8,6 +8,7 @@ import pytest
 from playwright.sync_api import sync_playwright
 
 from resume_tailor.apply.ats.workday_repeaters import fill_education_years_async
+from resume_tailor.apply.answers import form_facts
 from resume_tailor.apply.forms import fill_page, form_routes
 from resume_tailor.apply.funnel.packet_models import Packet, PacketEducation
 
@@ -100,7 +101,7 @@ def test_required_certification_is_agreed_but_talent_community_is_not(page):
       <div class="form-group"><label><input type="checkbox" required>I certify that this application is accurate</label></div>
       <div class="form-group"><label><input type="checkbox">Join the talent community</label></div>
     """)
-    filled, unresolved = form_routes.accept_workday_sync(page, allow_routine=True)
+    filled, unresolved = form_routes.accept_workday_sync(page, consent=form_facts.Consent(True, True))
     assert unresolved == []
     assert [row["label"] for row in filled] == ["I certify that this application is accurate"]
     assert page.locator("input[type=checkbox]").nth(0).is_checked()

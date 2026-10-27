@@ -100,7 +100,7 @@ def test_a_language_option_with_its_code_names_that_language():
 ])
 def test_the_standing_agreement_covers_only_routine_notices(label, expected):
     action = _action("Yes", "profile", "auto_accept_routine_acknowledgements")
-    profile = {"auto_accept_routine_acknowledgements": True}
+    profile = {"auto_accept_notices": True, "auto_accept_agreements": True}
     assert _supported(action, _field(label), profile=profile) is expected
     assert not _supported(action, _field(label), profile={})
 

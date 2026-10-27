@@ -119,6 +119,12 @@ class LanguageEntry(BaseModel):
     levels: dict[str, str] = Field(default_factory=dict)
 
 
+#: 1: government-employee and conflict-of-interest answers have no default "No".
+ANSWERS_VERSION = 1
+#: Yes/No facts an older profile defaulted to "No" without asking (audit #31).
+_UNCONFIRMED_NO = ("government_employee", "conflict_of_interest")
+
+
 class ApplicantProfile(BaseModel):
     """Flat answers reused across ATS forms; not resume content."""
 
@@ -154,9 +160,10 @@ class ApplicantProfile(BaseModel):
     #: Country of citizenship, for export-control questions ("a citizen of Iran, Cuba...").
     citizenship: str = ""
     #: "Are you a current or former government employee / have you served in the military?"
-    government_employee: bool = False
+    #: None = not answered: Fill leaves the question for the applicant (audit #31).
+    government_employee: bool | None = None
     #: "Do you have a conflict of interest (outside work, ties to a customer or competitor)?"
-    conflict_of_interest: bool = False
+    conflict_of_interest: bool | None = None
     requires_sponsorship_now: bool | None = None
     requires_sponsorship_future: bool | None = None
     f1_opt_eligible: bool | None = None
@@ -196,9 +203,12 @@ class ApplicantProfile(BaseModel):
     class_year: ClassYear = ""
     #: Blank = earliest undergraduate start year, like automatic class standing.
     high_school_graduation_year: str = Field(default="", pattern=r"^$|^\d{4}$")
-    #: Agree to required notices and consents (privacy, background check, screening,
-    #: accuracy, terms, arbitration); optional opt-ins are always declined.
-    auto_accept_routine_acknowledgements: bool = True
+    #: Agree to required routine notices: privacy, EEO and data notices, screening
+    #: consent. Optional opt-ins are always declined.
+    auto_accept_notices: bool = True
+    #: Agree to binding ones too: terms, arbitration, certifications that the application
+    #: is accurate, typed e-signatures (`form_facts.agreement`). Off until opted in.
+    auto_accept_agreements: bool = False
     #: Explicit answers to broad recruiting questions; unset means ask the applicant.
     consider_other_positions: bool | None = None
     minimum_qualifications_answer: bool | None = None
@@ -218,6 +228,21 @@ class ApplicantProfile(BaseModel):
     eeo: EEOAnswers = Field(default_factory=EEOAnswers)
     languages: list[LanguageEntry] = Field(default_factory=list)
     custom_answers: dict[str, str] = Field(default_factory=dict)
+
+    #: The file's answer-defaults stamp (`load_profile` migrates older files once).
+    answers_version: int = ANSWERS_VERSION
+
+    @model_validator(mode="before")
+    @classmethod
+    def _split_acknowledgements(cls, data: Any) -> Any:
+        """A profile saved before notices and agreements were split keeps its notices
+        choice; agreements start off (audit #32)."""
+        if not isinstance(data, dict) or "auto_accept_routine_acknowledgements" not in data:
+            return data
+        out = dict(data)
+        legacy = out.pop("auto_accept_routine_acknowledgements")
+        out.setdefault("auto_accept_notices", bool(legacy) if legacy is not None else True)
+        return out
 
     @model_validator(mode="before")
     @classmethod
@@ -371,6 +396,18 @@ def _migrate_education(path: Path, raw: dict[str, Any]) -> None:
     save_profile(ApplicantProfile.model_validate(raw))
 
 
+def _unconfirm_defaults(path: Path, raw: dict[str, Any]) -> dict[str, Any]:
+    """Turn a stored default "No" for government employment or a conflict of interest
+    into "not answered", once: older profiles saved "No" without asking. A Yes stays."""
+    out = {**raw, "answers_version": ANSWERS_VERSION}
+    for key in _UNCONFIRMED_NO:
+        if out.get(key) is False:
+            out[key] = None
+    _backup(path)
+    save_profile(ApplicantProfile.model_validate(out))
+    return out
+
+
 #: Secret-store key of the profile's Workday password (see `secret_store.profile_name`).
 _PASSWORD_SECRET = "workday_password"
 
@@ -396,6 +433,8 @@ def load_profile() -> tuple[ApplicantProfile, bool]:
     raw = json.loads(path.read_text(encoding="utf-8"))
     if isinstance(raw, dict) and any(key in raw for key in _LEGACY_EDUCATION):
         _migrate_education(path, raw)
+    if isinstance(raw, dict) and int(raw.get("answers_version") or 0) < ANSWERS_VERSION:
+        raw = _unconfirm_defaults(path, raw)
     profile = ApplicantProfile.model_validate(raw)
     if profile.workday_password:
         _backup(path)
