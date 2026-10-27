@@ -64,6 +64,11 @@ def _now() -> str:
     return datetime.now(UTC).replace(microsecond=0).isoformat()
 
 
+#: When this server process started: a row left "filling" since before then was cut by
+#: a restart; one left since was a fill that stopped without recording its end.
+_PROCESS_STARTED = _now()
+
+
 #: Per-application starting budget, matching `fill.fill_application`'s own deadline;
 #: the fill pushes it out on progress (`_on_deadline`).
 _APPLICATION_BUDGET_SEC = 240
@@ -189,6 +194,9 @@ class _Controls:
     #: Waiting applications to bring back now, or to leave in Needs you (`come_back`).
     retry_now: set[str] = field(default_factory=set)
     leave: set[str] = field(default_factory=set)
+    #: Applications the applicant settled by hand while this batch held them (`revoke`):
+    #: a running item stops at its next check and never submits; a pending one is dropped.
+    revoked: set[str] = field(default_factory=set)
 
 
 #: Operations running now, by id, oldest first (the live objects their workers update).
@@ -201,6 +209,8 @@ _EDITING = False
 #: never act on one tab (v1.25.0 looked at `in_flight`, which a review action never
 #: fills: two corrections ran on one tab and could overwrite each other).
 _AT_WORK: set[str] = set()
+#: Rows a route is editing now (`rows_idle`): held, so no batch starts on them.
+_EDITING_ROWS: set[str] = set()
 
 
 def _ctl(operation: ApplyOperation) -> _Controls:
@@ -224,6 +234,51 @@ def registry_edit_idle():
             _EDITING = False
 
 
+@contextmanager
+def rows_idle(application_ids: list[str]):
+    """Exclude Apply workers from just these rows during an edit of them (archive,
+    restore, undo, retry): refused while a running batch holds one or a worker is on its
+    tab, and while the nightly run is busy. Batches on other rows go on meanwhile."""
+    ids = {store.app_id(application_id) or application_id for application_id in application_ids}
+    with _LOCK:
+        if _EDITING or daily_progress.daily_busy():
+            raise RuntimeError("Another Apply workflow is running; try again when it finishes")
+        busy = {application_id for application_id in ids if row_busy(application_id)}
+        if busy:
+            raise RuntimeError(
+                f"{len(busy)} of these applications are in a running Apply task; "
+                "try again when it finishes"
+            )
+        # Counted as held (`_held_elsewhere`), so no batch takes these rows meanwhile.
+        _EDITING_ROWS.update(ids)
+    try:
+        yield
+    finally:
+        with _LOCK:
+            _EDITING_ROWS.difference_update(ids)
+
+
+def row_busy(application_id: str) -> bool:
+    """Whether a running batch holds this row or a worker is on its tab now."""
+    resolved = store.app_id(application_id) or application_id
+    with _LOCK:
+        return resolved in (_held_elsewhere() | _AT_WORK | answer_harvest.FILLING)
+
+
+def revoke(application_id: str, reason: str) -> bool:
+    """Take one application away from the batch holding it: the applicant settled it by
+    hand (marked it submitted or skipped). A running fill stops at its next check and
+    never submits; a pending or waiting one is dropped. True when a batch held it."""
+    resolved = store.app_id(application_id) or application_id
+    with _LOCK:
+        holders = [op for op in _ACTIVE.values() if resolved in op.held_ids]
+        for operation in holders:
+            _CONTROLS.setdefault(operation.operation_id, _Controls()).revoked.add(resolved)
+    for operation in holders:
+        _event(operation, "revoked", reason, resolved)
+    return bool(holders)
+
+
 def _register(operation: ApplyOperation) -> None:
     with _LOCK:
         _ACTIVE[operation.operation_id] = operation
@@ -243,7 +298,7 @@ def _unregister(operation: ApplyOperation) -> None:
 def _held_elsewhere(operation: ApplyOperation | None = None) -> set[str]:
     """Applications the running operations other than ``operation`` still own."""
     with _LOCK:
-        return {
+        return _EDITING_ROWS | {
             application_id
             for other in _ACTIVE.values()
             if other is not operation
@@ -432,7 +487,7 @@ def list_recent() -> list[ApplyOperation]:
                     operation.finished_at = _now()
                     operation.updated_at = operation.finished_at
                     changed = True
-            for app in store_views.list_applications(status="filling", limit=None):
+            for app in _stranded_fills():
                 fill_result = (
                     store_models.FillResult.model_validate(app.fill) if app.fill else store_models.FillResult()
                 )
@@ -443,12 +498,33 @@ def list_recent() -> list[ApplyOperation]:
                     recovered_status = "submit_unconfirmed"
                 else:
                     recovered_status = "awaiting_review" if app.fill else "ready"
-                store.set_status(app, recovered_status, note="Fill interrupted by server restart")
+                store.set_status(app, recovered_status, note=_stranded_note(app))
                 store.upsert(app)
         if changed:
             _save(operations)
         values = list(operations.values())
     return sorted(values, key=lambda item: item.updated_at, reverse=True)
+
+
+def _stranded_fills() -> list[store_models.Application]:
+    """Rows still "filling" with no worker on them: none of this process's fills (the
+    nightly run's included) holds them."""
+    if daily_progress.daily_busy():
+        return []
+    return [
+        app
+        for app in store_views.list_applications(status="filling", limit=None)
+        if app.source_job_id not in answer_harvest.FILLING and app.source_job_id not in _AT_WORK
+    ]
+
+
+def _stranded_note(app: store_models.Application) -> str:
+    started = next(
+        (change.at for change in reversed(app.status_history) if change.status == "filling"), ""
+    )
+    if started and started >= _PROCESS_STARTED:
+        return "Fill stopped without finishing"
+    return "Fill interrupted by server restart"
 
 
 def active() -> ApplyOperation | None:
@@ -508,7 +584,12 @@ def _start_locked(request: ApplyOperationRequest) -> ApplyOperation:
     if request.action != "find" and not request.application_ids:
         raise ValueError(f"{request.action} requires at least one selected application")
     settings_snapshot = _captured_settings(request)
-    selected = list(dict.fromkeys(request.application_ids))
+    # One id per row, whichever alias the caller used (desktop and extension differ), so
+    # `held_ids`, tab claims and watchers all compare the same string.
+    selected = list(dict.fromkeys(
+        store.app_id(application_id) or application_id
+        for application_id in request.application_ids
+    ))
     excluded: dict[str, list[str]] = {}
     if request.action == "fill":
         for application_id in selected:
@@ -685,8 +766,13 @@ def _process_item(
                 operation.excluded[application_id] = ["archived_application"]
             _event(operation, "excluded", "Application is archived", application_id)
             return outcome
+        if application_id in _ctl(operation).revoked:
+            _event(operation, "revoked", "You settled this application; leaving it", application_id)
+            return outcome
         if operation.action == "prepare":
             outcome = _prepare_item(operation, request, settings, application_id, item)
+            return outcome
+        if _already_settled(operation, app, application_id):
             return outcome
         if again and _settled_while_waiting(operation, app, application_id, item.label):
             return outcome
@@ -722,9 +808,12 @@ def _prepare_item(
     ctl = _ctl(operation)
     _event(operation, "preparing", "Fetching and tailoring application", application_id)
 
+    def stop() -> bool:
+        return ctl.hold.is_set() or application_id in ctl.revoked
+
     def progress(message: str) -> None:
         # A stopped item stays quiet: its late progress would bury "Paused".
-        if not ctl.hold.is_set():
+        if not stop():
             _event(operation, "preparing", message, application_id)
 
     try:
@@ -734,7 +823,7 @@ def _prepare_item(
             on_progress=progress,
             force_prepare=request.force_prepare,
             on_job=lambda job_id: _set_job(operation, job_id, application_id),
-            should_stop=ctl.hold.is_set,
+            should_stop=stop,
         )
     except PrepareInterrupted:
         return "stopped"
@@ -785,6 +874,8 @@ def _fill_item(
     ctl = _ctl(operation)
     attempt_mode = "continue" if again else request.fill_mode
     while True:
+        if application_id in ctl.revoked:
+            return "done"
         if attempt_mode == "continue":
             _harvest_typed(operation, application_id)
         _event(operation, "filling", "Opening application form", application_id)
@@ -796,7 +887,7 @@ def _fill_item(
                 settings=settings,
                 submit_mode="auto_submit" if submit_allowed else "awaiting_review",
                 fill_mode=attempt_mode,
-                should_cancel=ctl.cancel.is_set,
+                should_cancel=lambda: ctl.cancel.is_set() or application_id in ctl.revoked,
                 on_progress=lambda message: _event(
                     operation, "filling", message, application_id
                 ),
@@ -809,7 +900,13 @@ def _fill_item(
         finally:
             answer_harvest.FILLING.discard(application_id)
         release_submit(submit_allowed, result.status)
-        if result.status in {"awaiting_review", "awaiting_otp"}:
+        if application_id in ctl.revoked:
+            _event(operation, "revoked", "Stopped: you settled this application", application_id)
+            return "done"
+        if result.status in {"awaiting_review", "awaiting_otp"} or (
+            result.status == "fill_failed" and result.browser_target_id
+        ):
+            # A failed fill's tab too (audit #3): finished by hand, it is recorded.
             answer_harvest.watch(application_id)
         if result.status == "submitted":
             with _LOCK:
@@ -918,19 +1015,36 @@ def _release(operation: ApplyOperation, application_id: str) -> None:
             operation.held_ids.remove(application_id)
 
 
+def _already_settled(
+    operation: ApplyOperation, app: store_models.Application, application_id: str
+) -> bool:
+    """The applicant submitted or skipped this application by hand after the batch took
+    it: counted as they left it, never filled."""
+    if app.status not in store_models.TERMINAL_STATUSES:
+        return False
+    _note_settled(operation, app, application_id)
+    return True
+
+
+def _note_settled(
+    operation: ApplyOperation, app: store_models.Application, application_id: str
+) -> None:
+    if app.status == "submitted":
+        with _LOCK:
+            operation.completed += 1
+    _event(
+        operation, "filling",
+        f"Already {app.status.replace('_', ' ')}; not filling it again", application_id,
+    )
+
+
 def _settled_while_waiting(
     operation: ApplyOperation, app: store_models.Application, application_id: str, label: str
 ) -> bool:
     """A waiting application that needs no fill now: the applicant submitted or skipped
     it by hand (counted as they left it), or its tab is gone (left in Needs you)."""
     if app.status not in come_back.STILL_WAITING:
-        if app.status == "submitted":
-            with _LOCK:
-                operation.completed += 1
-        _event(
-            operation, "filling",
-            f"Already {app.status.replace('_', ' ')}; not filling it again", application_id,
-        )
+        _note_settled(operation, app, application_id)
         return True
     target = store_models.FillResult.model_validate(app.fill).browser_target_id if app.fill else ""
     open_ids = browser.open_target_ids()
@@ -945,9 +1059,9 @@ def _settled_while_waiting(
     return False
 
 
-def _leave_waiting(operation: ApplyOperation, application_id: str) -> None:
-    """The applicant chose to finish a waiting application themselves: Needs you, as
-    with come-back off."""
+def _leave_waiting(operation: ApplyOperation, application_id: str, reason: str = "") -> None:
+    """A waiting application is left for the applicant to finish (they chose to, or its
+    timer ran out first): Needs you, as with come-back off."""
     waiting = _unwait(operation, application_id)
     with _LOCK:
         operation.processed += 1
@@ -955,10 +1069,26 @@ def _leave_waiting(operation: ApplyOperation, application_id: str) -> None:
         operation.needs_input += 1
         attention_mod.record(
             operation.attention, application_id, waiting.label if waiting else application_id,
-            "needs_input", waiting.reason if waiting else "Needs your answers",
+            "needs_input", reason or (waiting.reason if waiting else "Needs your answers"),
         )
     _release(operation, application_id)
-    _event(operation, "filling", "Left for you to finish", application_id)
+    _event(operation, "filling", reason or "Left for you to finish", application_id)
+
+
+def _still_quiet(application_id: str) -> bool:
+    """Right before a comeback takes the tab back: look again (the watcher's last look
+    may be 20 s old) and come back only if the applicant is still done there."""
+    answer_harvest.collect(application_id)
+    return come_back.ready_to_continue(application_id)
+
+
+def _drop_revoked(operation: ApplyOperation, application_id: str) -> None:
+    """A row the applicant settled by hand leaves the batch: counted, off the waiting
+    list, free for anything else."""
+    _unwait(operation, application_id)
+    with _LOCK:
+        operation.processed += 1
+    _release(operation, application_id)
 
 
 def _claim(operation: ApplyOperation, application_id: str) -> bool:
@@ -1086,6 +1216,13 @@ def _dispatch_round(
                 return application_id
         return None
 
+    def drop_revoked() -> None:
+        """Drop the pending applications the applicant settled by hand (`revoke`)."""
+        for application_id in [a for a in pending if a in ctl.revoked]:
+            pending.remove(application_id)
+            not_before.pop(application_id, None)
+            _drop_revoked(operation, application_id)
+
     def leave_requested() -> None:
         for application_id in list(ctl.leave):
             ctl.leave.discard(application_id)
@@ -1093,6 +1230,13 @@ def _dispatch_round(
                 pending.remove(application_id)
                 del not_before[application_id]
                 _leave_waiting(operation, application_id)
+        now = time.monotonic()
+        for application_id in [a for a in pending if come_back.expired(not_before.get(a), now)]:
+            if ready(application_id):
+                continue  # ready at the last moment: it comes back
+            pending.remove(application_id)
+            del not_before[application_id]
+            _leave_waiting(operation, application_id, come_back.STILL_WAITING_NOTE)
 
     def show_answered() -> None:
         """Mark the waiting fills whose questions are all answered (they come back once
@@ -1130,6 +1274,7 @@ def _dispatch_round(
                 if ctl.cancel.is_set() or _wait_if_paused(operation) == "cancel":
                     return
                 leave_requested()
+                drop_revoked()
                 if not pending:
                     return
                 if not any(ready(application_id) for application_id in pending):
@@ -1155,12 +1300,25 @@ def _dispatch_round(
                     slots.release(operation.operation_id)
                     site_free.wait(timeout=0.5)
                     continue
-                if on_take is not None:
-                    on_take(application_id)
-                again = not_before.pop(application_id, None) is not None
+                waited_until = not_before.pop(application_id, None)
+                again = waited_until is not None
+                asked = application_id in ctl.retry_now
                 ctl.retry_now.discard(application_id)
                 # A comeback is that site's own verification wait; it goes on.
                 hold = gate.verification_hold(application_id) if gate and not again else ""
+            if again and not asked and not _still_quiet(application_id):
+                # They typed there since the last look: the tab stays theirs for now.
+                with dispatch_lock:
+                    not_before[application_id] = waited_until
+                    pending.append(application_id)
+                    if gate is not None:
+                        gate.release(application_id)
+                    site_free.notify_all()
+                _unclaim(application_id)
+                slots.release(operation.operation_id)
+                continue
+            if on_take is not None:
+                on_take(application_id)
             if again:
                 _unwait(operation, application_id)
             outcome: Outcome = "done"
@@ -1193,7 +1351,9 @@ def _dispatch_round(
                 with dispatch_lock:
                     gate.record_result(application_id, label)
             with dispatch_lock:
-                if outcome == "stopped" and not ctl.cancel.is_set():
+                if outcome != "done" and application_id in ctl.revoked:
+                    _drop_revoked(operation, application_id)
+                elif outcome == "stopped" and not ctl.cancel.is_set():
                     pending.appendleft(application_id)
                 elif outcome == "come_back":
                     comebacks[application_id] = comebacks.get(application_id, 0) + 1
@@ -1383,6 +1543,7 @@ def control(operation_id: str, action: ControlAction, application_id: str = "") 
         raise RuntimeError("Apply operation is no longer active")
     ctl = _ctl(operation)
     if action in ("retry_now", "leave"):
+        application_id = store.app_id(application_id) or application_id
         with _LOCK:
             if not any(w.application_id == application_id for w in operation.waiting):
                 raise RuntimeError("That application is not waiting to come back")
@@ -1437,6 +1598,8 @@ def _start_review_locked(
     app = store.get(source_job_id)
     if app is None:
         raise KeyError(source_job_id)
+    # The one id fills and other review actions claim this row's tab by (`store.app_id`).
+    source_job_id = app.source_job_id
     if app.archived_at:
         raise ValueError("Archived applications cannot be inspected or corrected until restored")
     prior = store_models.FillResult.model_validate(app.fill) if app.fill else None

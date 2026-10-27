@@ -482,8 +482,13 @@ def test_blocked_site_hands_over_and_rests_the_host(fill_paths, monkeypatch):
     result = fill.fill_application("src-1", settings=_AUTO)
     assert result.status == "awaiting_review"
     assert "blocked automated access" in result.handoff_reason
-    with pytest.raises(RuntimeError, match="refused automated visits recently"):
-        fill.fill_application("src-1", settings=_AUTO)
+    # The rest is recorded on the row (never left "filling", audit #23).
+    again = fill.fill_application("src-1", settings=_AUTO)
+    assert again.status == "fill_failed"
+    assert "refused automated visits recently" in (again.error or "")
+    stored = store.get("src-1")
+    assert stored.status == "fill_failed"
+    assert "refused automated visits recently" in stored.status_history[-1].note
     form_guards.reset_hosts()
 
 
@@ -1249,3 +1254,20 @@ def test_continue_with_a_closed_tab_reopens_the_posting(fill_paths, monkeypatch)
 
     assert any(m.startswith("Review tab was closed; reopening the posting") for m in messages)
     assert page.goto.call_args.args[0] == "https://example.com/apply"
+
+
+def test_a_packet_error_is_recorded_and_never_leaves_the_row_filling(fill_paths, monkeypatch):
+    """Audit #23: the status used to turn "filling" before the packet was built."""
+    _stub_greenhouse_form(fill_paths, monkeypatch)
+
+    def broken(_job_id):
+        raise ValueError("packet artifacts missing")
+
+    monkeypatch.setattr(packet, "build_packet", broken)
+    result = fill.fill_application("src-1", settings=_AUTO)
+    assert result.status == "fill_failed"
+    assert result.error == "packet artifacts missing"
+    stored = store.get("src-1")
+    assert stored.status == "fill_failed"
+    assert stored.status_history[-1].note == "packet artifacts missing"
+    assert "filling" not in [change.status for change in stored.status_history]

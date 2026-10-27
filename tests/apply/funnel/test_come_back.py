@@ -97,9 +97,10 @@ def _until(check, timeout: float = 3.0) -> None:
         time.sleep(0.01)
 
 
-def test_a_stuck_fill_goes_to_the_back_and_comes_back_as_a_continue_fill(batch):
+def test_a_stuck_fill_goes_to_the_back_and_comes_back_as_a_continue_fill(batch, monkeypatch):
+    monkeypatch.setattr(operations.come_back, "ready_to_continue", lambda _id: True)
     batch.fills({"one": [_STUCK, _DONE]})
-    operation = batch.run(ids=("one", "two", "three"))
+    operation = batch.run(ids=("one", "two", "three"), wait=30.0)
     assert batch.calls == [
         ("one", "initial"), ("two", "initial"), ("three", "initial"), ("one", "continue"),
     ]
@@ -154,9 +155,29 @@ def test_control_refuses_an_application_that_is_not_waiting(batch):
     worker.join(3)
 
 
-def test_it_gives_up_after_two_comebacks(batch):
+def test_its_timer_alone_never_takes_the_tab_back(batch):
+    """Audit #21: a comeback at the deadline retook a tab the applicant was typing in."""
+    batch.fills({"one": [_STUCK, _DONE]})
+    operation = batch.run(wait=0.0)
+    assert batch.calls == [("one", "initial")]
+    assert (operation.processed, operation.needs_input) == (1, 1)
+    assert operation.attention[0].message == come_back.STILL_WAITING_NOTE
+    assert operation.waiting == [] and operation.held_ids == []
+
+
+def test_typing_since_the_last_look_puts_the_comeback_off(batch, monkeypatch):
+    looks = iter([True, False, True])  # ready when picked; typing on the fresh look
+    monkeypatch.setattr(operations.come_back, "ready_to_continue", lambda _id: next(looks, True))
+    batch.fills({"one": [_STUCK, _DONE]})
+    operation = batch.run(wait=30.0)
+    assert batch.calls == [("one", "initial"), ("one", "continue")]
+    assert operation.completed == 1
+
+
+def test_it_gives_up_after_two_comebacks(batch, monkeypatch):
+    monkeypatch.setattr(operations.come_back, "ready_to_continue", lambda _id: True)
     batch.fills({"one": [_STUCK]})
-    operation = batch.run()
+    operation = batch.run(wait=30.0)
     assert batch.calls == [("one", "initial"), ("one", "continue"), ("one", "continue")]
     assert (operation.processed, operation.needs_input) == (1, 1)
     assert [a.kind for a in operation.attention] == ["needs_input"]

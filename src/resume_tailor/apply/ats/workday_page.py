@@ -46,6 +46,7 @@ _UNAVAILABLE = re.compile(
 )
 
 _ALREADY_APPLIED = re.compile(r"you(?:'ve| have) already applied", re.I)
+_COMPLETED_URL = re.compile(r"/jobTasks/completed(?:/|$)", re.I)
 
 VERIFY_EMAIL = re.compile(
     r"verify your (?:account|email)|verification (?:email|link) (?:has been|was) sent|"
@@ -96,6 +97,9 @@ def classify(snap: dict[str, Any]) -> WorkdayState:
     if VERIFY_EMAIL.search(text):
         return "verify_email"
     if _ALREADY_APPLIED.search(text):
+        return "already_applied"
+    # Where a submit lands: the candidate home's completed applications (audit #36).
+    if "CandidateHomePage" in ids and _COMPLETED_URL.search(str(snap.get("url") or "")):
         return "already_applied"
     if ids & {"adventureButton", "continueButton"}:  # Apply, or Continue Application (a saved draft)
         return "posting"

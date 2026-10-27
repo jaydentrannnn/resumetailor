@@ -174,7 +174,17 @@ export type ApplicationRow = {
     /** Written answers the fill drafted, by question. */
     long_text_answers?: Record<string, string>;
     confirmation?: string;
+    /** What happened to the application's tab, newest last (`tab_events`). */
+    tab_history?: ApplicationTabEvent[];
   } | null;
+};
+
+/** One tab event: closed by the app, kept (with why), gone, or replaced by a new fill. */
+export type ApplicationTabEvent = {
+  at: string;
+  event: "closed" | "kept" | "gone" | "replaced" | string;
+  reason: string;
+  host: string;
 };
 
 export const acknowledgeApplicationResume = (id: string, revision: string) =>
@@ -638,9 +648,28 @@ export function listExtensionCaptures(stubsOnly = false): Promise<CapturedItem[]
   return request(`/api/extension-captures${stubsOnly ? "?stubs_only=true" : ""}`);
 }
 
-/** Open browser tab ids; `reachable: false` means tab state is unknown. */
-export function getOpenTabs(): Promise<{ reachable: boolean; target_ids: string[] }> {
+/** A finished application's tab the app will close when its countdown ends. */
+export type ClosingTab = { id: string; company: string; due_in: number };
+
+/**
+ * Open browser tab ids; `reachable: false` means tab state is unknown. `closing` lists the
+ * finished applications' tabs counting down to close.
+ */
+export function getOpenTabs(): Promise<{
+  reachable: boolean;
+  target_ids: string[];
+  closing?: ClosingTab[];
+}> {
   return request("/api/applications/open-tabs");
+}
+
+/** Keep this application's tab open: the app never closes it automatically. */
+export function keepApplicationTab(
+  sourceJobId: string,
+): Promise<{ kept: boolean; was_closing: boolean }> {
+  return request(`/api/applications/${encodeURIComponent(sourceJobId)}/keep-tab`, {
+    method: "POST",
+  });
 }
 
 /** CSV download URL for the applications tracker export. */

@@ -45,13 +45,15 @@ from resume_tailor import config
 
 HoldCode = Literal[
     "paused", "daily_cap", "company_cap", "already_submitted", "duplicate", "resume_quality",
-    "posting_instructions",
+    "posting_instructions", "settled",
 ]
 
 #: Statuses that mean the employer (probably) has the application.
 APPLIED_STATUSES = frozenset(
     {"submitted", "submit_unconfirmed", "interview", "rejected", "ghosted"}
 )
+#: Statuses the applicant closed by hand without sending (`store_models.TERMINAL_STATUSES`).
+SETTLED_STATUSES = frozenset({"skipped"})
 AUTO_NOTE = "auto_submit"
 DUPLICATE_WINDOW = timedelta(days=30)
 CAP_WINDOW = timedelta(hours=24)
@@ -220,12 +222,19 @@ def check(
         from resume_tailor.apply.funnel import store
 
         apps = store.load_all().values()
+    apps = list(apps)
     others = [other for other in apps if _key(other) != _key(app)]
+    # The stored row, not the fill's copy of it: the applicant may have marked it
+    # submitted, skipped or archived it while this fill was on the page.
+    live = next((other for other in apps if _key(other) == _key(app)), app)
 
-    if app.status in APPLIED_STATUSES or any(
-        change.status in APPLIED_STATUSES for change in app.status_history
-    ):
-        return Hold("already_submitted", "This application was already submitted")
+    for row in (app, live):
+        if row.status in APPLIED_STATUSES or any(
+            change.status in APPLIED_STATUSES for change in row.status_history
+        ):
+            return Hold("already_submitted", "This application was already submitted")
+    if live.status in SETTLED_STATUSES or getattr(live, "archived_at", None):
+        return Hold("settled", "You closed this application; not submitting it")
 
     group = app.group_key or ""
     company = normalize_company(app.company)

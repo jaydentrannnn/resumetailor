@@ -251,10 +251,45 @@ def test_a_real_form_step_is_not_mistaken_for_a_careers_page(merged, required_em
     assert _guard(merged, required_empty, is_workday) == []
 
 
+def _earlier_tab(monkeypatch, url):
+    """The application's earlier tab, showing ``url`` (None: it is gone; an exception:
+    it cannot be checked)."""
+    def find(_context, target):
+        if isinstance(url, Exception):
+            raise url
+        return SimpleNamespace(url=url) if url is not None and target == "old-tab" else None
+
+    monkeypatch.setattr(browser, "find_target", find)
+
+
 def test_a_fresh_fill_closes_the_applications_previous_tab(fill_env, monkeypatch):
+    _earlier_tab(monkeypatch, JOB)
     _run(monkeypatch, [{"label": "Save job", "reason": "Unrecognized field"}],
          previous_tab="old-tab", fill_mode="reopen")
     assert fill_env == ["old-tab"]
+    fill_result = store_models.FillResult.model_validate(store.get("src-1").fill)
+    assert fill_result.tab_history[-1]["event"] == "replaced"
+
+
+@pytest.mark.parametrize(
+    "shows", ["https://mail.example.com/drafts/1", RuntimeError("busy")],
+    ids=["another page", "cannot be checked"],
+)
+def test_a_fresh_fill_leaves_an_earlier_tab_the_applicant_took_elsewhere(
+    fill_env, monkeypatch, shows,
+):
+    """Audit #5: the earlier tab was closed even when it showed something else."""
+    _earlier_tab(monkeypatch, shows)
+    _run(monkeypatch, [{"label": "Save job", "reason": "Unrecognized field"}],
+         previous_tab="old-tab", fill_mode="reopen")
+    assert fill_env == []
+
+
+def test_a_fresh_fill_has_nothing_to_close_when_the_earlier_tab_is_gone(fill_env, monkeypatch):
+    _earlier_tab(monkeypatch, None)
+    _run(monkeypatch, [{"label": "Save job", "reason": "Unrecognized field"}],
+         previous_tab="old-tab", fill_mode="reopen")
+    assert fill_env == []
 
 
 def test_a_first_fill_has_no_tab_to_close(fill_env, monkeypatch):
@@ -462,3 +497,24 @@ def test_an_apply_click_that_does_nothing_waits_for_its_tab_only_so_long():
     page = _TabWatch()
     assert fill_buttons._click_and_track_popup(page, object(), lambda: None) is page  # noqa: SLF001
     assert sum(page.slept) == fill_buttons._POPUP_WAIT_MS and page.waited_out  # noqa: SLF001
+
+
+# -- Workday's "already applied" screens never lead into the form (audit #36) ----------------
+
+
+@pytest.mark.parametrize("evidence", [None, {"url": "u", "requisition": "R1", "signal": "s"}])
+def test_an_already_applied_screen_with_nothing_to_record_hands_over(monkeypatch, evidence):
+    from resume_tailor.apply.forms import fill_entry
+    from resume_tailor.apply.funnel import submission_monitor
+
+    page = MagicMock(url="https://x.wd5.myworkdayjobs.com/en-US/X/jobTasks/completed/application")
+    monkeypatch.setattr(fill_entry.workday_flow, "enter_application",
+                        lambda *_a, **_k: (page, "already_applied"))
+    monkeypatch.setattr(submission_monitor, "confirmation", lambda *_a, **_k: evidence)
+    monkeypatch.setattr(submission_monitor, "record", lambda *_a, **_k: None)  # already settled
+    run = SimpleNamespace(page=page, context=None, deadline=0, progress=lambda _m: None,
+                          app=SimpleNamespace(final_url="", posting_url=JOB),
+                          _handoff=lambda reason, **_k: ("handoff", reason))
+    assert fill_entry._FillEntry._enter_workday(run) == (
+        "handoff", "Workday says you have already applied to this job."
+    )

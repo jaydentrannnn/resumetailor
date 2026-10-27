@@ -18,6 +18,7 @@ import { AppCommands } from "./components/shell/useAppCommands";
 import { TextContextMenu } from "./components/TextContextMenu";
 import { AppRail } from "./components/shell/AppRail";
 import { StatusBar } from "./components/shell/StatusBar";
+import { TabCloseNotice } from "./components/shell/TabCloseNotice";
 import { ToastProvider } from "./components/ui/Toast";
 import { RunPage } from "./pages/run/RunPage";
 import { ConfirmProvider } from "./state/confirmState";
@@ -176,6 +177,7 @@ function Shell() {
                 </Routes>
               </Suspense>
             </main>
+            <TabCloseNotice />
             <StatusBar />
           </div>
         </div>

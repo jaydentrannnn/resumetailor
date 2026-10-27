@@ -618,11 +618,6 @@ def regenerate_job_cover_letter(
         raise HTTPException(
             status_code=409, detail=f"Job {job_id} is {resolved.status}, not ready to regenerate."
         )
-    if get_queue().busy():
-        raise HTTPException(
-            status_code=409,
-            detail="Cannot regenerate while another tailoring run is in progress.",
-        )
     try:
         out = regenerate_cover_letter(
             job_id,
@@ -652,11 +647,6 @@ def generate_job_expansion(job_id: str, force: bool = False) -> ExpansionOut:
     if resolved.status != "succeeded":
         raise HTTPException(
             status_code=409, detail=f"Job {job_id} is {resolved.status}, not ready to expand."
-        )
-    if get_queue().busy():
-        raise HTTPException(
-            status_code=409,
-            detail="Cannot generate while another tailoring run is in progress.",
         )
     try:
         out = generate_expansion(job_id, force=force)

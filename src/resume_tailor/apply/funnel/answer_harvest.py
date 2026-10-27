@@ -7,8 +7,8 @@ same question should get, so it is collected:
 - when Continue fill starts (`collect`, before the fill touches the tab),
 - when the review snapshot is refreshed (`from_review`, inside `review._record`),
 - every `_INTERVAL_S` seconds, and as soon as the tab's URL changes, on retained review
-  tabs no fill is using (`watch`; the same pass sees a manual submission and closes the
-  tab of a submitted or skipped application), and
+  tabs no fill is using (`watch`; the same pass sees a manual submission, and closes a
+  finished application's tab when `tab_close` finds it safe), and
 - from a small listener installed on handoff (`LISTENER_JS`): Workday shows one step at a
   time, so a step the applicant already clicked past is only in what the listener saw.
 
@@ -37,20 +37,21 @@ from typing import Any
 
 from resume_tailor import config
 from resume_tailor.apply.answers import answer_memory, rejected_repair
-from resume_tailor.apply.funnel import come_back, store, store_models
+from resume_tailor.apply.funnel import come_back, store, store_models, tab_close, tab_events
 
 _log = logging.getLogger(__name__)
 
 #: Field outcome states that mean "left for the applicant".
 _LEFT = frozenset({"unanswered", "ambiguous", "invalid_existing", "manual_review", "failed"})
 _SKIP_KINDS = frozenset({"file", "unsupported", "checkbox"})
-_RETAINED = frozenset({"awaiting_review", "awaiting_otp", "submit_unconfirmed"})
-#: Finished applications whose retained tab is closed (it holds a whole ATS page in memory).
+#: Rows whose open tab is watched. A failed fill's tab too (audit #3): the applicant may
+#: finish it by hand, which the watcher then records; it is never resumed from here.
+_RETAINED = frozenset({"awaiting_review", "awaiting_otp", "submit_unconfirmed", "fill_failed"})
+#: Finished applications whose retained tab may be closed (`tab_close` decides).
 _CLOSES_TAB = frozenset({"submitted", "skipped"})
 _INTERVAL_S = 20.0
 #: Tab URLs are polled this often, so a submission is seen as its confirmation page loads.
 _TICK_S = 2.0
-_CLOSE_GRACE_S = 30.0
 _TIMEOUT_S = 20.0
 
 #: Records what the applicant picks or types, by question label, in ``window.__rtTyped``.
@@ -59,10 +60,19 @@ LISTENER_JS = r"""
   window.__rtTyped = window.__rtTyped || {};
   if (window.__rtTypedInstalled) return true;
   window.__rtTypedInstalled = true;
-  const touch = () => { window.__rtLastInput = Date.now(); };
+  const touch = () => { if (!window.__rtAppUpload) window.__rtLastInput = Date.now(); };
   for (const type of ['input', 'change', 'keydown', 'click']) {
     document.addEventListener(type, touch, true);
   }
+  // Files the applicant attached themselves (a fill sets __rtAppUpload around its own).
+  window.__rtFiles = window.__rtFiles || [];
+  document.addEventListener('change', (event) => {
+    const el = event.target;
+    if (window.__rtAppUpload || !el || (el.type || '').toLowerCase() !== 'file') return;
+    for (const file of el.files || []) {
+      if (!window.__rtFiles.includes(file.name)) window.__rtFiles.push(file.name);
+    }
+  }, true);
   const clean = (s) => (s || '').replace(/\s+/g, ' ').trim();
   const text = (el) => clean(el && (el.innerText || el.textContent));
   const groupOf = (el) => el.closest(
@@ -119,7 +129,11 @@ LISTENER_JS = r"""
 """
 _READ_JS = "() => window.__rtTyped || {}"
 #: When the applicant last typed or clicked in the frame, and the frame's clock now.
-_ACTIVITY_JS = "() => [window.__rtLastInput || 0, Date.now()]"
+ACTIVITY_JS = "() => [window.__rtLastInput || 0, Date.now()]"
+#: The file names the applicant attached in the frame.
+_FILES_JS = "() => window.__rtFiles || []"
+#: Set around the app's own upload, so the listener does not take it for the applicant's.
+APP_UPLOAD_JS = "(on) => { window.__rtAppUpload = on; }"
 
 
 @dataclass(frozen=True)
@@ -356,10 +370,30 @@ async def _idle_seconds(page: Any) -> float:
     idle = float("inf")
     for frame in page.frames:
         with contextlib.suppress(Exception):
-            last, now = await frame.evaluate(_ACTIVITY_JS)
+            last, now = await frame.evaluate(ACTIVITY_JS)
             if last:
                 idle = min(idle, max(0.0, (float(now) - float(last)) / 1000.0))
     return idle
+
+
+async def _frames_files(page: Any) -> list[str]:
+    names: list[str] = []
+    for frame in page.frames:
+        with contextlib.suppress(Exception):
+            names += [str(name) for name in await frame.evaluate(_FILES_JS) if name]
+    return names
+
+
+def _record_touched_files(app: store_models.Application, names: list[str]) -> None:
+    """Remember the files the applicant attached in the tab: a Continue fill keeps them."""
+    if not names or not app.fill:
+        return
+    fill = store_models.FillResult.model_validate(app.fill)
+    merged = list(dict.fromkeys([*fill.user_touched_uploads, *names]))
+    if merged != fill.user_touched_uploads:
+        fill.user_touched_uploads = merged
+        app.fill = fill
+        store.upsert(app)
 
 
 async def install(page: Any) -> None:
@@ -398,8 +432,9 @@ async def _collect_async(application_id: str) -> int:
             observed = await scanner.scan(page)
             found = corrections(fill, observed.fields)
             typed = await _frames_typed(page) + from_fields(observed.fields) if left else []
+            files = await _frames_files(page)
+            await install(page)
             if left:
-                await install(page)
                 come_back.note(
                     application_id,
                     answered=answered_all(fill, typed, observed.fields),
@@ -411,6 +446,7 @@ async def _collect_async(application_id: str) -> int:
                 current = store.get(application_id)
                 if current is not None:
                     _record_corrections(current, found)
+                    _record_touched_files(current, files)
                 return save(typed, left, company=app.company, ats=_ats(app)) if left else 0
     return 0
 
@@ -457,13 +493,12 @@ class _Pass:
     """What the loop remembers between ticks."""
 
     urls: dict[str, str]  # application id -> its tab's URL at the last tick
-    closing: dict[str, float]  # application id -> when its finished tab is closed
     last_full: float
 
 
 def _loop() -> None:
     global _THREAD
-    state = _Pass(urls={}, closing={}, last_full=time.monotonic())
+    state = _Pass(urls={}, last_full=time.monotonic())
     while not _STOP.wait(_TICK_S):
         _tick(state)
         with _WATCH_LOCK:
@@ -496,21 +531,29 @@ def _tick(state: _Pass) -> None:
         app = store.get(application_id)
         fill = store_models.FillResult.model_validate(app.fill) if app and app.fill else None
         target = fill.browser_target_id if fill else ""
-        if app is not None and app.status in _CLOSES_TAB and target in targets:
-            # Submitted or skipped: leave the confirmation in view briefly, then close.
-            due = state.closing.setdefault(application_id, now + _CLOSE_GRACE_S)
-            if now < due:
-                continue
-            browser.close_target(target)
+        if (
+            app is not None and fill is not None and app.status in _CLOSES_TAB
+            and target in targets and tab_close.step(app, fill, target, targets[target], now)
+        ):
+            continue  # its close is counting down
         if app is None or app.status not in _RETAINED or target not in targets:
             # Submitted or skipped by hand, or its tab closed: a fill waiting to come
             # back to it stops waiting.
+            if app is not None and app.status in _RETAINED and target:
+                tab_events.record(
+                    application_id, "gone", "The tab was closed outside the app",
+                    url=state.urls.get(application_id, ""),
+                )
             come_back.note_settled(application_id)
             with _WATCH_LOCK:
                 _WATCHED.discard(application_id)
             state.urls.pop(application_id, None)
-            state.closing.pop(application_id, None)
+            tab_close.forget(application_id)
             continue
+        if app.status not in come_back.STILL_WAITING:
+            # Retained but no longer waiting on answers (a submission that looks sent,
+            # a failed fill): a fill waiting to come back to it stops waiting.
+            come_back.note_settled(application_id)
         url = targets[target]
         moved = state.urls.get(application_id, url) != url
         state.urls[application_id] = url
@@ -524,17 +567,11 @@ def restore() -> None:
 
     with _WATCH_LOCK:
         _WATCHED.clear()
-    open_ids: set[str] | None = None
     for app in store.load_all().values():
-        if app.status not in _RETAINED | _CLOSES_TAB or not app.fill:
+        # A finished application's tab left open across a restart is never closed: the
+        # applicant may be using it (audit #4).
+        if app.status not in _RETAINED or not app.fill:
             continue
         fill = store_models.FillResult.model_validate(app.fill)
-        if not fill.browser_target_id:
-            continue
-        if app.status in _CLOSES_TAB:
-            # A finished application's tab left open across a restart is closed too.
-            if open_ids is None:
-                open_ids = browser.open_target_ids() or set()
-            if fill.browser_target_id not in open_ids:
-                continue
-        watch(app.source_job_id)
+        if fill.browser_target_id:
+            watch(app.source_job_id)

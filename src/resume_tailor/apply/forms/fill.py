@@ -11,7 +11,7 @@ import asyncio
 import contextlib
 import time
 from collections.abc import Callable
-from typing import Literal
+from typing import Any, Literal
 
 from resume_tailor import config
 from resume_tailor.apply.answers import profile as profile_mod
@@ -72,17 +72,32 @@ def fill_application(
         store.upsert(app)
         return result
 
-    return _FillRun(
-        app,
-        source_job_id=source_job_id,
-        settings=settings,
-        submit_mode=submit_mode,
-        fill_mode=fill_mode,
-        should_cancel=should_cancel,
-        on_progress=on_progress,
-        applicant_profile=applicant_profile,
-        on_deadline=on_deadline,
-    ).run()
+    try:
+        run = _FillRun(
+            app,
+            source_job_id=source_job_id,
+            settings=settings,
+            submit_mode=submit_mode,
+            fill_mode=fill_mode,
+            should_cancel=should_cancel,
+            on_progress=on_progress,
+            applicant_profile=applicant_profile,
+            on_deadline=on_deadline,
+        )
+    except Exception as exc:  # noqa: BLE001 - recorded on the row, never left "filling"
+        return _failed_before_start(app, exc)
+    return run.run()
+
+
+def _failed_before_start(app: Any, exc: Exception) -> FillResult:
+    """The fill could not start (its packet, profile or site check failed): the row says
+    exactly why, keeping its recorded tab so Continue fill still finds it."""
+    previous = FillResult.model_validate(app.fill) if app.fill else FillResult()
+    result = previous.model_copy(update={"error": str(exc), "status": "fill_failed"})
+    store.set_status(app, "fill_failed", note=str(exc))
+    app.fill = result
+    store.upsert(app)
+    return result
 
 
 class _FillRun(fill_entry._FillEntry, fill_wizard._FillWizard, fill_finish._FillFinish):
@@ -105,13 +120,21 @@ class _FillRun(fill_entry._FillEntry, fill_wizard._FillWizard, fill_finish._Fill
         where that path saved the result. Never fails the fill."""
         with contextlib.suppress(Exception):
             page = getattr(self, "page", None)
+            result.tab_history = list(getattr(self, "tab_history", result.tab_history))
             result.diagnostics = {**result.diagnostics, **fill_diagnostics.build(
                 result, posting_url=getattr(self, "url", "") or "",
                 landed_url=str(page.url) if page is not None else "", elapsed_s=elapsed_s,
                 model_calls=calls, needs_review=getattr(self, "needs_review", None),
                 landed_platform=getattr(self, "landed_platform", ""),
             )}
-            if self.app.fill is result:
+            # `upsert` refreshed ``self.app.fill`` to a copy, so the saved result is found
+            # by content: everything but what was just added.
+            saved = self.app.fill
+            added = {"diagnostics", "tab_history"}
+            if isinstance(saved, FillResult) and (
+                saved.model_dump(exclude=added) == result.model_dump(exclude=added)
+            ):
+                saved.diagnostics, saved.tab_history = result.diagnostics, result.tab_history
                 store.upsert(self.app)
             path = self.out_dir / "fill.json"
             if path.is_file() and path.stat().st_mtime >= time.time() - elapsed_s - 1:

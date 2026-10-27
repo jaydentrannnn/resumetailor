@@ -33,6 +33,21 @@ _MAX_RESCANS = 2
 _FIRST_KEYS = ("country", "postal_code")
 
 
+@contextlib.contextmanager
+def _app_upload(target: Any):
+    """Mark the app's own upload in the frame, so the tab's listener does not record it
+    as a file the applicant attached (`answer_harvest`)."""
+    from resume_tailor.apply.funnel import answer_harvest  # noqa: PLC0415
+
+    with contextlib.suppress(Exception):
+        target.evaluate(answer_harvest.APP_UPLOAD_JS, True)
+    try:
+        yield
+    finally:
+        with contextlib.suppress(Exception):
+            target.evaluate(answer_harvest.APP_UPLOAD_JS, False)
+
+
 def _dependency_order(item: Any) -> int:
     key = item.get("key") if isinstance(item, dict) else None
     return _FIRST_KEYS.index(key) if key in _FIRST_KEYS else len(_FIRST_KEYS)
@@ -242,12 +257,14 @@ class _FillAnswers(fill_state._FillState):
         uploaded = False
         upload_error = "Upload could not be verified on the form"
         try:
-            uploaded = fill_widgets._set_and_verify_file(upload_target, sel, staged_path)
+            with _app_upload(upload_target):
+                uploaded = fill_widgets._set_and_verify_file(upload_target, sel, staged_path)
         except Exception as exc:  # noqa: BLE001
             upload_error = f"Browser rejected upload: {type(exc).__name__}"
             for frame in frames:
                 try:
-                    uploaded = fill_widgets._set_and_verify_file(frame, sel, staged_path)
+                    with _app_upload(frame):
+                        uploaded = fill_widgets._set_and_verify_file(frame, sel, staged_path)
                     break
                 except Exception:  # noqa: BLE001
                     continue
@@ -284,7 +301,10 @@ class _FillAnswers(fill_state._FillState):
         """Record a file already attached as kept, unless it is the app's own outdated
         upload: True means replace it."""
         purpose = str(record["purpose"])
-        whose = upload_replace.attached_by_app(self.previous_fill.uploads, purpose, shown, sha)
+        whose = upload_replace.attached_by_app(
+            self.previous_fill.uploads, purpose, shown, sha,
+            self.previous_fill.user_touched_uploads,
+        )
         if whose == "stale":
             return True
         self.uploads.append({
@@ -292,6 +312,7 @@ class _FillAnswers(fill_state._FillState):
             "frame_index": frame_index,
             **({"state": "preserved", "uploaded_by_app": True, "artifact_sha256": sha}
                if whose == "current" else {"state": "kept_existing"}),
+            **({"reason": upload_replace.AMBIGUOUS_NOTE} if whose == "ambiguous" else {}),
         })
         self.verified_purposes.add((purpose, frame_index))
         return False

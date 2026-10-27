@@ -278,7 +278,9 @@ def test_archive_busy_conflict_does_not_write(client, monkeypatch):
             )
         }
     )
-    busy = operations_mod.ApplyOperation(operation_id="busy", action="fill", state="running")
+    busy = operations_mod.ApplyOperation(
+        operation_id="busy", action="fill", state="running", held_ids=["a"]
+    )
     monkeypatch.setitem(operations_mod._ACTIVE, "busy", busy)
     result = c.post("/api/applications/archive", json={"application_ids": ["a"], "archived": True})
     assert result.status_code == 409
@@ -373,7 +375,7 @@ def test_open_tabs_route_separates_no_tabs_from_unknown(client, monkeypatch, ids
     monkeypatch.setattr(browser_mod, "open_target_ids", lambda: ids)
     res = c.get("/api/applications/open-tabs")
     assert res.status_code == 200
-    assert res.json() == expected
+    assert res.json() == {**expected, "closing": []}
 
 
 def test_start_apply_operation_route(client, monkeypatch):
@@ -508,13 +510,24 @@ def test_archived_application_is_not_preparable_or_retryable(client):
 
 
 def test_retry_refused_while_an_apply_operation_is_active(client, monkeypatch):
-    """A fetch retry may drive the browser an active Apply operation owns."""
+    """A fetch retry may drive the browser: with the extension's one tab, any running
+    Apply operation owns it; on the desktop browser only a batch holding this row."""
     c, _q = client
     _stored_app("a-1", "discovered")
     monkeypatch.setattr(operations_mod, "active", lambda: object())
+    monkeypatch.setattr(operations_mod.browser, "extension_mode", lambda: True)
     res = c.post("/api/applications/a-1/retry")
     assert res.status_code == 409
     assert "Apply workflow" in res.json()["detail"]
+
+    monkeypatch.setattr(operations_mod.browser, "extension_mode", lambda: False)
+    held = operations_mod.ApplyOperation(
+        operation_id="busy", action="prepare", state="running", held_ids=["a-1"]
+    )
+    monkeypatch.setitem(operations_mod._ACTIVE, "busy", held)
+    res = c.post("/api/applications/a-1/retry")
+    assert res.status_code == 409
+    assert "running Apply task" in res.json()["detail"]
 
 
 @pytest.mark.parametrize(

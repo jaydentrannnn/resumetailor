@@ -6,6 +6,13 @@ import { SubmitEvidenceList } from "../../../components/SubmitEvidenceList";
 
 const when = (at: string) => new Date(at).toLocaleString();
 
+const TAB_EVENT: Record<string, string> = {
+  closed: "closed by the app",
+  kept: "kept open",
+  gone: "closed outside the app",
+  replaced: "replaced by a new fill",
+};
+
 /** Timeline: every status change, newest first, then any automatic-submit evidence. */
 export function TimelinePanel({
   app,
@@ -15,10 +22,11 @@ export function TimelinePanel({
   applicationId: string;
 }) {
   const history = [...(app.status_history ?? [])].reverse();
+  const lastTab = app.fill?.tab_history?.at(-1);
   return (
     <div className="space-y-4">
       <Tile title="Timeline">
-        {(app.archived_at || app.fill?.confirmation) && (
+        {(app.archived_at || app.fill?.confirmation || lastTab) && (
           <div className="mb-3 space-y-1 text-xs text-ink-muted">
             {app.archived_at && (
               <p>
@@ -27,6 +35,13 @@ export function TimelinePanel({
             )}
             {app.fill?.confirmation && (
               <p className="text-sm text-ink">Confirmation: {app.fill.confirmation}</p>
+            )}
+            {lastTab && (
+              <p>
+                Tab {TAB_EVENT[lastTab.event] ?? lastTab.event}
+                {lastTab.reason && `: ${lastTab.reason}`}{" "}
+                <span className="font-mono">{when(lastTab.at)}</span>
+              </p>
             )}
           </div>
         )}

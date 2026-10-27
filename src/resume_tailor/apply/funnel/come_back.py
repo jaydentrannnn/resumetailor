@@ -4,8 +4,11 @@ With `ApplySettings.come_back_stuck` on (the default), a fill handed back becaus
 needs the applicant (unanswered or invalid questions, an email code, a CAPTCHA) keeps its
 tab and the batch moves on. The application comes back as a Continue fill once the
 applicant has answered every required question it left and stopped typing
-(`ready_to_continue`), or after `come_back_after_min` minutes, whichever is first. After
-`MAX_COMEBACKS` it is left in Needs you, exactly as with the setting off.
+(`ready_to_continue`), or when they press Retry now. The timer alone never takes the tab
+back (audit #21: a comeback retook a tab the applicant was typing in): after
+`come_back_after_min` minutes without that, it leaves the batch for Needs you
+(`expired`). After `MAX_COMEBACKS` it is left in Needs you, exactly as with the setting
+off.
 
 Decisions only; the dispatcher in `operations` acts on them. What the applicant did in
 the tab arrives from `answer_harvest`'s watcher pass (`note`, `note_settled`).
@@ -75,10 +78,22 @@ def wait_seconds(settings: ApplySettings) -> float:
     return float(settings.come_back_after_min) * 60.0
 
 
+#: Attention reason when a waiting fill's timer ran out before the applicant finished.
+STILL_WAITING_NOTE = "Still waiting on you — Continue when ready"
+
+
 def is_due(not_before: float | None, now: float, *, ready: bool, retry_now: bool) -> bool:
-    """Whether a pending application may be taken now: it never waited, its timer ran
-    out, the applicant answered everything it left, or they pressed Retry now."""
-    return not_before is None or now >= not_before or ready or retry_now
+    """Whether a pending application may be taken now: it never waited, the applicant
+    answered everything it left and stopped typing, or they pressed Retry now. Its timer
+    running out is not enough (`expired`)."""
+    del now
+    return not_before is None or ready or retry_now
+
+
+def expired(not_before: float | None, now: float) -> bool:
+    """A waiting application whose timer ran out without it being ready: it leaves the
+    batch for the applicant to finish (Continue when ready)."""
+    return not_before is not None and now >= not_before
 
 
 # -- what the applicant did in the tab (from `answer_harvest`'s watcher) -----------------

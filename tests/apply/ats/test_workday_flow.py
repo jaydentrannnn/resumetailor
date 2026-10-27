@@ -261,6 +261,28 @@ def test_classify_special_pages():
     assert workday_page.classify({"ids": ["header"], "otp_input": True}) == "otp"
 
 
+@pytest.mark.parametrize(
+    ("url", "state"),
+    [
+        # Where a submit lands (Carrier, Travelers, 2026-10): ids as the live log showed them.
+        ("https://carrier.wd5.myworkdayjobs.com/en-US/jobs/jobTasks/completed/application",
+         "already_applied"),
+        ("https://synthetic.wd5.myworkdayjobs.com/en-US/External/jobTasks/completed/application",
+         "already_applied"),
+        ("https://synthetic.wd5.myworkdayjobs.com/en-US/External/userHome", "unknown"),
+    ],
+)
+def test_classify_the_candidate_home_completed_screen(url, state):
+    snap = {
+        "url": url,
+        "ids": ["CandidateHomePage", "candidate-home-app", "applicationsSectionHeading",
+                "tasksSectionHeading", "noApplications", "noTasks", "returnToHome",
+                "utilityButtonAccountTasksMenu", "welcomeMsgHeader"],
+        "text": "My Applications",
+    }
+    assert workday_page.classify(snap) == state
+
+
 def test_a_verify_message_in_the_auth_step_is_verify_email():
     shell = {**_SCREENS["auth_step_loading"], "text": "Please verify your account. Check your inbox."}
     assert workday_page.classify(shell) == "verify_email"

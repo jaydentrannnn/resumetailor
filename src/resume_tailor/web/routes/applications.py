@@ -30,6 +30,7 @@ from resume_tailor.apply.funnel import (
     store_models,
     store_stats,
     store_views,
+    tab_close,
 )
 from resume_tailor.apply.funnel import operations as apply_operations
 from resume_tailor.apply.funnel import packet as apply_packet
@@ -39,7 +40,6 @@ from resume_tailor.content import bullet_tags, data, dates
 from resume_tailor.content.data import MasterResume
 from resume_tailor.pipeline import jd
 from resume_tailor.web import job_routing, template_ops
-from resume_tailor.web.jobs import get_queue
 from resume_tailor.web.routes.run_lookup import _resolve_run
 from resume_tailor.web.schemas import (
     AnswerRequest,
@@ -494,7 +494,21 @@ def get_open_application_tabs() -> dict[str, Any]:
     tab state is unknown, not that every tab is closed.
     """
     ids = apply_browser.open_target_ids()
-    return {"reachable": ids is not None, "target_ids": sorted(ids or ())}
+    return {
+        "reachable": ids is not None,
+        "target_ids": sorted(ids or ()),
+        # Finished applications' tabs closing soon, for the countdown (`tab_close`).
+        "closing": tab_close.pending(),
+    }
+
+
+@router.post("/api/applications/{source_job_id}/keep-tab")
+def keep_application_tab(source_job_id: str) -> dict[str, Any]:
+    """Keep this application's tab open: the app never closes it automatically."""
+    app = apply_store.get(source_job_id)
+    if app is None:
+        raise HTTPException(status_code=404, detail="Unknown application")
+    return {"kept": True, "was_closing": tab_close.keep(app.source_job_id)}
 
 
 @router.get("/api/applications/progress", response_model=store_stats.ProgressStats)
@@ -591,11 +605,9 @@ def list_applications(
 def archive_applications(body: ArchiveApplicationsRequest) -> ArchiveApplicationsResponse:
     """Move records between tables; restoring undoes submitted/skipped marks."""
     try:
-        with apply_operations.registry_edit_idle():
-            with template_ops.LOCK:
-                if get_queue().busy():
-                    raise HTTPException(status_code=409, detail="Tailoring is running; try again when it finishes")
-                updated, errors = apply_store.set_archived(body.application_ids, body.archived)
+        # Only these rows wait for Apply work on them; batches on others go on.
+        with template_ops.LOCK, apply_operations.rows_idle(body.application_ids):
+            updated, errors = apply_store.set_archived(body.application_ids, body.archived)
     except RuntimeError as exc:
         raise HTTPException(status_code=409, detail=str(exc)) from exc
     return ArchiveApplicationsResponse(updated=updated, errors=errors)
@@ -605,18 +617,15 @@ def archive_applications(body: ArchiveApplicationsRequest) -> ArchiveApplication
 def undo_submitted(source_job_id: str) -> ApplicationOut:
     """Correct a mistaken submitted/skipped mark on a restored application."""
     try:
-        with apply_operations.registry_edit_idle():
-            with template_ops.LOCK:
-                if get_queue().busy():
-                    raise HTTPException(status_code=409, detail="Tailoring is running; try again when it finishes")
-                app = apply_store.get(source_job_id)
-                if app is None:
-                    raise HTTPException(status_code=404, detail="Unknown application")
-                if app.archived_at:
-                    raise HTTPException(status_code=409, detail="Restore it first")
-                if not apply_store.undo_terminal(app, "Submitted mark undone by user"):
-                    raise HTTPException(status_code=409, detail="Application is not submitted or skipped")
-                return _application_out(apply_store.upsert(app))
+        with template_ops.LOCK, apply_operations.rows_idle([source_job_id]):
+            app = apply_store.get(source_job_id)
+            if app is None:
+                raise HTTPException(status_code=404, detail="Unknown application")
+            if app.archived_at:
+                raise HTTPException(status_code=409, detail="Restore it first")
+            if not apply_store.undo_terminal(app, "Submitted mark undone by user"):
+                raise HTTPException(status_code=409, detail="Application is not submitted or skipped")
+            return _application_out(apply_store.upsert(app))
     except RuntimeError as exc:
         raise HTTPException(status_code=409, detail=str(exc)) from exc
 
@@ -818,6 +827,17 @@ def set_application_status(
         raise HTTPException(status_code=404, detail=f"Unknown application {source_job_id!r}.")
     if app.archived_at:
         raise HTTPException(status_code=409, detail="Restore this application before changing its status")
+    if body.status in store_models.TERMINAL_STATUSES:
+        # Settling a row by hand takes it from any batch on it: that worker stops at its
+        # next check and never submits (`submit_guard` reads this stored status).
+        apply_operations.revoke(app.source_job_id, f"You marked it {body.status.replace('_', ' ')}")
+    elif apply_operations.row_busy(app.source_job_id):
+        raise HTTPException(
+            status_code=409,
+            detail="This application is in a running Apply task; try again when it finishes",
+        )
+    elif app.status in store_models.TERMINAL_STATUSES:
+        apply_store.allow_reopen(app)  # their own correction, not a late automation write
     try:
         apply_store.set_status(app, body.status, note=body.note)
     except ValueError as exc:
@@ -839,12 +859,13 @@ def set_application_notes(source_job_id: str, body: ApplicationNotesRequest) -> 
 @router.post("/api/applications/{source_job_id}/retry", response_model=ApplicationOut)
 def retry_application_route(source_job_id: str) -> ApplicationOut:
     """Re-run the failed fetch, prefilter, or tailor step for one application."""
-    # A fetch retry may drive the host browser, which an Apply operation or a daily
-    # pass owns while it runs.
-    if apply_operations.active() is not None or daily_progress.daily_busy():
+    # A fetch retry may drive the host browser. Beside other batches that is fine on the
+    # desktop browser (its own tab); the extension's relay still has one tab for all.
+    if apply_browser.extension_mode() and apply_operations.active() is not None:
         raise HTTPException(status_code=409, detail="Another Apply workflow is running; retry when it finishes.")
     try:
-        app = daily_retry.retry_application(source_job_id)
+        with apply_operations.rows_idle([source_job_id]):
+            app = daily_retry.retry_application(source_job_id)
     except KeyError as exc:
         raise HTTPException(status_code=404, detail=str(exc)) from exc
     except (RuntimeError, ValueError) as exc:

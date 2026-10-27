@@ -121,6 +121,21 @@ describe("ApplicationsTable actions", () => {
     expect(screen.queryByRole("menuitem", { name: "Not submitted — move back" })).toBeNull();
   });
 
+  it("continues a re-tailored row in its open tab instead of replacing it (audit #35)", () => {
+    const start = vi.fn();
+    const reopen = vi.fn();
+    show("ready", false, [], { fill: { browser_target_id: "T1" } }, false, {
+      openTabs: new Set(["T1"]),
+      start,
+      reopen,
+    });
+    fireEvent.click(screen.getAllByRole("menuitem", { name: "Start over in a new tab" })[0]);
+    expect(reopen).toHaveBeenCalledWith([expect.objectContaining({ source_job_id: "one" })]);
+    fireEvent.click(screen.getAllByRole("button", { name: "Continue" })[0]);
+    expect(start).toHaveBeenCalledWith("fill", ["one"], "continue");
+    expect(screen.queryByRole("button", { name: "Fill" })).toBeNull();
+  });
+
   it("offers Fill as the primary action after a ready row is restored", () => {
     show("ready");
     expect(screen.getAllByRole("button", { name: "Fill" }).length).toBeGreaterThan(0);

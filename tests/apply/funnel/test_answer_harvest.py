@@ -212,8 +212,24 @@ def test_answered_all_has_no_say_when_nothing_required_was_left():
 def test_listener_records_when_the_applicant_last_typed(page):
     page.set_content('<label for="t">Team</label><input id="t">')
     page.evaluate(harvest.LISTENER_JS)
-    last, _now = page.evaluate(harvest._ACTIVITY_JS)
+    last, _now = page.evaluate(harvest.ACTIVITY_JS)
     assert last == 0
     page.fill("#t", "Payments")
-    last, now = page.evaluate(harvest._ACTIVITY_JS)
+    last, now = page.evaluate(harvest.ACTIVITY_JS)
     assert 0 < last <= now
+
+
+def test_listener_records_files_the_applicant_attached_but_not_the_apps(page, tmp_path):
+    """Audit #33: a file the applicant attached is theirs; a Continue fill keeps it."""
+    mine, ours = tmp_path / "My Resume.pdf", tmp_path / "Tailored.pdf"
+    mine.write_bytes(b"%PDF-1.4")
+    ours.write_bytes(b"%PDF-1.4")
+    page.set_content('<input type="file" id="f">')
+    page.evaluate(harvest.LISTENER_JS)
+    page.evaluate(harvest.APP_UPLOAD_JS, True)
+    page.set_input_files("#f", str(ours))
+    page.evaluate(harvest.APP_UPLOAD_JS, False)
+    assert page.evaluate(harvest._FILES_JS) == []
+    assert page.evaluate(harvest.ACTIVITY_JS)[0] == 0  # the app's upload is not input
+    page.set_input_files("#f", str(mine))
+    assert page.evaluate(harvest._FILES_JS) == ["My Resume.pdf"]

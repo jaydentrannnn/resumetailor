@@ -1,4 +1,11 @@
-"""Recognize a manual submission in its retained application tab; never click."""
+"""Recognize a manual submission in its retained application tab; never click.
+
+Evidence is ``strong`` (the row becomes ``submitted``) or ``weak`` (``submit_unconfirmed``,
+for the applicant to confirm; never archived, its tab never closed): a thank-you line on a
+page that still shows the application form is weak (audit #6), and so is Workday's
+completed-applications page (where a submit lands) when it does not show this requisition
+as submitted (audit #36): a location variant shares its title, so a title is never enough.
+"""
 
 from __future__ import annotations
 
@@ -12,6 +19,23 @@ from resume_tailor.apply.discovery import identity
 from resume_tailor.apply.funnel import attempts, store, store_models
 
 ROWS_JS = "() => [...document.querySelectorAll('tr, [role=row]')].map(row => row.innerText || '')"
+#: Whether the page still shows an application form: a visible required field or a
+#: Submit/Apply control. A thank-you line beside one is not a confirmation.
+FORM_PROBE_JS = r"""() => {
+  const shown = (el) => !!(el.offsetWidth || el.offsetHeight || el.getClientRects().length);
+  const required = [...document.querySelectorAll(
+    'input[required], textarea[required], select[required], [aria-required="true"]')]
+    .some((el) => shown(el) && (el.type || '').toLowerCase() !== 'hidden');
+  const submit = [...document.querySelectorAll('button, input[type="submit"], [role="button"]')]
+    .some((el) => shown(el)
+      && /^\s*(submit( (my )?application)?|apply( now)?|send application)\s*$/i
+        .test(el.innerText || el.value || ''));
+  return required || submit;
+}"""
+#: Status note when the evidence is not enough to record the application as sent.
+LOOKS_SUBMITTED_NOTE = "Looks submitted — confirm?"
+#: Workday's candidate home after a submit: the list of completed applications.
+_WORKDAY_COMPLETED = re.compile(r"/jobTasks/completed(?:/|$)", re.I)
 _SUBMITTED_DATE = re.compile(
     r"\b(?:January|February|March|April|May|June|July|August|September|October|November|December)\s+\d{1,2},?\s+\d{4}\b|\b\d{4}-\d{2}-\d{2}\b|\b\d{1,2}/\d{1,2}/\d{4}\b",
     re.I,
@@ -46,16 +70,41 @@ def mentions_any(requisitions: list[str], text: str) -> bool:
     )
 
 
+_NOT_SUBMITTED = re.compile(r"not (?:yet )?submitted|application (?:draft|not submitted)", re.I)
+
+
 def confirmation(
-    posting_url: str, current_url: str, body: str, ats: str, rows: list[str] | None = None
+    posting_url: str, current_url: str, body: str, ats: str, rows: list[str] | None = None,
+    *, form_open: bool = False,
 ) -> dict[str, str] | None:
-    """Require an explicit confirmation and the matching posting or requisition."""
+    """Require an explicit confirmation and the matching posting or requisition.
+
+    ``form_open`` (`FORM_PROBE_JS`) says the page still shows an application form, so its
+    thank-you text is weak evidence."""
     if _site(posting_url) != _site(current_url):
         return None
     key = identity.canonical_key(posting_url.rstrip("/").removesuffix("/apply"))
     requisitions = requisition_ids(key, ats)
     if not requisitions:
         return None
+    evidence = _explicit(key, requisitions, current_url, body, ats, rows, form_open)
+    if evidence or ats != "workday" or not _WORKDAY_COMPLETED.search(current_url):
+        return evidence
+    if any(_NOT_SUBMITTED.search(row) for row in rows or [] if mentions_any(requisitions, row)):
+        return None  # this requisition is listed as a draft
+    # Carrier (2026-10): the completed list said "noApplications" right after a submit.
+    return {
+        "url": current_url,
+        "requisition": requisitions[0],
+        "signal": "Workday's completed applications page opened",
+        "strength": "weak",
+    }
+
+
+def _explicit(
+    key: str, requisitions: list[str], current_url: str, body: str, ats: str,
+    rows: list[str] | None, form_open: bool,
+) -> dict[str, str] | None:
     requisition = requisitions[0]
     current_key = identity.canonical_key(current_url.rstrip("/").removesuffix("/apply"))
     matching_url = current_key == key or (
@@ -67,8 +116,7 @@ def confirmation(
     date_signal = ""
     if ats == "workday" and rows is not None and not matching_url:
         matching_rows = [row for row in rows if mentions_any(requisitions, row)]
-        if any(re.search(r"not (?:yet )?submitted|application (?:draft|not submitted)", row, re.I)
-               for row in matching_rows):
+        if any(_NOT_SUBMITTED.search(row) for row in matching_rows):
             return None
         if not any(_SUBMITTED_DATE.search(row) for row in matching_rows):
             return None
@@ -88,7 +136,14 @@ def confirmation(
         "url": current_url,
         "requisition": requisition,
         "signal": marker[0] if marker else date_signal,
+        # A dated Workday row is a record, whatever else the page shows.
+        "strength": "weak" if form_open and not date_signal else "strong",
     }
+
+
+def strong(evidence: dict[str, str] | None) -> bool:
+    """Evidence enough to record the application as sent (older records: yes)."""
+    return bool(evidence) and evidence.get("strength", "strong") == "strong"
 
 
 def record(
@@ -97,29 +152,36 @@ def record(
     *,
     workspace_path: Path | None = None,
 ) -> store_models.FillResult | None:
-    """Re-read atomically; a workspace switch or later terminal decision wins."""
+    """Re-read atomically; a workspace switch or later terminal decision wins. Weak
+    evidence makes the row ``submit_unconfirmed`` once, for the applicant to confirm."""
     from resume_tailor.web import template_ops  # noqa: PLC0415
 
     result = None
+    sent = strong(evidence)
+    status = "submitted" if sent else "submit_unconfirmed"
 
     def confirm(current: store_models.Application) -> None:
         nonlocal result
         if current.status in store_models.TERMINAL_STATUSES or current.status == "screened_out":
             return
+        if not sent and current.status == "submit_unconfirmed":
+            return  # already waiting on the applicant's confirmation
         prior = store_models.FillResult.model_validate(current.fill or {})
         result = prior.model_copy(
             update={
-                "status": "submitted",
+                "status": status,
                 "submit_action": "manual_submit",
-                "confirmation": evidence["signal"],
+                "confirmation": evidence["signal"] if sent else "",
                 "confirmation_evidence": {**evidence, "at": store_models._now_iso()},
                 "browser_url": evidence["url"],
-                "handoff_reason": "",
+                "handoff_reason": "" if sent else LOOKS_SUBMITTED_NOTE,
                 "error": None,
             }
         )
         current.fill, current.error = result, None
-        store.set_status(current, "submitted", note=attempts.MONITOR_NOTE)
+        store.set_status(
+            current, status, note=attempts.MONITOR_NOTE if sent else LOOKS_SUBMITTED_NOTE
+        )
 
     with template_ops.LOCK:
         if workspace_path is not None and workspace_path != config.APPLICATIONS_PATH:
@@ -138,15 +200,20 @@ def record(
 async def inspect(
     app: store_models.Application, page: Any, *, workspace_path: Path | None = None
 ) -> bool:
+    """Record a submission seen in ``page``; True when it was recorded as sent (weak
+    evidence is recorded too, but the tab is still read)."""
     workspace_path = workspace_path or config.APPLICATIONS_PATH
     try:
         body = await page.locator("body").inner_text(timeout=4000)
         rows = await page.evaluate(ROWS_JS) if app.ats == "workday" else None
+        form_open = bool(await page.evaluate(FORM_PROBE_JS))
         evidence = confirmation(
-            app.final_url or app.posting_url, str(page.url), body, app.ats, rows
+            app.final_url or app.posting_url, str(page.url), body, app.ats, rows,
+            form_open=form_open,
         )
         if evidence:
-            return record(app, evidence, workspace_path=workspace_path) is not None
+            recorded = record(app, evidence, workspace_path=workspace_path) is not None
+            return recorded and strong(evidence)
     except Exception:  # noqa: BLE001 - a closed or busy tab is retried, never a confirmation
         pass
     return False

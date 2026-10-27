@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 import {
   canContinueFill,
+  canContinueWithNewFiles,
   canReopenFill,
   isTabClosed,
   isTerminalRow,
@@ -77,6 +78,33 @@ describe("canContinueFill", () => {
     expect(canContinueFill(row, new Set(["T1", "T2"]))).toBe(true);
     expect(canContinueFill(row, new Set(["T2"]))).toBe(true);
     expect(canContinueFill(row, null)).toBe(true);
+  });
+});
+
+describe("canContinueWithNewFiles", () => {
+  const row = {
+    status: "ready",
+    archived_at: null,
+    preparation_eligible: true,
+    fill: { browser_target_id: "T1" },
+  } as Parameters<typeof canContinueWithNewFiles>[0];
+
+  it("continues a re-tailored row in its tab while that tab is known open (audit #35)", () => {
+    expect(canContinueWithNewFiles(row, new Set(["T1"]))).toBe(true);
+  });
+
+  it("needs the tab known open, a ready row and a fillable resume", () => {
+    expect(canContinueWithNewFiles(row, new Set(["T2"]))).toBe(false);
+    expect(canContinueWithNewFiles(row, null)).toBe(false);
+    expect(canContinueWithNewFiles({ ...row, status: "awaiting_review" }, new Set(["T1"]))).toBe(
+      false,
+    );
+    expect(canContinueWithNewFiles({ ...row, fill: {} } as typeof row, new Set(["T1"]))).toBe(
+      false,
+    );
+    expect(canContinueWithNewFiles({ ...row, preparation_eligible: false }, new Set(["T1"]))).toBe(
+      false,
+    );
   });
 });
 

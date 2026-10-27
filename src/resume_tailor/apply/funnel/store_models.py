@@ -125,6 +125,12 @@ class FillResult(BaseModel):
     #: {app_version, platform: {posting, landed}, end_category, elapsed_s, model_calls,
     #: corrections: [{label, key}]} (`forms.fill_diagnostics`, `answer_harvest`).
     diagnostics: dict[str, Any] = Field(default_factory=dict)
+    #: What happened to this application's tab, newest last (`tab_events`):
+    #: {at, event: closed|kept|gone|replaced, reason, host}.
+    tab_history: list[dict[str, str]] = Field(default_factory=list)
+    #: File names the applicant attached or changed in the tab themselves
+    #: (`answer_harvest`); a Continue fill never replaces those (`upload_replace`).
+    user_touched_uploads: list[str] = Field(default_factory=list)
 
 #: What happened after an application went out. Hiring progress is derived from these
 #: (`outcomes.hiring_progress`); the row's operational ``status`` stays ``submitted``.
@@ -245,6 +251,9 @@ class Application(BaseModel):
     #: The stored version this object was read from (never mutated), or None for a
     #: row built in memory. `upsert` diffs against it; see the module docstring.
     _base: Application | None = PrivateAttr(default=None)
+    #: Set by `store.undo_terminal` until the next write: the one change allowed to
+    #: take a terminal row back to a working status (`store._merge_into`).
+    _undoing_terminal: bool = PrivateAttr(default=False)
 
 @dataclass
 class Index:

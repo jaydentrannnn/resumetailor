@@ -367,3 +367,25 @@ def test_a_posting_with_lines_addressed_to_ai_is_held(tmp_path):
     # Recorded findings win over a rescan; hidden page chrome alone never holds.
     clean = _app("c", jd_text_path=str(jd), posting_guard=GuardFindings(hidden_blocks=3))
     assert submit_guard.check(clean, SETTINGS, apps=[], now=NOW) is None
+
+
+def test_the_stored_row_decides_not_the_fills_copy():
+    """Audit #7: the applicant marked, skipped or archived it while the fill ran."""
+    fill_copy = _app("a", status="filling")
+    for status, code in (("submitted", "already_submitted"), ("skipped", "settled")):
+        hold = submit_guard.check(fill_copy, SETTINGS, apps=[_app("a", status=status)], now=NOW)
+        assert hold is not None and hold.code == code
+    archived = _app("a", status="awaiting_review", archived_at=NOW.isoformat())
+    hold = submit_guard.check(fill_copy, SETTINGS, apps=[archived], now=NOW)
+    assert hold is not None and hold.code == "settled"
+
+
+def test_skip_during_submit_pacing_stops_the_click(monkeypatch):
+    store.upsert(_app("a", status="filling"))
+    fill_copy = store.get("greenhouse:a")
+    store.update("greenhouse:a", lambda row: store.set_status(row, "skipped"))
+    monkeypatch.setattr(submit_guard, "_last_submit", None)
+    hold = submit_guard.check(fill_copy, SETTINGS)
+    assert hold is not None and hold.code == "settled"
+    with submit_guard.pace(can_submit=lambda: submit_guard.check(fill_copy, SETTINGS) is None) as go:
+        assert go is False

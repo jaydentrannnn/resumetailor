@@ -162,7 +162,10 @@ def test_workday_location_variant_matches_the_bare_requisition_the_page_shows():
     ],
 )
 def test_workday_variant_still_needs_its_own_requisition_and_a_confirmation(body):
-    assert submission_monitor.confirmation(VARIANT, COMPLETED, body, "workday") is None
+    # Workday's completed page alone only asks the applicant to confirm (audit #36).
+    evidence = submission_monitor.confirmation(VARIANT, COMPLETED, body, "workday")
+    assert evidence and not submission_monitor.strong(evidence)
+    assert submission_monitor.confirmation(VARIANT, VARIANT + "/apply/x", body, "workday") is None
 
 
 def test_dashed_requisition_without_variant_is_not_shortened():
@@ -224,9 +227,10 @@ def test_delayed_confirmation_preserves_a_later_terminal_decision(isolated_store
 
 
 class _ReadOnlyPage:
-    def __init__(self, url, body="", failure=None, rows=None):
+    def __init__(self, url, body="", failure=None, rows=None, form_open=False):
         self.url, self.body, self.failure = url, body, failure
         self.rows = rows if rows is not None else [body]
+        self.form_open = form_open
         self.reads = []
 
     def locator(self, selector):
@@ -240,6 +244,8 @@ class _ReadOnlyPage:
         return self.body
 
     async def evaluate(self, expression):
+        if expression == submission_monitor.FORM_PROBE_JS:
+            return self.form_open
         assert expression == submission_monitor.ROWS_JS
         return self.rows
 
@@ -294,3 +300,78 @@ def test_startup_restores_retained_target_watchers_without_starting_real_thread(
     assert {"review", "otp", "uncertain"} == answer_harvest._WATCHED
     assert len(started) == 1 and started[0]["daemon"] is True
     assert started[0]["target"] is answer_harvest._loop
+
+
+# -- weak evidence: confirm, never record as sent (audit #6, #36) ------------------------------
+
+GREENHOUSE = "https://job-boards.greenhouse.io/synthetic/jobs/8263774"
+#: Where Workday lands after a submit (Carrier, Travelers, 2026-10).
+CARRIER_DONE = "https://carrier.wd5.myworkdayjobs.com/en-US/jobs/jobTasks/completed/application"
+CARRIER_POSTING = (
+    "https://carrier.wd5.myworkdayjobs.com/en-US/jobs/job/Remote/Software-Intern_30140123"
+)
+
+
+def test_a_thank_you_line_beside_a_live_form_is_weak_evidence():
+    body = "Thank you for applying! Please complete the remaining questions."
+    weak = submission_monitor.confirmation(GREENHOUSE, GREENHOUSE, body, "greenhouse", form_open=True)
+    assert weak and weak["strength"] == "weak" and not submission_monitor.strong(weak)
+    sent = submission_monitor.confirmation(GREENHOUSE, GREENHOUSE, body, "greenhouse")
+    assert submission_monitor.strong(sent)
+
+
+def test_a_dated_workday_row_is_a_record_even_beside_a_form():
+    row = "Software Engineer\nR-01418\nOctober 12, 2026"
+    evidence = submission_monitor.confirmation(
+        POSTING, CANDIDATE_HOME, "Date Submitted\n" + row, "workday", rows=[row], form_open=True
+    )
+    assert submission_monitor.strong(evidence)
+
+
+def test_workday_completed_page_without_this_job_asks_to_confirm():
+    body = "My Applications\nNo Applications\nMy Tasks\nNo Tasks"
+    evidence = submission_monitor.confirmation(CARRIER_POSTING, CARRIER_DONE, body, "workday", rows=[])
+    assert evidence == {
+        "url": CARRIER_DONE, "requisition": "30140123",
+        "signal": "Workday's completed applications page opened", "strength": "weak",
+    }
+
+
+def test_workday_completed_page_listing_it_dated_is_strong_and_a_draft_is_nothing():
+    dated = "Software Intern\t30140123\tSubmitted\tOctober 25, 2026"
+    body = "Application Submitted\n" + dated
+    evidence = submission_monitor.confirmation(
+        CARRIER_POSTING, CARRIER_DONE, body, "workday", rows=[dated]
+    )
+    assert submission_monitor.strong(evidence)
+    draft = "Software Intern\t30140123\tNot Yet Submitted"
+    assert submission_monitor.confirmation(
+        CARRIER_POSTING, CARRIER_DONE, "My Applications\n" + draft, "workday", rows=[draft]
+    ) is None
+
+
+def test_weak_evidence_makes_the_row_unconfirmed_once_and_strong_evidence_settles_it(isolated_store):
+    app = _app()
+    store.upsert(app)
+    weak = {"url": POSTING, "requisition": "R-01418", "signal": "Thank you", "strength": "weak"}
+    result = submission_monitor.record(app, weak)
+    saved = store.get(app.source_job_id)
+    assert result and result.status == "submit_unconfirmed"
+    assert saved.status == "submit_unconfirmed" and saved.archived_at is None
+    assert saved.status_history[-1].note == submission_monitor.LOOKS_SUBMITTED_NOTE
+    fill = store_models.FillResult.model_validate(saved.fill)
+    assert fill.confirmation == "" and fill.handoff_reason == submission_monitor.LOOKS_SUBMITTED_NOTE
+    assert submission_monitor.record(app, weak) is None  # no second status change
+    assert len(store.get(app.source_job_id).status_history) == len(saved.status_history)
+    strong = {**weak, "signal": "Application Submitted", "strength": "strong"}
+    assert submission_monitor.record(app, strong).status == "submitted"
+    assert store.get(app.source_job_id).status == "submitted"
+
+
+def test_inspect_with_a_live_form_records_unconfirmed_and_keeps_reading(isolated_store):
+    app = _app(ats="greenhouse", posting_url=GREENHOUSE, final_url=GREENHOUSE,
+               canonical_key=identity.canonical_key(GREENHOUSE))
+    store.upsert(app)
+    page = _ReadOnlyPage(GREENHOUSE, "Thank you for applying!", form_open=True)
+    assert asyncio.run(submission_monitor.inspect(app, page)) is False
+    assert store.get(app.source_job_id).status == "submit_unconfirmed"

@@ -33,6 +33,12 @@ OTHER_PAGE_REOPENED = (
 )
 
 
+#: Progress line when a fresh fill leaves the application's earlier tab open.
+EARLIER_TAB_KEPT = (
+    "The earlier tab shows another page or could not be checked; leaving it open"
+)
+
+
 class _FillEntry(fill_state._FillState):
     """`_FillRun` steps that get from the posting to the first form step."""
 
@@ -58,9 +64,11 @@ class _FillEntry(fill_state._FillState):
                 # A popup left open by the last fill or by the applicant blocks this one.
                 workday_page.close_stray_popups(self.page)
         else:
-            # A fresh fill replaces this application's earlier tab rather than adding one.
+            # A fresh fill replaces this application's earlier tab rather than adding one,
+            # but only a tab still on this application (audit #5): one taken elsewhere,
+            # or that cannot be checked, is the applicant's and stays.
             if self.previous_fill.browser_target_id and not keep_tab:
-                browser.close_target(self.previous_fill.browser_target_id)
+                self._replace_earlier_tab(context)
             self.page = context.new_page()
             self.target_id = browser.target_id(context, self.page)
             self._record_target(self.url)
@@ -90,15 +98,51 @@ class _FillEntry(fill_state._FillState):
                     self.app.final_url or self.app.posting_url, str(self.page.url),
                     self.page.inner_text("body"), self.app.ats,
                     self.page.evaluate(submission_monitor.ROWS_JS) if self.app.ats == "workday" else None,
+                    form_open=bool(self.page.evaluate(submission_monitor.FORM_PROBE_JS)),
                 )
             except Exception:  # noqa: BLE001 - ordinary form inspection continues
                 evidence = None
-            if evidence:
-                return submission_monitor.record(self.app, evidence)
+            # Weak evidence beside a live form: the form is filled on (audit #6).
+            if submission_monitor.strong(evidence):
+                recorded = submission_monitor.record(self.app, evidence)
+                return recorded or self._handoff(
+                    "This application is already recorded; nothing to fill"
+                )
         language = form_guards.form_language(fill_page._page_lang(self.page))
         if language:
             return self._handoff(f"{language}. Fill it in this tab.")
         return None
+
+    def _replace_earlier_tab(self, context: Any) -> None:
+        from resume_tailor.apply.funnel import tab_events  # noqa: PLC0415
+
+        target = self.previous_fill.browser_target_id
+        try:
+            earlier = browser.find_target(context, target)
+        except Exception:  # noqa: BLE001 - unknown: left open
+            earlier = None
+            url, shows = "", "unknown"
+        else:
+            url = str(earlier.url) if earlier is not None else ""
+            known = (self.previous_fill.browser_url, self.app.final_url, self.app.posting_url)
+            shows = (
+                "gone" if earlier is None
+                # A site whose URLs name no requisition reads "unknown" even on the
+                # posting itself; the very URL the app recorded is this application.
+                else "same" if url.rstrip("/") in {k.rstrip("/") for k in known if k}
+                else identity.retained_tab(url, known)
+            )
+        if shows == "gone":
+            return
+        closed = shows == "same" and browser.close_target(target)
+        if shows != "same":
+            self.progress(EARLIER_TAB_KEPT)
+        self.tab_history = tab_events.append(self.tab_history, tab_events.entry(
+            self.source_job_id, "replaced" if closed else "kept",
+            "A new fill opened the posting again" if closed
+            else EARLIER_TAB_KEPT if shows != "same" else "The browser did not close it",
+            url=url,
+        ))
 
     def _recheck_platform(self) -> None:
         """Use the handling of the platform the entry landed on (a company careers page
@@ -173,10 +217,16 @@ class _FillEntry(fill_state._FillState):
                       snap.get("url") or self.page.url, sorted(snap.get("ids") or [])[:80])
         if wd_state == "already_applied":
             from resume_tailor.apply.funnel import submission_monitor  # noqa: PLC0415
+            try:
+                rows = self.page.evaluate(submission_monitor.ROWS_JS)
+            except Exception:  # noqa: BLE001 - the rows only sharpen the evidence
+                rows = None
             evidence = submission_monitor.confirmation(self.app.final_url or self.app.posting_url,
-                str(self.page.url), self.page.inner_text("body"), "workday")
-            if evidence:
-                return submission_monitor.record(self.app, evidence)
+                str(self.page.url), self.page.inner_text("body"), "workday", rows)
+            recorded = submission_monitor.record(self.app, evidence) if evidence else None
+            if recorded is not None:
+                return recorded
+            # No evidence, or nothing new to record: hand over, never fill the form.
         if wd_state not in {"already_applied", "unavailable", "posting", "start_dialog", "unknown"}:
             return None
         reason = {

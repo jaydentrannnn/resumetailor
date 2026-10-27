@@ -17,11 +17,18 @@ import { rememberApplicationListScroll } from "../../lib/applicationNavigation";
 import { isTabClosed, type OpenTabs } from "../../lib/applicationRows";
 import { canRetailor } from "../../lib/applyPage";
 import { describe } from "../../lib/errors";
+import { announceTabsChanged } from "../../lib/tabsChanged";
 import { useToast } from "../../lib/toast";
 import { useConfirm } from "../../state/confirmState";
 import type { TableActions } from "./ApplicationsTable";
 import type { FindOptions } from "./ProgressToolbar";
 import type { ApplicationTableState } from "./useApplicationTable";
+
+const TAB_CLOSES_NOTE = "Its tab closes in 30 s unless you keep it open.";
+
+function hasOpenTab(row: ApplicationRow, openTabs: OpenTabs): boolean {
+  return !!row.fill?.browser_target_id && !isTabClosed(row, openTabs);
+}
 
 /**
  * Everything the page starts or changes on rows: Find / Prepare / Fill (with the resume
@@ -223,10 +230,15 @@ export function useApplyRowActions({
       if (done.length) {
         for (const table of tables) table.deselect(done);
         const n = done.length;
-        toast.success(`${n} application${n === 1 ? "" : "s"} skipped`, "Moved to Done.", {
-          label: "Undo",
-          onClick: () => void unskip(done),
-        });
+        const tabOpen = rows.some(
+          (row) => done.includes(row.source_job_id) && hasOpenTab(row, openTabs),
+        );
+        toast.success(
+          `${n} application${n === 1 ? "" : "s"} skipped`,
+          tabOpen ? `Moved to Done. ${TAB_CLOSES_NOTE}` : "Moved to Done.",
+          { label: "Undo", onClick: () => void unskip(done) },
+        );
+        announceTabsChanged();
       }
       if (failures.length) toast.error("Some applications were not skipped", failures.join("; "));
       refresh();
@@ -266,12 +278,16 @@ export function useApplyRowActions({
   async function mark(row: ApplicationRow, status: "submitted" | "skipped") {
     try {
       const updated = await setApplicationStatus(row.source_job_id, status);
-      // Submitting and skipping move the row to Done server-side; say so.
+      // Submitting and skipping move the row to Done server-side; say so. A skipped row's
+      // tab closes after a countdown; a submitted mark the app did not see keeps its tab.
       if (updated.archived_at)
         toast.success(
           `${row.company} marked ${status === "submitted" ? "submitted" : "skipped"}`,
-          "Moved to Done.",
+          status === "skipped" && hasOpenTab(row, openTabs)
+            ? `Moved to Done. ${TAB_CLOSES_NOTE}`
+            : "Moved to Done.",
         );
+      announceTabsChanged();
       refresh();
     } catch (reason) {
       showError("Could not update the status", reason);

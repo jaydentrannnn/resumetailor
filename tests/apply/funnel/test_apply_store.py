@@ -829,3 +829,43 @@ def test_sort_by_posted_date_orders_by_publication_not_discovery(apps_path):
         "cap",
         "new",
     ]
+
+
+def test_a_fill_that_wrote_once_after_the_mark_still_cannot_unsubmit(apps_path):
+    """Audit #7: each upsert refreshes the fill's object, so its base turns terminal too;
+    its next working-status write must still not take the row out of submitted."""
+    store.upsert(_sample_app(canonical_key="gh:acme:1", status="filling"))
+    fill_view = store.get("gh:acme:1")
+    store.update("gh:acme:1", lambda app: store.set_status(app, "submitted", note="by hand"))
+    fill_view.error = "progress"
+    store.upsert(fill_view)  # refreshed: its base is now the submitted row
+    assert fill_view.status == "submitted"
+
+    store.set_status(fill_view, "awaiting_review", note="fill done")
+    store.upsert(fill_view)
+    assert store.get("gh:acme:1").status == "submitted"
+
+
+def test_undo_and_the_applicants_own_correction_may_reopen(apps_path):
+    store.upsert(_sample_app(canonical_key="gh:acme:1", status="submitted"))
+    app = store.get("gh:acme:1")
+    assert store.undo_terminal(app, "mistake")
+    assert store.upsert(app).status not in store_models.TERMINAL_STATUSES
+
+    store.update("gh:acme:1", lambda row: store.set_status(row, "rejected"))
+    app = store.get("gh:acme:1")
+    store.allow_reopen(app)
+    store.set_status(app, "awaiting_review", note="employer reopened it")
+    assert store.upsert(app).status == "awaiting_review"
+    # The permission lasts one write only.
+    store.update("gh:acme:1", lambda row: store.set_status(row, "skipped"))
+    store.set_status(app, "awaiting_review")
+    assert store.upsert(app).status == "skipped"
+
+
+def test_app_id_resolves_every_alias_to_the_source_id(apps_path):
+    """Audit #8: the desktop page and the extension name one row differently."""
+    store.upsert(_sample_app(source_job_id="simplify-123", canonical_key="gh:acme:1"))
+    assert store.app_id("gh:acme:1") == "simplify-123"
+    assert store.app_id("simplify-123") == "simplify-123"
+    assert store.app_id("nope") is None

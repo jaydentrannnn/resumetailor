@@ -332,6 +332,19 @@ def get(key: str) -> store_models.Application | None:
         return _checkout(apps[found]) if found is not None else None
 
 
+def app_id(key: str) -> str | None:
+    """The one id every owner records for the row ``key`` names: its ``source_job_id``.
+
+    The desktop page and the extension can name one row by different aliases (a source
+    id, the canonical key); operations, tab claims and watchers compare ids as strings,
+    so each resolves its alias here first. The registry key is not used: it changes when
+    a canonical key is learned later."""
+    with _LOCK:
+        apps = _snapshot()
+        found = _locate(apps, key)
+        return apps[found].source_job_id if found is not None else None
+
+
 #: Fields `_merge_into` never copies from the caller: bookkeeping it computes itself.
 _MERGE_SKIP = frozenset({"revision", "status_history", "source_refs"})
 
@@ -344,17 +357,19 @@ def _merge_into(
     Returns a new row; none of the three inputs is modified. ``status_history`` and
     ``source_refs`` are append-only, so the caller's new entries are appended to the
     stored ones rather than replacing entries a concurrent writer added. When the
-    caller changed ``status`` while someone else moved the row to a terminal status
-    (the user marked it submitted, skipped, ...), the terminal status is kept and a
-    note says what arrived late: a background fill must never un-submit a row.
+    caller changed ``status`` to a working status while the stored row is terminal (the
+    user marked it submitted, skipped, ...), the terminal status is kept and a note says
+    what arrived late: a background fill must never un-submit a row. That holds even
+    when the caller read the row after it became terminal (its object is refreshed in
+    place by each `upsert`); only `undo_terminal` leaves a terminal status.
     """
     merged = stored.model_copy(deep=True)
     merged._base = None
     keep_status = (
         app.status != base.status
-        and stored.status != base.status
         and stored.status in store_models.TERMINAL_STATUSES
-        and app.status != stored.status
+        and app.status not in store_models.TERMINAL_STATUSES
+        and not app._undoing_terminal
     )
     for name in type(app).model_fields:
         if name in _MERGE_SKIP:
@@ -395,6 +410,7 @@ def _refresh(app: store_models.Application, row: store_models.Application) -> No
     for name in type(app).model_fields:
         setattr(app, name, copy.deepcopy(getattr(row, name)))
     app._base = row
+    app._undoing_terminal = False
 
 
 def upsert(app: store_models.Application) -> store_models.Application:
@@ -553,6 +569,12 @@ def status_at(app: store_models.Application) -> str:
     return app.status_history[-1].at if app.status_history else app.discovered_at
 
 
+def allow_reopen(app: store_models.Application) -> None:
+    """The applicant's own status correction may take this terminal row back to a working
+    status on its next write, as `undo_terminal` does; automation never calls this."""
+    app._undoing_terminal = True
+
+
 def undo_terminal(app: store_models.Application, note: str) -> bool:
     """Undo a submitted/skipped mark, the one sanctioned bypass of `set_status`'s terminal guard."""
     if app.status not in {"submitted", "skipped"}:
@@ -576,6 +598,7 @@ def undo_terminal(app: store_models.Application, note: str) -> bool:
         store_models.StatusChange(status=app.status, at=store_models._now_iso(), note=note)
     )
     app.revision += 1
+    app._undoing_terminal = True
     return True
 
 

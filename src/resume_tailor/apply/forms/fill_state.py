@@ -121,8 +121,8 @@ class _FillState:
         self.deadline = self.started + fill_outcomes.BASE_BUDGET_S
 
         self.previous_fill = FillResult.model_validate(app.fill) if app.fill else FillResult()
-        store.set_status(app, "filling", note="")
-        store.upsert(app)
+        #: This application's tab events, carried into whatever result the fill saves.
+        self.tab_history = list(self.previous_fill.tab_history)
         self.progress("building packet")
         self.pkt = (
             apply_packet.build_packet(app.job_id)
@@ -180,6 +180,10 @@ class _FillState:
             raise RuntimeError(
                 f"This site refused automated visits recently; try again in about {minutes} min"
             )
+        # Only once everything above held: a packet or host error before this leaves the
+        # row as it was (`fill.fill_application` records it), never stuck in "filling".
+        store.set_status(app, "filling", note="")
+        store.upsert(app)
 
     # -- inputs ------------------------------------------------------------------------
 

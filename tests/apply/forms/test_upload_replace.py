@@ -34,14 +34,24 @@ STAGED = "Ada Lovelace Resume - Intern.pdf"
         ({"uploaded_by_app": True, "filename": STAGED, "artifact_sha256": OLD_SHA},
          "my_resume.pdf", "1" * 64, "theirs"),
         ({"filename": STAGED, "verified": True}, STAGED, "1" * 64, "theirs"),
-        # No digest to compare on one side: nothing says it changed.
-        ({"uploaded_by_app": True, "filename": STAGED}, STAGED, "1" * 64, "current"),
+        # No digest to compare on one side: the app cannot tell (audit #33), so the
+        # file is kept for the applicant to check rather than claimed as current.
+        ({"uploaded_by_app": True, "filename": STAGED}, STAGED, "1" * 64, "ambiguous"),
+        ({"uploaded_by_app": True, "filename": STAGED, "artifact_sha256": OLD_SHA}, STAGED,
+         "", "ambiguous"),
     ],
 )
 def test_attached_by_app_reads_the_upload_record(prior, shown, current, expected):
     assert upload_replace.attached_by_app(
         [{"purpose": "resume", **prior}], "resume", shown, current
     ) == expected
+
+
+def test_a_file_the_applicant_attached_is_theirs_under_the_apps_name():
+    """Audit #33: they replaced the app's upload with their own copy of that name."""
+    prior = [{"purpose": "resume", "uploaded_by_app": True, "filename": STAGED,
+              "artifact_sha256": OLD_SHA}]
+    assert upload_replace.attached_by_app(prior, "resume", STAGED, "1" * 64, [STAGED]) == "theirs"
 
 
 class _Target:
@@ -234,3 +244,14 @@ def test_a_widget_without_a_remove_control_is_left_alone(page):
     assert not upload_replace.remove_listed(page, STAGED)
     assert page.get_by_text(STAGED).count() == 1
     assert page.locator("[data-automation-id=workExperience-1]").count() == 1
+
+
+def test_a_file_without_a_recorded_version_is_kept_for_the_applicant(tmp_path, monkeypatch):
+    run, sent, removals, _sha = _run(
+        tmp_path, monkeypatch, prior=[{"uploaded_by_app": True, "filename": STAGED}],
+        listed=STAGED,
+    )
+    assert sent == [] and removals == []
+    (record,) = run.uploads
+    assert record["state"] == "kept_existing"
+    assert record["reason"] == upload_replace.AMBIGUOUS_NOTE

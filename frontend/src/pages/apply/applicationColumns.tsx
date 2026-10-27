@@ -10,6 +10,7 @@ import {
 } from "../../lib/applicationStatus";
 import {
   canContinueFill,
+  canContinueWithNewFiles,
   canFillAfterReview,
   canReopenFill,
   isTabClosed,
@@ -88,6 +89,13 @@ function rowMenu(row: ApplicationRow, archived: boolean, actions: TableActions):
       disabled: workflowOff || !canFillAfterReview(row),
       description: workflowNote || undefined,
       action: () => actions.start("fill", [row.source_job_id], "continue"),
+    });
+  if (canContinueWithNewFiles(row, openTabs))
+    items.push({
+      label: "Start over in a new tab",
+      disabled: workflowOff,
+      description: workflowNote || undefined,
+      action: () => actions.reopen([row]),
     });
   if (canReopenFill(row))
     items.push({
@@ -201,6 +209,23 @@ function RowAction({
         onClick={() => actions.reopen([row])}
       >
         Start over
+      </button>
+    );
+  else if (kind === "fill" && canContinueWithNewFiles(row, openTabs))
+    primary = (
+      <button
+        type="button"
+        className={action("success")}
+        title={
+          workflowNote ||
+          (browserUsable
+            ? "Continue with new files: fill the open tab again, replacing the app's earlier uploads"
+            : needsBrowser)
+        }
+        disabled={workflowOff || !browserUsable}
+        onClick={() => actions.start("fill", [row.source_job_id], "continue")}
+      >
+        Continue
       </button>
     );
   else if (kind === "fill")

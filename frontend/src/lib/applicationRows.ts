@@ -89,6 +89,29 @@ export function canContinueFill(
   );
 }
 
+/**
+ * A prepared row whose earlier fill's tab is still open (its files were tailored again
+ * since): Fill continues in that tab, swapping the app's own outdated uploads for the new
+ * files, instead of closing it. Needs the tab known open, not just recorded.
+ */
+export function canContinueWithNewFiles(
+  row: Pick<
+    ApplicationRow,
+    "status" | "archived_at" | "preparation_eligible" | "preparation_reasons" | "fill"
+  >,
+  openTabs: OpenTabs,
+): boolean {
+  const id = row.fill?.browser_target_id;
+  return (
+    row.status === "ready" &&
+    !row.archived_at &&
+    !!id &&
+    openTabs != null &&
+    openTabs.has(id) &&
+    canFillAfterReview(row)
+  );
+}
+
 /** Whether "Start over" applies: a prepared row whose fill stopped for the applicant. */
 export function canReopenFill(
   row: Pick<ApplicationRow, "status" | "archived_at" | "job_id">,

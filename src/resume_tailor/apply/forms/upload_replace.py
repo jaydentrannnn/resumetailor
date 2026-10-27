@@ -2,7 +2,9 @@
 
 A Continue fill finds files already attached. One the app uploaded itself (its record
 says ``uploaded_by_app`` under that filename) is replaced when the prepared document has
-changed since (``artifact_sha256``); anything else is the applicant's and is kept.
+changed since (``artifact_sha256``); anything else is the applicant's and is kept. A file
+the applicant attached in the tab (`answer_harvest`'s listener) is theirs even under the
+app's file name, and one whose version the record cannot tell is left for them to check.
 """
 
 from __future__ import annotations
@@ -21,6 +23,8 @@ REPLACED_NOTE = "Replaced the earlier upload with the current version"
 NOT_REPLACED_NOTE = "An earlier version is attached and could not be replaced"
 #: Upload record error when the stale earlier upload shows only away from its upload step.
 EARLIER_STEP_NOTE = "An earlier version is attached; replace it on the upload step"
+#: Upload record reason when a file under the app's name has no version on record.
+AMBIGUOUS_NOTE = "A file with this name was already attached; check it is the current version"
 
 
 def artifact_sha256(path: Any) -> str:
@@ -32,16 +36,22 @@ def artifact_sha256(path: Any) -> str:
 
 
 def attached_by_app(
-    prior_uploads: Iterable[dict[str, Any]], purpose: str, shown: str, current_sha: str
-) -> Literal["current", "stale", "theirs"]:
-    """Whose file ``shown`` is: the app's and up to date, the app's but outdated, or not
-    the app's (no record of uploading it, which includes records from before the app
-    kept one)."""
+    prior_uploads: Iterable[dict[str, Any]], purpose: str, shown: str, current_sha: str,
+    touched: Iterable[str] = (),
+) -> Literal["current", "stale", "theirs", "ambiguous"]:
+    """Whose file ``shown`` is: the app's and up to date, the app's but outdated, not the
+    app's (no record of uploading it, which includes records from before the app kept
+    one, or the applicant attached it in the tab: ``touched``), or the app's name with no
+    version on record to compare (``ambiguous``: kept, for the applicant to check)."""
+    if shown in set(touched):
+        return "theirs"
     prior = _ours(prior_uploads, purpose, shown)
     if prior is None:
         return "theirs"
     recorded = str(prior.get("artifact_sha256") or "")
-    return "stale" if current_sha and recorded and recorded != current_sha else "current"
+    if not recorded or not current_sha:
+        return "ambiguous"
+    return "stale" if recorded != current_sha else "current"
 
 
 def _ours(

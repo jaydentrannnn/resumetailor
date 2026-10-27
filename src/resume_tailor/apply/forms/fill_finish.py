@@ -230,6 +230,7 @@ class _FillFinish(fill_state._FillState):
                 stale = visible and upload_replace.attached_by_app(
                     [prior], str(purpose), str(filename),
                     upload_replace.artifact_sha256(self.artifact_path(str(purpose))),
+                    self.previous_fill.user_touched_uploads,
                 ) == "stale"
                 ours = {key: prior[key] for key in ("uploaded_by_app", "artifact_sha256")
                         if key in prior}
