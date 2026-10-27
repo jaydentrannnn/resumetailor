@@ -318,15 +318,6 @@ def _start_refusal(action: str) -> str:
         return ""
     if action == "find" or any(other.action == "find" for other in running):
         return f"Apply operation {running[-1].operation_id} is already active"
-    # The extension's relay has one connection to the browser, and a Prepare may open
-    # a posting there: only batches of the same kind share it.
-    if browser.extension_mode() and any(
-        other.action != action or action not in ("prepare", "fill") for other in running
-    ):
-        return (
-            "With the browser extension, one kind of Apply task runs at a time; "
-            "start this when the current one finishes"
-        )
     return ""
 
 
@@ -546,11 +537,19 @@ def _captured_settings(request: ApplyOperationRequest) -> ApplySettings:
     job_defaults = JobSettings.model_validate(raw["defaults"])
     settings = job_defaults.apply.model_copy(deep=True)
     settings._job_defaults = job_defaults
+    saved = settings.model_selection
     settings.model_provider = request.model_provider
     settings.model_name = request.model_name.strip()
-    settings.model_selection = (
-        request.model_selection.model_copy(deep=True) if request.model_selection else None
-    )
+    if request.model_selection is not None:
+        settings.model_selection = request.model_selection.model_copy(deep=True)
+    elif not (
+        saved is not None
+        and saved.provider == settings.model_provider
+        and saved.model_name == settings.model_name
+    ):
+        # A request naming a different model than the saved one runs that model; one
+        # naming the saved model keeps its full selection (server URL, Vertex project).
+        settings.model_selection = None
     settings.auto_submit_enabled = request.auto_submit
     settings.blocker_mode = request.blocker_mode
     return settings
@@ -1202,7 +1201,8 @@ def _dispatch_round(
         ).max_concurrent_jobs
         workers = capacity
     else:
-        capacity = 1 if browser.extension_mode() else settings.max_parallel_fills
+        # The extension's relay gives each fill its own tab, like the desktop browser.
+        capacity = settings.max_parallel_fills
         workers = 1 if request.blocker_mode == "pause" else capacity
     workers = min(workers, len(ids))
     # Shared with every batch of this kind running beside this one.

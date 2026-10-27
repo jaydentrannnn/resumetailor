@@ -150,16 +150,18 @@ def test_pausing_one_batch_leaves_the_other_running(apply_env):
     assert _finished(prepare).completed == 1
 
 
-def test_the_extension_runs_one_kind_at_a_time(apply_env, monkeypatch):
-    prepare = _start("prepare", ["one"])
+def test_the_extension_runs_prepare_and_fill_side_by_side(apply_env, monkeypatch):
+    """Audit #27: the relay gives every task its own tab, as the desktop browser does."""
     monkeypatch.setattr(operations.browser, "extension_mode", lambda: True)
-    with pytest.raises(RuntimeError, match="browser extension"):
-        _start("fill", ["two"])
-    second = _start("prepare", ["two"])  # the same kind shares it
+    prepare = _start("prepare", ["one"])
+    fill = _start("fill", ["two"])
+    assert {prepare.operation_id, fill.operation_id} <= {
+        op.operation_id for op in operations.active_all()
+    }
     for gate in apply_env.gates.values():
         gate.set()
     _finished(prepare)
-    _finished(second)
+    _finished(fill)
 
 
 def test_profile_edits_wait_for_every_batch(apply_env):

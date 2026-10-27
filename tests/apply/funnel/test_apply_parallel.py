@@ -85,9 +85,8 @@ def test_fill_uses_exactly_two_workers(batch, monkeypatch):
     assert operation.in_flight == []
 
 
-@pytest.mark.parametrize("extension, blocker", [(True, "continue"), (False, "pause")])
-def test_fill_serial_modes(batch, monkeypatch, extension, blocker):
-    monkeypatch.setattr(operations.browser, "extension_mode", lambda: extension)
+def test_fill_serial_mode(batch, monkeypatch):
+    blocker = "pause"
     active = peak = 0
 
     def fake_fill(_application_id, **_kwargs):

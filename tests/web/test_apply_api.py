@@ -509,18 +509,12 @@ def test_archived_application_is_not_preparable_or_retryable(client):
     assert result.status_code == 422
 
 
-def test_retry_refused_while_an_apply_operation_is_active(client, monkeypatch):
-    """A fetch retry may drive the browser: with the extension's one tab, any running
-    Apply operation owns it; on the desktop browser only a batch holding this row."""
+def test_retry_refused_while_an_apply_operation_holds_the_row(client, monkeypatch):
+    """A fetch retry drives the browser in a tab of its own, with the extension's relay
+    too (audit #38): only a batch holding this row stands in its way."""
     c, _q = client
     _stored_app("a-1", "discovered")
-    monkeypatch.setattr(operations_mod, "active", lambda: object())
     monkeypatch.setattr(operations_mod.browser, "extension_mode", lambda: True)
-    res = c.post("/api/applications/a-1/retry")
-    assert res.status_code == 409
-    assert "Apply workflow" in res.json()["detail"]
-
-    monkeypatch.setattr(operations_mod.browser, "extension_mode", lambda: False)
     held = operations_mod.ApplyOperation(
         operation_id="busy", action="prepare", state="running", held_ids=["a-1"]
     )

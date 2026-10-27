@@ -20,11 +20,12 @@ import os
 import socket
 import threading
 import time
+import uuid
 from collections.abc import Iterator
 from contextlib import asynccontextmanager, contextmanager
 from dataclasses import dataclass
 from typing import Any
-from urllib.parse import urlparse, urlunparse
+from urllib.parse import quote, urlparse, urlunparse
 
 import httpx
 
@@ -42,42 +43,53 @@ class BrowserStatus:
     cdp_url: str = ""
 
 
-#: Close reason the extension relay (`cdp_relay.py`) sends a second client while a fill
-#: holds the one connection it allows: the relay and tab are fine, just in use.
-RELAY_BUSY = "Relay busy: a fill is connected"
+#: Close reason the extension relay (`cdp_relay.py`) gives a connection asking for a tab
+#: another task drives: the relay and the tab are fine, just in use.
+RELAY_BUSY = "Relay busy: another task is using this tab"
 TAB_GONE = "Tab was closed or DevTools opened"
 UPLOAD_LOCK = threading.Lock()
-_RELAY_LEASE = threading.Lock()
+#: One task at a time per relay tab, in this process (the relay enforces it across all).
+_TAB_LEASES: dict[str, threading.Lock] = {}
+_TAB_LEASES_GUARD = threading.Lock()
+
+
+def _tab_lease(target_id: str) -> threading.Lock | None:
+    """The lease on one relay tab; None outside extension mode or without a tab, where
+    connections share nothing (a connection without a tab sees only tabs it opens)."""
+    if not target_id or not extension_mode():
+        return None
+    with _TAB_LEASES_GUARD:
+        return _TAB_LEASES.setdefault(target_id, threading.Lock())
 
 
 @contextmanager
-def relay_slot() -> Iterator[None]:
-    """Foreground connections wait for a bounded background observation to finish."""
-    held = extension_mode()
-    if held and not _RELAY_LEASE.acquire(timeout=25):
+def relay_slot(target_id: str = "") -> Iterator[None]:
+    """Foreground work on a relay tab waits for a bounded observation of it to finish."""
+    lease = _tab_lease(target_id)
+    if lease is not None and not lease.acquire(timeout=25):
         raise RuntimeError(RELAY_BUSY)
     try:
         yield
     finally:
-        if held:
-            _RELAY_LEASE.release()
+        if lease is not None:
+            lease.release()
 
 
 @asynccontextmanager
-async def async_relay_slot(*, background: bool = False):
-    """A monitor skips a busy relay; foreground work waits without blocking its loop."""
-    held = extension_mode()
-    if held:
+async def async_relay_slot(*, background: bool = False, target_id: str = ""):
+    """A monitor skips a busy tab; foreground work waits without blocking its loop."""
+    lease = _tab_lease(target_id)
+    if lease is not None:
         deadline = time.monotonic() + 25
-        while not _RELAY_LEASE.acquire(blocking=False):
+        while not lease.acquire(blocking=False):
             if background or time.monotonic() >= deadline:
                 raise RuntimeError(RELAY_BUSY)
             await asyncio.sleep(0.05)
     try:
         yield
     finally:
-        if held:
-            _RELAY_LEASE.release()
+        if lease is not None:
+            lease.release()
 
 
 @asynccontextmanager
@@ -92,22 +104,28 @@ async def upload_slot():
 
 
 def extension_mode() -> bool:
-    """True when fills drive the extension's selected tab through the relay."""
+    """True when Fill and JD fetch drive tabs the extension opens, through the relay."""
     return os.environ.get("BROWSER_MODE", "cdp").lower() == "extension"
 
 
-def _relay_call(method: str) -> dict[str, Any]:
-    """One CDP browser-level command to the relay on a short-lived connection."""
+def _relay_endpoint(target_id: str = "", conn: str = "") -> str:
+    """The relay URL for one connection: scoped to ``target_id`` (else to the tabs it
+    opens), named ``conn`` so `_tab_gone` can ask about it afterwards."""
+    endpoint = effective_cdp_url()
+    if target_id:
+        endpoint += f"/tab/{quote(target_id, safe='')}"
+    return f"{endpoint}?conn={conn}" if conn else endpoint
+
+
+def _relay_call(method: str, params: dict[str, Any] | None = None) -> dict[str, Any]:
+    """One CDP browser-level command to the relay on its own short connection.
+
+    It holds no tab, so it never waits for (or blocks) a task working in one."""
     from websockets.sync.client import connect
 
-    if not _RELAY_LEASE.acquire(blocking=False):
-        raise RuntimeError(RELAY_BUSY)
-    try:
-        with connect(effective_cdp_url(), open_timeout=2, close_timeout=1) as connection:
-            connection.send(json.dumps({"id": 1, "method": method}))
-            reply = json.loads(connection.recv(timeout=2))
-    finally:
-        _RELAY_LEASE.release()
+    with connect(effective_cdp_url(), open_timeout=2, close_timeout=1) as connection:
+        connection.send(json.dumps({"id": 1, "method": method, "params": params or {}}))
+        reply = json.loads(connection.recv(timeout=5))
     if reply.get("error"):
         raise RuntimeError(reply["error"].get("message", "Relay rejected connection"))
     return reply["result"]
@@ -167,9 +185,8 @@ def browser_status() -> BrowserStatus:
             return BrowserStatus(reachable=True, browser=product, cdp_url=endpoint)
         except Exception as exc:  # noqa: BLE001 - a stopped relay is normal
             if _relay_busy(exc):
-                # A fill holds the relay's only connection; the tab is attached.
                 return BrowserStatus(
-                    reachable=True, browser="Extension relay (fill running)", cdp_url=endpoint
+                    reachable=True, browser="Extension relay (in use)", cdp_url=endpoint
                 )
             return BrowserStatus(reachable=False, error=str(exc), cdp_url=endpoint)
     configured = config.CHROME_CDP_URL.rstrip("/")
@@ -201,7 +218,10 @@ def open_target_ids() -> set[str] | None:
 
 
 def open_targets() -> dict[str, str] | None:
-    """Open tabs as ``{target id: url}``, or ``None`` when the browser is unreachable."""
+    """Open tabs as ``{target id: url}``, or ``None`` when the browser is unreachable.
+
+    In extension mode these are every tab the app opened through the relay (audit #39),
+    whichever task holds them."""
     if extension_mode():
         try:
             infos = _relay_call("Target.getTargets")["targetInfos"]
@@ -229,9 +249,15 @@ def close_target(target_id: str) -> bool:
     """Close one tab by target id; False when it was not closed (never raises).
 
     Retained application tabs pile up otherwise: each holds a full ATS page in memory,
-    and a batch of handed-over Workday tabs ran the fill browser past 8 GB (2026-10)."""
-    if not target_id or extension_mode():
-        return False  # the relay drives the applicant's own tab: never ours to close
+    and a batch of handed-over Workday tabs ran the fill browser past 8 GB (2026-10).
+    In extension mode the relay closes only a tab the app opened."""
+    if not target_id:
+        return False
+    if extension_mode():
+        try:
+            return _relay_call("Target.closeTarget", {"targetId": target_id}).get("success") is True
+        except Exception:  # noqa: BLE001 - a stopped relay is an expected state
+            return False
     try:
         resp = httpx.get(f"{effective_cdp_url()}/json/close/{target_id}", timeout=2.0)
     except Exception:  # noqa: BLE001 - unreachable browser is an expected state
@@ -239,14 +265,19 @@ def close_target(target_id: str) -> bool:
     return resp.status_code == 200
 
 
-def _tab_gone() -> bool:
-    """After a fill error in relay mode: did the selected tab go away?
+def _tab_gone(conn: str) -> bool:
+    """After an error in relay mode: did connection ``conn`` lose its tab?
 
-    The relay drops the fill's connection when the tab closes or DevTools opens, so a
-    probe then finds no tab. While the fill is still connected the probe gets
-    `RELAY_BUSY`, which reads as reachable, and the original error stands.
+    The relay remembers a connection whose tab closed (or opened DevTools) under it and
+    answers on a connection of its own, so the probe works while the task is still
+    connected. A relay that no longer answers (the extension left) reads as gone too.
     """
-    return extension_mode() and not browser_status().reachable
+    if not extension_mode():
+        return False
+    try:
+        return bool(_relay_call("Relay.tabGone", {"conn": conn}).get("gone"))
+    except Exception:  # noqa: BLE001 - unreachable: the tab is gone with it
+        return True
 
 
 def _ensure() -> BrowserStatus:
@@ -263,7 +294,7 @@ def _require_browser(status: BrowserStatus) -> None:
     if extension_mode():
         raise RuntimeError(
             f"Extension relay unavailable at {status.cdp_url}: {status.error}. "
-            "Start the relay and choose Use this tab for Fill in the extension."
+            "Start the relay and choose Connect Fill relay in the extension."
         )
     raise RuntimeError(
         f"Browser CDP unreachable at {status.cdp_url}: {status.error}. "
@@ -273,13 +304,15 @@ def _require_browser(status: BrowserStatus) -> None:
 
 
 @contextmanager
-def cdp_browser() -> Iterator[Any]:
-    with relay_slot(), _cdp_browser() as connected:
+def cdp_browser(target_id: str = "") -> Iterator[Any]:
+    """A browser connection. In extension mode it sees the one existing tab
+    ``target_id`` (holding its lease) beside any tab it opens; CDP mode sees every tab."""
+    with relay_slot(target_id), _cdp_browser(target_id) as connected:
         yield connected
 
 
 @contextmanager
-def _cdp_browser() -> Iterator[Any]:
+def _cdp_browser(target_id: str = "") -> Iterator[Any]:
     """Connect to the host browser over CDP; yield a Playwright ``Browser``.
 
     Each caller owns a separate sync Playwright connection in its own thread. Browser
@@ -296,13 +329,17 @@ def _cdp_browser() -> Iterator[Any]:
         ) from exc
 
     # sync_playwright must not run on a thread that already has an asyncio loop.
-    connect_url = effective_cdp_url(config.CHROME_CDP_URL)
+    conn = uuid.uuid4().hex
+    connect_url = (
+        _relay_endpoint(target_id, conn) if extension_mode()
+        else effective_cdp_url(config.CHROME_CDP_URL)
+    )
     with sync_playwright() as p:
         browser = p.chromium.connect_over_cdp(connect_url)
         try:
             yield browser
         except Exception as exc:
-            if _tab_gone():
+            if _tab_gone(conn):
                 raise RuntimeError(TAB_GONE) from exc
             raise
         finally:
@@ -342,7 +379,7 @@ def find_target(context: Any, expected_id: str) -> Any | None:
 
 def focus_target(expected_id: str) -> str:
     """Focus a recorded application tab and return its current URL."""
-    with cdp_browser() as connected:
+    with cdp_browser(expected_id) as connected:
         for context in connected.contexts:
             page = find_target(context, expected_id)
             if page is not None:
@@ -352,25 +389,31 @@ def focus_target(expected_id: str) -> str:
 
 
 @asynccontextmanager
-async def async_cdp_browser(*, background: bool = False):
-    async with async_relay_slot(background=background), _async_cdp_browser() as connected:
+async def async_cdp_browser(*, background: bool = False, target_id: str = ""):
+    """Async twin of `cdp_browser`; ``background`` skips a tab another task holds."""
+    async with (
+        async_relay_slot(background=background, target_id=target_id),
+        _async_cdp_browser(target_id) as connected,
+    ):
         yield connected
 
 
 @asynccontextmanager
-async def _async_cdp_browser():
+async def _async_cdp_browser(target_id: str = ""):
     """Async CDP connection for the deadline-bounded verified Apply engine."""
     _require_browser(await asyncio.to_thread(_ensure))
     try:
         from playwright.async_api import async_playwright
     except ImportError as exc:
         raise RuntimeError("playwright is not installed") from exc
+    conn = uuid.uuid4().hex
+    url = _relay_endpoint(target_id, conn) if extension_mode() else effective_cdp_url()
     async with async_playwright() as playwright:
-        connected = await playwright.chromium.connect_over_cdp(effective_cdp_url())
+        connected = await playwright.chromium.connect_over_cdp(url)
         try:
             yield connected
         except Exception as exc:
-            if _tab_gone():
+            if await asyncio.to_thread(_tab_gone, conn):
                 raise RuntimeError(TAB_GONE) from exc
             raise
         finally:

@@ -108,7 +108,7 @@ def _correctable(tmp_path, monkeypatch, label: str):
     page = SimpleNamespace(url=url)
 
     @asynccontextmanager
-    async def fake_browser():
+    async def fake_browser(*_args, **_kwargs):
         yield SimpleNamespace(contexts=[object()])
 
     async def fake_find(_context, _target):

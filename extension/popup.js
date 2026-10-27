@@ -267,15 +267,22 @@ function renderAdvanced(parts) {
   const details = node("details", "", "advanced");
   details.append(node("summary", "Advanced"));
   if (state.options.relay && state.relayAllowed) {
-    details.append(button("Use this tab for Fill (relay)", async () => {
-      try {
-        const result = await rpc({ type: "relay", tab: currentTab });
-        state.lastResult = result.message;
-        render();
-      } catch (error) {
-        showError(error.message);
-      }
-    }));
+    const relay = state.relay || { connected: false, tabs: 0 };
+    if (relay.connected) {
+      // Fill and posting fetches open their own background tabs; the student's stay theirs.
+      const open = relay.tabs ? ` · ${relay.tabs} app tab${relay.tabs === 1 ? "" : "s"} open` : "";
+      details.append(node("p", `Fill relay connected${open}.`, "muted"));
+    } else {
+      details.append(button("Connect Fill relay", async () => {
+        try {
+          const result = await rpc({ type: "relay" });
+          state.lastResult = result.message;
+          await refresh();
+        } catch (error) {
+          showError(error.message);
+        }
+      }));
+    }
   } else {
     details.append(node("p", "The Fill relay is off. Turn it on in the options.", "muted"));
   }
@@ -292,12 +299,18 @@ function renderPaired() {
   if (current.operation) {
     parts.push(node("p", `${current.operation.action}: ${current.operation.message || current.operation.state} (${current.operation.processed}/${current.operation.total})`, "notice"));
   }
-  if (state.pendingFill) {
+  const pendingFills = state.pendingFills || {};
+  const pageId = page?.lookup.application?.id;
+  const others = Object.keys(pendingFills).filter((id) => id !== pageId).length;
+  if (pageId && pendingFills[pageId]) {
     parts.push(node("p", "Preparing this application. Fill will start once it is ready.", "notice"));
     parts.push(button("Cancel pending fill", async () => {
-      await rpc({ type: "cancel" });
+      await rpc({ type: "cancel", applicationId: pageId });
       await refresh();
     }));
+  }
+  if (others) {
+    parts.push(node("p", `${others} other application${others === 1 ? "" : "s"} waiting to Fill.`, "muted"));
   }
   if (state.lastResult) parts.push(node("p", state.lastResult, "notice"));
   if (last?.application && ["exists", "merged", "completed"].includes(last.result) &&

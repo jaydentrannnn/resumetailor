@@ -209,7 +209,7 @@ def _run(monkeypatch, leftovers, *, previous_tab="", fill_mode="initial", postin
     page = _page(posting, leftovers)
 
     @contextmanager
-    def _fake_browser():
+    def _fake_browser(*_args, **_kwargs):
         connected = MagicMock()
         connected.contexts = [MagicMock()]
         connected.contexts[0].new_page.return_value = page

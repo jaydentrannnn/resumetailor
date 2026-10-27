@@ -4,12 +4,14 @@ import {
 } from "./lib/api.js";
 import { captureTab, extractTab, lookupTab, readTabCards } from "./lib/capture.js";
 import { advanceFollowUp, cancelFollowUp, startFollowUp } from "./lib/workflow.js";
-import { connectRelay, relayAllowed } from "./lib/relay.js";
+import { connectRelay, relayAllowed, relayState } from "./lib/relay.js";
 import { getOptions, setOptions } from "./lib/settings.js";
 import { hasBoardAccess, syncBoardScripts } from "./lib/boards.js";
 import { CompletionGuard, mergeCardStatus, shouldComplete, statusLabel } from "./lib/stubs.js";
 
 const ALARM = "resume-tailor-status";
+/** A fill stopped there earlier; Fill this page continues it. */
+const CONTINUE_STATUSES = new Set(["awaiting_review", "awaiting_otp", "fill_failed"]);
 const COMMAND = "capture-page";
 let actionBusy = false;
 const completions = new CompletionGuard();
@@ -83,10 +85,11 @@ async function snapshot(tab) {
   if (!saved.token) return { state: "unpaired", port, options };
   const current = await status();
   const page = tab && /^https?:\/\//.test(tab.url || "") ? await lookupTab(tab) : null;
-  const session = await chrome.storage.session.get(["pendingFill", "lastResult"]);
+  const session = await chrome.storage.session.get(["pendingFills", "lastResult"]);
   return {
     state: "paired", port, status: current, page, options,
-    boardAccess: await hasBoardAccess(), relayAllowed: await relayAllowed(), ...session,
+    boardAccess: await hasBoardAccess(), relayAllowed: await relayAllowed(),
+    relay: relayState(), ...session,
   };
 }
 
@@ -129,8 +132,16 @@ async function runAction(action, tab) {
       await chrome.storage.session.set({ lastResult: "Fill started. You submit the application yourself." });
       return { message: "Fill started. You submit the application yourself.", operation: started, application: app };
     }
-    const existing = await chrome.storage.session.get("pendingFill");
-    if (existing.pendingFill) throw new Error("A fill is already waiting for preparation.");
+    if (CONTINUE_STATUSES.has(app.status)) {
+      // A fill stopped here before: continue it in its tab instead of preparing again.
+      const started = await operation(app.id, "fill", "continue");
+      const message = "Fill continued. You submit the application yourself.";
+      await chrome.storage.session.set({ lastResult: message });
+      return { message, operation: started, application: app };
+    }
+    if (app.status === "filling") throw new Error("This application is being filled now.");
+    const { pendingFills = {} } = await chrome.storage.session.get("pendingFills");
+    if (pendingFills[app.id]) throw new Error("This application is already waiting to Fill.");
     const started = await operation(app.id, "prepare");
     await startFollowUp({
       applicationId: app.id,
@@ -257,7 +268,9 @@ chrome.permissions.onRemoved.addListener((removed) => {
 chrome.alarms.onAlarm.addListener((alarm) => {
   if (alarm.name !== ALARM) return;
   void updateBadge();
-  void advanceFollowUp().catch((error) => {
+  void advanceFollowUp().then((finished) => {
+    for (const message of finished) void notify(message);
+  }).catch((error) => {
     if (error instanceof ExtensionApiError && error.code === "extension_auth") return;
     void chrome.storage.session.set({ lastResult: error.message });
   });
@@ -281,8 +294,8 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
         return { id: result.id };
       }
       case "action": return runAction(message.action, message.tab);
-      case "cancel": await cancelFollowUp(); return {};
-      case "relay": return connectRelay(message.tab);
+      case "cancel": await cancelFollowUp(message.applicationId); return {};
+      case "relay": return connectRelay();
       case "cards": return readCards(message.tab);
       case "save-cards": return saveCards(message.cards);
       case "job-view": return jobView(message, sender);

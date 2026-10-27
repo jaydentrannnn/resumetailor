@@ -612,7 +612,11 @@ def capture_stubs(body: CaptureStubsRequest) -> CaptureStubsResponse:
     return CaptureStubsResponse(results=results)
 
 
-def _start(application_id: str, action: Literal["prepare", "fill"]) -> ApplyOperationResponse:
+def _start(
+    application_id: str,
+    action: Literal["prepare", "fill"],
+    mode: Literal["initial", "continue"] = "initial",
+) -> ApplyOperationResponse:
     app = store.get(application_id)
     if app is None:
         raise HTTPException(status_code=404, detail="That page is not tracked yet.")
@@ -630,11 +634,15 @@ def _start(application_id: str, action: Literal["prepare", "fill"]) -> ApplyOper
     settings = _apply_settings()
     request = ApplyOperationRequest(
         action=action,
+        fill_mode=mode,
         application_ids=[app.canonical_key or app.source_job_id],
         # The student is at the tab; the extension never starts an automatic submit.
         auto_submit=False,
         model_provider=settings.model_provider,
         model_name=settings.model_name,
+        # The full Heavy selection (custom server URL, Vertex project), as the Apply page
+        # sends it; provider and name alone cannot reach those (audit #25).
+        model_selection=settings.model_selection,
     )
     try:
         operation = apply_operations.start(request)
@@ -659,5 +667,9 @@ def prepare(application_id: str) -> ApplyOperationResponse:
     response_model=ApplyOperationResponse,
     status_code=202,
 )
-def fill_application(application_id: str) -> ApplyOperationResponse:
-    return _start(application_id, "fill")
+def fill_application(
+    application_id: str, mode: Literal["initial", "continue"] = "initial"
+) -> ApplyOperationResponse:
+    """``mode=continue`` picks up a fill that stopped earlier (review, a code, a failure)
+    in its own tab, like Continue on the Apply page."""
+    return _start(application_id, "fill", mode)

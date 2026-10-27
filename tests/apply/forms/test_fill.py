@@ -318,7 +318,7 @@ def _stub_greenhouse_form(fill_paths, monkeypatch, **app_fields):
     page.locator.return_value.first.evaluate.return_value = "Ada Lovelace Resume - Intern.pdf"
 
     @contextmanager
-    def _fake_browser():
+    def _fake_browser(*_args, **_kwargs):
         browser = MagicMock()
         browser.contexts = [MagicMock()]
         browser.contexts[0].new_page.return_value = page
@@ -552,7 +552,7 @@ def test_unanswered_salary_question_forces_manual_review_even_with_auto_submit(f
     page.evaluate.side_effect = evaluate_form
 
     @contextmanager
-    def fake_browser():
+    def fake_browser(*_args, **_kwargs):
         instance = MagicMock()
         instance.contexts = [MagicMock()]
         instance.contexts[0].new_page.return_value = page
@@ -598,7 +598,7 @@ def test_a_guessed_location_list_is_kept_for_review(fill_paths, monkeypatch):
     page.evaluate.side_effect = evaluate_form
 
     @contextmanager
-    def fake_browser():
+    def fake_browser(*_args, **_kwargs):
         instance = MagicMock()
         instance.contexts = [MagicMock()]
         instance.contexts[0].new_page.return_value = page
@@ -649,7 +649,7 @@ def test_fill_application_awaiting_review(fill_paths, monkeypatch, model_unavail
     page.evaluate.side_effect = _evaluate_replies({"questions": []}, filler_result, ["Phone"])
 
     @contextmanager
-    def _fake_browser():
+    def _fake_browser(*_args, **_kwargs):
         browser = MagicMock()
         browser.contexts = [MagicMock()]
         browser.contexts[0].new_page.return_value = page
@@ -722,7 +722,7 @@ def test_fill_application_answer_stage_pinned_to_apply_settings_model(fill_paths
     page.evaluate.side_effect = _evaluate_replies({"questions": []}, filler_result, [])
 
     @contextmanager
-    def _fake_browser():
+    def _fake_browser(*_args, **_kwargs):
         browser = MagicMock()
         browser.contexts = [MagicMock()]
         browser.contexts[0].new_page.return_value = page
@@ -774,7 +774,7 @@ def test_fill_application_failure_sets_fill_failed(fill_paths, monkeypatch):
     monkeypatch.setattr(data, "load", lambda: MagicMock(all_bullets=lambda: []))
 
     @contextmanager
-    def _broken_browser():
+    def _broken_browser(*_args, **_kwargs):
         raise RuntimeError("CDP unreachable")
         yield  # pragma: no cover
 
@@ -802,7 +802,7 @@ def test_a_posting_in_another_country_answers_not_authorized(fill_paths, monkeyp
     monkeypatch.setattr(data, "load", lambda: MagicMock(all_bullets=lambda: []))
 
     @contextmanager
-    def _broken_browser():
+    def _broken_browser(*_args, **_kwargs):
         raise RuntimeError("CDP unreachable")
         yield  # pragma: no cover
 
@@ -851,7 +851,7 @@ def test_fill_application_readiness_guard_fails_when_zero_controls(fill_paths, m
     page.get_by_role.return_value = mock_loc
 
     @contextmanager
-    def _fake_browser():
+    def _fake_browser(*_args, **_kwargs):
         browser = MagicMock()
         browser.contexts = [MagicMock()]
         browser.contexts[0].new_page.return_value = page
@@ -916,7 +916,7 @@ def test_a_page_with_only_its_own_chrome_is_not_ready_for_review(fill_paths, mon
     page.get_by_role.return_value = mock_loc
 
     @contextmanager
-    def _fake_browser():
+    def _fake_browser(*_args, **_kwargs):
         browser = MagicMock()
         browser.contexts = [MagicMock()]
         browser.contexts[0].new_page.return_value = page
@@ -948,7 +948,7 @@ def test_workday_error_page_that_survives_refreshes_is_handed_over(fill_paths, m
     page.frames = [page]
 
     @contextmanager
-    def _fake_browser():
+    def _fake_browser(*_args, **_kwargs):
         cdp = MagicMock()
         cdp.contexts = [MagicMock()]
         cdp.contexts[0].new_page.return_value = page
@@ -1078,7 +1078,7 @@ def test_fill_application_multi_step_wizard(fill_paths, monkeypatch):
     page.get_by_role = _get_by_role
 
     @contextmanager
-    def _fake_browser():
+    def _fake_browser(*_args, **_kwargs):
         browser = MagicMock()
         browser.contexts = [MagicMock()]
         browser.contexts[0].new_page.return_value = page

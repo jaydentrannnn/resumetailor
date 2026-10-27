@@ -383,7 +383,7 @@ def test_a_fill_that_fails_after_sending_the_submit_stays_unconfirmed(tmp_path, 
         raise OSError("could not write fill.json")
 
     @contextmanager
-    def connected():
+    def connected(*_args, **_kwargs):
         yield MagicMock()
 
     monkeypatch.setattr(fill._FillRun, "_run_connected", submit_then_fail)

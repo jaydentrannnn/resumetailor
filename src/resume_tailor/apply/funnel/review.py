@@ -129,7 +129,7 @@ async def refresh(source_job_id: str) -> store_models.FillResult:
     previous = store_models.FillResult.model_validate(app.fill) if app.fill else None
     if previous is None or not previous.browser_target_id:
         raise ValueError("No recorded review tab")
-    async with browser.async_cdp_browser() as connected:
+    async with browser.async_cdp_browser(target_id=previous.browser_target_id) as connected:
         for context in connected.contexts:
             page = await browser.async_find_target(context, previous.browser_target_id)
             if page is not None:
@@ -189,7 +189,7 @@ async def correct(
         wanted = option.label
     else:
         raise ValueError("This control cannot be corrected here")
-    async with browser.async_cdp_browser() as connected:
+    async with browser.async_cdp_browser(target_id=previous.browser_target_id) as connected:
         for context in connected.contexts:
             page = await browser.async_find_target(context, previous.browser_target_id)
             if page is None:

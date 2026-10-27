@@ -147,7 +147,9 @@ def test_close_target_closes_by_id_and_never_raises(monkeypatch):
     assert seen == ["http://127.0.0.1:9222/json/close/TAB1", "http://127.0.0.1:9222/json/close/GONE"]
 
 
-def test_close_target_leaves_the_extension_tab_alone(monkeypatch):
+def test_close_target_in_extension_mode_goes_through_the_relay(monkeypatch):
+    """The relay closes only tabs the app opened (`test_cdp_relay.py`); never over HTTP."""
     monkeypatch.setattr(browser, "extension_mode", lambda: True)
     monkeypatch.setattr(browser.httpx, "get", lambda *a, **k: pytest.fail("must not close"))
+    monkeypatch.setattr(browser, "_relay_call", lambda *_a, **_k: {"success": False})
     assert _CLOSE_TARGET("TAB1") is False

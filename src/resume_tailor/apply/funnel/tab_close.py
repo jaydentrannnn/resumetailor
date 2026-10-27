@@ -55,10 +55,6 @@ _PENDING: dict[str, Pending] = {}
 
 def refusal(app: store_models.Application, fill: store_models.FillResult) -> str:
     """Why this finished application's tab stays open, or "" when it may close."""
-    from resume_tailor.apply.driver import browser  # noqa: PLC0415
-
-    if browser.extension_mode():
-        return "The browser extension's tabs are yours; the app never closes them"
     if app.source_job_id in KEPT:
         return "You chose to keep it open"
     if app.status == "submitted" and not fill.confirmation:
@@ -180,7 +176,7 @@ async def _read_async(target: str, install: bool) -> tuple[float, float] | None:
     from resume_tailor.apply.driver import browser  # noqa: PLC0415
     from resume_tailor.apply.funnel import answer_harvest  # noqa: PLC0415
 
-    async with browser.async_cdp_browser() as connected:
+    async with browser.async_cdp_browser(target_id=target) as connected:
         for context in connected.contexts:
             page = await browser.async_find_target(context, target)
             if page is None:

@@ -414,14 +414,15 @@ async def _collect_async(application_id: str) -> int:
         return 0
     fill = store_models.FillResult.model_validate(app.fill)
     left = left_for_you(fill)
-    if not fill.browser_target_id or (browser.extension_mode() and FILLING):
+    if not fill.browser_target_id:
         return 0
     # Only an open tab: never start a browser just to read one.
     if fill.browser_target_id not in (browser.open_target_ids() or set()):
         return 0
-    connection = (browser.async_cdp_browser(background=True) if browser.extension_mode()
-                  else browser.async_cdp_browser())
-    async with connection as connected:
+    # A tab another task holds in the relay is skipped this round, never waited for.
+    async with browser.async_cdp_browser(
+        background=True, target_id=fill.browser_target_id
+    ) as connected:
         for context in connected.contexts:
             page = await browser.async_find_target(context, fill.browser_target_id)
             if page is None:
@@ -516,8 +517,6 @@ def _tick(state: _Pass) -> None:
     a submission's confirmation page — or on the `_INTERVAL_S` full pass."""
     from resume_tailor.apply.driver import browser  # noqa: PLC0415
 
-    if browser.extension_mode() and FILLING:
-        return  # the relay has one connection; fills take priority
     targets = browser.open_targets()
     if targets is None:
         return  # browser unreachable: try again later
@@ -563,8 +562,6 @@ def _tick(state: _Pass) -> None:
 
 def restore() -> None:
     """Resume observation of this workspace's retained tabs after startup."""
-    from resume_tailor.apply.driver import browser  # noqa: PLC0415
-
     with _WATCH_LOCK:
         _WATCHED.clear()
     for app in store.load_all().values():

@@ -151,7 +151,7 @@ class _FillRun(fill_entry._FillEntry, fill_wizard._FillWizard, fill_finish._Fill
         stall = watchdog.Stall()
         try:
             self.progress("connecting to browser")
-            with browser.cdp_browser() as pw_browser:
+            with browser.cdp_browser(self.target_id) as pw_browser:
                 pid = watchdog.driver_pid(pw_browser)
                 with watchdog.stall_guard(
                     lambda: self.deadline,

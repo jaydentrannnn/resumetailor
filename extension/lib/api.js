@@ -100,7 +100,7 @@ export async function request(path, { method = "GET", body, paired = true } = {}
   if (!response.ok) {
     if (response.status === 401 && payload.error === "extension_auth") {
       await chrome.storage.local.remove("token");
-      await chrome.storage.session.remove("pendingFill");
+      await chrome.storage.session.remove("pendingFills");
       throw new ExtensionApiError("Pair again.", 401, "extension_auth");
     }
     throw new ExtensionApiError(detailText(payload, `ResumeTailor returned ${response.status}.`), response.status, payload.error);
@@ -127,5 +127,10 @@ export const lookupBatch = (urls) =>
   request("/api/extension/lookup-batch", { method: "POST", body: { urls: urls.slice(0, MAX_BATCH) } });
 export const captureStubs = (cards) =>
   request("/api/extension/capture-stubs", { method: "POST", body: { cards: cards.slice(0, MAX_BATCH) } });
-export const operation = (id, action) =>
-  request(`/api/extension/applications/${encodeURIComponent(id)}/${action}`, { method: "POST" });
+// `mode` "continue" picks up a fill that stopped earlier, in its own tab.
+export const operation = (id, action, mode = "initial") =>
+  request(
+    `/api/extension/applications/${encodeURIComponent(id)}/${action}` +
+      (mode === "continue" ? "?mode=continue" : ""),
+    { method: "POST" },
+  );

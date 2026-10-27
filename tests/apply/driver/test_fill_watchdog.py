@@ -77,7 +77,7 @@ def test_the_driver_pid_is_read_from_a_sync_browser_and_its_process_can_be_ended
 
 def test_a_cut_fill_reports_where_it_was_stuck(monkeypatch):
     @contextmanager
-    def fake_browser():
+    def fake_browser(*_args, **_kwargs):
         yield SimpleNamespace(contexts=[])
 
     @contextmanager

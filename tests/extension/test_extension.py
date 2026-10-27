@@ -609,3 +609,48 @@ def test_status_counts_rows_that_need_you(client):
     body = client.get("/api/extension/status", headers=headers).json()
     assert body["needs_you"] == 2
     assert body["paused"] is False
+
+
+def test_extension_fills_with_the_full_saved_model_selection(client, monkeypatch):
+    """Audit #25: a custom server or Vertex project reaches an extension-started fill,
+    and ``mode=continue`` continues a retained fill instead of starting over."""
+    heavy = {"provider": "custom", "model_name": "qwen", "base_url": "https://llm.example/v1"}
+    light = {
+        "provider": "vertex_ai",
+        "model_name": "gemini-2.5-flash",
+        "vertex_project": "proj-1",
+        "vertex_location": "us-central1",
+    }
+    settings = {"defaults": {"ai_models": {"light": light, "heavy": heavy}}}
+    config.SETTINGS_PATH.write_text(json.dumps(settings), encoding="utf-8")
+    headers = _pair(client)
+    body = {"url": "https://boards.greenhouse.io/acme/jobs/9", "jd_text": _JD}
+    row = client.post("/api/extension/capture", json=body, headers=headers).json()["application"]
+
+    seen = []
+
+    def _start(request):
+        seen.append(request)
+        return apply_operations.ApplyOperation(
+            operation_id="op1", action=request.action, application_ids=request.application_ids
+        )
+
+    monkeypatch.setattr(apply_operations, "start", _start)
+    url = f"/api/extension/applications/{row['id']}/fill"
+    assert client.post(url, headers=headers).status_code == 202
+    assert client.post(f"{url}?mode=continue", headers=headers).status_code == 202
+    assert [r.fill_mode for r in seen] == ["initial", "continue"]
+    selection = seen[0].model_selection
+    assert selection is not None and selection.base_url == "https://llm.example/v1"
+
+    captured = apply_operations._captured_settings(seen[0])
+    assert captured.model_selection is not None
+    assert captured.model_selection.base_url == "https://llm.example/v1"
+    assert captured.fallback_selection is not None
+    assert captured.fallback_selection.vertex_project == "proj-1"
+
+    # Without a selection, the saved one is kept for the same model, dropped for another.
+    bare = seen[0].model_copy(update={"model_selection": None})
+    assert apply_operations._captured_settings(bare).model_selection is not None
+    other = bare.model_copy(update={"model_provider": "gemini", "model_name": "flash"})
+    assert apply_operations._captured_settings(other).model_selection is None

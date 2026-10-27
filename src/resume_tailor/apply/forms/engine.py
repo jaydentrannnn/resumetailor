@@ -258,7 +258,11 @@ async def fill_application(
     try:
         async with asyncio.timeout(fill_outcomes.HARD_CAP_S):
             progress("Connecting to browser")
-            async with browser.async_cdp_browser() as connected:
+            # A continue works in the recorded tab; in extension mode the connection
+            # sees only that tab and the ones it opens.
+            async with browser.async_cdp_browser(
+                target_id=previous.browser_target_id if fill_mode == "continue" else ""
+            ) as connected:
                 if not connected.contexts:
                     raise RuntimeError("No connected browser context is available")
                 context = connected.contexts[0]

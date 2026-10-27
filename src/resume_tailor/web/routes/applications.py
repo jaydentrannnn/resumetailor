@@ -866,10 +866,8 @@ def set_application_notes(source_job_id: str, body: ApplicationNotesRequest) -> 
 @router.post("/api/applications/{source_job_id}/retry", response_model=ApplicationOut)
 def retry_application_route(source_job_id: str) -> ApplicationOut:
     """Re-run the failed fetch, prefilter, or tailor step for one application."""
-    # A fetch retry may drive the host browser. Beside other batches that is fine on the
-    # desktop browser (its own tab); the extension's relay still has one tab for all.
-    if apply_browser.extension_mode() and apply_operations.active() is not None:
-        raise HTTPException(status_code=409, detail="Another Apply workflow is running; retry when it finishes.")
+    # A fetch retry may drive the host browser, in a tab of its own (the extension's
+    # relay too), so only a batch holding this row stands in its way.
     try:
         with apply_operations.rows_idle([source_job_id]):
             app = daily_retry.retry_application(source_job_id)

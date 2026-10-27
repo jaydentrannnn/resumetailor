@@ -119,7 +119,7 @@ def engine_env(tmp_path, monkeypatch):
                 self.contexts = [object()] if contexts else []
 
         @asynccontextmanager
-        async def cdp():
+        async def cdp(*_args, **_kwargs):
             yield _Connected()
 
         async def open_page(connected, context):
