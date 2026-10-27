@@ -144,3 +144,62 @@ test("an unknown status fails visibly", async () => {
   assert.match(finished[0], /something new/);
   assert.deepEqual(session.pendingFills, {});
 });
+
+test("a cancel while the row is looked up is final: no Fill is sent", async () => {
+  await startFollowUp(pending);
+  active = null;
+  apps[pending.lookupUrl].status = "ready";
+  let answer;
+  const lookedUp = new Promise((resolve) => { answer = resolve; });
+  const plainFetch = globalThis.fetch;
+  globalThis.fetch = async (url) => {
+    if (url.includes("/lookup?")) {
+      await lookedUp;
+    }
+    return plainFetch(url);
+  };
+  const advancing = advanceFollowUp();
+  await new Promise((resolve) => setTimeout(resolve, 5));
+  await cancelFollowUp("id1");
+  answer();
+  assert.deepEqual(await advancing, []);
+  assert.equal(posts.length, 0);
+  assert.deepEqual(session.pendingFills, {});
+  assert.match(session.lastResult, /cancelled/);
+});
+
+test("a cancel and a new wait for the same application do not cross", async () => {
+  await startFollowUp(pending);
+  const first = structuredClone(session.pendingFills.id1);
+  await cancelFollowUp("id1");
+  await startFollowUp(pending);
+  // The old wait's step comes back late: it neither ends nor dispatches the new one.
+  session.pendingFills.id1.phase = "preparing";
+  assert.notEqual(session.pendingFills.id1.token, first.token);
+  apps[pending.lookupUrl].status = "skipped";
+  active = null;
+  const finished = await advanceFollowUp();
+  assert.equal(finished.length, 1);  // the live wait ends once, by its own token
+  assert.deepEqual(session.pendingFills, {});
+});
+
+test("changes that overlap never lose another application's wait", async () => {
+  // Storage that answers after a turn of the event loop, as Chrome's does; the write that
+  // marks id1 dispatching lands late, after id2 started waiting.
+  const later = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
+  const store = globalThis.chrome.storage.session;
+  const get = store.get;
+  const set = store.set;
+  store.get = async (keys) => { await later(1); return get(keys); };
+  store.set = async (value) => {
+    await later(value.pendingFills?.id1?.phase === "dispatching" ? 20 : 1);
+    return set(value);
+  };
+  apps[second.lookupUrl] = { id: "id2", status: "tailoring", archived: false };
+  await startFollowUp(pending);
+  active = null;
+  apps[pending.lookupUrl].status = "ready";
+  await Promise.all([advanceFollowUp(), startFollowUp(second)]);
+  assert.equal(posts.length, 1);
+  assert.deepEqual(Object.keys(session.pendingFills), ["id2"]);
+});

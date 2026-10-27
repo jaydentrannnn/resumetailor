@@ -132,6 +132,13 @@ class FillResult(BaseModel):
     #: (`answer_harvest`); a Continue fill never replaces those (`upload_replace`).
     user_touched_uploads: list[str] = Field(default_factory=list)
 
+    @property
+    def confirmed(self) -> bool:
+        """The app itself saw this submission go through: its own submit's confirmation
+        or strong evidence in the tab. ``confirmation`` alone also holds failure text
+        ("missing", an error message)."""
+        return self.status == "submitted" and bool(self.confirmation)
+
 #: What happened after an application went out. Hiring progress is derived from these
 #: (`outcomes.hiring_progress`); the row's operational ``status`` stays ``submitted``.
 OutcomeType = Literal[

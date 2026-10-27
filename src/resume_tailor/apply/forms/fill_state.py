@@ -19,7 +19,6 @@ from resume_tailor.apply.funnel import cover_on_demand, packet_fields, packet_pr
 from resume_tailor.apply.funnel import fill_files
 from resume_tailor.apply.funnel import packet as apply_packet
 from resume_tailor.apply.funnel.store_models import FillResult
-from resume_tailor.content import data
 from resume_tailor.infra import wait_clock
 from resume_tailor.web.schemas import ApplySettings
 
@@ -139,7 +138,8 @@ class _FillState:
         if profile is None:
             profile, _ = profile_mod.load_profile()
         self.profile = profile
-        self.resume = data.load()
+        # The facts the attached resume shows, not edits saved since it was tailored.
+        self.resume = apply_packet.source_resume(app.job_id)
         contact_name = getattr(getattr(self.resume, "contact", None), "name", "")
         self.bullets, self.requirements, self.jd_text = fill_widgets._job_artifacts(app.job_id)
         self.filler_js = fill_page._load_filler_js()

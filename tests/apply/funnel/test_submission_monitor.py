@@ -227,11 +227,12 @@ def test_delayed_confirmation_preserves_a_later_terminal_decision(isolated_store
 
 
 class _ReadOnlyPage:
-    def __init__(self, url, body="", failure=None, rows=None, form_open=False):
+    def __init__(self, url, body="", failure=None, rows=None, form_open=False, frames=()):
         self.url, self.body, self.failure = url, body, failure
         self.rows = rows if rows is not None else [body]
         self.form_open = form_open
         self.reads = []
+        self.frames = [self, *frames]
 
     def locator(self, selector):
         assert selector == "body"
@@ -373,5 +374,27 @@ def test_inspect_with_a_live_form_records_unconfirmed_and_keeps_reading(isolated
                canonical_key=identity.canonical_key(GREENHOUSE))
     store.upsert(app)
     page = _ReadOnlyPage(GREENHOUSE, "Thank you for applying!", form_open=True)
+    assert asyncio.run(submission_monitor.inspect(app, page)) is False
+    assert store.get(app.source_job_id).status == "submit_unconfirmed"
+
+
+class _Frame:
+    def __init__(self, form_open):
+        self.form_open = form_open
+
+    async def evaluate(self, expression):
+        assert expression == submission_monitor.FORM_PROBE_JS
+        if isinstance(self.form_open, Exception):
+            raise self.form_open
+        return self.form_open
+
+
+@pytest.mark.parametrize("frame", [_Frame(True), _Frame(RuntimeError("detached"))])
+def test_a_form_open_in_an_iframe_keeps_the_thank_you_line_weak(isolated_store, frame):
+    """An embedded application: thank-you text outside, a live required form inside."""
+    app = _app(ats="greenhouse", posting_url=GREENHOUSE, final_url=GREENHOUSE,
+               canonical_key=identity.canonical_key(GREENHOUSE))
+    store.upsert(app)
+    page = _ReadOnlyPage(GREENHOUSE, "Thank you for applying!", frames=[frame])
     assert asyncio.run(submission_monitor.inspect(app, page)) is False
     assert store.get(app.source_job_id).status == "submit_unconfirmed"

@@ -197,6 +197,30 @@ def record(
     return result
 
 
+def form_open(page: Any) -> bool:
+    """`FORM_PROBE_JS` over every frame: an embedded application keeps its form in an
+    iframe, below a thank-you line on the page around it. A frame that cannot be read
+    counts as open."""
+    for frame in page.frames:
+        try:
+            if frame.evaluate(FORM_PROBE_JS):
+                return True
+        except Exception:  # noqa: BLE001
+            return True
+    return False
+
+
+async def form_open_async(page: Any) -> bool:
+    """`form_open` for an async page."""
+    for frame in page.frames:
+        try:
+            if await frame.evaluate(FORM_PROBE_JS):
+                return True
+        except Exception:  # noqa: BLE001
+            return True
+    return False
+
+
 async def inspect(
     app: store_models.Application, page: Any, *, workspace_path: Path | None = None
 ) -> bool:
@@ -206,10 +230,9 @@ async def inspect(
     try:
         body = await page.locator("body").inner_text(timeout=4000)
         rows = await page.evaluate(ROWS_JS) if app.ats == "workday" else None
-        form_open = bool(await page.evaluate(FORM_PROBE_JS))
         evidence = confirmation(
             app.final_url or app.posting_url, str(page.url), body, app.ats, rows,
-            form_open=form_open,
+            form_open=await form_open_async(page),
         )
         if evidence:
             recorded = record(app, evidence, workspace_path=workspace_path) is not None

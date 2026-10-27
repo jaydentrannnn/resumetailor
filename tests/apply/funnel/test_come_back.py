@@ -300,3 +300,28 @@ def test_an_unchanged_profile_is_kept_as_is(monkeypatch):
     assert operations._updated_profile(operation, "one", mine) is mine
     assert operations._updated_profile(operation, "one", None) is None
     assert operation.events == []
+
+
+def test_a_corrected_workday_password_alone_is_used(monkeypatch):
+    from resume_tailor.apply.answers.profile import ApplicantProfile
+
+    mine = ApplicantProfile(city="Same", workday_password="old-secret")
+    saved = mine.model_copy(update={"workday_password": "new-secret"})
+    monkeypatch.setattr(operations.profile, "load_profile", lambda: (saved, False))
+    operation = operations.ApplyOperation(operation_id="t", action="fill", state="running")
+    assert operations._updated_profile(operation, "one", mine).workday_password == "new-secret"
+    assert [e["message"] for e in operation.events] == ["Using your updated profile"]
+
+
+def test_an_unreadable_secret_store_keeps_the_batch_password(monkeypatch):
+    from resume_tailor.apply.answers.profile import ApplicantProfile
+
+    mine = ApplicantProfile(city="Old", workday_password="old-secret")
+    saved = ApplicantProfile(city="New")  # the store could not be read: ""
+    monkeypatch.setattr(operations.profile, "load_profile", lambda: (saved, False))
+    operation = operations.ApplyOperation(operation_id="t", action="fill", state="running")
+    updated = operations._updated_profile(operation, "one", mine)
+    assert (updated.city, updated.workday_password) == ("New", "old-secret")
+    saved_same = mine.model_copy(update={"workday_password": ""})
+    monkeypatch.setattr(operations.profile, "load_profile", lambda: (saved_same, False))
+    assert operations._updated_profile(operation, "one", mine) is mine

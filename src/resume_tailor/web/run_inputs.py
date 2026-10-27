@@ -2,8 +2,9 @@
 
 A run captures the master resume when it is queued (`JobQueue.submit`), so an edit
 saved while it waits or runs never mixes into it (audit #13); that copy is kept beside
-the run (``resume_snapshot.json``) for the cover letter regenerated later. ``inputs``
-names the resume, template, guidance, writing styles and model routing by hash: the
+the run (``resume_snapshot.json``) for the cover letter, expansion, claim checks and
+packet made from it later. ``inputs`` names the resume, template, guidance, writing
+styles, model routing and every other setting that changes the output by hash: the
 nightly run reuses an earlier run only when all of them still match (audit #30).
 """
 
@@ -19,6 +20,21 @@ from resume_tailor.content.industries import GuidanceSnapshot
 from resume_tailor.web.schemas import JobSettings
 
 SNAPSHOT = "resume_snapshot.json"
+
+#: `JobSettings` fields left out of "options": the app's own layout and concurrency, the
+#: cache switch, Apply's fill knobs, the opt-in stages a reused run adds on demand
+#: (expansion and cover letter, `preparation.check`), and what "styles" and "model"
+#: already cover (model routing is resolved from app-wide settings at run time). Every
+#: other field changes what a run writes: pages, include, semantic scoring, entry limits,
+#: fit controls, merging, repairs.
+_NOT_OPTIONS = frozenset({
+    "max_concurrent_jobs", "show_shortcut_hints", "start_page", "rail_layout",
+    "no_cache", "apply", "suggest_vocabulary", "no_expand", "cover_letter",
+    "no_cover_letter", "rewrite_style", "expand_style", "cover_style",
+    "model", "model_name", "ai_models", "ai_advanced_enabled", "advanced_settings",
+    "effort", "custom_effort", "ollama_model", "gemini_model", "rewrite_model",
+    "expand_model", "skills_model", "cover_model", "review_model", "answer_model",
+})
 
 
 def _hash(payload: Any) -> str:
@@ -46,6 +62,7 @@ def fingerprints(
         "guidance": guidance.fingerprint() if guidance is not None else "",
         "styles": _hash([settings.rewrite_style, settings.expand_style, settings.cover_style]),
         "model": _hash(job_routing.model_routing(settings)),
+        "options": _hash(settings.model_dump(mode="json", exclude=set(_NOT_OPTIONS))),
     }
 
 

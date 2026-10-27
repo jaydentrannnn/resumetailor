@@ -135,11 +135,15 @@ def test_a_failed_replacement_keeps_the_old_file_known_as_the_apps(tmp_path, mon
 def test_the_apps_current_upload_is_kept(tmp_path, monkeypatch):
     resume = tmp_path / "resume.pdf"
     resume.write_bytes(b"%PDF-1.4 current")  # what `_run` writes again
-    prior = [{**OURS, "artifact_sha256": upload_replace.artifact_sha256(resume)}]
+    pinned = str(tmp_path / "fills" / "1" / "resume_pdf" / "resume.pdf")
+    prior = [{**OURS, "artifact_sha256": upload_replace.artifact_sha256(resume),
+              "artifact_path": pinned}]
     run, sent, removals, _sha = _run(tmp_path, monkeypatch, prior=prior, listed=STAGED)
     assert sent == [] and removals == []
     (record,) = run.uploads
     assert record["state"] == "preserved" and record["uploaded_by_app"]
+    # The exact file on the form stays named, for "What was sent" (audit review #7).
+    assert record["artifact_path"] == pinned
 
 
 @pytest.mark.parametrize(
@@ -180,6 +184,16 @@ def test_an_outdated_upload_seen_off_its_step_is_not_verified(tmp_path):
     record = _seen_off_its_step(tmp_path, OURS)
     assert not record["verified"] and record["error"] == upload_replace.EARLIER_STEP_NOTE
     assert record["uploaded_by_app"]  # the next Continue still knows it is the app's
+
+
+def test_a_current_upload_seen_off_its_step_keeps_its_pinned_copy(tmp_path):
+    resume = tmp_path / "resume.pdf"
+    resume.write_bytes(b"%PDF-1.4 current")  # what `_seen_off_its_step` writes again
+    pinned = str(tmp_path / "fills" / "1" / "resume_pdf" / "resume.pdf")
+    record = _seen_off_its_step(tmp_path, {
+        **OURS, "artifact_sha256": upload_replace.artifact_sha256(resume), "artifact_path": pinned,
+    })
+    assert record["verified"] and record["artifact_path"] == pinned
 
 
 def test_a_file_seen_off_its_step_that_the_app_did_not_upload_is_kept(tmp_path):

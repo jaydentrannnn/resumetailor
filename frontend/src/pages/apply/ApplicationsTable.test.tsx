@@ -192,6 +192,48 @@ describe("ApplicationsTable beside a running batch", () => {
   });
 });
 
+describe("ApplicationsTable housekeeping while a task runs elsewhere (review #14)", () => {
+  const item = (name: string) =>
+    screen.getAllByRole("menuitem", { name })[0] as HTMLButtonElement;
+
+  it.each([
+    ["ready", false, "Archive"],
+    ["submitted", false, "Not submitted — move back"],
+    ["submitted", true, "Restore (undo submitted)"],
+  ] as const)("keeps %s rows' %s on while another row's task runs", (status, archived, name) => {
+    show(status, archived, [], {}, false, { active: true, held: new Set(["other"]) });
+    expect(item(name).disabled).toBe(false);
+  });
+
+  it("turns them off on the row the task holds, and says why", () => {
+    show("ready", false, [], {}, false, { active: true, held: new Set(["one"]) });
+    expect(item("Archive").disabled).toBe(true);
+    expect(item("Archive").getAttribute("aria-description")).toMatch(/running Apply task/);
+  });
+
+  it("archives the checked rows no task holds and leaves the held one out", () => {
+    const move = vi.fn();
+    const free = row("ready", false, "two");
+    show("ready", false, [row("ready"), free], {}, false, {
+      active: true, held: new Set(["one"]), move,
+    });
+    fireEvent.keyDown(document, { key: "Escape" });
+    const archive = screen.getByRole("button", { name: "Archive" });
+    expect(archive.getAttribute("title")).toBe("1 held by a running Apply task is left out");
+    fireEvent.click(archive);
+    expect(move).toHaveBeenCalledWith(["two"], true);
+  });
+
+  it("keeps a failed row's Retry on while another row's task runs", () => {
+    show("tailor_failed", false, [], { retry_kind: "tailor" }, false, {
+      active: true, held: new Set(["other"]),
+    });
+    fireEvent.keyDown(document, { key: "Escape" });
+    const [retry] = screen.getAllByRole("button", { name: "Retry" });
+    expect((retry as HTMLButtonElement).disabled).toBe(false);
+  });
+});
+
 describe("ApplicationsTable ready rows and long text", () => {
   it("opens the complete review question supplied by the server", () => {
     vi.spyOn(HTMLElement.prototype, "scrollWidth", "get").mockReturnValue(600);

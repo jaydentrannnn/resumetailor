@@ -360,7 +360,7 @@ def get_job_packet(job_id: str) -> JSONResponse:
         raise HTTPException(status_code=404, detail=f"No packet for job {job_id!r}.")
     content = json.loads(path.read_text(encoding="utf-8"))
     with suppress(Exception):  # a rebuild failure still serves the saved packet
-        if content.get("inputs_digest") != apply_packet.current_inputs_digest():
+        if content.get("inputs_digest") != apply_packet.current_inputs_digest(job_id):
             content = json.loads(apply_packet.write_packet(job_id).model_dump_json())
     return JSONResponse(content=content)
 

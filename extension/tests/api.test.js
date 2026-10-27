@@ -17,7 +17,11 @@ beforeEach(() => {
         set: async (value) => Object.assign(local, value),
         remove: async (key) => { delete local[key]; },
       },
-      session: { remove: async (key) => { delete session[key]; } },
+      session: {
+        get: async (key) => ({ [key]: structuredClone(session[key]) }),
+        set: async (value) => Object.assign(session, structuredClone(value)),
+        remove: async (key) => { delete session[key]; },
+      },
     },
   };
 });
@@ -35,9 +39,9 @@ test("finds the lowest valid app and reuses its port", async () => {
   assert.equal(calls.length, 1);
 });
 
-test("revocation clears credential and queued fill", async () => {
+test("revocation clears credential and every queued fill", async () => {
   local = { port: 8000, token: "secret" };
-  session.pendingFill = { applicationId: "a" };
+  session.pendingFills = { a: { applicationId: "a" }, b: { applicationId: "b" } };
   globalThis.fetch = async (url, options) => {
     if (url.endsWith("/api/health")) return { ok: true, json: async () => ({ app: "resumetailor" }) };
     assert.equal(options.headers["X-RT-Extension"], "secret");
@@ -45,7 +49,7 @@ test("revocation clears credential and queued fill", async () => {
   };
   await assert.rejects(() => request("/api/extension/status"), /Pair again/);
   assert.equal(local.token, undefined);
-  assert.equal(session.pendingFill, undefined);
+  assert.deepEqual(session.pendingFills, {});
 });
 
 test("capture sends one JSON request with the paired token", async () => {

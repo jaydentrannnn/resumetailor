@@ -464,6 +464,19 @@ def test_pause_during_pacing_wait_stops_the_submit(fill_paths, monkeypatch):
     assert "paused" in result.handoff_reason
 
 
+def test_skip_while_the_submit_evidence_is_captured_stops_the_click(fill_paths, monkeypatch):
+    _stub_greenhouse_form(fill_paths, monkeypatch)
+    clicked, skipped = [], []
+    monkeypatch.setattr(clicks, "submit_click", lambda *a, **k: clicked.append(a))
+    monkeypatch.setattr(
+        fill_page, "_record_submit_evidence", lambda *_a, **_k: skipped.append(True)
+    )
+    result = fill.fill_application("src-1", settings=_AUTO, should_cancel=lambda: bool(skipped))
+    assert skipped == [True]
+    assert clicked == []
+    assert result.submit_action == "awaiting_review"
+
+
 def test_non_english_form_is_handed_over(fill_paths, monkeypatch):
     page = _stub_greenhouse_form(fill_paths, monkeypatch)
     page.locator.return_value.first.get_attribute.return_value = "fr-FR"

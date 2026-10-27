@@ -1,3 +1,5 @@
+import { changePending } from "./pending.js";
+
 const FIRST_PORT = 8000;
 const LAST_PORT = 8010;
 const PROBE_MS = 1000;
@@ -100,7 +102,9 @@ export async function request(path, { method = "GET", body, paired = true } = {}
   if (!response.ok) {
     if (response.status === 401 && payload.error === "extension_auth") {
       await chrome.storage.local.remove("token");
-      await chrome.storage.session.remove("pendingFills");
+      await changePending((pending) => {
+        for (const id of Object.keys(pending)) delete pending[id];
+      });
       throw new ExtensionApiError("Pair again.", 401, "extension_auth");
     }
     throw new ExtensionApiError(detailText(payload, `ResumeTailor returned ${response.status}.`), response.status, payload.error);

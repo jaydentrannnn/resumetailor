@@ -3,12 +3,14 @@
 `store.set_status` calls `on_status` on every status change. A row moving into
 ``submitted`` or ``submit_unconfirmed`` from a status that was not already sent gets a
 new `SubmissionAttempt`: the resume and cover letter (PDF and Word), the packet, the
-final bullets, requirements and coverage from the run folder, the saved JD and
-``fill.json`` from the application folder, and under ``attached/`` the exact files the
-app attached (its fill's pinned copies, `fill_files`), copied to
+final bullets, requirements and coverage, the saved JD and ``fill.json`` from the
+application folder, and under ``attached/<purpose>/`` the exact files the app attached
+(its fill's pinned copies, `fill_files`), copied to
 ``APPLICATIONS_OUTPUT_DIR/<source_job_id>/attempts/<n>/``, hashed and marked read-only.
-Interview prep and follow-ups read this copy, never the run folder a later Prepare
-overwrites.
+The run files come from the fill folder of the resume (or cover letter) the app
+attached, so they describe that document; the run folder only when the app attached
+neither. Interview prep and follow-ups read this copy, never the run folder a later
+Prepare overwrites.
 
 ``confirmed`` says these exact files reached the employer: an automatic submit that saw
 its confirmation, or a submit the monitor saw in the tab the app filled. A manual mark
@@ -21,16 +23,17 @@ from __future__ import annotations
 
 import hashlib
 import os
+import re
 import shutil
 import stat
 import uuid
 from pathlib import Path
-from typing import Literal
+from typing import Any, Literal
 
 from resume_tailor import config
 from resume_tailor.apply.forms.submit_guard import AUTO_NOTE
 
-from . import store_models
+from . import fill_files, store_models
 
 #: The status note `submission_monitor` writes when it sees a manual submit.
 MONITOR_NOTE = "Manual submission confirmed in the recorded application tab"
@@ -87,30 +90,78 @@ def _sha256(path: Path) -> str:
 
 
 def _sources(app: store_models.Application) -> list[tuple[Path, str]]:
-    """``(source, name in the attempt folder)`` for every file that exists."""
-    sources: list[tuple[Path, str]] = []
+    """``(source, name in the attempt folder)`` for every file that exists. A resume or
+    cover letter the app attached brings the run files that go with it from its fill
+    folder (`fill_files`), never the run folder a later Prepare rewrote."""
+    uploads = _attached_uploads(app)
+    sources: list[tuple[Path | None, str]] = []
     if app.job_id:
         run_dir = config.OUTPUT_DIR / "jobs" / app.job_id
-        sources.extend((run_dir / name, name) for name in RUN_FILES)
+        fills = _fill_folders(uploads)
+        sources.extend((_run_file(run_dir, fills, name), name) for name in RUN_FILES)
     app_dir = config.APPLICATIONS_OUTPUT_DIR / app.source_job_id
     jd = Path(app.jd_text_path) if app.jd_text_path else app_dir / "jd.txt"
     sources += [(jd, "jd.txt"), (app_dir / "fill.json", "fill.json")]
-    sources += _attached(app)
-    return [(path, name) for path, name in sources if path.is_file()]
+    sources += _attached(uploads)
+    return [(path, name) for path, name in sources if path is not None and path.is_file()]
 
 
 #: Where an attempt keeps the files the app attached.
 ATTACHED = "attached/"
+#: Where a fill folder keeps each run document (`packet._artifact_paths` kinds); the
+#: run's JSON files are under ``fill_files.RUN``.
+_PINNED_AS = {
+    "tailored.pdf": "resume_pdf", "tailored.docx": "resume_docx",
+    "cover.pdf": "cover_pdf", "cover.docx": "cover_docx",
+}
 
 
-def _attached(app: store_models.Application) -> list[tuple[Path, str]]:
-    """The pinned files this row's fill verified as attached, once each."""
+def _attached_uploads(app: store_models.Application) -> list[dict[str, Any]]:
+    """The uploads this row's fill verified as attached from a pinned copy."""
     fill = store_models.FillResult.model_validate(app.fill) if app.fill else None
+    return [
+        upload for upload in (fill.uploads if fill else [])
+        if upload.get("artifact_path") and upload.get("uploaded_by_app")
+        and upload.get("verified")
+    ]
+
+
+def _fill_folders(uploads: list[dict[str, Any]]) -> dict[str, Path]:
+    """purpose → the fill folder its attached copy came from, for folders that kept the
+    run files with it (fills from before that keep none, and read the run folder)."""
+    folders: dict[str, Path] = {}
+    for upload in uploads:
+        folder = Path(str(upload["artifact_path"])).parent.parent
+        if (folder / fill_files.RUN).is_dir():
+            folders.setdefault(str(upload.get("purpose") or ""), folder)
+    return folders
+
+
+def _run_file(run_dir: Path, fills: dict[str, Path], name: str) -> Path | None:
+    """Where ``name`` comes from: the fill folder of the document it goes with (the cover
+    letter's for ``cover.*``, else the resume's), or the run folder when the app attached
+    neither. None when that fill had no such file: the run's newer one is not it."""
+    folder = fills.get("cover_letter") if name.startswith("cover") else None
+    folder = folder or fills.get("resume")
+    if folder is None:
+        return run_dir / name
+    kept = folder / _PINNED_AS.get(name, fill_files.RUN) / name
+    return kept if kept.is_file() else None
+
+
+def _attached(uploads: list[dict[str, Any]]) -> list[tuple[Path, str]]:
+    """The attached pinned files, once each, named by purpose: a transcript and a
+    portfolio can both be ``document.pdf``."""
     found: dict[str, Path] = {}
-    for upload in fill.uploads if fill else []:
-        path = str(upload.get("artifact_path") or "")
-        if path and upload.get("uploaded_by_app") and upload.get("verified"):
-            found.setdefault(ATTACHED + Path(path).name, Path(path))
+    for upload in uploads:
+        path = Path(str(upload["artifact_path"]))
+        if path in found.values():
+            continue
+        purpose = re.sub(r"[^a-z_]", "", str(upload.get("purpose") or "").lower()) or "file"
+        name, number = f"{ATTACHED}{purpose}/{path.name}", 2
+        while name in found:
+            name, number = f"{ATTACHED}{purpose}/{number}-{path.name}", number + 1
+        found[name] = path
     return [(path, name) for name, path in found.items()]
 
 

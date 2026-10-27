@@ -1,6 +1,6 @@
 import type { SubmissionAttempt } from "../../../api";
 import { Tile } from "../../../components/ui";
-import { attemptFileUrl } from "../../../lib/attemptFiles";
+import { attemptFileLabel, attemptFileUrl } from "../../../lib/attemptFiles";
 
 function howSent(attempt: SubmissionAttempt): string {
   if (attempt.method === "manual")
@@ -46,7 +46,7 @@ function AttemptFiles({
                   rel="noreferrer"
                   title={`SHA-256 ${attempt.files[name]}`}
                 >
-                  {name.split("/").pop()}
+                  {attemptFileLabel(name)}
                 </a>
               </span>
             ))}

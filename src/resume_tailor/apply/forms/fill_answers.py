@@ -310,7 +310,8 @@ class _FillAnswers(fill_state._FillState):
         self.uploads.append({
             **record, "filename": shown, "verified": True, "preserved": True,
             "frame_index": frame_index,
-            **({"state": "preserved", "uploaded_by_app": True, "artifact_sha256": sha}
+            **({"state": "preserved", "uploaded_by_app": True, "artifact_sha256": sha,
+                **upload_replace.pinned_copy(self.previous_fill.uploads, purpose, shown)}
                if whose == "current" else {"state": "kept_existing"}),
             **({"reason": upload_replace.AMBIGUOUS_NOTE} if whose == "ambiguous" else {}),
         })

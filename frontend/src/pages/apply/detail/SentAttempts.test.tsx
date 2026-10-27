@@ -35,6 +35,15 @@ describe("SentAttempts", () => {
     );
   });
 
+  it("names what each attached file was for, so two of one name stay apart", () => {
+    const both = { "attached/transcript/document.pdf": "a", "attached/portfolio/document.pdf": "b" };
+    render(<SentAttempts applicationId="r" attempts={[attempt({ files: both, attached: both })]} />);
+    expect(
+      screen.getByRole("link", { name: "document.pdf (transcript)" }).getAttribute("href"),
+    ).toBe("/api/applications/r/attempts/2/files/attached/transcript/document.pdf");
+    expect(screen.getByRole("link", { name: "document.pdf (portfolio)" })).toBeTruthy();
+  });
+
   it("says a manual mark's files were not confirmed attached", () => {
     render(
       <SentAttempts

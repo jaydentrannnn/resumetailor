@@ -45,7 +45,8 @@ const RUN_IN_FLIGHT = new Set(["queued", "running"]);
  * actions on it (archive/restore, accept a flagged resume, refresh or correct the form
  * review, open its browser tab). A tailor retry or fill in flight is followed until it
  * settles, and the run is read again whenever the row's run or status changes (audit
- * #16); a response for an application no longer on screen is dropped.
+ * #16). A response for an application no longer on screen is dropped: an action on A
+ * that finishes after B opened never fills B's page.
  */
 export function useApplicationDetail(applicationId: string | undefined, workspaceId: unknown) {
   const location = useLocation();
@@ -60,6 +61,12 @@ export function useApplicationDetail(applicationId: string | undefined, workspac
   const [error, setError] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
   const sequence = useRef(0);
+  // What the page shows now. An action's closures belong to the render that started it,
+  // so `mine()` says whether the application they were made for is still on screen.
+  const shown = useRef({ applicationId, workspaceId });
+  shown.current = { applicationId, workspaceId };
+  const mine = () =>
+    shown.current.applicationId === applicationId && shown.current.workspaceId === workspaceId;
   useEffect(() => {
     if (!applicationId) return;
     window.scrollTo(0, 0);
@@ -150,45 +157,42 @@ export function useApplicationDetail(applicationId: string | undefined, workspac
 
   /** Run `work` with the page busy; its result is dropped if another application opened. */
   async function guarded(work: () => Promise<Detail | void>) {
-    const current = sequence.current;
     setBusy(true);
     try {
       const updated = await work();
-      if (updated && current === sequence.current) setDetail(updated);
+      if (updated && mine()) setDetail(updated);
     } catch (reason) {
-      if (current === sequence.current) setError(String(reason));
+      if (mine()) setError(String(reason));
     } finally {
-      if (current === sequence.current) setBusy(false);
+      if (mine()) setBusy(false);
     }
   }
 
   async function refreshEditedResume() {
     setDocsRevision((n) => n + 1);
     if (!applicationId || !app?.job_id) return;
-    const current = sequence.current;
     try {
       const [updated, run] = await Promise.all([
         getApplication(applicationId),
         fetchJob(app.job_id),
       ]);
-      if (current === sequence.current) {
+      if (mine()) {
         setDetail(updated);
         setJob(run);
       }
     } catch (reason) {
-      if (current === sequence.current) setError(String(reason));
+      if (mine()) setError(String(reason));
     }
   }
 
   /** Read the application again (after an action from its header). */
   async function reload() {
-    if (!applicationId) return;
-    const current = sequence.current;
+    if (!applicationId || !mine()) return;
     try {
       const updated = await getApplication(applicationId);
-      if (current === sequence.current) setDetail(updated);
+      if (mine()) setDetail(updated);
     } catch (reason) {
-      if (current === sequence.current) setError(String(reason));
+      if (mine()) setError(String(reason));
     }
   }
 
@@ -201,12 +205,13 @@ export function useApplicationDetail(applicationId: string | undefined, workspac
     try {
       const result = await archiveApplications([app.source_job_id], !app.archived_at);
       const refused = result.errors[app.source_job_id];
-      if (refused) setError(`${app.archived_at ? "Not restored" : "Not archived"}: ${refused}`);
+      if (refused && mine())
+        setError(`${app.archived_at ? "Not restored" : "Not archived"}: ${refused}`);
       await reload();
     } catch (reason) {
-      setError(String(reason));
+      if (mine()) setError(String(reason));
     } finally {
-      setBusy(false);
+      if (mine()) setBusy(false);
     }
   }
 
@@ -261,8 +266,10 @@ export function useApplicationDetail(applicationId: string | undefined, workspac
     void focusApplicationReviewTab(app.source_job_id).catch((reason) => setError(String(reason)));
   };
 
-  const setApplication = (updated: ApplicationRow) =>
-    setDetail((previous) => (previous ? { ...previous, application: updated } : previous));
+  const setApplication = (updated: ApplicationRow) => {
+    if (mine())
+      setDetail((previous) => (previous ? { ...previous, application: updated } : previous));
+  };
 
   return {
     tab,

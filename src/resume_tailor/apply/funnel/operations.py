@@ -484,7 +484,7 @@ def list_recent() -> list[ApplyOperation]:
                 )
                 if (
                     fill_result.submit_action in {"submit", "auto_submit"}
-                    and not fill_result.confirmation
+                    and not fill_result.confirmed
                 ):
                     recovered_status = "submit_unconfirmed"
                 else:
@@ -868,10 +868,14 @@ def _updated_profile(
     except Exception:  # noqa: BLE001 - an unreadable profile keeps the batch's copy
         return applicant
     secret = {"workday_password"}
-    if current.model_dump(exclude=secret) == applicant.model_dump(exclude=secret):
+    # A corrected Workday password counts; an unreadable secret store ("") does not, and
+    # keeps the batch's password.
+    password = current.workday_password or applicant.workday_password
+    if (password == applicant.workday_password
+            and current.model_dump(exclude=secret) == applicant.model_dump(exclude=secret)):
         return applicant
     _event(operation, "filling", "Using your updated profile", application_id)
-    return current.model_copy(deep=True)
+    return current.model_copy(update={"workday_password": password}, deep=True)
 
 
 def _fill_item(

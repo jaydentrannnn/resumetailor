@@ -45,8 +45,10 @@ const retryVariant = (status: string): ButtonVariant =>
 
 /** The row's overflow menu: files, links and every action that is not the primary one. */
 function rowMenu(row: ApplicationRow, archived: boolean, actions: TableActions): MenuItem[] {
-  const { busy, active, openTabs } = actions;
-  // Prepare/Fill actions run beside other tasks; only this row's own task blocks them.
+  const { busy, openTabs } = actions;
+  // Prepare/Fill actions run beside other tasks; only this row's own task blocks them. So
+  // do Archive, Restore and Undo: the server refuses only a row a task holds, and every
+  // row while Find jobs or the nightly run has Apply to itself (`operations.rows_idle`).
   const workflowOff = busy || actions.exclusiveBusy || actions.held.has(row.source_job_id);
   const workflowNote =
     heldNote(row, actions.held, actions.waiting) || (actions.exclusiveBusy ? EXCLUSIVE_NOTE : "");
@@ -62,15 +64,16 @@ function rowMenu(row: ApplicationRow, archived: boolean, actions: TableActions):
       ...items,
       {
         label: row.status === "submitted" ? "Restore (undo submitted)" : "Restore",
-        disabled: busy || active,
+        disabled: workflowOff,
         action: () => actions.move([row.source_job_id], false),
-        description: "Available when Apply is idle",
+        description: workflowNote || undefined,
       },
     ];
   if (["submitted", "skipped"].includes(row.status))
     items.push({
       label: "Not submitted — move back",
-      disabled: busy || active,
+      disabled: workflowOff,
+      description: workflowNote || undefined,
       action: () => actions.undo(row),
     });
   if (canRetailor(row))
@@ -121,9 +124,9 @@ function rowMenu(row: ApplicationRow, archived: boolean, actions: TableActions):
     ...items,
     {
       label: "Archive",
-      disabled: busy || active,
+      disabled: workflowOff,
       action: () => actions.move([row.source_job_id], true),
-      description: "Available when Apply is idle",
+      description: workflowNote || undefined,
     },
   ];
 }
@@ -143,7 +146,7 @@ function RowAction({
   actions: TableActions;
   navigate: NavigateFunction;
 }) {
-  const { busy, active, browserUsable, openTabs } = actions;
+  const { busy, browserUsable, openTabs } = actions;
   const workflowOff = busy || actions.exclusiveBusy || actions.held.has(row.source_job_id);
   const workflowNote =
     heldNote(row, actions.held, actions.waiting) || (actions.exclusiveBusy ? EXCLUSIVE_NOTE : "");
@@ -235,8 +238,8 @@ function RowAction({
       <button
         type="button"
         className={action(retryVariant(row.status))}
-        title={row.retry_kind ? retryTitle(row.retry_kind) : undefined}
-        disabled={busy || active}
+        title={workflowNote || (row.retry_kind ? retryTitle(row.retry_kind) : undefined)}
+        disabled={workflowOff}
         onClick={() => actions.retry(row)}
       >
         {retryLabel}

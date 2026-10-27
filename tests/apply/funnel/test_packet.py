@@ -507,7 +507,7 @@ def test_packet_records_inputs_digest_and_route_rebuilds_stale(tmp_path, monkeyp
     job_dir.mkdir(parents=True)
     (job_dir / "packet.json").write_text(_json.dumps({"job_id": "job1", "inputs_digest": "old"}))
     monkeypatch.setattr(config, "OUTPUT_DIR", tmp_path)
-    monkeypatch.setattr(packet_mod, "current_inputs_digest", lambda: "new")
+    monkeypatch.setattr(packet_mod, "current_inputs_digest", lambda _job_id: "new")
     rebuilt = packet_models.Packet(job_id="job1", built_at="now", inputs_digest="new")
     monkeypatch.setattr(packet_mod, "write_packet", lambda job_id: rebuilt)
     with TestClient(app) as client:
@@ -662,3 +662,20 @@ def test_authorization_mismatch_checks_every_authorized_country():
     # A profile saved before the list existed seeds it from the single country.
     legacy = ApplicantProfile.model_validate({"authorization_country": "Canada"})
     assert legacy.authorization_countries == ["Canada"]
+
+
+def test_build_packet_states_the_resume_the_run_was_tailored_from(job_dir):
+    """A master edit saved after the run never mixes into its packet (audit #9)."""
+    from resume_tailor.apply.funnel import packet as packet_mod
+    from resume_tailor.web import run_inputs
+
+    tailored_from = synthetic_resume()
+    run_inputs.save_snapshot(tailored_from, job_dir)
+    edited = synthetic_resume()
+    edited.education[0].school = "Edited After The Run"
+    config.MASTER_RESUME_PATH.write_text(edited.model_dump_json(indent=2), encoding="utf-8")
+    pkt = build_packet(job_dir.name)
+    assert [row.school for row in pkt.education] == ["State University"]
+    assert packet_mod.current_inputs_digest(job_dir.name) == pkt.inputs_digest
+    (job_dir / run_inputs.SNAPSHOT).unlink()  # a run made before runs kept a copy
+    assert [row.school for row in build_packet(job_dir.name).education] == ["Edited After The Run"]

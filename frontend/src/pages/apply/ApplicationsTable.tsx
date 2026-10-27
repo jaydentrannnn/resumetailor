@@ -4,7 +4,8 @@ import type { ApplicationRow } from "../../api";
 import { DataTable, Pagination } from "../../components/TableControls";
 import { Button, SelectionBar } from "../../components/ui";
 import type { OpenTabs } from "../../lib/applicationRows";
-import { bulkMarkable } from "../../lib/applicationActions";
+import { bulkMarkable, bulkMovable } from "../../lib/applicationActions";
+import { EXCLUSIVE_NOTE } from "../../lib/applyPage";
 import { useRunState } from "../../state/runState";
 import { applicationColumns } from "./applicationColumns";
 import { TableFilters } from "./TableFilters";
@@ -90,7 +91,7 @@ export function ApplicationsTable({
 }) {
   const navigate = useNavigate();
   const { settings, setSettings } = useRunState();
-  const { busy, active } = actions;
+  const { busy } = actions;
   // Optional columns are per tab, remembered in Apply settings for this profile.
   const prefs = settings.apply.table_prefs ?? {};
   const extraColumns = prefs[scope]?.columns ?? [];
@@ -111,6 +112,9 @@ export function ApplicationsTable({
   const elsewhere = selectedIds.filter((id) => !onScreen.has(id)).length;
   // Rows a running task holds are left out; one at a time, a row's menu takes them over.
   const markable = bulkMarkable(state.selectedRows, actions.held);
+  // Archive/Restore likewise leaves out held rows; the rest move while the task runs.
+  const movable = bulkMovable(state.selectedRows, actions.held);
+  const leftOut = selectedIds.length - movable.length;
 
   return (
     <div className="space-y-3">
@@ -137,9 +141,15 @@ export function ApplicationsTable({
           <Button
             variant="plain"
             size="sm"
-            disabled={busy || active || !selectedIds.length}
-            title={active ? "Available when the current Apply task finishes" : undefined}
-            onClick={() => actions.move(selectedIds, !archived)}
+            disabled={busy || actions.exclusiveBusy || !movable.length}
+            title={
+              actions.exclusiveBusy
+                ? EXCLUSIVE_NOTE
+                : leftOut
+                  ? `${leftOut} held by a running Apply task ${leftOut === 1 ? "is" : "are"} left out`
+                  : undefined
+            }
+            onClick={() => actions.move(movable.map((row) => row.source_job_id), !archived)}
           >
             {archived ? "Restore" : "Archive"}
           </Button>

@@ -217,7 +217,8 @@ def generate_expansion(job_id: str, *, force: bool = False) -> ExpansionOut:
         industries.bind(snapshot)
         if snapshot is not None:
             style.activate(**snapshot.styles)
-        resume = data.load()
+        # The resume the run was tailored from, so the expansion and the resume agree.
+        resume = run_inputs.load_snapshot(out_dir) or data.load()
         tag_infer.annotate_cached(resume)
         try:
             semantic = relevance.score_table(resume.all_bullets(), requirements, use_cache=True)
@@ -245,12 +246,13 @@ def verify_claim(job_id: str | None, text: str) -> coverletter.ClaimCheck:
     Pure — no LLM, no disk writes. Raises ``FileNotFoundError`` when a job-scoped
     run has no saved bullets or JD.
     """
-    resume = data.load()
     if job_id is None:
+        resume = data.load()
         bullets = {bullet.id: bullet.text for bullet in resume.all_bullets()}
         return coverletter.check_claims(resume, bullets, "", text)
 
     out_dir = config.OUTPUT_DIR / "jobs" / job_id
+    resume = run_inputs.load_snapshot(out_dir) or data.load()
     bullets_path = out_dir / "bullets.json"
     if not bullets_path.exists():
         raise FileNotFoundError(

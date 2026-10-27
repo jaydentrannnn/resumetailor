@@ -1,8 +1,9 @@
 """Application packet assembly from a completed tailoring run.
 
-Pure function of disk artifacts, the master resume, and the applicant profile — no LLM.
-``build_packet`` reads ``run.json``, optional expansion/skills/cover/bullets JSON, and
-paths to rendered documents; ``write_packet`` persists ``packet.json`` beside them.
+Pure function of disk artifacts, the master resume the run was tailored from, and the
+applicant profile — no LLM. ``build_packet`` reads ``run.json``, optional
+expansion/skills/cover/bullets JSON, and paths to rendered documents; ``write_packet``
+persists ``packet.json`` beside them.
 """
 
 from __future__ import annotations
@@ -15,16 +16,28 @@ from pathlib import Path
 from resume_tailor import config
 from resume_tailor.apply.answers import profile as profile_mod
 from resume_tailor.apply.ats import ats_hints
-from resume_tailor.content.data import MasterResume, load
+from resume_tailor.content import data
+from resume_tailor.content.data import MasterResume
 from resume_tailor.infra import atomic
 from resume_tailor.pipeline.expand import ExpandedEntry, Expansion
 
 from . import packet_fields, packet_models
 
 
-def current_inputs_digest() -> str:
+def source_resume(job_id: str, *, job_dir: Path | None = None) -> MasterResume:
+    """The master resume run ``job_id`` was tailored from (its `run_inputs` snapshot), so
+    a packet, an expansion and a fill's answers state what the resume they go with shows;
+    the current one for a run made before runs kept a copy (audit #13)."""
+    from resume_tailor.web import run_inputs  # noqa: PLC0415
+
+    folder = job_dir if job_dir is not None else config.OUTPUT_DIR / "jobs" / job_id
+    return run_inputs.load_snapshot(folder) or data.load()
+
+
+def current_inputs_digest(job_id: str) -> str:
+    """`packet_models.inputs_digest` of what a packet for ``job_id`` is built from now."""
     profile, _seeded = profile_mod.load_profile()
-    return packet_models.inputs_digest(profile, load())
+    return packet_models.inputs_digest(profile, source_resume(job_id))
 
 
 def _experience_from_expansion(
@@ -165,7 +178,7 @@ def build_packet(
 
     if applicant_profile is None:
         applicant_profile, _seeded = profile_mod.load_profile()
-    resume = load()
+    resume = source_resume(job_id, job_dir=job_dir)
 
     from resume_tailor.apply.funnel import preparation
 

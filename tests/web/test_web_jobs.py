@@ -178,7 +178,7 @@ def test_job_runs_to_success_with_stubbed_pipeline(client, monkeypatch, tmp_path
     assert not (job_dir / "template.docx").exists()  # shared, not copied per run
     # What the run was built from (audit #13): the resume as queued, and its inputs.
     record = json.loads((job_dir / "run.json").read_text())
-    assert set(record["inputs"]) == {"resume", "template", "guidance", "styles", "model"}
+    assert set(record["inputs"]) == {"resume", "template", "guidance", "styles", "model", "options"}
     assert (job_dir / "resume_snapshot.json").is_file()
     assert isinstance(status["report"]["gaps"], list)
     assert status["expansion"] is not None

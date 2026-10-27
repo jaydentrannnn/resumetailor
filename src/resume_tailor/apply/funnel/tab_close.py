@@ -57,7 +57,7 @@ def refusal(app: store_models.Application, fill: store_models.FillResult) -> str
     """Why this finished application's tab stays open, or "" when it may close."""
     if app.source_job_id in KEPT:
         return "You chose to keep it open"
-    if app.status == "submitted" and not fill.confirmation:
+    if app.status == "submitted" and not fill.confirmed:
         return "Marked submitted without a confirmation the app saw"
     if app.status == "skipped":
         change = app.status_history[-1] if app.status_history else None
@@ -92,7 +92,7 @@ def step(
         _PENDING.pop(application_id, None)
     if application_id in KEPT:
         return False  # `keep` recorded it
-    why = _due_refusal(app, fill, url, pending)
+    why = refusal(app, fill) or _due_refusal(app, fill, url, pending)
     if why:
         tab_events.record(application_id, "kept", why, url=url)
         return False
@@ -113,8 +113,14 @@ def _due_refusal(
     if url != pending.url:
         return "The tab moved to another page"
     known = (fill.browser_url, app.final_url, app.posting_url)
-    if identity.retained_tab(url, known) == "different":
+    shown = identity.retained_tab(url, known)
+    if shown == "different":
         return "The tab shows another page"
+    # Another page of the same site (Workday's candidate profile) can hold the
+    # applicant's own work: only a page the app itself left or saw the tab on closes.
+    seen = {_page(item) for item in (*known, fill.confirmation_evidence.get("url", "")) if item}
+    if shown == "unknown" and _page(url) not in seen:
+        return "Could not tell that the tab still shows this application"
     if pending.armed_page_ms is None:
         return "Could not check the tab for your input"
     last = _last_input(pending.target)
@@ -123,6 +129,10 @@ def _due_refusal(
     if last > pending.armed_page_ms:
         return "You used the tab"
     return ""
+
+
+def _page(url: str) -> str:
+    return url.split("#", 1)[0].rstrip("/")
 
 
 def pending() -> list[dict[str, Any]]:

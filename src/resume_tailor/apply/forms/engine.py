@@ -48,7 +48,6 @@ from resume_tailor.apply.funnel import (
     store_models,
 )
 from resume_tailor.apply.funnel.packet_models import Packet
-from resume_tailor.content import data
 from resume_tailor.infra import model_queue
 from resume_tailor.pipeline.jd import JobRequirements
 from resume_tailor.web.schemas import ApplySettings
@@ -156,7 +155,7 @@ async def fill_application(
     applicant = applicant_profile
     if applicant is None:
         applicant, _seeded = profile.load_profile()
-    resume = data.load()
+    resume = packet.source_resume(app.job_id)
     fields = dict(pkt.fields)
     education.refresh_fields(fields, applicant.highest_education_obtained)
     education.refresh_fields(pkt.fields, applicant.highest_education_obtained)

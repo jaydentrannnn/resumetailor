@@ -95,9 +95,69 @@ def test_what_was_sent_keeps_the_exact_files_the_app_attached(tmp_path, monkeypa
     )
     store.set_status(app, "submitted", note=submit_guard.AUTO_NOTE)
     [attempt] = app.attempts
-    assert attempt.attached == {"attached/tailored.pdf": _sha(b"%PDF resume")}
-    copied = config.APPLICATIONS_OUTPUT_DIR / "job-1" / "attempts" / "1" / "attached" / "tailored.pdf"
+    assert attempt.attached == {"attached/resume/tailored.pdf": _sha(b"%PDF resume")}
+    copied = (config.APPLICATIONS_OUTPUT_DIR / "job-1" / "attempts" / "1" / "attached"
+              / "resume" / "tailored.pdf")
     assert copied.read_bytes() == b"%PDF resume"
+
+
+def _prepared_run(job_id: str = "run1"):
+    """A run folder where `fill_files` looks for the run's own files."""
+    run = config.OUTPUT_DIR / "jobs" / job_id
+    run.mkdir(parents=True)
+    (run / "tailored.pdf").write_bytes(b"%PDF resume")
+    (run / "cover.pdf").write_bytes(b"%PDF cover")
+    (run / "bullets.json").write_text('{"b1": "Built the first version"}', encoding="utf-8")
+    (run / "cover.json").write_text('{"paragraphs": ["First letter"]}', encoding="utf-8")
+    return run
+
+
+def test_the_bullets_kept_are_those_of_the_resume_the_app_attached(tmp_path, monkeypatch):
+    """A Prepare between the fill and the mark rewrites the run folder; "What was sent"
+    and interview prep keep the bullets of the resume on the form (audit review #8)."""
+    from resume_tailor.apply.funnel import sent_copy
+
+    monkeypatch.setattr(config, "OUTPUT_DIR", tmp_path / "output")
+    run = _prepared_run()
+    pkt = _packet(run)
+    fill_files.pin(pkt, "job-3")
+    (run / "tailored.pdf").write_bytes(b"%PDF re-prepared")
+    (run / "bullets.json").write_text('{"b1": "Never uploaded"}', encoding="utf-8")
+    (run / "cover.json").write_text('{"paragraphs": ["Never uploaded"]}', encoding="utf-8")
+    app = store_models.Application(
+        source="t", source_job_id="job-3", company="Acme", role="Analyst", status="ready",
+        job_id="run1",
+        fill={"uploads": [{"purpose": "resume", "verified": True, "uploaded_by_app": True,
+                           "artifact_path": pkt.artifacts["resume_pdf"]}]},
+    )
+    store.set_status(app, "submitted", note=submit_guard.AUTO_NOTE)
+    [attempt] = app.attempts
+    assert attempt.files["tailored.pdf"] == _sha(b"%PDF resume")
+    sent = sent_copy.load(app)
+    assert sent.attempt == 1 and sent.bullets == {"b1": "Built the first version"}
+    assert sent.cover_letter == "First letter"
+    packet = config.APPLICATIONS_OUTPUT_DIR / "job-3" / "attempts" / "1" / "packet.json"
+    assert '"pinned_dir"' in packet.read_text(encoding="utf-8")  # the fill's own packet
+
+
+def test_two_attached_files_with_one_name_are_both_kept(tmp_path, monkeypatch):
+    monkeypatch.setattr(config, "OUTPUT_DIR", tmp_path / "output")
+    uploads = []
+    for purpose, body in (("transcript", b"%PDF transcript"), ("portfolio", b"%PDF portfolio")):
+        source = tmp_path / purpose / "document.pdf"
+        source.parent.mkdir()
+        source.write_bytes(body)
+        uploads.append({"purpose": purpose, "verified": True, "uploaded_by_app": True,
+                        "artifact_path": str(source)})
+    app = store_models.Application(
+        source="t", source_job_id="job-4", company="Acme", role="Analyst", status="ready",
+        fill={"uploads": uploads},
+    )
+    store.set_status(app, "submitted", note=submit_guard.AUTO_NOTE)
+    assert app.attempts[0].attached == {
+        "attached/transcript/document.pdf": _sha(b"%PDF transcript"),
+        "attached/portfolio/document.pdf": _sha(b"%PDF portfolio"),
+    }
 
 
 def test_a_manual_mark_without_app_uploads_keeps_only_prepared_files(tmp_path, monkeypatch):

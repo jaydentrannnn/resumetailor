@@ -153,3 +153,27 @@ def test_apply_prepare_heal_failure_falls_back_to_a_full_prepare(monkeypatch):
     app = type("App", (), {"job_id": "run8"})()
 
     assert daily._heal_missing_expansion(app, JobSettings().apply) is still_missing
+
+
+def test_generate_expansion_uses_the_resume_the_run_was_tailored_from(client, monkeypatch):
+    """A master edit saved after the run never reaches its expansion (audit #9)."""
+    from resume_tailor.content import data
+    from resume_tailor.web import run_inputs
+
+    c, _ = client
+    out_dir, _ = _seed_finished_run("exp09")
+    tailored_from = synthetic_resume()
+    run_inputs.save_snapshot(tailored_from, out_dir)
+    edited = synthetic_resume()
+    edited.experience[0].company = "Edited After The Run"
+    monkeypatch.setattr(data, "load", lambda: edited)
+    seen: list[str] = []
+
+    def fake_expand(resume, requirements, **kwargs):
+        seen.append(resume.experience[0].company)
+        return expand.Expansion(entries=[], model="stub", char_limit=config.EXPAND_CHAR_LIMIT)
+
+    monkeypatch.setattr(expand, "expand_experience", fake_expand)
+    monkeypatch.setattr(relevance, "score_table", lambda bullets, req, **k: {})
+    assert c.post("/api/jobs/exp09/expansion").status_code == 200
+    assert seen == [tailored_from.experience[0].company]

@@ -98,7 +98,7 @@ class _FillEntry(fill_state._FillState):
                     self.app.final_url or self.app.posting_url, str(self.page.url),
                     self.page.inner_text("body"), self.app.ats,
                     self.page.evaluate(submission_monitor.ROWS_JS) if self.app.ats == "workday" else None,
-                    form_open=bool(self.page.evaluate(submission_monitor.FORM_PROBE_JS)),
+                    form_open=submission_monitor.form_open(self.page),
                 )
             except Exception:  # noqa: BLE001 - ordinary form inspection continues
                 evidence = None

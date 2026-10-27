@@ -60,6 +60,12 @@ export function bulkMarkable(rows: ApplicationRow[], held: Set<string>): Applica
   return rows.filter((row) => canMark(row) && !held.has(row.source_job_id));
 }
 
+/** The checked rows a bulk Archive or Restore acts on: those no running task holds (the
+ * server edits only idle rows, `operations.rows_idle`); tasks on others go on. */
+export function bulkMovable(rows: ApplicationRow[], held: Set<string>): ApplicationRow[] {
+  return rows.filter((row) => !held.has(row.source_job_id));
+}
+
 type Confirm = (options: { title: string; message: string; confirmLabel?: string }) => Promise<boolean>;
 
 /**

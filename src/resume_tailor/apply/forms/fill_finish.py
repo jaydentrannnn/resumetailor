@@ -232,7 +232,8 @@ class _FillFinish(fill_state._FillState):
                     upload_replace.artifact_sha256(self.artifact_path(str(purpose))),
                     self.previous_fill.user_touched_uploads,
                 ) == "stale"
-                ours = {key: prior[key] for key in ("uploaded_by_app", "artifact_sha256")
+                ours = {key: prior[key]
+                        for key in ("uploaded_by_app", "artifact_sha256", "artifact_path")
                         if key in prior}
                 uploads.append({
                     "purpose": purpose, "filename": filename or "",
@@ -334,6 +335,12 @@ class _FillFinish(fill_state._FillState):
                 "fields": list(merged.get("filled") or []),
                 "uploads": self.uploads,
             }, required=True)
+            # Skip, a pause or a held row can land while the evidence is captured.
+            if self._cancelled() or submit_guard.is_paused() or not self._submit_still_allowed():
+                self.held = self.held or submit_guard.Hold(
+                    "paused", "Submit stopped: cancelled or paused while waiting"
+                )
+                return
             dispatched = self.submit_dispatched = True
             clicks.submit_click(submit_btn, decision=action, timeout=10_000)
             page.wait_for_load_state("networkidle", timeout=30_000)

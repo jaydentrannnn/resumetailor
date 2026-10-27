@@ -4,7 +4,10 @@ A fill uploads from ``APPLICATIONS_OUTPUT_DIR/<id>/fills/<n>/<kind>/``, never th
 folder, so a resume re-rendered, a cover letter rewritten or a Prepare run while the
 fill works never changes what it sends. Each copy is checked against the hash its
 packet's preparation manifest recorded (`Changed` when the file moved on in between);
-`attempts` keeps the copies a fill actually attached (audit #11).
+`attempts` keeps the copies a fill actually attached (audit #11). Beside them, ``run/``
+keeps what goes with those documents: the run's bullets, requirements, coverage and
+cover-letter text, and the packet as the fill built it, so interview prep reads the
+bullets of the resume that was attached, not a later Prepare's.
 """
 
 from __future__ import annotations
@@ -18,6 +21,12 @@ from pathlib import Path
 
 from resume_tailor import config
 from resume_tailor.apply.funnel.packet_models import Packet
+
+
+#: The fill folder's copy of the run files that go with its documents.
+RUN = "run"
+#: Run files kept in ``run/`` (the packet is written as the fill built it).
+SUPPORTING = ("bullets.json", "requirements.json", "coverage.json", "cover.json")
 
 
 class Changed(RuntimeError):
@@ -53,6 +62,7 @@ def pin(pkt: Packet, application_id: str) -> Path:
     for kind, source in list(pkt.artifacts.items()):
         pkt.artifacts[kind] = str(_copy(Path(source), folder / kind, recorded.get(kind)))
     pkt.pinned_dir = str(folder)
+    _keep_run_files(pkt, folder, SUPPORTING)
     return folder
 
 
@@ -62,10 +72,26 @@ def pin_more(pkt: Packet, kinds: Iterable[str]) -> None:
     if not pinned:
         return
     folder = Path(pinned)
+    kinds = list(kinds)
     for kind in kinds:
         source = pkt.artifacts.get(kind)
         if source and not Path(source).is_relative_to(folder):
             pkt.artifacts[kind] = str(_copy(Path(source), folder / kind, None))
+    covers = ("cover.json",) if any(kind.startswith("cover") for kind in kinds) else ()
+    _keep_run_files(pkt, folder, covers)
+
+
+def _keep_run_files(pkt: Packet, folder: Path, names: Iterable[str]) -> None:
+    """Copy ``names`` from the run folder into ``folder/run/`` and write the packet there."""
+    kept = folder / RUN
+    kept.mkdir(exist_ok=True)
+    run_dir = config.OUTPUT_DIR / "jobs" / pkt.job_id
+    for name in names:
+        if (run_dir / name).is_file():
+            _copy(run_dir / name, kept, None)
+    _writable(kept / "packet.json")
+    (kept / "packet.json").write_text(pkt.model_dump_json(indent=2) + "\n", encoding="utf-8")
+    os.chmod(kept / "packet.json", stat.S_IREAD)
 
 
 def sha256(path: Path) -> str:
@@ -76,9 +102,15 @@ def sha256(path: Path) -> str:
     return digest.hexdigest()
 
 
+def _writable(path: Path) -> None:
+    if path.exists():
+        os.chmod(path, stat.S_IWRITE | stat.S_IREAD)
+
+
 def _copy(source: Path, folder: Path, expected: str | None) -> Path:
     folder.mkdir(parents=True, exist_ok=True)
     target = folder / source.name
+    _writable(target)
     shutil.copyfile(source, target)
     if expected and sha256(target) != expected:
         target.unlink()

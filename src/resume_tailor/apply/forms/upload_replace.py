@@ -64,6 +64,16 @@ def _ours(
     ), None)
 
 
+def pinned_copy(
+    prior_uploads: Iterable[dict[str, Any]], purpose: str, shown: str
+) -> dict[str, Any]:
+    """The earlier fill's pinned copy of ``shown`` (``artifact_path``), carried onto the
+    record when a Continue keeps that upload, so "What was sent" still holds the exact
+    file the form has; {} when there is none."""
+    path = str((_ours(prior_uploads, purpose, shown) or {}).get("artifact_path") or "")
+    return {"artifact_path": path} if path else {}
+
+
 def still_ours(
     prior_uploads: Iterable[dict[str, Any]], purpose: str, shown: str
 ) -> dict[str, Any]:

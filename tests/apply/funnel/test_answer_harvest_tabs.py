@@ -41,11 +41,17 @@ def tabs(tmp_path, monkeypatch):
     return fake
 
 
-def _watched(status="awaiting_review", target="T1", confirmation="Thank you for applying"):
+def _watched(status="awaiting_review", target="T1", confirmation="Thank you for applying",
+             fill_status=None, url=URL):
+    """A watched row; a submitted one carries the confirmation the app saw (its fill
+    ``submitted``) unless ``fill_status`` says otherwise."""
+    seen = status == "submitted" and confirmation
     app = store_models.Application(
         source="manual", source_job_id="app", company="Synthetic", role="Engineer",
-        posting_url=URL, final_url=URL, ats="greenhouse", status="awaiting_review",
-        fill={"browser_target_id": target, "browser_url": URL, "status": "awaiting_review",
+        posting_url=url, final_url=url, ats="greenhouse" if url == URL else "workday",
+        status="awaiting_review",
+        fill={"browser_target_id": target, "browser_url": url,
+              "status": fill_status or ("submitted" if seen else "awaiting_review"),
               "confirmation": confirmation if status == "submitted" else ""},
     )
     if status != "awaiting_review":
@@ -160,6 +166,26 @@ def test_a_mark_without_a_seen_confirmation_keeps_the_tab(tabs, monkeypatch):
     _counted_down(monkeypatch, _state())
     assert tabs.closed == [] and "app" not in harvest._WATCHED
     assert _history()[-1] == ("kept", "Marked submitted without a confirmation the app saw")
+
+
+def test_a_failed_confirmation_marked_submitted_by_hand_keeps_the_tab(tabs, monkeypatch):
+    """``confirmation`` also holds failure text: "missing" is no evidence."""
+    _watched(status="submitted", confirmation="missing", fill_status="submit_unconfirmed")
+    _counted_down(monkeypatch, _state())
+    assert tabs.closed == []
+    assert _history()[-1] == ("kept", "Marked submitted without a confirmation the app saw")
+
+
+def test_a_tab_taken_to_another_page_of_the_site_before_skip_is_kept(tabs, monkeypatch):
+    """Workday's candidate profile, opened before Skip: same site, not this application."""
+    posting = "https://acme.wd5.myworkdayjobs.com/en-US/External/job/Austin/Intern_R-01418/apply"
+    _watched(status="skipped", url=posting)
+    tabs.urls["T1"] = "https://acme.wd5.myworkdayjobs.com/en-US/External/userHome"
+    state = _state()
+    _counted_down(monkeypatch, state)
+    harvest._tick(state)
+    assert tabs.closed == []
+    assert _history()[-1] == ("kept", "Could not tell that the tab still shows this application")
 
 
 def test_a_skip_from_before_this_session_keeps_the_tab(tabs, monkeypatch):
