@@ -249,9 +249,14 @@ and Workday are assist-only; extension Prepare/Fill always use `auto_submit=fals
 The extension can automatically start Fill after successful preparation. CDP remains
 the default Fill mode. The X3 relay passed a synthetic end-to-end Greenhouse Fill,
 file upload, cross-origin frame evaluation, wait, and tab-detach failure checks in
-Edge. With `BROWSER_MODE=extension`, the local relay CDP URL, and an explicitly attached
-tab, Fill can drive that tab through `chrome.debugger`; closing it or opening DevTools
-marks Fill failed. The relay is local-only and requires manual startup and attachment.
+Edge. With `BROWSER_MODE=extension` and the local relay CDP URL, Fill and JD fetch open
+background tabs through the extension (`createTab`) and drive them through
+`chrome.debugger`; the student's own tabs are never attached. Each app connection sees
+the one tab it names (`/cdp/<secret>/tab/<targetId>`, leased to it) or only the tabs it
+opens, so tasks run side by side (`cdp_relay.py`, `browser.relay_slot(target_id)`).
+`open_targets` lists every app tab; `close_target` closes only app tabs. Closing a tab
+or opening DevTools marks that Fill failed (`Relay.tabGone`, per connection). The relay
+is local-only and requires manual startup.
 Cross-origin iCIMS iframe text needs selection capture or opening
 the iframe in its own tab.
 
@@ -469,8 +474,8 @@ holds a posting with a line addressed to an AI tool (`posting_instructions`, fro
 `submit_guard.pace` spaces automatic submits 20–90 s apart, one at a time. Fill runs up to
 `ApplySettings.max_parallel_fills` (default 2, range 1–4) applications at once, each in its
 own tab over its own CDP connection (Playwright sync objects are thread-bound); file uploads
-share `browser.UPLOAD_LOCK`, submits still pass through `pace`, and extension mode (one
-relayed tab) always runs one at a time. Each submit writes
+share `browser.UPLOAD_LOCK` and submits still pass through `pace`; extension mode gives
+each fill its own relayed tab the same way. Each submit writes
 `submit-<UTC stamp>/{before,after}.{json,png}` next to `fill.json`, shown on the detail page's
 Timeline. `fill_page.confirmation_markers` adds per-ATS confirmation selectors, phrases and URL
 fragments. The pause switch also holds the operation worker between applications. The Apply page sends
@@ -495,11 +500,11 @@ batches run together; Pause or Cancel on one never touches another. Each operati
 the rows it still owns in `held_ids` (pending, in flight or waiting to come back) and
 releases a row the moment its item finishes, so a row a running Prepare has tailored can go
 straight into a Fill. A start leaves out rows another batch holds (reason `in_another_task`;
-409 when none are left). Find jobs and the nightly run still run alone; extension mode allows
-only batches of the same kind together (one relayed tab, and Prepare can open the posting
-in the browser); Check/Correct on one application is refused while a batch holds it. Each
-kind shares one fair slot pool (`op_slots.SlotPool`): `max_parallel_fills` for Fill (1 in
-extension mode) and `max_concurrent_jobs` for Prepare, split between that kind's running
+409 when none are left). Find jobs and the nightly run still run alone; extension mode
+runs Prepare and Fill side by side like the desktop browser (each task in its own relayed
+tab); Check/Correct on one application is refused while a batch holds it. Each
+kind shares one fair slot pool (`op_slots.SlotPool`): `max_parallel_fills` for Fill
+and `max_concurrent_jobs` for Prepare, split between that kind's running
 batches by fewest slots held, then longest wait; a batch alone gets every slot and no slot
 sits idle. The Workday one-fill-per-site set (`op_slots.WORKDAY_BUSY`) is process-wide.
 `submit_guard.pace` already re-checks the daily caps inside its lock; the per-run auto-submit

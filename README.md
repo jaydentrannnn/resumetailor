@@ -315,12 +315,12 @@ the same job. The extension never clicks, scrolls or opens pages by itself, and 
 never fetches LinkedIn or Indeed. The options page also sets the app port, what a quick
 capture does next (send, or send and tailor), and the chip.
 
-CDP remains the default Fill browser. To fill the selected tab through the extension,
+CDP remains the default Fill browser. To fill in your own browser through the extension,
 start the optional loopback relay with `python -m resume_tailor.apply.driver.cdp_relay`, set
 `BROWSER_MODE=extension` and `EXTENSION_CDP_URL` to the printed URL before starting the
 app, turn on **Fill relay** under Advanced in the extension options (this is the only
-time it asks for the `debugger` permission), then choose **Use this tab for Fill
-(relay)** in the popup. See [`extension/README.md`](extension/README.md) for setup. The
+time it asks for the `debugger` permission), then choose **Connect Fill relay** in the
+popup. Fill then opens each application in a background tab of its own. See [`extension/README.md`](extension/README.md) for setup. The
 extension contacts the local ResumeTailor server on 127.0.0.1 ports 8000–8010. Opening
 its popup sends the current page URL for lookup; with LinkedIn/Indeed allowed, the job
 you open there is looked up too. Description text is sent only when you choose a capture

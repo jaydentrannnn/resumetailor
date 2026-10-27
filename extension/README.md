@@ -40,7 +40,7 @@
 All LinkedIn/Indeed selectors live in `lib/sites.js`, with fallbacks. When a site
 changes its markup, add the new selector first in that list.
 
-## Fill the selected tab through the relay
+## Fill through the relay
 
 The normal CDP browser mode remains the default. For the optional relay, run the app
 and relay on the same host and with the same `RESUME_TAILOR_DATA_DIR`. After pairing:
@@ -51,14 +51,19 @@ and relay on the same host and with the same `RESUME_TAILOR_DATA_DIR`. After pai
    one-time `ws://127.0.0.1:8011/cdp/...` URL.
 3. Start ResumeTailor with `BROWSER_MODE=extension` and `EXTENSION_CDP_URL` set to that
    exact URL. Restarting the relay creates a new URL, so restart the app with it.
-4. On the job tab, open **Advanced** in the popup and choose **Use this tab for Fill
-   (relay)**, then use **Fill this page**. Keep that tab open; opening DevTools detaches
-   it. The app leaves the filled form for your review and submission.
+4. Open **Advanced** in the popup and choose **Connect Fill relay**, then use **Fill
+   this page** (or Fill on the Apply page). Fill opens the application in a new
+   background tab of this browser and leaves the filled form there for your review and
+   submission. Opening DevTools on that tab, or closing it, stops the fill.
 
 The relay binds only to `127.0.0.1:8011`. Its CDP URL contains a temporary secret.
-The relay reuses that tab when Fill requests a new page. Only one tab can be attached
-at a time; detach by closing the tab or stopping the relay. This mode was checked on
-a synthetic Greenhouse-like page in Edge, not live job sites.
+The app drives only tabs it opened through the relay, never your own tabs, and it
+closes only those. Each task gets its own tab, so several fills, a Prepare and a
+posting fetch run side by side, as with the desktop browser. The popup shows how many
+app tabs are open. If the relay restarts, the extension attaches the app's tabs that
+are still open again. `tests/relay_smoke.py` checks this against real Edge on synthetic
+pages (two tabs side by side, a fetch in its own tab, a tab closed mid-fill), not live
+job sites.
 
 If a page shows a login wall or its job description is hidden in a cross-origin iCIMS
 iframe, select the description and use **Send selection to ResumeTailor** from the

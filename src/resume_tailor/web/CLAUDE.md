@@ -51,11 +51,13 @@ same text (`tests/tooling/test_agent_docs.py` enforces it).
   roles; imported pay data), `company_research` (facts quoted from pages about an
   application's company; started by hand), `evidence` (GitHub repositories and
   documents as resume evidence; items added only on the student's accept),
-  `extension`, `resume`,
+  `send_to_apply` (a finished Tailor run tracked on Apply, ready to Fill), `extension`, `resume`,
   `template`, `libraries`, `config`, `workspaces`, `system`, `setup`, `answers`,
   `automation`, `discovery`, `jd`, `onboarding`, `secrets`, `diagnostics`, `update`, `reference`
   (static Profile-page option lists), `desktop` (desktop app only, 404 elsewhere: Save as
   via the shell's native dialog, Show in folder / Open for a run's files, window title).
+- `run_inputs.py` — what a run was made from (resume, template, style, guidance, config
+  fingerprints), checked before a run is reused or sent to Apply.
 - `extension.py` — pairing codes → tokens; `security.py` — request gate; `state.py` —
   process-wide flags shared by the lifespan and routers.
 
