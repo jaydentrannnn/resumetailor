@@ -181,6 +181,9 @@ class SubmissionAttempt(BaseModel):
     snapshot_dir: str = ""
     #: File name in ``snapshot_dir`` -> SHA-256.
     files: dict[str, str] = Field(default_factory=dict)
+    #: The names in ``files`` the app itself attached to the form (``attached/...``,
+    #: copied from the fill's pinned files) -> SHA-256. Empty: the prepared files only.
+    attached: dict[str, str] = Field(default_factory=dict)
     packet_digest: str = ""
     jd_sha256: str = ""
     voided_at: str | None = None

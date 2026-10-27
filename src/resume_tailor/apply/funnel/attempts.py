@@ -3,8 +3,9 @@
 `store.set_status` calls `on_status` on every status change. A row moving into
 ``submitted`` or ``submit_unconfirmed`` from a status that was not already sent gets a
 new `SubmissionAttempt`: the resume and cover letter (PDF and Word), the packet, the
-final bullets, requirements and coverage from the run folder, and the saved JD and
-``fill.json`` from the application folder, copied to
+final bullets, requirements and coverage from the run folder, the saved JD and
+``fill.json`` from the application folder, and under ``attached/`` the exact files the
+app attached (its fill's pinned copies, `fill_files`), copied to
 ``APPLICATIONS_OUTPUT_DIR/<source_job_id>/attempts/<n>/``, hashed and marked read-only.
 Interview prep and follow-ups read this copy, never the run folder a later Prepare
 overwrites.
@@ -94,7 +95,23 @@ def _sources(app: store_models.Application) -> list[tuple[Path, str]]:
     app_dir = config.APPLICATIONS_OUTPUT_DIR / app.source_job_id
     jd = Path(app.jd_text_path) if app.jd_text_path else app_dir / "jd.txt"
     sources += [(jd, "jd.txt"), (app_dir / "fill.json", "fill.json")]
+    sources += _attached(app)
     return [(path, name) for path, name in sources if path.is_file()]
+
+
+#: Where an attempt keeps the files the app attached.
+ATTACHED = "attached/"
+
+
+def _attached(app: store_models.Application) -> list[tuple[Path, str]]:
+    """The pinned files this row's fill verified as attached, once each."""
+    fill = store_models.FillResult.model_validate(app.fill) if app.fill else None
+    found: dict[str, Path] = {}
+    for upload in fill.uploads if fill else []:
+        path = str(upload.get("artifact_path") or "")
+        if path and upload.get("uploaded_by_app") and upload.get("verified"):
+            found.setdefault(ATTACHED + Path(path).name, Path(path))
+    return [(path, name) for name, path in found.items()]
 
 
 def record(
@@ -117,8 +134,11 @@ def record(
             target = folder / name
             if target.exists():  # a folder left by an attempt whose row was never saved
                 os.chmod(target, stat.S_IWRITE | stat.S_IREAD)
+            target.parent.mkdir(parents=True, exist_ok=True)
             shutil.copyfile(source, target)
             attempt.files[name] = _sha256(target)
+            if name.startswith(ATTACHED):
+                attempt.attached[name] = attempt.files[name]
             os.chmod(target, stat.S_IREAD)
     except OSError as exc:
         attempt.error = f"Could not copy every file: {exc}"

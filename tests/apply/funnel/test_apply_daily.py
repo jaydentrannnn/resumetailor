@@ -112,7 +112,9 @@ def _sample_row(**overrides) -> SourceRow:
     return SourceRow(**data_row)
 
 
-def _write_prior_run(root: Path, job_id: str, *, company: str, jd_text: str) -> None:
+def _write_prior_run(
+    root: Path, job_id: str, *, company: str, jd_text: str, inputs: dict | None = None
+) -> None:
     """Seed an archived run directory for reuse tests."""
     d = root / "output" / "jobs" / job_id
     d.mkdir(parents=True)
@@ -130,6 +132,7 @@ def _write_prior_run(root: Path, job_id: str, *, company: str, jd_text: str) -> 
                 "job_id": job_id,
                 "status": "succeeded",
                 "metadata": {"company": company, "role": "Intern"},
+                "inputs": inputs,
             }
         ),
         encoding="utf-8",
@@ -320,14 +323,29 @@ def test_run_daily_idempotent_on_known_ids(stub_pipeline, apply_paths, monkeypat
     assert summary.processed == 0
 
 
-def test_run_daily_reuses_prior_run_when_company_matches(stub_pipeline, apply_paths, monkeypatch):
-    """Reuse should skip the queue when jaccard recommends reuse and company matches."""
+_SAME = {"resume": "r1", "template": "t1", "guidance": "", "styles": "s1", "model": "m1"}
+
+
+@pytest.mark.parametrize(
+    ("inputs", "reused"),
+    [(_SAME, True), ({**_SAME, "resume": "r0"}, False), (None, False)],
+    ids=["same inputs", "older resume", "no inputs recorded"],
+)
+def test_run_daily_reuses_prior_run_only_when_built_from_the_same_inputs(
+    stub_pipeline, apply_paths, monkeypatch, inputs, reused
+):
+    """Reuse skips the queue when jaccard recommends it, the company matches and the
+    prior run was built from today's resume, template, guidance, styles and model."""
+    from resume_tailor.web import run_inputs
+
+    monkeypatch.setattr(run_inputs, "fingerprints", lambda *_a: dict(_SAME))
     jd_text = "python fastapi software engineering intern remote " * 5
     _write_prior_run(
         apply_paths,
         "prior-run",
         company="Acme Corp",
         jd_text=jd_text,
+        inputs=inputs,
     )
     monkeypatch.setattr(
         fetch_jd,
@@ -343,11 +361,13 @@ def test_run_daily_reuses_prior_run_when_company_matches(stub_pipeline, apply_pa
     summary = daily.run_daily(
         settings=ApplySettings(enabled=True, max_new_per_day=5, reuse_threshold=0.72)
     )
+    app = store.get("aaa11111-1111-1111-1111-111111111111")
+    if not reused:
+        assert summary.reused == 0 and app.reused_from_job_id is None
+        return
     assert summary.reused == 1
     assert summary.ready == 1
     assert summary.tailored == 0
-
-    app = store.get("aaa11111-1111-1111-1111-111111111111")
     assert app.reused_from_job_id == "prior-run"
     assert app.job_id == "prior-run"
 

@@ -90,6 +90,13 @@ def ensure(pkt: Packet) -> bool:
     for kind in ("cover_pdf", "cover_docx"):
         if kind in fresh.artifacts:
             pkt.artifacts[kind] = fresh.artifacts[kind]
+    from resume_tailor.apply.funnel import fill_files  # noqa: PLC0415
+
+    try:
+        fill_files.pin_more(pkt, ("cover_pdf", "cover_docx"))
+    except OSError:
+        _log.warning("Could not pin the cover letter for job %s", pkt.job_id, exc_info=True)
+        return False
     pkt.cover_letter = fresh.cover_letter
     pkt.preparation = fresh.preparation
     return has_cover(pkt)

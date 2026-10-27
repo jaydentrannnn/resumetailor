@@ -176,6 +176,10 @@ def test_job_runs_to_success_with_stubbed_pipeline(client, monkeypatch, tmp_path
     stored = config.OUTPUT_DIR / "run_templates" / f"{snapshot['template_sha']}.docx"
     assert stored.read_bytes() == b"PK-template"
     assert not (job_dir / "template.docx").exists()  # shared, not copied per run
+    # What the run was built from (audit #13): the resume as queued, and its inputs.
+    record = json.loads((job_dir / "run.json").read_text())
+    assert set(record["inputs"]) == {"resume", "template", "guidance", "styles", "model"}
+    assert (job_dir / "resume_snapshot.json").is_file()
     assert isinstance(status["report"]["gaps"], list)
     assert status["expansion"] is not None
     assert status["expansion"]["entries"][0]["company"] == resume.experience[0].company
@@ -215,6 +219,20 @@ def test_job_runs_to_success_with_stubbed_pipeline(client, monkeypatch, tmp_path
     expansion_md = c.get(f"/api/jobs/{job_id}/expansion.md")
     assert expansion_md.status_code == 200
     assert b"Expanded bullet from stub." in expansion_md.content
+
+
+def test_a_run_keeps_the_resume_it_was_queued_with(monkeypatch, tmp_path):
+    """An edit saved while a run waits never mixes into it (audit #13)."""
+    from resume_tailor.content import data as data_mod
+    from resume_tailor.web.jobs import JobQueue
+    from resume_tailor.web.schemas import JobSettings
+
+    queued = load()
+    monkeypatch.setattr(JobQueue, "_ensure_worker", lambda self: None)
+    job, _position = JobQueue().submit("Python intern", JobSettings())
+    edited = queued.model_copy(update={"contact": queued.contact.model_copy(update={"name": "New"})})
+    monkeypatch.setattr(data_mod, "load", lambda *a, **k: edited)
+    assert job.resume.contact.name == queued.contact.name
 
 
 def test_get_resume_outline(client):

@@ -486,12 +486,33 @@ class _RowRun:
             and prior_company.casefold() == app.company.casefold()
         ):
             return False
+        if not self._same_inputs(app, prior.job_id):
+            self._log(f"[reuse skipped] {app.company} ← {prior.job_id}: built from older inputs")
+            return False
         daily_rows._link_reused_packet(app, prior.job_id)
         store.upsert(app)
         self._count("reused", "ready")
         self._log(f"[reuse] {app.company} ← {prior.job_id} (jaccard={score:.2f})")
         self._count("processed")
         return True
+
+    def _same_inputs(self, app: store_models.Application, job_id: str) -> bool:
+        """Whether run ``job_id`` was built from today's resume, template, guidance,
+        styles and model routing (audit #30); a run that recorded none never matches."""
+        from resume_tailor import config  # noqa: PLC0415
+        from resume_tailor.content import data  # noqa: PLC0415
+        from resume_tailor.web import job_routing, run_inputs  # noqa: PLC0415
+
+        recorded = run_inputs.recorded(config.OUTPUT_DIR / "jobs" / job_id)
+        if not recorded:
+            return False
+        run_settings = daily_rows._job_settings(self.job_defaults, self.settings, ats=app.ats)
+        guidance = job_routing.tailoring_guidance(run_settings, config.active_workspace_id())
+        try:
+            current = run_inputs.fingerprints(data.load(), run_settings, guidance)
+        except Exception:  # noqa: BLE001 - unreadable inputs: tailor afresh
+            return False
+        return recorded == current
 
     def _tailor(self, app: store_models.Application, jd_text: str) -> None:
         metadata = RunMetadata(

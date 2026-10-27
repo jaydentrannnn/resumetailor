@@ -97,6 +97,8 @@ class Packet(BaseModel):
     #: Fill always rebuilds in memory; this tells a reader of ``packet.json`` whether
     #: the saved copy is out of date.
     inputs_digest: str = ""
+    #: The fill folder ``artifacts`` were pinned to (`fill_files.pin`); "" when unpinned.
+    pinned_dir: str = ""
 
 def inputs_digest(profile: ApplicantProfile, resume: MasterResume) -> str:
     """Hash of everything outside the job folder that a packet's fields come from."""

@@ -271,7 +271,7 @@ class _FillAnswers(fill_state._FillState):
         self.uploads.append({
             **record, "filename": staged_name, "verified": uploaded,
             "error": "" if uploaded else upload_error, "frame_index": frame_index,
-            "uploaded_by_app": uploaded, "artifact_sha256": sha,
+            "uploaded_by_app": uploaded, "artifact_sha256": sha, "artifact_path": str(path),
             **({"reason": upload_replace.REPLACED_NOTE} if uploaded and replacing else {}),
             # The outdated file may still be attached.
             **({} if uploaded or not replacing else upload_replace.still_ours(

@@ -49,6 +49,8 @@ def _persist_run_record(job: job_types.Job, status: str | None = None) -> None:
         "error": job.error,
         "report": job.report.model_dump() if job.report else None,
         "metadata": job.metadata.model_dump() if job.metadata else None,
+        #: What it was built from (`run_inputs`); the nightly run reuses only a match.
+        "inputs": job.inputs or None,
         "guidance": ({
             "target_field": job.guidance.target_field,
             "version": job.guidance.version,

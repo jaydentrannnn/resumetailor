@@ -359,6 +359,8 @@ export function cancelJob(jobId: string): Promise<JobStatus> {
 
 export type DeleteRunHistoryResult = {
   deleted: string[];
+  /** Runs an application uses: hidden from history, their files kept. */
+  hidden?: string[];
   errors: Record<string, string>;
 };
 

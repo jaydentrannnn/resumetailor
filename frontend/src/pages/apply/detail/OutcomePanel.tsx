@@ -142,7 +142,7 @@ export function OutcomePanel({
           </ol>
         </Tile>
       )}
-      <SentAttempts attempts={app.attempts ?? []} />
+      <SentAttempts applicationId={id} attempts={app.attempts ?? []} />
     </div>
   );
 }

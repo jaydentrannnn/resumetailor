@@ -11,6 +11,7 @@ import {
 import {
   type AppConfig,
   type CoverLetter,
+  type DeleteRunHistoryResult,
   type Expansion,
   type JobSettings,
   type ProgressEvent,
@@ -79,7 +80,7 @@ type RunStateValue = {
   cancelling: boolean;
   refreshHistory: () => Promise<void>;
   /** Remove finished runs from history and clear results if the active view was deleted. */
-  deleteHistoryRuns: (jobIds: string[]) => Promise<Record<string, string>>;
+  deleteHistoryRuns: (jobIds: string[]) => Promise<DeleteRunHistoryResult>;
   /** Load a past (or still-running) job into the results tiles without re-downloading. */
   loadRun: (jobId: string) => Promise<void>;
 };
@@ -517,7 +518,7 @@ export function RunProvider({ children }: { children: ReactNode }) {
         clearDisplayedRun();
       }
       await refreshHistory();
-      return result.errors;
+      return result;
     },
     [jobId, busy, clearDisplayedRun, refreshHistory],
   );

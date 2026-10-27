@@ -17,7 +17,7 @@ import traceback
 import uuid
 
 from resume_tailor import config
-from resume_tailor.content import industries
+from resume_tailor.content import data, industries
 from resume_tailor.infra import housekeeping, logs, model_queue
 from resume_tailor.pipeline.events import ProgressEvent
 from resume_tailor.web.schemas import (
@@ -62,6 +62,10 @@ class JobQueue:
         job_id = uuid.uuid4().hex[:12]
         workspace_id = config.active_workspace_id()
         guidance = job_routing.tailoring_guidance(settings, workspace_id)
+        try:
+            resume = data.load()  # captured now: an edit saved while it waits stays out
+        except Exception:  # noqa: BLE001 - the run reads it again and reports the error
+            resume = None
         job = job_types.Job(
             job_id=job_id,
             jd_text=jd_text,
@@ -69,6 +73,7 @@ class JobQueue:
             workspace_id=workspace_id,
             metadata=metadata,
             guidance=guidance,
+            resume=resume,
         )
         with self._lock:
             self._jobs[job_id] = job

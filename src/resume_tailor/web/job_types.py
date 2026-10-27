@@ -6,7 +6,7 @@ import threading
 from dataclasses import dataclass, field
 from datetime import UTC, datetime
 from pathlib import Path
-from typing import Literal
+from typing import Any, Literal
 
 from resume_tailor.content import industries
 from resume_tailor.pipeline.events import ProgressEvent
@@ -56,6 +56,11 @@ class Job:
     cancel_requested: threading.Event = field(default_factory=threading.Event)
     out_dir: Path | None = None
     guidance: industries.GuidanceSnapshot | None = None
+    #: The master resume as it was when the run was queued (`run_inputs`); None when it
+    #: could not be read then (the run reads it when it starts and fails the same way).
+    resume: Any = None
+    #: `run_inputs.fingerprints` of what the run was built from, for ``run.json``.
+    inputs: dict[str, str] = field(default_factory=dict)
 
     def emit(self, event: ProgressEvent) -> None:
         """Append a progress event and wake any SSE listeners."""

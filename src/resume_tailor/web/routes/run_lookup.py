@@ -214,6 +214,7 @@ def _scan_run_history() -> list[RunHistoryEntryOut]:
     active_ws = config.active_workspace_id()
     jobs_root = config.OUTPUT_DIR / "jobs"
     by_id: dict[str, RunHistoryEntryOut] = {}
+    hidden: set[str] = set()
 
     if jobs_root.is_dir():
         for child in jobs_root.iterdir():
@@ -221,6 +222,9 @@ def _scan_run_history() -> list[RunHistoryEntryOut]:
                 continue
             raw = _load_run_json(child.name)
             if raw is None:
+                continue
+            if raw.get("hidden"):
+                hidden.add(child.name)
                 continue
             # Skip runs that belong to a different profile (or legacy runs with no
             # workspace_id when we *do* have an active one — those predate this field).
@@ -250,6 +254,8 @@ def _scan_run_history() -> list[RunHistoryEntryOut]:
     for job in get_queue().iter_jobs():
         if active_ws is not None and job.workspace_id not in (None, active_ws):
             continue
+        if job.job_id in hidden:
+            continue
         out_dir = job.out_dir or (jobs_root / job.job_id)
         title = (
             job.report.title
@@ -276,6 +282,20 @@ def _scan_run_history() -> list[RunHistoryEntryOut]:
 
     runs = sorted(by_id.values(), key=lambda r: r.created_at, reverse=True)
     return runs[:_HISTORY_LIMIT]
+
+def hide_run(job_id: str) -> bool:
+    """Leave a run out of history, keeping its files (``run.json`` ``hidden``)."""
+    from resume_tailor.infra import atomic  # noqa: PLC0415
+
+    raw = _load_run_json(job_id)
+    if raw is None:
+        return False
+    raw["hidden"] = True
+    atomic.write_text(
+        config.OUTPUT_DIR / "jobs" / job_id / "run.json", json.dumps(raw, indent=2) + "\n"
+    )
+    return True
+
 
 def _job_artifact(job_id: str, suffix: str) -> Path:
     """Resolve a finished job's deliverable, or raise 404."""

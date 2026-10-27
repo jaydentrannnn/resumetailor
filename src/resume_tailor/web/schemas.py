@@ -903,6 +903,9 @@ class DeleteRunHistoryResponse(BaseModel):
     """Per-id outcome of a history delete request."""
 
     deleted: list[str] = Field(default_factory=list)
+    #: Runs an application still uses (its files are what Fill uploads and what was
+    #: sent): hidden from history and kept, never deleted.
+    hidden: list[str] = Field(default_factory=list)
     errors: dict[str, str] = Field(default_factory=dict)
 
 

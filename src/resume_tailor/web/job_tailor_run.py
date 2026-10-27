@@ -34,7 +34,7 @@ from resume_tailor.pipeline.events import ProgressCallback, ProgressEvent
 from resume_tailor.pipeline.fabrication import FabricationError
 from resume_tailor.pipeline.fit_types import FitError
 
-from . import job_followups, job_outputs, job_routing, job_types, skill_refresh
+from . import job_followups, job_outputs, job_routing, job_types, run_inputs, skill_refresh
 
 logger = logging.getLogger(__name__)
 
@@ -132,7 +132,9 @@ class _TailorJobRun:
         except ValueError as exc:
             raise RuntimeError(str(exc)) from exc
 
-        self.resume = data.load()
+        self.resume = job.resume if job.resume is not None else data.load()
+        job.inputs = run_inputs.fingerprints(self.resume, settings, job.guidance)
+        run_inputs.save_snapshot(self.resume, self.out_dir)
         self._join_skill_refresh()
         inference = tag_infer.prepare_run(self.resume, on_event=self.on_event)
         if inference.error is None:

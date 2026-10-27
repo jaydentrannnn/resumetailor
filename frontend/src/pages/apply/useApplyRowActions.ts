@@ -37,6 +37,7 @@ function hasOpenTab(row: ApplicationRow, openTabs: OpenTabs): boolean {
  */
 export function useApplyRowActions({
   apply,
+  flushSettings,
   tables,
   openTabs,
   active,
@@ -51,6 +52,8 @@ export function useApplyRowActions({
   showError,
 }: {
   apply: ApplySettings;
+  /** Saves settings still waiting on the autosave; false when that failed. */
+  flushSettings: () => Promise<boolean>;
   tables: ApplicationTableState[];
   openTabs: OpenTabs;
   active: boolean;
@@ -83,6 +86,15 @@ export function useApplyRowActions({
   ) {
     setBusy(true);
     try {
+      // An operation captures the settings when it starts: never start on a stale copy
+      // of what was just edited (audit #14).
+      if (!(await flushSettings())) {
+        toast.error(
+          "Your settings are not saved yet",
+          "Nothing was started. Check the settings drawer, then try again.",
+        );
+        return;
+      }
       if (action === "fill") {
         const current = await Promise.all(ids.map((id) => getApplication(id)));
         const flagged = current.filter((item) => item.application.resume_review?.required);

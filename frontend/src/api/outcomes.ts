@@ -39,6 +39,8 @@ export type SubmissionAttempt = {
   confirmed: boolean;
   snapshot_dir: string;
   files: Record<string, string>;
+  /** Files (names in `files`) the app itself attached to the form, with their SHA-256. */
+  attached?: Record<string, string>;
   voided_at: string | null;
   error: string;
 };

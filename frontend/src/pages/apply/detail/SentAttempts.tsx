@@ -1,5 +1,6 @@
 import type { SubmissionAttempt } from "../../../api";
 import { Tile } from "../../../components/ui";
+import { attemptFileUrl } from "../../../lib/attemptFiles";
 
 function howSent(attempt: SubmissionAttempt): string {
   if (attempt.method === "manual")
@@ -11,8 +12,58 @@ function howSent(attempt: SubmissionAttempt): string {
     : "Sent by ResumeTailor; the confirmation wasn't seen.";
 }
 
+function AttemptFiles({
+  applicationId,
+  attempt,
+}: {
+  applicationId: string;
+  attempt: SubmissionAttempt;
+}) {
+  const names = Object.keys(attempt.files);
+  if (!names.length) return <p className="text-xs text-ink-muted">No files were copied.</p>;
+  const attached = attempt.attached ?? {};
+  const groups = [
+    ["Attached by the app", names.filter((name) => name in attached)],
+    [
+      Object.keys(attached).length ? "Prepared files" : "Prepared files (not confirmed attached)",
+      names.filter((name) => !(name in attached)),
+    ],
+  ] as const;
+  return (
+    <>
+      {groups
+        .filter(([, list]) => list.length)
+        .map(([label, list]) => (
+          <p key={label} className="text-xs text-ink-muted">
+            {label}:{" "}
+            {list.map((name, index) => (
+              <span key={name}>
+                {index > 0 && ", "}
+                <a
+                  className="rt-link"
+                  href={attemptFileUrl(applicationId, attempt.number, name)}
+                  target="_blank"
+                  rel="noreferrer"
+                  title={`SHA-256 ${attempt.files[name]}`}
+                >
+                  {name.split("/").pop()}
+                </a>
+              </span>
+            ))}
+          </p>
+        ))}
+    </>
+  );
+}
+
 /** "What was sent": the read-only copy kept each time the application went out. */
-export function SentAttempts({ attempts }: { attempts: SubmissionAttempt[] }) {
+export function SentAttempts({
+  applicationId,
+  attempts,
+}: {
+  applicationId: string;
+  attempts: SubmissionAttempt[];
+}) {
   if (!attempts.length) return null;
   return (
     <Tile title="What was sent">
@@ -26,15 +77,8 @@ export function SentAttempts({ attempts }: { attempts: SubmissionAttempt[] }) {
             </p>
             {attempt.voided_at && <p className="text-xs text-ink-muted">Undone; files kept.</p>}
             <p className="text-xs text-ink-2">{howSent(attempt)}</p>
-            <p className="text-xs text-ink-muted">
-              {Object.keys(attempt.files).join(", ") || "No files were copied."}
-            </p>
+            <AttemptFiles applicationId={applicationId} attempt={attempt} />
             {attempt.error && <p className="text-xs text-attn">{attempt.error}</p>}
-            {attempt.snapshot_dir && (
-              <p className="break-all font-mono text-[11px] text-ink-muted">
-                {attempt.snapshot_dir}
-              </p>
-            )}
           </li>
         ))}
       </ol>

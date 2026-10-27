@@ -258,17 +258,27 @@ def delete_run_history(body: DeleteRunHistoryRequest) -> DeleteRunHistoryRespons
     """Remove finished runs from disk-backed history.
 
     Queued and running jobs are rejected per id — use ``DELETE /api/jobs/{id}`` to
-    cancel those instead.
+    cancel those instead. A run an application uses is hidden instead (audit #9).
     """
+    from resume_tailor.infra import housekeeping  # noqa: PLC0415
+
     deleted: list[str] = []
+    hidden: list[str] = []
     errors: dict[str, str] = {}
+    used = housekeeping._referenced_jobs()
     for job_id in body.job_ids:
+        if job_id in used:
+            if run_lookup.hide_run(job_id):
+                hidden.append(job_id)
+            else:
+                errors[job_id] = "Used by an application; could not hide it"
+            continue
         reason = get_queue().remove_from_history(job_id)
         if reason is None:
             deleted.append(job_id)
         else:
             errors[job_id] = reason
-    return DeleteRunHistoryResponse(deleted=deleted, errors=errors)
+    return DeleteRunHistoryResponse(deleted=deleted, hidden=hidden, errors=errors)
 
 
 @router.get("/api/jobs/{job_id}", response_model=JobStatusResponse)

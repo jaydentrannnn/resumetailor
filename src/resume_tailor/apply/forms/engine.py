@@ -38,6 +38,7 @@ from resume_tailor.apply.forms import (
     form_routes,
 )
 from resume_tailor.apply.forms.field_types import AttachmentOutcome, FieldObservation, FieldOutcome
+from resume_tailor.apply.funnel import fill_files
 from resume_tailor.apply.funnel import (
     cover_on_demand,
     packet,
@@ -146,10 +147,11 @@ async def fill_application(
         raise RuntimeError(f"Application needs Prepare: {', '.join(eligible.reasons)}")
     if not app.job_id:
         raise RuntimeError("Application has no prepared Tailor job")
-    pkt = (
-        packet.build_packet(app.job_id)
+    pkt = fill_files.pinned_packet(
+        lambda: packet.build_packet(app.job_id)
         if applicant_profile is None else
-        packet.build_packet(app.job_id, applicant_profile=applicant_profile)
+        packet.build_packet(app.job_id, applicant_profile=applicant_profile),
+        source_job_id,
     )
     applicant = applicant_profile
     if applicant is None:

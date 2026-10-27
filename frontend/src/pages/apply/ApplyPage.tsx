@@ -31,7 +31,7 @@ import { useApplyRowActions } from "./useApplyRowActions";
  * pinned on top and every setting in a side drawer.
  */
 export function ApplyPage() {
-  const { settings, setSettings, config } = useRunState();
+  const { settings, setSettings, config, flushSettings } = useRunState();
   const workspaceId = useWorkspaceState().activeId ?? "";
   const toast = useToast();
   const profileGaps = useProfileGaps();
@@ -98,6 +98,7 @@ export function ApplyPage() {
   const sourcesStatus = useSourcesStatus(active);
   const { busy, findOptions, setFindOptions, actions } = useApplyRowActions({
     apply: settings.apply,
+    flushSettings,
     tables: [queue, review, archive],
     openTabs,
     active,

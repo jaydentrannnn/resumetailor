@@ -2,6 +2,7 @@ import { useEffect, useMemo, useState } from "react";
 import { type RunHistoryEntry, downloadPdfUrl, downloadUrl } from "../api";
 import { type RunSort, type RunStatusFilter, filterRuns, sortRuns } from "../lib/runHistory";
 import { saveLabel } from "../lib/fileActions";
+import { useToast } from "../lib/toast";
 import { useDesktop } from "../lib/useDesktop";
 import { useConfirm } from "../state/confirmState";
 import { useRunState } from "../state/runState";
@@ -27,6 +28,7 @@ function isDeletable(run: RunHistoryEntry): boolean {
 export function RunHistoryPanel({ onOpened }: { onOpened?: () => void }) {
   const { history, jobId, loadRun, busy, deleteHistoryRuns, refreshHistory } = useRunState();
   const { confirm } = useConfirm();
+  const toast = useToast();
   const [selected, setSelected] = useState<Set<string>>(() => new Set());
   const [deleting, setDeleting] = useState(false);
   const [deleteError, setDeleteError] = useState<string | null>(null);
@@ -93,10 +95,16 @@ export function RunHistoryPanel({ onOpened }: { onOpened?: () => void }) {
     setDeleting(true);
     setDeleteError(null);
     try {
-      const errors = await deleteHistoryRuns(ids);
+      const { errors, hidden = [] } = await deleteHistoryRuns(ids);
       const failed = Object.entries(errors);
       if (failed.length > 0) {
         setDeleteError(failed.map(([id, reason]) => `${id}: ${reason}`).join("; "));
+      }
+      if (hidden.length) {
+        toast.info(
+          `Kept ${hidden.length} run${hidden.length === 1 ? "" : "s"} an application uses`,
+          "Hidden from history; Apply still needs their files.",
+        );
       }
       setSelected((prev) => {
         const next = new Set(prev);

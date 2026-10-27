@@ -5,11 +5,14 @@
 - ``GET /api/applications/{id}/submit-evidence``: the audit folders `fill.py` writes
   around each automatic submit (``submit-<UTC stamp>/{before,after}.{json,png}``). The
   files themselves are served from the ``…/{stamp}/{name}`` route below.
+- ``GET /api/applications/{id}/attempts/{n}/files/{name}``: one file of a "What was
+  sent" copy (`attempts`), read-only; ``?download=1`` saves it.
 """
 
 from __future__ import annotations
 
 import json
+import mimetypes
 import re
 from datetime import UTC, datetime
 from pathlib import Path
@@ -137,3 +140,24 @@ def get_submit_evidence_file(application_id: str, stamp: str, name: str) -> File
             media = "image/png" if name.endswith(".png") else "application/json"
             return FileResponse(path, media_type=media)
     raise HTTPException(status_code=404, detail="No such file.")
+
+
+@router.get("/api/applications/{application_id}/attempts/{number}/files/{name:path}")
+def get_attempt_file(
+    application_id: str, number: int, name: str, download: bool = False
+) -> FileResponse:
+    """One file of attempt ``number``'s copy: only a name the attempt recorded, inside
+    its own folder."""
+    app = store.get(application_id)
+    attempt = next((a for a in app.attempts if a.number == number), None) if app else None
+    if attempt is None or not attempt.snapshot_dir or name not in attempt.files:
+        raise HTTPException(status_code=404, detail="No such file.")
+    folder = Path(attempt.snapshot_dir).resolve()
+    path = (folder / name).resolve()
+    if not path.is_relative_to(folder) or not path.is_file():
+        raise HTTPException(status_code=404, detail="No such file.")
+    media = mimetypes.guess_type(path.name)[0] or "application/octet-stream"
+    return FileResponse(
+        path, media_type=media, filename=path.name,
+        content_disposition_type="attachment" if download else "inline",
+    )

@@ -855,6 +855,26 @@ def _prepare_item(
     return "done"
 
 
+def _updated_profile(
+    operation: ApplyOperation, application_id: str,
+    applicant: profile.ApplicantProfile | None,
+) -> profile.ApplicantProfile | None:
+    """The profile a Continue fill uses: the one saved now, when it changed since the
+    batch started (an answer added while the fill waited on you; audit #12). A single
+    attempt keeps one profile throughout."""
+    if applicant is None:
+        return None
+    try:
+        current, _seeded = profile.load_profile()
+    except Exception:  # noqa: BLE001 - an unreadable profile keeps the batch's copy
+        return applicant
+    secret = {"workday_password"}
+    if current.model_dump(exclude=secret) == applicant.model_dump(exclude=secret):
+        return applicant
+    _event(operation, "filling", "Using your updated profile", application_id)
+    return current.model_copy(deep=True)
+
+
 def _fill_item(
     operation: ApplyOperation,
     request: ApplyOperationRequest,
@@ -873,11 +893,13 @@ def _fill_item(
     Continue fill: it reuses the retained tab and its answers."""
     ctl = _ctl(operation)
     attempt_mode = "continue" if again else request.fill_mode
+    applicant = applicant_snapshot
     while True:
         if application_id in ctl.revoked:
             return "done"
         if attempt_mode == "continue":
             _harvest_typed(operation, application_id)
+            applicant = _updated_profile(operation, application_id, applicant)
         _event(operation, "filling", "Opening application form", application_id)
         submit_allowed = reserve_submit()
         answer_harvest.FILLING.add(application_id)
@@ -891,7 +913,7 @@ def _fill_item(
                 on_progress=lambda message: _event(
                     operation, "filling", message, application_id
                 ),
-                applicant_profile=applicant_snapshot,
+                applicant_profile=applicant,
                 on_deadline=_on_deadline(operation, item),
             )
         except BaseException:

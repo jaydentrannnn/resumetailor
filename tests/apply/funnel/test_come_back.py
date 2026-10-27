@@ -257,3 +257,46 @@ def test_readiness_needs_answers_and_a_quiet_tab():
     assert come_back.ready_to_continue("x")
     come_back.forget("x")
     assert not come_back.ready_to_continue("x")
+
+
+def test_a_comeback_uses_the_profile_saved_while_it_waited(batch, monkeypatch):
+    """An answer added to the profile while the fill waited reaches its Continue fill;
+    the first attempt keeps the batch's copy (audit #12)."""
+    from resume_tailor.apply.answers.profile import ApplicantProfile
+
+    batch_copy = ApplicantProfile(city="Old City")
+    saved = ApplicantProfile(city="New City")
+    monkeypatch.setattr(operations.profile, "load_profile", lambda: (saved, False))
+    monkeypatch.setattr(operations.come_back, "ready_to_continue", lambda _id: True)
+    monkeypatch.setattr(operations.come_back, "wait_seconds", lambda _settings: 30.0)
+    seen: list[str] = []
+    replies = [_STUCK, _DONE]
+
+    def fake_fill(application_id, **kwargs):
+        seen.append(kwargs["applicant_profile"].city)
+        result = replies.pop(0)
+        batch.rows[application_id].status, batch.rows[application_id].fill = result.status, result
+        return result
+
+    monkeypatch.setattr(operations.fill, "fill_application", fake_fill)
+    operation = operations.ApplyOperation(
+        operation_id="test", action="fill", state="running", application_ids=["one"],
+        total=1, held_ids=["one"],
+    )
+    request = ApplyOperationRequest(
+        action="fill", application_ids=["one"], model_provider="ollama", model_name="test",
+    )
+    operations._dispatch_items(operation, request, ApplySettings(max_parallel_fills=1), batch_copy)
+    assert seen == ["Old City", "New City"]
+    assert any(e["message"] == "Using your updated profile" for e in operation.events)
+
+
+def test_an_unchanged_profile_is_kept_as_is(monkeypatch):
+    from resume_tailor.apply.answers.profile import ApplicantProfile
+
+    mine = ApplicantProfile(city="Same")
+    monkeypatch.setattr(operations.profile, "load_profile", lambda: (mine.model_copy(), False))
+    operation = operations.ApplyOperation(operation_id="t", action="fill", state="running")
+    assert operations._updated_profile(operation, "one", mine) is mine
+    assert operations._updated_profile(operation, "one", None) is None
+    assert operation.events == []

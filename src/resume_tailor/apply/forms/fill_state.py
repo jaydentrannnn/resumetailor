@@ -16,6 +16,7 @@ from resume_tailor.apply.discovery import fetch_jd
 from resume_tailor.apply.driver import browser
 from resume_tailor.apply.forms import form_guards, wizards
 from resume_tailor.apply.funnel import cover_on_demand, packet_fields, packet_profile_fields, store
+from resume_tailor.apply.funnel import fill_files
 from resume_tailor.apply.funnel import packet as apply_packet
 from resume_tailor.apply.funnel.store_models import FillResult
 from resume_tailor.content import data
@@ -124,10 +125,11 @@ class _FillState:
         #: This application's tab events, carried into whatever result the fill saves.
         self.tab_history = list(self.previous_fill.tab_history)
         self.progress("building packet")
-        self.pkt = (
-            apply_packet.build_packet(app.job_id)
+        self.pkt = fill_files.pinned_packet(
+            lambda: apply_packet.build_packet(app.job_id)
             if applicant_profile is None else
-            apply_packet.build_packet(app.job_id, applicant_profile=applicant_profile)
+            apply_packet.build_packet(app.job_id, applicant_profile=applicant_profile),
+            source_job_id, progress=self.progress,
         )
         profile = applicant_profile
         if profile is None:

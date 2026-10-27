@@ -20,7 +20,7 @@ from resume_tailor.pipeline import (
     tag_infer,
 )
 from resume_tailor.pipeline.events import ProgressCallback, ProgressEvent
-from resume_tailor.web import template_ops
+from resume_tailor.web import run_inputs, template_ops
 from resume_tailor.web.schemas import (
     CoverAnglesIn,
     CoverLetterOut,
@@ -151,7 +151,8 @@ def regenerate_cover_letter(
         industries.bind(snapshot)
         if snapshot is not None:
             style.activate(**snapshot.styles)
-        resume = data.load()
+        # The resume the run was tailored from, so the letter and the resume agree.
+        resume = run_inputs.load_snapshot(out_dir) or data.load()
         letter = coverletter.draft_letter(
             resume,
             requirements,
