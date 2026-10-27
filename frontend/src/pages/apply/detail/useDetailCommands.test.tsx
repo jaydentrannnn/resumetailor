@@ -3,6 +3,7 @@ import { act, renderHook } from "@testing-library/react";
 import type { ReactNode } from "react";
 import { describe, expect, it, vi } from "vitest";
 import {
+  archiveApplications,
   retryApplication,
   setApplicationStatus,
   startApplyOperation,
@@ -82,7 +83,9 @@ describe("useDetailCommands (audit #19)", () => {
     await vi.waitFor(() => expect(toast.success).toHaveBeenCalled());
     const undo = toast.success.mock.calls[0][2] as { onClick: () => void };
     await act(async () => undo.onClick());
-    await vi.waitFor(() => expect(undoSubmitted).toHaveBeenCalledWith("a1"));
+    // The mark moved it to Done: Undo restores it, which undoes the mark.
+    await vi.waitFor(() => expect(archiveApplications).toHaveBeenCalledWith(["a1"], false));
+    expect(undoSubmitted).not.toHaveBeenCalled();
   });
 
   it("offers no Mark or step on a finished application", () => {

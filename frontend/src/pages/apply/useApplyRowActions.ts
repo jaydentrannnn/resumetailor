@@ -237,7 +237,7 @@ export function useApplyRowActions({
           tabOpen ? `Moved to Done. ${TAB_CLOSES_NOTE}` : "Moved to Done.",
           {
             label: "Undo",
-            onClick: () => void (submitted ? unsubmit(done) : unskip(done)),
+            onClick: () => void unmark(done),
           },
         );
         announceTabsChanged();
@@ -264,16 +264,12 @@ export function useApplyRowActions({
     await markAll([row], status);
   }
 
-  /** Undo of a Mark submitted: each row goes back to where it was. */
-  async function unsubmit(ids: string[]) {
-    const results = await Promise.allSettled(ids.map((id) => undoSubmitted(id)));
-    const failed = results.filter((result) => result.status === "rejected").length;
-    if (failed) toast.error("Some applications could not be moved back", `${failed} still marked`);
-    refresh();
-  }
-
-  /** Skipping moves a row to Done; restoring it from Done is what undoes the skipped mark. */
-  async function unskip(ids: string[]) {
+  /**
+   * Undo of a Mark submitted or Skip. The mark moved each row to Done, and restoring a
+   * row from Done is what undoes its mark (`store.set_archived`); undo-submitted is only
+   * for a row already restored.
+   */
+  async function unmark(ids: string[]) {
     try {
       const result = await archiveApplications(ids, false);
       const failures = Object.entries(result.errors);
@@ -283,7 +279,7 @@ export function useApplyRowActions({
           failures.map(([id, message]) => `${id}: ${message}`).join("; "),
         );
     } catch (reason) {
-      showError("Could not undo the skip", reason);
+      showError("Could not undo the mark", reason);
     }
     refresh();
   }

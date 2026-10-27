@@ -96,6 +96,10 @@ def _seed(base: str) -> None:
             status="screened_in",
         ),
     ):
+        # A history like a real row's, so undoing a mark puts the row back where it was.
+        row.status_history.append(
+            store_models.StatusChange(status=row.status, at=store_models._now_iso(), note="e2e seed")
+        )
         store.upsert(row)
 
 

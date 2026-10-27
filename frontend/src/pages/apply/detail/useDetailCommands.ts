@@ -4,7 +4,6 @@ import {
   retryApplication,
   setApplicationStatus,
   startApplyOperation,
-  undoSubmitted,
   type ApplicationRow,
 } from "../../../api";
 import {
@@ -116,12 +115,12 @@ export function useDetailCommands(
     await run(async () => {
       await setApplicationStatus(id, status);
       announceTabsChanged();
-      // Skipping is undone by restoring the row from Done, as on the Apply list.
+      // The mark moved it to Done; restoring it from there undoes the mark, as on Apply.
       const undo = () =>
-        void run(
-          () => (status === "submitted" ? undoSubmitted(id) : archiveApplications([id], false)),
-          "Could not undo",
-        );
+        void run(async () => {
+          const error = (await archiveApplications([id], false)).errors[id];
+          if (error) throw new Error(error);
+        }, "Could not undo");
       toast.success(`${app.company} marked ${status}`, "Moved to Done.", {
         label: "Undo",
         onClick: undo,
