@@ -75,12 +75,7 @@ export function DetailHeader({
               </Button>
             )}
             {commands.label && (
-              <Button
-                variant={nextVariant}
-                size="sm"
-                disabled={off}
-                onClick={commands.runNext}
-              >
+              <Button variant={nextVariant} size="sm" disabled={off} onClick={commands.runNext}>
                 {commands.label}
               </Button>
             )}

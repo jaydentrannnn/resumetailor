@@ -47,8 +47,6 @@ describe("marking", () => {
 
   it("leaves held and finished rows out of a bulk mark", () => {
     const rows = [row("ready"), row("filling"), row("submitted")];
-    expect(bulkMarkable(rows, new Set(["filling"])).map((item) => item.status)).toEqual([
-      "ready",
-    ]);
+    expect(bulkMarkable(rows, new Set(["filling"])).map((item) => item.status)).toEqual(["ready"]);
   });
 });

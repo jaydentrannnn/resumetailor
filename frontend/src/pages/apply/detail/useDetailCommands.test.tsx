@@ -97,7 +97,13 @@ describe("useDetailCommands (audit #19)", () => {
       <ConfirmProvider>{children}</ConfirmProvider>
     );
     const { result, rerender } = renderHook(
-      ({ row }) => useDetailCommands(row, null, vi.fn(async () => {}), vi.fn()),
+      ({ row }) =>
+        useDetailCommands(
+          row,
+          null,
+          vi.fn(async () => {}),
+          vi.fn(),
+        ),
       { wrapper, initialProps: { row: app("tailor_failed", { retry_kind: "tailor" }) } },
     );
     act(() => result.current.runNext());

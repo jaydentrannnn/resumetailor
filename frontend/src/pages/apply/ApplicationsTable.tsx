@@ -149,7 +149,12 @@ export function ApplicationsTable({
                   ? `${leftOut} held by a running Apply task ${leftOut === 1 ? "is" : "are"} left out`
                   : undefined
             }
-            onClick={() => actions.move(movable.map((row) => row.source_job_id), !archived)}
+            onClick={() =>
+              actions.move(
+                movable.map((row) => row.source_job_id),
+                !archived,
+              )
+            }
           >
             {archived ? "Restore" : "Archive"}
           </Button>

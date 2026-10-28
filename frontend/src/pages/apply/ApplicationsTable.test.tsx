@@ -193,8 +193,7 @@ describe("ApplicationsTable beside a running batch", () => {
 });
 
 describe("ApplicationsTable housekeeping while a task runs elsewhere (review #14)", () => {
-  const item = (name: string) =>
-    screen.getAllByRole("menuitem", { name })[0] as HTMLButtonElement;
+  const item = (name: string) => screen.getAllByRole("menuitem", { name })[0] as HTMLButtonElement;
 
   it.each([
     ["ready", false, "Archive"],
@@ -215,7 +214,9 @@ describe("ApplicationsTable housekeeping while a task runs elsewhere (review #14
     const move = vi.fn();
     const free = row("ready", false, "two");
     show("ready", false, [row("ready"), free], {}, false, {
-      active: true, held: new Set(["one"]), move,
+      active: true,
+      held: new Set(["one"]),
+      move,
     });
     fireEvent.keyDown(document, { key: "Escape" });
     const archive = screen.getByRole("button", { name: "Archive" });
@@ -226,7 +227,8 @@ describe("ApplicationsTable housekeeping while a task runs elsewhere (review #14
 
   it("keeps a failed row's Retry on while another row's task runs", () => {
     show("tailor_failed", false, [], { retry_kind: "tailor" }, false, {
-      active: true, held: new Set(["other"]),
+      active: true,
+      held: new Set(["other"]),
     });
     fireEvent.keyDown(document, { key: "Escape" });
     const [retry] = screen.getAllByRole("button", { name: "Retry" });

@@ -66,7 +66,11 @@ export function bulkMovable(rows: ApplicationRow[], held: Set<string>): Applicat
   return rows.filter((row) => !held.has(row.source_job_id));
 }
 
-type Confirm = (options: { title: string; message: string; confirmLabel?: string }) => Promise<boolean>;
+type Confirm = (options: {
+  title: string;
+  message: string;
+  confirmLabel?: string;
+}) => Promise<boolean>;
 
 /**
  * Before a Fill: false (with a toast) when a flagged resume could not be verified, or when
