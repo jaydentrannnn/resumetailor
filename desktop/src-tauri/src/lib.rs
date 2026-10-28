@@ -12,7 +12,7 @@
 //!   stops with the shell even when the shell is killed rather than quit;
 //! - keeps one instance (a second launch focuses the first window);
 //! - hides the window on close so the nightly scheduler keeps running, with a tray menu
-//!   to reopen or quit; quitting stops the server;
+//!   to reopen or quit (on macOS the Dock icon reopens it too); quitting stops the server;
 //! - checks for, downloads and installs updates when the server asks (`update.rs`);
 //! - opens the native Save dialog and sets the window title when the server asks
 //!   (`window_requests.rs`);
@@ -427,10 +427,16 @@ pub fn run() {
         .build(tauri::generate_context!())
         .expect("error while building the ResumeTailor shell");
 
-    app.run(|handle, event| {
-        if let RunEvent::Exit = event {
-            stop_server(handle);
-        }
+    app.run(|handle, event| match event {
+        RunEvent::Exit => stop_server(handle),
+        // A Dock click (or a launch from Finder) on the running app: macOS sends this
+        // instead of starting a second copy, so the window hidden on close comes back.
+        #[cfg(target_os = "macos")]
+        RunEvent::Reopen {
+            has_visible_windows: false,
+            ..
+        } => show_main(handle),
+        _ => {}
     });
 }
 

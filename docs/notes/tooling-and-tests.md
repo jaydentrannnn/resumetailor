@@ -293,3 +293,14 @@ order. Decision rules (`report.COVER_CHECKS`, `REVIEW_CHECKS`) were fixed before
 unsupported claims and gaps claimed as experience must not rise; guard-dropped review
 suggestions may rise at most 5 points; the judge arm may lose at most 10 points more
 often than the control.
+
+## 2026-10-28 - macOS: the Dock icon brings back a closed window
+
+Closing the window hides it (`CloseRequested` → `prevent_close` + `hide`) so the
+scheduler and fills keep running. On macOS a Dock click, or opening the app from Finder
+or Launchpad, does not start a second copy: AppKit sends the running app
+`applicationShouldHandleReopen`, which Tauri delivers as `RunEvent::Reopen`. The run
+loop handled only `RunEvent::Exit`, so after a close the Dock click did nothing and the
+only way back was Dock → Quit and relaunch. `app.run` now calls `show_main` on
+`Reopen { has_visible_windows: false }`. The arm is `cfg(target_os = "macos")`, so only
+the macOS release build compiles it; Windows CI cannot catch a mistake there.
