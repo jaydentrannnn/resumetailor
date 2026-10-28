@@ -226,7 +226,12 @@ def test_a_run_keeps_the_resume_it_was_queued_with(monkeypatch, tmp_path):
     from resume_tailor.content import data as data_mod
     from resume_tailor.web.jobs import JobQueue
     from resume_tailor.web.schemas import JobSettings
+    from tests.fixtures import synthetic_resume
 
+    # Never the machine's own data/master_resume.json: CI has none.
+    resume_path = tmp_path / "master_resume.json"
+    resume_path.write_text(synthetic_resume().model_dump_json(), encoding="utf-8")
+    monkeypatch.setattr(config, "MASTER_RESUME_PATH", resume_path)
     queued = load()
     monkeypatch.setattr(JobQueue, "_ensure_worker", lambda self: None)
     job, _position = JobQueue().submit("Python intern", JobSettings())
