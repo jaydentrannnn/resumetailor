@@ -41,8 +41,11 @@ describe("useApplicationDetail", () => {
     act(() => {
       archiving = result.current.move();
     });
+    expect(result.current.busy).toBe(true);
     rerender({ id: "B" });
     await waitFor(() => expect(result.current.app?.source_job_id).toBe("B"));
+    // B's own controls are on while A's request is still out, and after it lands.
+    expect(result.current.busy).toBe(false);
 
     vi.mocked(getApplication).mockClear();
     await act(async () => {
@@ -51,6 +54,7 @@ describe("useApplicationDetail", () => {
     });
     expect(result.current.app?.source_job_id).toBe("B");
     expect(result.current.error).toBeNull();
+    expect(result.current.busy).toBe(false);
     expect(getApplication).not.toHaveBeenCalledWith("A");
   });
 });

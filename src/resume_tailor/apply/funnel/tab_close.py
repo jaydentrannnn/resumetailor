@@ -9,7 +9,9 @@ there (audit #4: a tab taken to another page, with a draft in it, was closed):
 2. the tab still shows that application (`identity.retained_tab`), on the URL it
    showed when the close was armed;
 3. the applicant has not typed or clicked there since it was armed (the listener's
-   ``__rtLastInput``; unreadable means touched);
+   ``__rtLastInput``; unreadable means touched). Arming marks every frame's document
+   with a token (`ARM_JS`): a frame without it, or without the listener, was reloaded
+   or replaced since, so input there is unknown and the tab stays;
 4. they did not press Keep open (`keep`).
 
 The close waits `GRACE_S` after it is armed; the app shows the countdown (`pending`).
@@ -22,6 +24,7 @@ import asyncio
 import contextlib
 import threading
 import time
+import uuid
 from dataclasses import dataclass
 from typing import Any
 
@@ -32,6 +35,15 @@ GRACE_S = 30.0
 _TIMEOUT_S = 10.0
 #: When this server process started: a row skipped before then is not closed now.
 _STARTED = store_models._now_iso()
+
+#: Marks the document a close was armed on (a reload or another page drops it).
+ARM_JS = "(token) => { window.__rtCloseArm = token; return true; }"
+#: When the applicant last typed or clicked in the frame, its clock, and whether it is
+#: still the document the close was armed on, with the input listener in it.
+CHECK_JS = (
+    "(token) => [window.__rtLastInput || 0, Date.now(),"
+    " !!window.__rtTypedInstalled && window.__rtCloseArm === token]"
+)
 
 _LOCK = threading.Lock()
 #: Applications whose tab the applicant chose to keep; never closed automatically.
@@ -48,6 +60,8 @@ class Pending:
     target: str
     #: The page's clock (ms) when the close was armed; None when it could not be read.
     armed_page_ms: float | None
+    #: What `ARM_JS` marked the tab's documents with.
+    token: str = ""
 
 
 _PENDING: dict[str, Pending] = {}
@@ -79,9 +93,10 @@ def step(
         if why:
             tab_events.record(application_id, "kept", why, url=url)
             return False
+        token = uuid.uuid4().hex
         armed = Pending(
             due=now + GRACE_S, url=url, company=app.company, target=target,
-            armed_page_ms=_page_clock(target, install=True),
+            armed_page_ms=_arm(target, token), token=token,
         )
         with _LOCK:
             _PENDING[application_id] = armed
@@ -123,7 +138,7 @@ def _due_refusal(
         return "Could not tell that the tab still shows this application"
     if pending.armed_page_ms is None:
         return "Could not check the tab for your input"
-    last = _last_input(pending.target)
+    last = _last_input(pending.target, pending.token)
     if last is None:
         return "Could not check the tab for your input"
     if last > pending.armed_page_ms:
@@ -163,26 +178,28 @@ def forget(application_id: str) -> None:
 # -- reading the page (one short CDP connection) ------------------------------------------
 
 
-def _page_clock(target: str, *, install: bool = False) -> float | None:
-    """The page's clock now (ms), installing the input listener first; None on failure."""
-    reading = _read(target, install=install)
+def _arm(target: str, token: str) -> float | None:
+    """Install the input listener and mark every frame with ``token``; the page's clock
+    now (ms), or None when a frame could not be marked."""
+    reading = _read(target, token, arm=True)
     return reading[1] if reading else None
 
 
-def _last_input(target: str) -> float | None:
-    """When the applicant last typed or clicked in the tab (page ms; 0 if never)."""
-    reading = _read(target, install=False)
+def _last_input(target: str, token: str) -> float | None:
+    """When the applicant last typed or clicked in the tab (page ms; 0 if never); None
+    when a frame is no longer the document armed with ``token``."""
+    reading = _read(target, token, arm=False)
     return reading[0] if reading else None
 
 
-def _read(target: str, *, install: bool) -> tuple[float, float] | None:
+def _read(target: str, token: str, *, arm: bool) -> tuple[float, float] | None:
     try:
-        return asyncio.run(asyncio.wait_for(_read_async(target, install), _TIMEOUT_S))
+        return asyncio.run(asyncio.wait_for(_read_async(target, token, arm), _TIMEOUT_S))
     except Exception:  # noqa: BLE001 - unreadable reads as touched: the tab stays
         return None
 
 
-async def _read_async(target: str, install: bool) -> tuple[float, float] | None:
+async def _read_async(target: str, token: str, arm: bool) -> tuple[float, float] | None:
     from resume_tailor.apply.driver import browser  # noqa: PLC0415
     from resume_tailor.apply.funnel import answer_harvest  # noqa: PLC0415
 
@@ -191,13 +208,22 @@ async def _read_async(target: str, install: bool) -> tuple[float, float] | None:
             page = await browser.async_find_target(context, target)
             if page is None:
                 continue
-            if install:
+            if arm:
                 await answer_harvest.install(page)
+                for frame in page.frames:
+                    with contextlib.suppress(Exception):
+                        await frame.evaluate(ARM_JS, token)
             last, clock = 0.0, None
             for frame in page.frames:
-                with contextlib.suppress(Exception):
-                    frame_last, frame_now = await frame.evaluate(answer_harvest.ACTIVITY_JS)
-                    last = max(last, float(frame_last or 0))
-                    clock = max(clock or 0.0, float(frame_now))
+                # A frame that cannot be read, reloaded since (its listener and mark are
+                # gone) or added since may hold input: the tab stays.
+                try:
+                    frame_last, frame_now, same = await frame.evaluate(CHECK_JS, token)
+                except Exception:  # noqa: BLE001
+                    return None
+                if not same:
+                    return None
+                last = max(last, float(frame_last or 0))
+                clock = max(clock or 0.0, float(frame_now))
             return (last, clock) if clock is not None else None
     return None

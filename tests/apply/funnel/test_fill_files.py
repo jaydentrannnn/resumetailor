@@ -168,3 +168,58 @@ def test_a_manual_mark_without_app_uploads_keeps_only_prepared_files(tmp_path, m
     store.set_status(app, "submitted", note="Marked by you")
     assert app.attempts[0].attached == {} and not app.attempts[0].confirmed
     assert attempts.ATTACHED == "attached/"
+
+
+def test_a_rerender_during_the_pin_waits_so_the_resume_and_bullets_are_one_revision(
+    tmp_path, monkeypatch
+):
+    """A re-render landing between the documents and the run files used to leave the old
+    PDF beside the new bullets (review: interview prep read bullets never uploaded)."""
+    import json
+    import threading
+
+    from resume_tailor.infra import run_lock
+
+    monkeypatch.setattr(config, "OUTPUT_DIR", tmp_path / "output")
+    run = _prepared_run()
+    pkt = _packet(run)
+
+    def rerender():  # what `rerender.rerender` does to the run folder, under its lock
+        with run_lock.of(run):
+            (run / "tailored.pdf").write_bytes(b"%PDF re-rendered")
+            (run / "bullets.json").write_text('{"b1": "Re-rendered"}', encoding="utf-8")
+
+    writer = threading.Thread(target=rerender)
+    copy = fill_files._copy
+
+    def copy_then_rerender(source, folder, expected):
+        target = copy(source, folder, expected)
+        if source.name == "tailored.pdf" and not writer.is_alive():
+            writer.start()
+            writer.join(timeout=0.2)  # held off by the pin until it is done
+        return target
+
+    monkeypatch.setattr(fill_files, "_copy", copy_then_rerender)
+    folder = fill_files.pin(pkt, "job-5")
+    writer.join()
+    assert (folder / "resume_pdf" / "tailored.pdf").read_bytes() == b"%PDF resume"
+    kept = json.loads((folder / "run" / "bullets.json").read_text(encoding="utf-8"))
+    assert kept == {"b1": "Built the first version"}
+    assert (run / "bullets.json").read_text(encoding="utf-8") == '{"b1": "Re-rendered"}'
+
+
+def test_a_document_rewritten_without_the_lock_during_the_pin_is_refused(tmp_path, monkeypatch):
+    monkeypatch.setattr(config, "OUTPUT_DIR", tmp_path / "output")
+    run = _prepared_run()
+    pkt = _packet(run)
+    copy = fill_files._copy
+
+    def copy_then_rewrite(source, folder, expected):
+        target = copy(source, folder, expected)
+        if source.name == "bullets.json":
+            (run / "tailored.pdf").write_bytes(b"%PDF rewritten")
+        return target
+
+    monkeypatch.setattr(fill_files, "_copy", copy_then_rewrite)
+    with pytest.raises(fill_files.Changed):
+        fill_files.pin(pkt, "job-6")

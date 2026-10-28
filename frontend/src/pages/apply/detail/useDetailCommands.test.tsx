@@ -88,6 +88,26 @@ describe("useDetailCommands (audit #19)", () => {
     expect(undoSubmitted).not.toHaveBeenCalled();
   });
 
+  it("keeps an action still running for one application off the next one's buttons", async () => {
+    let done: () => void = () => {};
+    vi.mocked(retryApplication).mockImplementationOnce(
+      () => new Promise((resolve) => (done = () => resolve({} as never))),
+    );
+    const wrapper = ({ children }: { children: ReactNode }) => (
+      <ConfirmProvider>{children}</ConfirmProvider>
+    );
+    const { result, rerender } = renderHook(
+      ({ row }) => useDetailCommands(row, null, vi.fn(async () => {}), vi.fn()),
+      { wrapper, initialProps: { row: app("tailor_failed", { retry_kind: "tailor" }) } },
+    );
+    act(() => result.current.runNext());
+    expect(result.current.working).toBe(true);
+    rerender({ row: app("ready", { source_job_id: "b2" }) });
+    expect(result.current.working).toBe(false);
+    await act(async () => done());
+    expect(result.current.working).toBe(false);
+  });
+
   it("offers no Mark or step on a finished application", () => {
     const { result } = mount(app("submitted", { archived_at: "2026-10-01T00:00:00Z" }));
     expect(result.current.canMark).toBe(false);

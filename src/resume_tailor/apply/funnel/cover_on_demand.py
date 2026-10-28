@@ -23,6 +23,7 @@ from typing import Literal
 from resume_tailor import config
 from resume_tailor.apply.funnel import packet as packet_mod
 from resume_tailor.apply.funnel.packet_models import Packet
+from resume_tailor.infra import run_lock
 
 _log = logging.getLogger(__name__)
 
@@ -78,25 +79,28 @@ def ensure(pkt: Packet) -> bool:
         return True
     from resume_tailor.web import job_followups
 
-    job_dir = config.OUTPUT_DIR / "jobs" / pkt.job_id
-    try:
-        with _LOCK:
-            if not any((job_dir / name).is_file() for name in _COVER_FILES):
-                job_followups.regenerate_cover_letter(pkt.job_id)
-            fresh = packet_mod.write_packet(pkt.job_id)
-    except Exception:  # noqa: BLE001 - the fill continues; the upload names what is missing
-        _log.warning("Could not write a cover letter for job %s", pkt.job_id, exc_info=True)
-        return False
-    for kind in ("cover_pdf", "cover_docx"):
-        if kind in fresh.artifacts:
-            pkt.artifacts[kind] = fresh.artifacts[kind]
     from resume_tailor.apply.funnel import fill_files  # noqa: PLC0415
 
-    try:
-        fill_files.pin_more(pkt, ("cover_pdf", "cover_docx"))
-    except OSError:
-        _log.warning("Could not pin the cover letter for job %s", pkt.job_id, exc_info=True)
-        return False
+    job_dir = config.OUTPUT_DIR / "jobs" / pkt.job_id
+    # The letter, the packet built from it and its pinned copy are one revision: a
+    # Regenerate on the job page waits until this fill has pinned its letter.
+    with run_lock.of(job_dir):
+        try:
+            with _LOCK:
+                if not any((job_dir / name).is_file() for name in _COVER_FILES):
+                    job_followups.regenerate_cover_letter(pkt.job_id)
+                fresh = packet_mod.write_packet(pkt.job_id)
+        except Exception:  # noqa: BLE001 - the fill continues; the upload names what is missing
+            _log.warning("Could not write a cover letter for job %s", pkt.job_id, exc_info=True)
+            return False
+        for kind in ("cover_pdf", "cover_docx"):
+            if kind in fresh.artifacts:
+                pkt.artifacts[kind] = fresh.artifacts[kind]
+        try:
+            fill_files.pin_more(pkt, ("cover_pdf", "cover_docx"))
+        except OSError:
+            _log.warning("Could not pin the cover letter for job %s", pkt.job_id, exc_info=True)
+            return False
     pkt.cover_letter = fresh.cover_letter
     pkt.preparation = fresh.preparation
     return has_cover(pkt)

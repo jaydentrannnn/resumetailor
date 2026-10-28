@@ -74,6 +74,8 @@ export function useApplicationDetail(applicationId: string | undefined, workspac
     setDetail(null);
     setJob(null);
     setError(null);
+    // An action still running for the application left behind can no longer clear it.
+    setBusy(false);
     getApplication(applicationId)
       .then((result) => {
         if (current === sequence.current) setDetail(result);

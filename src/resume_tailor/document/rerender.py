@@ -33,6 +33,7 @@ from pathlib import Path
 from resume_tailor import config
 from resume_tailor.content.data import Bullet, Experience, MasterResume
 from resume_tailor.document import render
+from resume_tailor.infra import run_lock
 from resume_tailor.pipeline.merge import MergeGroup
 
 SNAPSHOT = "render_snapshot.json"
@@ -330,17 +331,19 @@ def rerender(
             over = max(1, lines - target * lines_per_page)
             return {"status": "over", "pages": pages, "target_pages": target, "over_by_lines": over}
 
-        for name in ("tailored.docx", "tailored.pdf", "bullets.json"):
-            original = out_dir / name
-            backup = out_dir / name.replace(".", ".v1.", 1)
-            if original.is_file() and not backup.exists():
-                shutil.copy2(original, backup)
-        tmp_docx.replace(out_dir / "tailored.docx")
-        if tmp_pdf.is_file():
-            tmp_pdf.replace(out_dir / "tailored.pdf")
-        elif estimated:
-            (out_dir / "tailored.pdf").unlink(missing_ok=True)  # never serve a stale PDF
-        (out_dir / "bullets.json").write_text(json.dumps(bullets, indent=2), "utf-8")
+        # The resume and its bullets change together: a fill pinning them waits.
+        with run_lock.of(out_dir):
+            for name in ("tailored.docx", "tailored.pdf", "bullets.json"):
+                original = out_dir / name
+                backup = out_dir / name.replace(".", ".v1.", 1)
+                if original.is_file() and not backup.exists():
+                    shutil.copy2(original, backup)
+            tmp_docx.replace(out_dir / "tailored.docx")
+            if tmp_pdf.is_file():
+                tmp_pdf.replace(out_dir / "tailored.pdf")
+            elif estimated:
+                (out_dir / "tailored.pdf").unlink(missing_ok=True)  # never serve a stale PDF
+            (out_dir / "bullets.json").write_text(json.dumps(bullets, indent=2), "utf-8")
         (out_dir / "review.json").write_text(
             json.dumps(
                 {"edits": edits, "reverted": reverted, "removed": removed, "confirmed": confirmed},

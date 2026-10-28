@@ -33,7 +33,7 @@ def tabs(tmp_path, monkeypatch):
 
     fake = _Tabs()
     fake.urls, fake.closed, fake.collected = {"T1": URL}, [], []
-    monkeypatch.setattr(tab_close, "_read", lambda _target, install: fake.reading)
+    monkeypatch.setattr(tab_close, "_read", lambda _target, _token, arm: fake.reading)
     monkeypatch.setattr(browser, "extension_mode", lambda: False)
     monkeypatch.setattr(browser, "open_targets", lambda: dict(fake.urls))
     monkeypatch.setattr(browser, "close_target", lambda target: fake.closed.append(target) or True)
@@ -229,3 +229,58 @@ def test_nothing_is_read_while_the_browser_is_unreachable(tabs, monkeypatch):
     monkeypatch.setattr(harvest.time, "monotonic", lambda: 5000.0)
     harvest._tick(_state())
     assert tabs.collected == [] and "app" in harvest._WATCHED
+
+
+class _Frame:
+    """A frame's ``window``: what the listener and the arm mark leave there."""
+
+    def __init__(self):
+        self.window: dict = {}
+
+    async def evaluate(self, script, arg=None):
+        window = self.window
+        if script == harvest.LISTENER_JS:
+            window["__rtTypedInstalled"] = True
+            return True
+        if script == tab_close.ARM_JS:
+            window["__rtCloseArm"] = arg
+            return True
+        assert script == tab_close.CHECK_JS
+        armed = bool(window.get("__rtTypedInstalled")) and window.get("__rtCloseArm") == arg
+        return [window.get("__rtLastInput", 0), 2000.0, armed]
+
+
+@pytest.fixture
+def frames(monkeypatch):
+    """The real `tab_close` reads over a fake connection to one tab of two frames."""
+    from contextlib import asynccontextmanager
+    from types import SimpleNamespace
+
+    page = SimpleNamespace(frames=[_Frame(), _Frame()])
+
+    @asynccontextmanager
+    async def connect(**_kwargs):
+        yield SimpleNamespace(contexts=[object()])
+
+    async def find(_context, _target):
+        return page
+
+    monkeypatch.setattr(browser, "async_cdp_browser", connect)
+    monkeypatch.setattr(browser, "async_find_target", find)
+    return page.frames
+
+
+def test_input_after_a_reload_during_the_countdown_keeps_the_tab(frames):
+    """A reload drops the listener: typing after it is unseen, so it must read as
+    unknown, never as untouched (review: notes typed after a reload were lost)."""
+    assert tab_close._arm("T1", "tok") == 2000.0
+    assert tab_close._last_input("T1", "tok") == 0  # same documents, untouched
+    frames[1].window = {}  # the embedded form reloaded; the notes typed there are unseen
+    assert tab_close._last_input("T1", "tok") is None
+
+
+def test_input_in_the_armed_documents_is_read(frames):
+    tab_close._arm("T1", "tok")
+    frames[0].window["__rtLastInput"] = 2500.0
+    assert tab_close._last_input("T1", "tok") == 2500.0
+    assert tab_close._last_input("T1", "another arm") is None

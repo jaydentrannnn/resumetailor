@@ -233,3 +233,18 @@ def test_listener_records_files_the_applicant_attached_but_not_the_apps(page, tm
     assert page.evaluate(harvest.ACTIVITY_JS)[0] == 0  # the app's upload is not input
     page.set_input_files("#f", str(mine))
     assert page.evaluate(harvest._FILES_JS) == ["My Resume.pdf"]
+
+
+def test_a_reload_drops_the_close_mark_so_later_typing_is_never_read_as_untouched(page):
+    """A tab-close countdown on a reloaded tab: the listener is gone, so the notes typed
+    after the reload leave no trace; the mark tells the close it is another document."""
+    from resume_tailor.apply.funnel import tab_close
+
+    page.goto("data:text/html,<label for=t>Notes</label><input id=t>")
+    page.evaluate(harvest.LISTENER_JS)
+    page.evaluate(tab_close.ARM_JS, "tok")
+    assert page.evaluate(tab_close.CHECK_JS, "tok")[::2] == [0, True]
+    page.reload()
+    page.fill("#t", "New notes")
+    last, _now, same = page.evaluate(tab_close.CHECK_JS, "tok")
+    assert (last, same) == (0, False)

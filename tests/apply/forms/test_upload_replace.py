@@ -166,14 +166,15 @@ def test_a_fresh_upload_records_that_the_app_made_it(tmp_path, monkeypatch):
     assert "reason" not in record
 
 
-def _seen_off_its_step(tmp_path, prior):
+def _seen_off_its_step(tmp_path, prior, touched=()):
     """Continue on a page that only shows the earlier upload (Workday's Review step)."""
     resume = tmp_path / "resume.pdf"
     resume.write_bytes(b"%PDF-1.4 current")
     run = fill_finish._FillFinish.__new__(fill_finish._FillFinish)
     run.pkt = SimpleNamespace(artifacts={"resume_pdf": str(resume)})
     run.fill_mode, run.uploads = "continue", []
-    run.previous_fill = FillResult(uploads=[{"purpose": "resume", **prior}])
+    run.previous_fill = FillResult(uploads=[{"purpose": "resume", **prior}],
+                                   user_touched_uploads=list(touched))
     run._filename_visible = lambda _name: True  # noqa: SLF001
     run._verify_uploads()  # noqa: SLF001
     (record,) = run.uploads
@@ -194,6 +195,28 @@ def test_a_current_upload_seen_off_its_step_keeps_its_pinned_copy(tmp_path):
         **OURS, "artifact_sha256": upload_replace.artifact_sha256(resume), "artifact_path": pinned,
     })
     assert record["verified"] and record["artifact_path"] == pinned
+
+
+@pytest.mark.parametrize("why", ["replaced by the applicant", "no version on record"])
+def test_a_file_seen_off_its_step_the_app_cannot_vouch_for_is_never_recorded_as_its_own(
+    tmp_path, why
+):
+    """The applicant replaced the app's upload under its name (or the app kept no hash):
+    "What was sent" must not keep the app's old pinned copy as what the form has."""
+    resume = tmp_path / "resume.pdf"
+    resume.write_bytes(b"%PDF-1.4 current")
+    pinned = str(tmp_path / "fills" / "1" / "resume_pdf" / "resume.pdf")
+    prior = {**OURS, "artifact_sha256": upload_replace.artifact_sha256(resume),
+             "artifact_path": pinned}
+    if why == "no version on record":
+        del prior["artifact_sha256"]
+    record = _seen_off_its_step(
+        tmp_path, prior, touched=[STAGED] if why == "replaced by the applicant" else ()
+    )
+    assert record["verified"] and record["state"] == "kept_existing"
+    assert not {"uploaded_by_app", "artifact_sha256", "artifact_path"} & set(record)
+    if why == "no version on record":
+        assert record["reason"] == upload_replace.AMBIGUOUS_NOTE
 
 
 def test_a_file_seen_off_its_step_that_the_app_did_not_upload_is_kept(tmp_path):

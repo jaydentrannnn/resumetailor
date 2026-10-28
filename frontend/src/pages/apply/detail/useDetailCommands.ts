@@ -49,18 +49,26 @@ export function useDetailCommands(
   const { settings, flushSettings } = useRunState();
   const { confirm } = useConfirm();
   const toast = useToast();
-  const [working, setWorking] = useState(false);
+  // Kept per application: an action still running for one left behind (or its Undo,
+  // pressed later from the status bar) never holds the next one's buttons.
+  const [workingOn, setWorkingOn] = useState<ReadonlySet<string>>(() => new Set());
+  const working = !!app && workingOn.has(app.source_job_id);
   const next = app ? nextAction(app, openTabs) : "view";
   const withNewFiles = !!app && next === "fill" && canContinueWithNewFiles(app, openTabs);
 
   async function run(work: () => Promise<unknown>, failure: string) {
-    setWorking(true);
+    const id = app?.source_job_id ?? "";
+    setWorkingOn((previous) => new Set(previous).add(id));
     try {
       await work();
     } catch (reason) {
       toast.error(failure, describe(reason).detail);
     } finally {
-      setWorking(false);
+      setWorkingOn((previous) => {
+        const left = new Set(previous);
+        left.delete(id);
+        return left;
+      });
       await reload();
     }
   }

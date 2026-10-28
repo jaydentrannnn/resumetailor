@@ -8,6 +8,7 @@ from dataclasses import replace
 from resume_tailor import config
 from resume_tailor.content import data, industries, libraries, style
 from resume_tailor.content.data import MasterResume
+from resume_tailor.infra import run_lock
 from resume_tailor.pipeline import (
     bullet_checks,
     coverletter,
@@ -162,14 +163,15 @@ def regenerate_cover_letter(
             instruction=instruction,
             angles=angles,
         )
-        coverletter.render_cover_letter(resume, letter, out=out_dir / "cover.docx")
-
-    out = job_outputs._to_cover_out(letter, out_dir=out_dir)
-    (out_dir / "cover.json").write_text(out.model_dump_json(indent=2), encoding="utf-8")
-    (out_dir / "cover.md").write_text(
-        coverletter_format.format_markdown(letter),
-        encoding="utf-8",
-    )
+        # The letter's documents and its text change together: a fill pinning them waits.
+        with run_lock.of(out_dir):
+            coverletter.render_cover_letter(resume, letter, out=out_dir / "cover.docx")
+            out = job_outputs._to_cover_out(letter, out_dir=out_dir)
+            (out_dir / "cover.json").write_text(out.model_dump_json(indent=2), encoding="utf-8")
+            (out_dir / "cover.md").write_text(
+                coverletter_format.format_markdown(letter),
+                encoding="utf-8",
+            )
     return out
 
 def refresh_packet(job_id: str) -> None:
