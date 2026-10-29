@@ -1,7 +1,7 @@
 """Fetch job-description text from an ATS posting URL.
 
-Tries plain HTTP first; falls back to the host browser over CDP when the page is
-a JS shell. Never invents content — empty extraction becomes ``needs_browser``.
+Tries plain HTTP first; falls back to the host browser over CDP (`fetch_browser`) when
+the page is a JS shell. Never invents content — empty extraction becomes ``needs_browser``.
 
 Every path drops what a reader cannot see (`posting_guard`): hidden elements before the
 HTML is read, hidden-by-style elements in the browser, invisible characters at the end.
@@ -10,7 +10,6 @@ HTML is read, hidden-by-style elements in the browser, invisible characters at t
 from __future__ import annotations
 
 import re
-import time
 from collections.abc import Iterator
 from contextlib import contextmanager
 from contextvars import ContextVar
@@ -22,7 +21,6 @@ from urllib.parse import urlparse
 import httpx
 
 from resume_tailor.apply.ats import ats_fingerprint
-from resume_tailor.apply.driver.browser import cdp_browser
 from resume_tailor.apply.forms import form_guards
 from resume_tailor.pipeline import posting_guard
 
@@ -284,80 +282,25 @@ def _looks_like_js_shell(html: str, text: str) -> bool:
     )
 
 
-#: ``innerText`` already skips ``display:none``/``visibility:hidden``; this removes what it
-#: keeps but a reader cannot see (zero opacity or font size, transparent text that is not
-#: a gradient fill, off-screen or clipped boxes) and returns the removed text for
-#: scanning. Outermost hidden element only; page code is never walked.
-_VISIBLE_TEXT_JS = """() => {
-  const skip = new Set(['SCRIPT', 'STYLE', 'NOSCRIPT', 'TEMPLATE', 'SVG']);
-  const hidden = [];
-  const isHidden = (el) => {
-    const s = getComputedStyle(el);
-    if (s.display === 'none' || s.visibility === 'hidden') return true;
-    if (parseFloat(s.opacity) === 0 || parseFloat(s.fontSize) === 0) return true;
-    const clear = s.color === 'transparent' || s.color === 'rgba(0, 0, 0, 0)';
-    const gradient = s.backgroundClip === 'text' || s.webkitBackgroundClip === 'text';
-    if (clear && !gradient) return true;
-    if ((s.clipPath || '').startsWith('inset(100%')) return true;
-    const r = el.getBoundingClientRect();
-    if (r.right < -999 || r.bottom < -999) return true;
-    return (r.width === 0 || r.height === 0) && s.overflow === 'hidden';
-  };
-  const walk = (el) => {
-    for (const child of Array.from(el.children)) {
-      if (skip.has(child.tagName.toUpperCase())) continue;
-      if (isHidden(child)) hidden.push(child); else walk(child);
-    }
-  };
-  if (!document.body) return {text: '', hidden: []};
-  walk(document.body);
-  const texts = hidden.map((el) => (el.textContent || '').trim()).filter(Boolean);
-  for (const el of hidden) el.remove();
-  return {text: document.body.innerText, hidden: texts};
-}"""
+#: An Adzuna ``/land/ad/<id>`` link: a script redirect through ad networks to the employer
+#: or to LinkedIn, where ``/details/<id>`` shows the description on Adzuna itself.
+_ADZUNA_LANDING = re.compile(r"^/land/ad/(?P<id>\d+)")
 
 
-def _fetch_via_browser(url: str) -> FetchResult:
-    """Open ``url`` in the CDP browser and read the visible text (`_VISIBLE_TEXT_JS`).
+def _jd_page_url(url: str) -> str:
+    """The page to read the JD from: ``url``, or an Adzuna landing link's details page."""
+    parts = urlparse(url)
+    host = (parts.hostname or "").lower()
+    match = _ADZUNA_LANDING.match(parts.path)
+    if match and (host == "adzuna.com" or host.endswith(".adzuna.com")):
+        return f"{parts.scheme}://{parts.netloc}/details/{match.group('id')}"
+    return url
 
-    Some ATS pages (Workday among them) report "loaded" before the description
-    text arrives, so the read is retried for a few seconds rather than taken once.
-    """
-    with cdp_browser() as browser:
-        context = browser.contexts[0] if browser.contexts else browser.new_context()
-        page = context.new_page()
-        try:
-            page.goto(url, wait_until="domcontentloaded", timeout=60_000)
-            page.wait_for_load_state("networkidle", timeout=30_000)
-            final_url = page.url
-            text = ""
-            hidden: list[str] = []
-            deadline = time.monotonic() + 10.0
-            while True:
-                read = page.evaluate(_VISIBLE_TEXT_JS) or {}
-                text = str(read.get("text") or "").strip()
-                hidden += [str(t) for t in read.get("hidden") or []]
-                if len(text) >= _MIN_JD_CHARS or time.monotonic() >= deadline:
-                    break
-                page.wait_for_timeout(500)
-            if (found := _removed.get()) is not None and hidden:
-                found.append(posting_guard.Stripped(
-                    "", "\n".join(hidden), [t[:120] for t in hidden]
-                ))
-            ats = detect_ats(final_url)
-            if len(text) < _MIN_JD_CHARS:
-                return FetchResult(
-                    final_url=final_url,
-                    ats=ats,
-                    text=text,
-                    method="failed",
-                    error=f"Browser extraction too short ({len(text)} chars)",
-                )
-            return FetchResult(
-                final_url=final_url, ats=ats, text=text, method="browser"
-            )
-        finally:
-            page.close()
+
+def _first_line(exc: BaseException) -> str:
+    """An exception's message without Playwright's call log or httpx's help link."""
+    lines = str(exc).strip().splitlines()
+    return lines[0][:300] if lines else type(exc).__name__
 
 
 def fetch_jd(
@@ -390,8 +333,10 @@ _WORKDAY_JOB_DATA = re.compile(r'"@type"\s*:\s*"JobPosting"')
 
 
 def _fetch(url: str, *, allow_browser: bool, canonical_key: str | None) -> FetchResult:
-    from resume_tailor.apply.discovery import ats_api  # noqa: PLC0415 - ats_api imports us
+    # Both import this module: ats_api for its text extraction, fetch_browser for its results.
+    from resume_tailor.apply.discovery import ats_api, fetch_browser  # noqa: PLC0415
 
+    url = _jd_page_url(url)
     if canonical_key:
         try:
             api = ats_api.fetch_posting(canonical_key)
@@ -450,14 +395,14 @@ def _fetch(url: str, *, allow_browser: bool, canonical_key: str | None) -> Fetch
             return FetchResult(final_url=final_url, ats=ats, text=text, method="http")
         if allow_browser:
             try:
-                return _fetch_via_browser(url)
+                return fetch_browser.read(url)
             except Exception as exc:  # noqa: BLE001
                 return FetchResult(
                     final_url=final_url,
                     ats=ats,
                     text=text,
                     method="failed",
-                    error=str(exc),
+                    error=_first_line(exc),
                 )
         return FetchResult(
             final_url=final_url,
@@ -469,21 +414,21 @@ def _fetch(url: str, *, allow_browser: bool, canonical_key: str | None) -> Fetch
     except Exception as exc:  # noqa: BLE001
         if allow_browser:
             try:
-                return _fetch_via_browser(url)
+                return fetch_browser.read(url)
             except Exception as browser_exc:  # noqa: BLE001
                 return FetchResult(
                     final_url=url,
                     ats=detect_ats(url),
                     text="",
                     method="failed",
-                    error=f"{exc}; browser: {browser_exc}",
+                    error=f"{_first_line(exc)}; browser: {_first_line(browser_exc)}",
                 )
         return FetchResult(
             final_url=url,
             ats=detect_ats(url),
             text="",
             method="failed",
-            error=str(exc),
+            error=_first_line(exc),
         )
 
 

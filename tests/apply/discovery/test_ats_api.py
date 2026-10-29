@@ -8,7 +8,7 @@ from pathlib import Path
 import httpx
 import pytest
 
-from resume_tailor.apply.discovery import ats_api, fetch_jd
+from resume_tailor.apply.discovery import ats_api, fetch_browser, fetch_jd
 
 _FIXTURES = Path(__file__).resolve().parents[2] / "fixtures" / "ats"
 
@@ -308,7 +308,7 @@ def test_fetch_jd_uses_workday_api_before_http(monkeypatch):
     def _no_browser(url):
         raise AssertionError("browser should not run")
 
-    monkeypatch.setattr(fetch_jd, "_fetch_via_browser", _no_browser)
+    monkeypatch.setattr(fetch_browser, "read", _no_browser)
     result = fetch_jd.fetch_jd(
         "https://cai.wd5.myworkdayjobs.com/computer_aid/job/x/y_R1",
         allow_browser=True,
@@ -351,7 +351,7 @@ def test_fetch_jd_uses_api_before_browser(monkeypatch):
         browser_calls.append(url)
         raise AssertionError("browser should not run")
 
-    monkeypatch.setattr(fetch_jd, "_fetch_via_browser", _no_browser)
+    monkeypatch.setattr(fetch_browser, "read", _no_browser)
     result = fetch_jd.fetch_jd(
         "https://boards.greenhouse.io/figma/jobs/1",
         allow_browser=True,

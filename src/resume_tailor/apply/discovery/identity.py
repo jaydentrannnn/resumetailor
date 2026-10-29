@@ -12,7 +12,7 @@ import re
 from collections.abc import Iterable
 from pathlib import Path
 from typing import Literal
-from urllib.parse import parse_qs, urlencode, urlparse, urlunparse
+from urllib.parse import parse_qs, urlencode, urljoin, urlparse, urlunparse
 
 import httpx
 
@@ -114,6 +114,33 @@ def _strip_tracking(url: str) -> str:
     return urlunparse(parsed._replace(query=query))
 
 
+#: Hosts the backend never requests (`apply/CLAUDE.md`): a redirect toward one is not followed.
+_NEVER_FETCH = ("linkedin.com", "indeed.com")
+_MAX_HOPS = 6
+
+
+def _never_fetch(url: str) -> bool:
+    host = (urlparse(url).hostname or "").lower()
+    return any(host == d or host.endswith("." + d) for d in _NEVER_FETCH)
+
+
+def _follow(url: str, *, timeout: float) -> str:
+    """Where ``url``'s redirects lead, one hop at a time; a hop toward LinkedIn or Indeed
+    is returned without being requested (``lnkd.in`` is a wrapper)."""
+    current = url
+    for _ in range(_MAX_HOPS):
+        response = httpx.head(current, follow_redirects=False, timeout=timeout)
+        if response.status_code == 405:
+            response = httpx.get(current, follow_redirects=False, timeout=timeout)
+        location = response.headers.get("location")
+        if not (300 <= response.status_code < 400 and location):
+            return current
+        current = urljoin(current, location)
+        if _never_fetch(current):
+            return current
+    return current
+
+
 def resolve_final_url(url: str, *, timeout: float = 10.0) -> str:
     """Follow wrapper redirects to the ATS posting URL, caching permanently.
 
@@ -132,11 +159,12 @@ def resolve_final_url(url: str, *, timeout: float = 10.0) -> str:
         return cache[url]
 
     try:
-        response = httpx.head(url, follow_redirects=True, timeout=timeout)
-        if response.status_code == 405:
-            response = httpx.get(url, follow_redirects=True, timeout=timeout)
-        final = str(response.url)
+        final = _follow(url, timeout=timeout)
     except Exception:  # noqa: BLE001 — network failures fall back to the wrapper
+        return url
+    if (urlparse(final).hostname or "").lower() in _WRAPPER_HOSTS:
+        # Still on the wrapper (an expired zapply link lands on its job list): keep the
+        # link itself, so each keeps its own key and the fetch sees the closed redirect.
         return url
 
     final = _strip_tracking(final)

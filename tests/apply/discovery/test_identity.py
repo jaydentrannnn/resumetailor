@@ -5,6 +5,7 @@ from __future__ import annotations
 import json
 from typing import get_args
 
+import httpx
 import pytest
 
 from resume_tailor import config
@@ -125,23 +126,32 @@ def test_group_key_strips_year_season_and_parens():
     assert a == b
 
 
-def test_resolve_final_url_caches_and_skips_second_http(resolve_cache, monkeypatch):
-    """First call hits HTTP and writes the cache; second call is a cache hit."""
+def _redirects(monkeypatch, hops: dict[str, str]) -> list[str]:
+    """Patch `httpx.head`: a URL in ``hops`` answers 302 to its value, any other 200.
+    Returns the requested URLs."""
     calls: list[str] = []
 
-    class _Resp:
-        status_code = 200
-        url = "https://boards.greenhouse.io/acme/jobs/99?utm_source=x&gh_jid=99"
-
-    def _head(url, **kwargs):
+    def head(url, **kwargs):
+        assert kwargs.get("follow_redirects") is False
         calls.append(url)
-        return _Resp()
+        request = httpx.Request("HEAD", url)
+        if url in hops:
+            return httpx.Response(302, headers={"location": hops[url]}, request=request)
+        return httpx.Response(200, request=request)
 
-    monkeypatch.setattr(identity.httpx, "head", _head)
+    monkeypatch.setattr(identity.httpx, "head", head)
+    return calls
+
+
+def test_resolve_final_url_caches_and_skips_second_http(resolve_cache, monkeypatch):
+    """First call hits HTTP and writes the cache; second call is a cache hit."""
     wrapper = "https://simplify.jobs/p/abc"
+    calls = _redirects(monkeypatch, {
+        wrapper: "https://boards.greenhouse.io/acme/jobs/99?utm_source=x&gh_jid=99",
+    })
     first = identity.resolve_final_url(wrapper)
     assert first == "https://boards.greenhouse.io/acme/jobs/99?gh_jid=99"
-    assert len(calls) == 1
+    assert len(calls) == 2
     cache_path = config.APPLICATIONS_OUTPUT_DIR / "url_resolve_cache.json"
     assert cache_path.is_file()
     raw = json.loads(cache_path.read_text(encoding="utf-8"))
@@ -149,12 +159,33 @@ def test_resolve_final_url_caches_and_skips_second_http(resolve_cache, monkeypat
 
     second = identity.resolve_final_url(wrapper)
     assert second == first
-    assert len(calls) == 1
+    assert len(calls) == 2
 
 
 def test_resolve_final_url_passthrough_for_direct_ats():
     url = "https://boards.greenhouse.io/figma/jobs/1"
     assert identity.resolve_final_url(url) == url
+
+
+def test_a_wrapper_that_lands_on_its_own_site_keeps_the_link(resolve_cache, monkeypatch):
+    """An expired zapply link redirects to zapply's job list: every such link would share
+    that page's key, so the link itself is kept, uncached."""
+    link = "https://zapply.jobs/l/d/workday-nvidia-nvidiaexternalcareersite-JR2026958"
+    _redirects(monkeypatch, {
+        link: link + "/",
+        link + "/": "https://zapply.jobs/jobs",
+        "https://zapply.jobs/jobs": "/jobs/",
+    })
+    assert identity.resolve_final_url(link) == link
+    assert not (resolve_cache / "url_resolve_cache.json").exists()
+
+
+def test_a_redirect_to_linkedin_is_not_followed(resolve_cache, monkeypatch):
+    wrapper = "https://lnkd.in/abc"
+    target = "https://www.linkedin.com/jobs/view/4481121442"
+    calls = _redirects(monkeypatch, {wrapper: target})
+    assert identity.resolve_final_url(wrapper) == target
+    assert calls == [wrapper]
 
 
 @pytest.mark.parametrize(
