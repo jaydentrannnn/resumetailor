@@ -90,3 +90,12 @@ def test_icims_short_or_failed_iframe_falls_back_to_the_generic_path(monkeypatch
     assert result.method == "failed"
     assert "too short" in result.error
     assert len(calls) == 2
+
+
+def test_icims_job_taken_down_is_closed(monkeypatch):
+    # The iframe document answers 410 for a removed job; the shell would only say 405.
+    calls = _fake_get(monkeypatch, {"in_iframe=1": (410, "The requested job could not be found")})
+    result = fetch_jd.fetch_jd("https://careers-x.icims.com/jobs/3241/job")
+    assert result.closed == "Posting closed (the page answered 410)"
+    assert result.ats == "icims"
+    assert len(calls) == 1

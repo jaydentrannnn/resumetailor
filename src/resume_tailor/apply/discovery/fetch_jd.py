@@ -255,8 +255,13 @@ def _fetch_icims_content(url: str) -> FetchResult | None:
         resp = httpx.get(
             content_url, follow_redirects=True, timeout=30.0, headers={"Accept": "text/html"}
         )
-        resp.raise_for_status()
     except Exception:  # noqa: BLE001 - fall back to the generic path
+        return None
+    # A job iCIMS took down answers 410 here, while the generic path only sees a 405.
+    gone = form_guards.closed_posting("", status=resp.status_code)
+    if gone:
+        return _closed(url, "icims", gone)
+    if resp.status_code >= 400:
         return None
     text = extract_fragment_text(resp.text)
     if len(text) < _MIN_JD_CHARS:
@@ -372,35 +377,49 @@ def fetch_jd(
     return result
 
 
+def _closed(final_url: str, ats: AtsName, reason: str) -> FetchResult:
+    """A posting that no longer exists: no text, the reason as both error and `closed`."""
+    return FetchResult(
+        final_url=final_url, ats=ats, text="", method="failed", error=reason, closed=reason
+    )
+
+
+#: The structured job data a live Workday posting page carries (its ``ld+json``); a page
+#: for a posting Workday took down has none (2026-10-29).
+_WORKDAY_JOB_DATA = re.compile(r'"@type"\s*:\s*"JobPosting"')
+
+
 def _fetch(url: str, *, allow_browser: bool, canonical_key: str | None) -> FetchResult:
+    from resume_tailor.apply.discovery import ats_api  # noqa: PLC0415 - ats_api imports us
+
     if canonical_key:
         try:
-            from resume_tailor.apply.discovery import ats_api
-
-            api_text = ats_api.fetch_posting_text(canonical_key)
+            api = ats_api.fetch_posting(canonical_key)
         except Exception:  # noqa: BLE001
-            api_text = None
-        if api_text:
+            api = ats_api.ApiRead()
+        if api.gone:
+            return _closed(url, detect_ats(url), f"Posting closed ({api.gone})")
+        if api.text:
             return FetchResult(
                 final_url=url,
                 ats=detect_ats(url),
-                text=api_text,
+                text=api.text,
                 method="api",
             )
+    workday_gone = ""
     if detect_ats(url) == "workday":
         try:
-            from resume_tailor.apply.discovery import ats_api
-
-            workday_text = ats_api.workday_posting_text(url)
+            workday = ats_api.workday_posting(url)
         except Exception:  # noqa: BLE001
-            workday_text = None
-        if workday_text:
+            workday = ats_api.ApiRead()
+        if workday.text:
             return FetchResult(
                 final_url=url,
                 ats="workday",
-                text=workday_text,
+                text=workday.text,
                 method="api",
             )
+        workday_gone = workday.gone
     icims = _fetch_icims_content(url)
     if icims is not None:
         return icims
@@ -413,13 +432,13 @@ def _fetch(url: str, *, allow_browser: bool, canonical_key: str | None) -> Fetch
         )
         gone = form_guards.closed_posting("", status=resp.status_code)
         if gone:
-            return FetchResult(
-                final_url=str(resp.url), ats=detect_ats(url), text="", method="failed",
-                error=gone, closed=gone,
-            )
+            return _closed(str(resp.url), detect_ats(url), gone)
         resp.raise_for_status()
         final_url = str(resp.url)
         html = resp.text
+        if workday_gone and not _WORKDAY_JOB_DATA.search(html):
+            # The feed's 403 and a page with no job data agree: the posting is gone.
+            return _closed(final_url, "workday", f"Posting closed ({workday_gone})")
         text = extract_text(html)
         ats = detect_ats(final_url, html)
         closed = form_guards.closed_posting(text, final_url=final_url, requested_url=url)

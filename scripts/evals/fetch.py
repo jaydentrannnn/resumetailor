@@ -61,8 +61,8 @@ def _default_fetcher(ats: str, slug: str, job) -> str | None:
     from resume_tailor.apply.discovery import ats_api
 
     if ats == "workday":
-        return ats_api.workday_posting_text(job.url)
-    return ats_api.fetch_posting_text(f"{ats}:{slug}:{job.id}")
+        return ats_api.workday_posting(job.url).text
+    return ats_api.fetch_posting(f"{ats}:{slug}:{job.id}").text
 
 
 def _safe(name: str) -> str:

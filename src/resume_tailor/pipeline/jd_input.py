@@ -122,7 +122,7 @@ def from_url(url: str, *, allow_browser: bool = True) -> JdText:
         final, allow_browser=allow_browser, canonical_key=identity.canonical_key(final)
     )
     if fetched.method == "failed":
-        if re.search(r"\b(404|410)\b", fetched.error):
+        if fetched.closed or re.search(r"\b(404|410)\b", fetched.error):
             raise JdInputError(
                 "closed",
                 "That posting no longer exists (the page was not found). It may have closed.",
