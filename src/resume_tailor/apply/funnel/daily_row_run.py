@@ -356,7 +356,7 @@ class _RowRun:
 
     def _fetch_jd(self, app: store_models.Application) -> fetch_jd.FetchResult | None:
         """The posting's JD, saved on the application; None when the row stops here."""
-        url = app.posting_url or app.final_url
+        url, key = daily_rows.fetch_target(app)
         if not url:
             store.set_status(app, "skipped", note="no application link")
             store.upsert(app)
@@ -365,7 +365,7 @@ class _RowRun:
             return None
 
         fetch = daily_rows._captured_jd(app) or fetch_jd.fetch_jd(
-            url, allow_browser=self.allow_browser, canonical_key=self.ckey
+            url, allow_browser=self.allow_browser, canonical_key=key
         )
         app.final_url = fetch.final_url or app.final_url
         app.ats = fetch.ats

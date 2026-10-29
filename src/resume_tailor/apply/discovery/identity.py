@@ -25,6 +25,7 @@ _WRAPPER_HOSTS = frozenset(
         "www.simplify.jobs",
         "zapply.jobs",
         "www.zapply.jobs",
+        "go.vansh.nyc",
         "jobright.ai",
         "www.jobright.ai",
         "lnkd.in",

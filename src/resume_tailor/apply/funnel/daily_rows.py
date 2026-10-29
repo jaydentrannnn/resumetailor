@@ -10,7 +10,7 @@ from pathlib import Path
 
 from resume_tailor import config
 from resume_tailor.apply.answers import profile
-from resume_tailor.apply.discovery import fetch_jd
+from resume_tailor.apply.discovery import fetch_jd, identity
 from resume_tailor.apply.discovery.source_rows import SourceRow
 from resume_tailor.apply.funnel import eligibility as eligibility_mod
 from resume_tailor.apply.funnel import language_gate, store, store_models
@@ -128,6 +128,32 @@ def save_jd(
     app.jd_text_path = _save_jd(app.source_job_id, text)
     if found is not None:
         app.posting_guard = found
+
+#: Platforms a JD can't be fetched from by URL alone: unknown sites, and job boards the
+#: backend never fetches or that need the applicant's session.
+_NOT_AN_ATS = frozenset({"other", "unknown", "linkedin", "indeed", "handshake"})
+
+
+def _on_ats(url: str) -> bool:
+    return bool(url) and fetch_jd.detect_ats(url) not in _NOT_AN_ATS
+
+
+def fetch_target(app: store_models.Application) -> tuple[str, str | None]:
+    """Where to fetch the row's JD, and the key for an ATS feed lookup.
+
+    A row found through a short link (go.vansh.nyc, zapply, Adzuna) keeps that link as
+    its ``posting_url``, while an earlier fetch may have learned the ATS page it leads to
+    (``final_url``). Fetching that page lets the ATS paths run: Workday and iCIMS by URL,
+    the feeds by key. The row's stored key is its identity and never changes here; a
+    placeholder one only gives way to the resolved page's key for the feed lookup.
+    """
+    posting, final = app.posting_url or "", app.final_url or ""
+    url = final if _on_ats(final) and not _on_ats(posting) else posting or final
+    key = app.canonical_key or ""
+    if identity.is_placeholder_key(key) and url:
+        key = identity.canonical_key(url)
+    return url, None if identity.is_placeholder_key(key) else key
+
 
 def _captured_jd(app: store_models.Application) -> fetch_jd.FetchResult | None:
     """The text the browser extension sent for this row, instead of fetching it again.

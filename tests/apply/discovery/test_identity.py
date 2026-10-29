@@ -321,3 +321,11 @@ def test_retained_tab_tells_this_application_from_another_page(page_url, known, 
 ])
 def test_lost_posting(posting, landed, lost):
     assert identity.lost_posting(posting, landed) is lost
+
+
+def test_vansh_short_links_resolve_to_the_ats(resolve_cache, monkeypatch):
+    link = "https://go.vansh.nyc/BW"
+    icims = "https://careers-primecontrols.icims.com/jobs/2282/enterprise-automation-developer/job"
+    _redirects(monkeypatch, {link: icims})
+    assert identity.resolve_final_url(link) == icims
+    assert identity.canonical_key(identity.resolve_final_url(link)).startswith("icims:")

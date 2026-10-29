@@ -123,13 +123,10 @@ def retry_application(source_job_id: str) -> store_models.Application:
         return saved
 
     if kind == "fetch":
-        if not app.posting_url:
+        url, key = daily_rows.fetch_target(app)
+        if not url:
             raise RuntimeError("fetch retry requires posting_url")
-        result = fetch_jd.fetch_jd(
-            app.posting_url,
-            allow_browser=True,
-            canonical_key=app.canonical_key or None,
-        )
+        result = fetch_jd.fetch_jd(url, allow_browser=True, canonical_key=key)
         app.final_url = result.final_url
         app.ats = result.ats
         if result.closed:
