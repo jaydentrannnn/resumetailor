@@ -379,6 +379,8 @@ class _RowRun:
             return None
         if fetch.method == "failed" or len(fetch.text.strip()) < daily_rows._MIN_USABLE_JD_CHARS:
             store.set_status(app, "needs_browser", note=fetch.error or "jd too short")
+            # The Apply page's "Why it failed" reads `error`, not the status note.
+            app.error = fetch.error or "jd too short"
             store.upsert(app)
             self._count("needs_browser")
             daily_progress._row_attention(

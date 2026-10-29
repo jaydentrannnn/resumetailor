@@ -5,11 +5,30 @@ from __future__ import annotations
 
 import pytest
 
+from resume_tailor import config
 from resume_tailor.apply.discovery import fetch_jd
-from resume_tailor.apply.funnel import daily_rows, store_models
+from resume_tailor.apply.discovery.source_rows import SourceRow
+from resume_tailor.apply.funnel import (
+    daily_progress,
+    daily_row_run,
+    daily_rows,
+    store,
+    store_models,
+)
+from resume_tailor.web.schemas import ApplySettings, JobSettings
 
 _ICIMS = "https://careers-primecontrols.icims.com/jobs/2282/enterprise-automation-developer/job"
 _ASHBY = "https://jobs.ashbyhq.com/rhoda-ai/36a82229-5cab-48a7-99b6-ec9007c5b460/application"
+
+
+@pytest.fixture
+def apply_paths(tmp_path, monkeypatch):
+    """Isolate the applications registry and output tree."""
+    monkeypatch.setattr(config, "APPLICATIONS_PATH", tmp_path / "applications.json")
+    monkeypatch.setattr(config, "APPLICATIONS_OUTPUT_DIR", tmp_path / "applications")
+    monkeypatch.setattr(config, "OUTPUT_DIR", tmp_path / "output")
+    monkeypatch.setattr(config, "CACHE_DIR", tmp_path / "cache")
+    return tmp_path
 
 
 def _app(**fields) -> store_models.Application:
@@ -76,3 +95,41 @@ def test_fetch_target_prefers_the_ats_page_a_short_link_resolved_to(fields, expe
 def test_fetch_target_detects_linkedin_as_a_board():
     # Guards the table above: LinkedIn must count as a board, never an ATS to fetch.
     assert fetch_jd.detect_ats("https://www.linkedin.com/jobs/view/1") == "linkedin"
+
+
+def test_a_failed_fetch_says_why_on_the_row(apply_paths, monkeypatch, tmp_path):
+    """The Apply page's "Why it failed" chip reads `error`; the nightly run used to put the
+    reason only in the status history, so 126 of 127 stuck rows showed none."""
+    reason = "Client error '403 Forbidden'; browser: Timeout 30000ms exceeded."
+    monkeypatch.setattr(
+        fetch_jd,
+        "fetch_jd",
+        lambda url, allow_browser=True, canonical_key=None: fetch_jd.FetchResult(
+            final_url=url, ats="other", text="", method="failed", error=reason
+        ),
+    )
+    row = SourceRow(
+        company="Tesla",
+        role="Automation Engineer Intern",
+        location="Fremont, CA",
+        age="0d",
+        job_id="tesla-286986",
+        application_link="https://www.tesla.com/careers/search/job/286986",
+    )
+    daily_row_run._process_one(
+        row,
+        settings=ApplySettings(),
+        job_defaults=JobSettings(),
+        resume=None,
+        known_tags=[],
+        allow_browser=True,
+        dry_run=False,
+        fetch_only=True,
+        log_path=tmp_path / "daily.log",
+        log=lambda _line: None,
+        summary=daily_progress.DailySummary(date="2026-10-29"),
+        index=store.build_index(),
+    )
+    app = store.get("tesla-286986")
+    assert app is not None and app.status == "needs_browser"
+    assert app.error == reason
