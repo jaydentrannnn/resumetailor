@@ -17,7 +17,7 @@ from resume_tailor.web.job_routing import model_routing
 from resume_tailor.web.jobs import get_queue
 from resume_tailor.web.schemas import ApplySettings, JobSettings
 
-from . import daily_batch, daily_progress, daily_row_run, daily_rows
+from . import daily_batch, daily_progress, daily_retry, daily_row_run, daily_rows
 
 
 @contextmanager
@@ -308,6 +308,14 @@ def run_daily(
             should_cancel=should_cancel,
         )
         daily_progress._progress_set(processed=len(to_process), current="")
+        if not dry_run and not should_cancel():
+            daily_progress._progress_set(current="Re-reading postings that needed the browser")
+            moved = daily_retry.refetch_stuck(
+                should_cancel=should_cancel,
+                log=lambda line: daily_rows._append_log(log_file, line, log),
+            )
+            daily_progress._progress_set(current="")
+            daily_rows._append_log(log_file, f"refetch moved={moved}", log)
         if should_cancel():
             summary.reason = "cancelled"
         if not dry_run:

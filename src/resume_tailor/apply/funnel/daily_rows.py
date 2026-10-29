@@ -129,13 +129,21 @@ def save_jd(
     if found is not None:
         app.posting_guard = found
 
-#: Platforms a JD can't be fetched from by URL alone: unknown sites, and job boards the
-#: backend never fetches or that need the applicant's session.
-_NOT_AN_ATS = frozenset({"other", "unknown", "linkedin", "indeed", "handshake"})
+#: Job boards the backend never fetches, or whose pages need the applicant's session.
+_BOARDS = frozenset({"linkedin", "indeed", "handshake"})
 
 
 def _on_ats(url: str) -> bool:
-    return bool(url) and fetch_jd.detect_ats(url) not in _NOT_AN_ATS
+    """Whether ``url`` names an ATS posting: a known ATS host, or a page whose key names a
+    requisition (a ``gh_jid`` on a company's careers page)."""
+    if not url:
+        return False
+    ats = fetch_jd.detect_ats(url)
+    if ats in _BOARDS:
+        return False
+    return ats not in {"other", "unknown"} or not identity.is_placeholder_key(
+        identity.canonical_key(url)
+    )
 
 
 def fetch_target(app: store_models.Application) -> tuple[str, str | None]:
@@ -144,10 +152,13 @@ def fetch_target(app: store_models.Application) -> tuple[str, str | None]:
     A row found through a short link (go.vansh.nyc, zapply, Adzuna) keeps that link as
     its ``posting_url``, while an earlier fetch may have learned the ATS page it leads to
     (``final_url``). Fetching that page lets the ATS paths run: Workday and iCIMS by URL,
-    the feeds by key. The row's stored key is its identity and never changes here; a
+    the feeds by key. A wrapper link that never resolved (the sighting was offline) is
+    resolved now. The row's stored key is its identity and never changes here; a
     placeholder one only gives way to the resolved page's key for the feed lookup.
     """
     posting, final = app.posting_url or "", app.final_url or ""
+    if posting and not _on_ats(final):
+        final = identity.resolve_final_url(posting)  # unchanged unless a wrapper host
     url = final if _on_ats(final) and not _on_ats(posting) else posting or final
     key = app.canonical_key or ""
     if identity.is_placeholder_key(key) and url:

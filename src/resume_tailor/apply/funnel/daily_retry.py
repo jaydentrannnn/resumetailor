@@ -1,8 +1,13 @@
-"""Retrying one failed application: classify the failure and re-run tailor or fill."""
+"""Retrying failed applications: classify the failure and re-run fetch, prefilter or tailor;
+re-fetch rows stuck at ``needs_browser`` on every Find."""
 
 from __future__ import annotations
 
+import contextlib
 import threading
+import time
+from collections.abc import Callable
+from datetime import UTC, datetime, timedelta
 from pathlib import Path
 from typing import Literal
 
@@ -123,25 +128,91 @@ def retry_application(source_job_id: str) -> store_models.Application:
         return saved
 
     if kind == "fetch":
-        url, key = daily_rows.fetch_target(app)
-        if not url:
-            raise RuntimeError("fetch retry requires posting_url")
-        result = fetch_jd.fetch_jd(url, allow_browser=True, canonical_key=key)
-        app.final_url = result.final_url
-        app.ats = result.ats
-        if result.closed:
-            store.set_status(app, "skipped", note=result.closed)
-            app.error = None
-            return store.upsert(app)
-        if len(result.text.strip()) >= daily_rows._MIN_USABLE_JD_CHARS:
-            daily_rows.save_jd(app, result.text, result.guard)
-            store.set_status(app, "jd_fetched", note=f"retry via {result.method}")
-            app.error = None
-            return store.upsert(app)
-        store.set_status(
-            app, "needs_browser", note=result.error or "jd too short"
-        )
-        app.error = result.error
-        return store.upsert(app)
+        return _retry_fetch(app)
 
     raise RuntimeError(f"no retry path for status {app.status!r}")
+
+
+def _retry_fetch(app: store_models.Application) -> store_models.Application:
+    """Fetch the JD again, then run the no-LLM prefilter on it as Find jobs does, so the
+    row lands where a first fetch would have left it: ``jd_fetched``, ``screened_out``,
+    ``skipped`` (closed) or ``needs_browser`` again."""
+    url, key = daily_rows.fetch_target(app)
+    if not url:
+        raise RuntimeError("fetch retry requires posting_url")
+    result = fetch_jd.fetch_jd(url, allow_browser=True, canonical_key=key)
+    app.final_url = result.final_url
+    app.ats = result.ats
+    if result.closed:
+        store.set_status(app, "skipped", note=result.closed)
+        app.error = None
+        return store.upsert(app)
+    if len(result.text.strip()) < daily_rows._MIN_USABLE_JD_CHARS:
+        store.set_status(app, "needs_browser", note=result.error or "jd too short")
+        app.error = result.error or "jd too short"
+        return store.upsert(app)
+    daily_rows.save_jd(app, result.text, result.guard)
+    app.error = None
+    settings = JobSettings.model_validate(workspace.load_settings()["defaults"]).apply
+    elig = daily_rows.prefilter_screen(result.text, app.role, settings)
+    app.eligibility_flags = list(dict.fromkeys([*app.eligibility_flags, *elig.flags]))
+    if not elig.passed:
+        app.screen = elig
+        store.set_status(app, "screened_out", note="prefilter: " + "; ".join(elig.reasons))
+        return store.upsert(app)
+    store.set_status(app, "jd_fetched", note=f"retry via {result.method}")
+    return store.upsert(app)
+
+
+#: A row stuck at ``needs_browser`` is fetched again once it has waited this long, until
+#: it has failed this many fetches in all; one run re-fetches at most this many rows, in
+#: at most this many seconds (no model calls, but a browser read can take a minute).
+_REFETCH_AFTER = timedelta(hours=20)
+_REFETCH_MAX_FAILURES = 5
+_REFETCH_PER_RUN = 40
+_REFETCH_BUDGET_S = 15 * 60
+
+
+def _due_for_refetch(now: datetime) -> list[str]:
+    """Registry keys of the stuck rows due another fetch, longest-waiting first.
+
+    The count and time of the row's ``needs_browser`` entries in its history are its
+    failed fetches; nothing else is stored."""
+    due: list[tuple[str, str]] = []
+    for key, app in store.rows_view().items():
+        if app.status != "needs_browser" or app.archived_at or app.capture_stub:
+            continue
+        failed = [change.at for change in app.status_history if change.status == "needs_browser"]
+        if len(failed) >= _REFETCH_MAX_FAILURES:
+            continue
+        last = failed[-1] if failed else ""
+        with contextlib.suppress(ValueError, TypeError):  # an unreadable time: due
+            if last and datetime.fromisoformat(last) > now - _REFETCH_AFTER:
+                continue
+        due.append((last, key))
+    return [key for _last, key in sorted(due)]
+
+
+def refetch_stuck(
+    *,
+    should_cancel: Callable[[], bool] = lambda: False,
+    log: Callable[[str], None] = lambda _line: None,
+    now: datetime | None = None,
+) -> int:
+    """Fetch the JD again for rows stuck at ``needs_browser`` (Find jobs and the nightly
+    run call this), so a fetch that failed while offline, or before a fetch fix, heals
+    without the student pressing Retry. Returns how many rows moved on."""
+    started = time.monotonic()
+    moved = 0
+    for key in _due_for_refetch(now or datetime.now(UTC))[:_REFETCH_PER_RUN]:
+        if should_cancel() or time.monotonic() - started > _REFETCH_BUDGET_S:
+            break
+        try:
+            app = retry_application(key)
+        except Exception as exc:  # noqa: BLE001 - one row's failure never stops the sweep
+            log(f"[refetch] {key}: {exc}")
+            continue
+        if app.status != "needs_browser":
+            moved += 1
+        log(f"[refetch] {app.company}: {app.status}")
+    return moved
