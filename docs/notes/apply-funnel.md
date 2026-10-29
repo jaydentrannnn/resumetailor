@@ -2727,3 +2727,48 @@ A second agent reviewed the audit fixes; each finding was reproduced in a test b
 - **Navigating away from a running Archive** left `busy` on for the next application, because A's completion may not touch B's state. `busy` resets when the page opens another application, and `useDetailCommands` tracks `working` per application, so A's action (or its later Undo) never holds B's buttons.
 - **Review-page Continue** carried the app's ownership (`uploaded_by_app`, hash, pinned path) even for a file the applicant replaced under the same name, or one with no recorded hash. `_verify_uploads` now carries them only when `attached_by_app` says "current" (the pinned path too) or "stale". An ambiguous file is kept as the applicant's, with the ambiguity note, as on the upload step.
 - **Pin vs a concurrent re-render.** Documents were pinned, then the run's JSON copied separately. `infra/run_lock.of(run_dir)` (a reentrant per-run lock) is now held by `rerender`'s file replace, by `regenerate_cover_letter`'s render-and-write (the model call stays outside), by the on-demand cover from draft to pin, and by `fill_files.pin` / `pin_more`. After copying, `pin` checks the source documents still match the packet's hashes; a writer that skips the lock raises `Changed`, and the packet is rebuilt once. A full re-tailor doesn't take the lock: row ownership keeps Fill off a row that is being prepared.
+
+## "Browser needed" rows: closed signals, a sturdier browser read, and a nightly re-fetch (2026-10-29)
+
+An audit of one workspace found 127 `needs_browser` rows. Few of them needed a browser. Most were closed postings that only the plain-HTTP path could report as closed; the rest were rows that failed once (offline on Oct 21, a DNS blip) and were never tried again.
+
+- **Closed signals, by path** (`fetch_jd._closed`: `method="failed"`, `error` = `closed` = the reason, so every caller's existing `.closed` check moves the row to Skipped):
+  - **Workday cxs `403` with `errorCode: "S22"`** is a hint, not proof. The fetch confirms it against the page: no `"@type":"JobPosting"` in the HTML means closed. Across 64 live URLs, 403 always came with a page without JobPosting, and 200 always came with one. **Workday 404 is NOT closed**: two such rows had open pages.
+  - **Greenhouse on a company site (`gh_jid`)**: when the board lookup misses, `boards.greenhouse.io/embed/job_app?token=<id>` decides. 404 means closed. 200 redirects to `...?for=<board>&token=<id>`, and the board's feed then reads the job.
+  - **iCIMS iframe document 404/410** means closed.
+  - **The browser read** runs `form_guards.closed_posting` on what it read, so Ashby's "Job not found" is caught there. There is no Ashby API rule, because unlisted Ashby jobs exist.
+  - **New closing phrases**: Tesla's "This job is unavailable at the moment" and Workday's "The page you are looking for doesn't exist". Workday's page also carries a cookie banner that pushes it past `_MIN_JD_CHARS`, so without the phrase it was taken for a description. Both GE Healthcare and Leidos rows had 0 hits in their site's cxs search.
+  - `jd_input` checks `fetched.closed` before its 404/410 regex.
+- **`fetch_browser.read`** (moved out of `fetch_jd`):
+  - `domcontentloaded`, then a best-effort `networkidle` (10 s). Tesla's bot check never goes idle.
+  - The read loop retries after "Execution context was destroyed", which happens when the bot check reloads the page. The deadline is 15 s, and a page that reads as closed stops the wait.
+  - `page.route` aborts every LinkedIn/Indeed request. A main-frame navigation there is reported with that URL ("sends applicants to LinkedIn; ... browser extension") and never loads. Adzuna `land/ad` goes through appcast to LinkedIn.
+  - Errors keep only the first line of each exception, without Playwright's call log.
+  - The read also takes the text of frames embedded from an ATS host (`_embedded_postings`). SeatGeek shows its Greenhouse posting in a cross-origin frame; the page alone read 538 chars of chrome, while with the frame it reads 8,097.
+- **Workday feed address**: the site is the segment just before `job`. A job list that repeats the site (`/en-US/wellsfargojobs/wellsfargojobs/job/`; Workday's page shows "1 Error" there) or uses a lowercase locale (`en-us`) used to miss the feed.
+- **Adzuna `/land/ad/<id>` is read as `/details/<id>`**, which renders the description. Plain HTTP gets a 403 there, so the browser reads it.
+- **`identity.resolve_final_url` follows redirects hop by hop** (at most 6) and stops before requesting a LinkedIn/Indeed host.
+  - A landing still on the wrapper's own host (an expired zapply link → `zapply.jobs/jobs/`) returns the original link, uncached, so each row keeps its own key instead of all of them sharing one.
+  - `go.vansh.nyc` is a wrapper: a plain 302 to the ATS.
+- **`daily_rows.fetch_target(app)`**:
+  - It fetches the ATS page a short link resolved to: `final_url` when it is on an ATS, or a careers page whose key names a requisition (`gh_jid`), and `posting_url` is not.
+  - It resolves a wrapper link that an offline sighting never resolved.
+  - A placeholder row key gives way to the resolved page's key for the feed lookup only. The row's key (the primary key) never changes here; the next Find re-keys it through `_rekey`.
+  - Used by the nightly fetch and by Retry.
+- **The row says why.** A `needs_browser` row from the nightly fetch now carries `app.error`; before this, 126 of 127 rows had none, and the "Why it failed" chip was blank.
+- **`daily_retry.refetch_stuck`** runs after `_process_rows` on every non-dry Find and nightly run, unless cancelled. It uses no model call.
+  - Picks `needs_browser` rows that are not archived and not capture stubs, with fewer than 5 `needs_browser` entries in their history, last tried 20 h or more ago, oldest first.
+  - Limits: at most 40 rows or 15 minutes per run.
+  - Retry and the sweep both prefilter after a successful fetch (`prefilter_screen`), so a row lands in `jd_fetched` or `screened_out` as the nightly run would put it.
+- **Measured on a copy of the DB**, for the 127 rows:
+  - Without a browser: 84 closed (49 Workday S22, 25 expired zapply links, 7 gh_jid/other, 2 iCIMS, 1 Ashby) and 23 read. 20 were left for the browser: Adzuna ×11, Tesla ×5, SeatGeek, GE Healthcare, Leidos, Wells Fargo.
+  - With a separate Chrome over CDP (never the fill browser), all 20 were settled:
+    - Adzuna: 7 read from `/details/<id>`, 4 closed.
+    - Tesla: 1 read (5,194 chars), 4 closed.
+    - SeatGeek read. GE Healthcare and Leidos closed. Wells Fargo read from the feed.
+    - No LinkedIn or Indeed response arrived; the tracking pixels were aborted.
+  - Expected after the sweep: about 94 closed and 33 read.
+- **Not done:**
+  - A Tesla `/cua-api/careers/job/<id>` adapter: the browser read now reads Tesla.
+  - Keys from zapply link names, and the iCIMS key that includes `https://` (that one needs a key migration).
+  - `ready` Workday rows that closed after tailoring (15 in that workspace): that is for the fill side.
