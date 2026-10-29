@@ -23,7 +23,9 @@ from urllib.parse import urlsplit
 _CLOSED_PHRASES = re.compile(
     r"no longer accepting applications"
     r"|(?:this|the) (?:job|position|posting|role|requisition) (?:is|has) (?:no longer "
-    r"(?:available|open|active)|been (?:filled|closed|removed)|closed|expired)"
+    r"(?:available|open|active)|been (?:filled|closed|removed)|closed|expired|unavailable)"
+    # Workday's page for a posting it no longer has.
+    r"|(?:this|the) page you(?: are|'re|’re) looking for (?:doesn['’]t|does not) exist"
     r"|(?:job|position|posting) (?:has )?expired"
     r"|(?:this|the) job (?:you are|you're) looking for (?:is no longer|could not be|was not)"
     r"|(?:this|the) job you requested (?:is no longer|could not be|was not)"

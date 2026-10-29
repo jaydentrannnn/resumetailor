@@ -189,6 +189,18 @@ def test_workday_other_refusals_are_not_gone(monkeypatch):
             "https://mfs.wd1.myworkdayjobs.com/wday/cxs/mfs/MFS-Careers/job/"
             "Boston/Co-op_MFS-231931",
         ),
+        # A lowercase locale, and a site a job list repeated (Workday's page errors on it).
+        (
+            "https://intel.wd1.myworkdayjobs.com/en-us/external/job/Santa-Clara/X_JR1",
+            "https://intel.wd1.myworkdayjobs.com/wday/cxs/intel/external/job/Santa-Clara/X_JR1",
+        ),
+        (
+            "https://wf.wd1.myworkdayjobs.com/en-US/wellsfargojobs/wellsfargojobs/job/"
+            "CHARLOTTE-NC/Internship_R-583417",
+            "https://wf.wd1.myworkdayjobs.com/wday/cxs/wf/wellsfargojobs/job/"
+            "CHARLOTTE-NC/Internship_R-583417",
+        ),
+        ("https://acme.wd1.myworkdayjobs.com/job/Boston/X_R1", None),
         ("https://boards.greenhouse.io/figma/jobs/1", None),
     ],
 )

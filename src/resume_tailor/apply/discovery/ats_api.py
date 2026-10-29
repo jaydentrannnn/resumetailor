@@ -33,9 +33,6 @@ _ASHBY_BOARD_CACHE: dict[str, dict[str, Any]] = {}
 
 _TAG_RE = re.compile(r"<[^>]+>")
 
-#: A locale path segment Workday inserts before ``job/…`` (``en-US``, ``en-CA``, …).
-_LOCALE_SEGMENT = re.compile(r"^[a-z]{2}-[A-Z]{2}$")
-
 
 def clear_ashby_cache() -> None:
     """Drop the in-process Ashby board cache (call at ``run_daily`` start)."""
@@ -178,8 +175,9 @@ def _workday_api_url(url: str) -> str | None:
     """Return the Workday ``wday/cxs`` JSON address for a posting URL, or ``None``.
 
     Every ``myworkdayjobs.com`` posting has a matching JSON address at
-    ``/wday/cxs/<tenant>/<path>``, one path segment shorter when the URL carries a
-    leading locale (``en-US``, ``en-CA``, …).
+    ``/wday/cxs/<tenant>/<site>/job/...``. The site is the one segment before ``job``:
+    what comes before it is a locale (``en-US``, ``en-us``) or the site repeated by a
+    job list (``/wellsfargojobs/wellsfargojobs/job/``), which Workday serves an error for.
     """
     parsed = urlparse(url)
     host = (parsed.hostname or "").lower()
@@ -187,11 +185,10 @@ def _workday_api_url(url: str) -> str | None:
         return None
     tenant = host.split(".")[0]
     segments = [s for s in parsed.path.split("/") if s]
-    if segments and _LOCALE_SEGMENT.match(segments[0]):
-        segments = segments[1:]
-    if "job" not in segments:
+    if "job" not in segments[1:]:
         return None
-    return f"https://{host}/wday/cxs/{tenant}/{'/'.join(segments)}"
+    at = segments.index("job", 1)
+    return f"https://{host}/wday/cxs/{tenant}/{'/'.join(segments[at - 1:])}"
 
 
 def workday_posting(url: str) -> ApiRead:

@@ -36,10 +36,11 @@ class _Page:
     """A tab whose reads return ``reads`` in turn (an exception is raised); ``redirect_to``
     is a navigation the page tries during ``goto``."""
 
-    def __init__(self, reads, *, url=_URL, idle_error=None, redirect_to=None):
+    def __init__(self, reads, *, url=_URL, idle_error=None, redirect_to=None, frames=()):
         self._reads = list(reads)
         self.url = url
         self.main_frame = object()
+        self.frames = [self.main_frame, *frames]
         self._idle_error = idle_error
         self._redirect_to = redirect_to
         self.routes = []
@@ -111,6 +112,36 @@ def test_other_read_errors_still_fail_the_read(monkeypatch):
     _use(monkeypatch, _Page([RuntimeError("Target page, context or browser has been closed")]))
     with pytest.raises(RuntimeError, match="has been closed"):
         fetch_browser.read(_URL)
+
+
+class _Frame:
+    def __init__(self, url, text):
+        self.url = url
+        self._text = text
+
+    def evaluate(self, script):
+        if isinstance(self._text, Exception):
+            raise self._text
+        return {"text": self._text, "hidden": []}
+
+
+def test_a_posting_shown_in_an_ats_frame_is_read_with_the_page(monkeypatch):
+    """SeatGeek shows the description in a Greenhouse frame; the page's own text is only
+    its title and site chrome. Ads and trackers in other frames are not read."""
+    chrome = "Sports Music Shows Cities Sign in View all jobs Software Engineer - New Grad"
+    frames = [
+        _Frame("https://job-boards.greenhouse.io/embed/job_app?for=seatgeek&token=8227548",
+               _BODY),
+        _Frame("https://insight.adsrvr.org/track/cei?advertiser_id=1", "Ad text"),
+        _Frame("https://job-boards.greenhouse.io/embed/detached",
+               RuntimeError("Frame was detached")),
+    ]
+    _use(monkeypatch, _Page([{"text": chrome}], url="https://seatgeek.com/jobs/8227548",
+                            frames=frames))
+    result = fetch_browser.read("https://seatgeek.com/jobs/8227548")
+    assert result.method == "browser"
+    assert result.text.startswith(chrome) and "battery cell lines" in result.text
+    assert "Ad text" not in result.text
 
 
 def test_a_page_saying_the_job_is_gone_is_closed(monkeypatch):

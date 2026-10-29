@@ -47,6 +47,7 @@ class _Page:
         self.scripts: list[str] = []
 
     main_frame = object()
+    frames = [main_frame]
 
     def route(self, *args, **kwargs):
         pass

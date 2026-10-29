@@ -28,6 +28,9 @@ def _fresh_hosts():
         "Applications are now closed.",
         # Ashby's page for a removed job (Batch 3, 2026-10-21).
         "Job not found\nThe job you requested was not found.\nView all open positions",
+        # Tesla's and Workday's pages for a removed job, read in a browser (2026-10-29).
+        "Build your Career at Tesla\nJob not available\nThis job is unavailable at the moment.",
+        "GE HealthCare Careers\nThe page you are looking for doesn't exist.\nFollow Us",
     ],
 )
 def test_closing_banners(text):

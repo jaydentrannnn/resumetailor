@@ -131,6 +131,9 @@ def _read_visible(page: Any) -> tuple[str, list[str]]:
             continue
         text = str(got.get("text") or "").strip()
         hidden += [str(t) for t in got.get("hidden") or []]
+        framed, framed_hidden = _embedded_postings(page)
+        text = "\n\n".join([text, *framed]).strip()
+        hidden += framed_hidden
         if (
             len(text) >= fetch_jd._MIN_JD_CHARS  # noqa: SLF001
             or form_guards.closed_posting(text)  # a closed page stays short: stop waiting
@@ -138,6 +141,25 @@ def _read_visible(page: Any) -> tuple[str, list[str]]:
         ):
             return text, hidden
         page.wait_for_timeout(500)
+
+
+#: Frame hosts that are not an ATS posting: ads, captchas, trackers, and the job boards.
+_NOT_A_POSTING = frozenset({"other", "unknown", "linkedin", "indeed", "handshake"})
+
+
+def _embedded_postings(page: Any) -> tuple[list[str], list[str]]:
+    """Visible and hidden text of frames the page embeds from an ATS. A careers page may
+    show its posting in one (SeatGeek's Greenhouse board), out of the page's own text."""
+    texts: list[str] = []
+    hidden: list[str] = []
+    for frame in page.frames:
+        if frame is page.main_frame or fetch_jd.detect_ats(frame.url) in _NOT_A_POSTING:
+            continue
+        with contextlib.suppress(Exception):  # a frame that detaches mid-read is skipped
+            got = frame.evaluate(_VISIBLE_TEXT_JS) or {}
+            texts.append(str(got.get("text") or "").strip())
+            hidden += [str(t) for t in got.get("hidden") or []]
+    return [t for t in texts if t], hidden
 
 
 def _sent_to_board(target: str) -> fetch_jd.FetchResult:
