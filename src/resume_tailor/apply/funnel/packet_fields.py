@@ -73,7 +73,8 @@ def _maybe_set(fields: dict[str, str], key: str, value: str | None) -> None:
 def build_fields(profile: ApplicantProfile, resume: MasterResume) -> dict[str, str]:
     """Build flat canonical field values from profile with resume contact fallbacks."""
     contact = resume.contact
-    contact_first, contact_last = _split_contact_name(contact.name)
+    contact_name = "" if contact.name.strip().casefold() == "your name" else contact.name
+    contact_first, contact_last = _split_contact_name(contact_name)
 
     first_name = _pick(profile.first_name, contact_first)
     last_name = _pick(profile.last_name, contact_last)
@@ -98,7 +99,8 @@ def build_fields(profile: ApplicantProfile, resume: MasterResume) -> dict[str, s
     if profile.preferred_name.strip() and profile.preferred_name.strip().casefold() != (first_name or "").strip().casefold():
         # Ticks Workday's "I have a preferred name" box, which reveals the inputs.
         fields["has_preferred_name"] = "Yes"
-    _maybe_set(fields, "email", _pick(profile.email, contact.email) or None)
+    contact_email = "" if contact.email.strip().casefold() == "you@example.com" else contact.email
+    _maybe_set(fields, "email", _pick(profile.email, contact_email) or None)
     typed_phone = _pick(profile.phone, contact.phone)
     _maybe_set(fields, "phone", typed_phone or None)
     # The two shapes forms ask for (`phone.py`); the filler picks by the input's hints.
@@ -245,7 +247,10 @@ def build_fields(profile: ApplicantProfile, resume: MasterResume) -> dict[str, s
     _maybe_set(fields, "gender", _eeo_value(profile.eeo.gender))
     _maybe_set(fields, "race", _eeo_value(profile.eeo.race))
     _maybe_set(fields, "race_detail", profile.eeo.race_detail or None)
-    _maybe_set(fields, "hispanic_latino", _yes_no(profile.eeo.hispanic_latino))
+    _maybe_set(
+        fields, "hispanic_latino",
+        "decline" if profile.eeo.hispanic_latino_declined else _yes_no(profile.eeo.hispanic_latino),
+    )
     # A category ("not_veteran"), matched to each form's wording by `field_matcher.VETERAN_TIERS`.
     _maybe_set(fields, "veteran_status", profile.eeo.veteran or None)
     _maybe_set(fields, "disability_status", _eeo_value(profile.eeo.disability))

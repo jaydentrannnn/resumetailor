@@ -240,6 +240,7 @@ export type ApplicantProfile = {
     race: string;
     race_detail?: string;
     hispanic_latino?: boolean | null;
+    hispanic_latino_declined?: boolean;
     /** A category (`profile.VeteranStatus`), matched to each form's own wording. */
     veteran: VeteranStatus;
     /** The older free-text answer this category was converted from; "" once confirmed. */

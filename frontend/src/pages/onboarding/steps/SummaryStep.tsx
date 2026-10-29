@@ -34,8 +34,8 @@ export function SummaryStep({
   onEdit: (step: OnboardingStepId) => void;
 }) {
   const { config, settings } = useRunState();
-  const { draft } = useApplicantProfile();
-  const { resume } = useEditorState();
+  const { draft, dirty: profileDirty } = useApplicantProfile();
+  const { resume, dirty: resumeDirty } = useEditorState();
   const { info } = useTemplateState();
   const apply = settings.apply;
   const target = config?.target_fields?.find((f) => f.id === config?.target_field);
@@ -75,6 +75,16 @@ export function SummaryStep({
       nextLabel="Save and finish"
     >
       <div className="space-y-4">
+        <p className="text-sm text-attn">
+          Finishing saves your setup progress. Tailoring still needs a working model, a template and
+          resume content. Skipped steps can be edited later.
+        </p>
+        {(profileDirty || resumeDirty) && (
+          <p role="alert" className="text-sm text-attn">
+            Some edits are still unsaved. Return to their step to fix and save them; they remain in
+            this window.
+          </p>
+        )}
         {section(
           "field",
           "Your field",

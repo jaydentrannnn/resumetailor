@@ -89,7 +89,7 @@ describe("validateProfile", () => {
       email: "alex@",
       phone: "12",
       github_url: "not a url",
-      school_email: "alex@gmail.com",
+      school_email: "alex@",
       salary_hourly_min: 30,
       salary_hourly_max: 20,
       graduation_date: "May 2027",

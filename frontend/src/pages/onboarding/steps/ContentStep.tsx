@@ -5,22 +5,39 @@ import { useApplicantProfile } from "../../../state/applicantProfileState";
 import { useEditorState } from "../../../state/editorState";
 import { EditorPage } from "../../editor/EditorPage";
 import { StepFrame, type StepNav } from "../StepFrame";
+import { completenessErrors } from "../../../lib/resumeEdit";
+import { contactErrors } from "../../../lib/onboardingContact";
 
 /** Step 5: what was imported, what is worth fixing, and the full editor to fix it in. */
 export function ContentStep({ nav }: { nav: StepNav }) {
   const editor = useEditorState();
   const { gaps } = useApplicantProfile();
   const review = reviewResume(editor.resume);
+  const invalidContact = Object.values(contactErrors(editor.resume?.contact));
 
   return (
     <StepFrame
       title="Check your resume content"
       intro="Everything tailored later comes from here: your jobs, projects and their bullets. Fix anything the import missed."
       nav={nav}
-      complete={contentComplete(review)}
-      onSave={() => (editor.dirty ? editor.save() : Promise.resolve(true))}
+      complete={contentComplete(review) && invalidContact.length === 0}
+      onSave={(mode) =>
+        mode === "leave" &&
+        editor.resume &&
+        (completenessErrors(editor.resume).length || invalidContact.length)
+          ? Promise.resolve(true)
+          : editor.dirty
+            ? editor.save()
+            : Promise.resolve(true)
+      }
       skipWarning={SKIP_WARNINGS.content}
-      error={editor.dirty && editor.errors.length ? editor.errors[0] : null}
+      error={
+        invalidContact.length
+          ? "Fix your resume contact in Personal info: " + invalidContact.join(" ")
+          : editor.dirty && editor.errors.length
+            ? editor.errors[0]
+            : null
+      }
     >
       {review.entries > 0 && (
         <DataList

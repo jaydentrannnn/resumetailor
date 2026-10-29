@@ -52,7 +52,7 @@ export function ToolsStep({ nav }: { nav: StepNav }) {
   async function launch() {
     setLaunching(true);
     try {
-      await flushSettings();
+      if (!(await flushSettings())) throw new Error("Could not save browser settings.");
       setBrowser(await launchBrowser());
     } catch (err) {
       setError(describe(err).detail);
@@ -80,6 +80,7 @@ export function ToolsStep({ nav }: { nav: StepNav }) {
       error={error}
     >
       <ModelsCard
+        deferHeavy
         embedded
         className="border-t border-line pt-4"
         light={light}
@@ -97,21 +98,26 @@ export function ToolsStep({ nav }: { nav: StepNav }) {
           onlyNeeded
         />
       )}
-      <Card
-        embedded
-        className="border-t border-line pt-4"
-        title="Browser"
-        description="The browser autofill opens to fill in applications."
-        actions={<ConnectionStatus view={view} />}
-      >
-        <BrowserPicker
-          status={browser}
-          view={view}
-          selected={apply.browser ?? null}
-          onSelect={(id) => patch({ browser: id })}
-          launch={{ run: () => void launch(), busy: launching }}
-        />
-      </Card>
+      <details>
+        <summary className="cursor-pointer text-sm font-semibold">
+          Optional: browser and autofill
+        </summary>
+        <Card
+          embedded
+          className="border-t border-line pt-4"
+          title="Browser"
+          description="The browser autofill opens to fill in applications."
+          actions={<ConnectionStatus view={view} />}
+        >
+          <BrowserPicker
+            status={browser}
+            view={view}
+            selected={apply.browser ?? null}
+            onSelect={(id) => patch({ browser: id })}
+            launch={{ run: () => void launch(), busy: launching }}
+          />
+        </Card>
+      </details>
     </StepFrame>
   );
 }

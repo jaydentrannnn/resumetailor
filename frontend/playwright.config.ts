@@ -4,7 +4,10 @@ import { defineConfig, devices } from "@playwright/test";
 // canned fake model (`scripts/e2e_server.py`); build the SPA first (`npm run e2e` does).
 // PW_CHROMIUM_PATH points at an already-installed Chromium instead of Playwright's own.
 const port = Number(process.env.E2E_PORT ?? 8777);
-const python = process.env.E2E_PYTHON ?? "../.venv/bin/python";
+const python =
+  process.env.E2E_PYTHON ??
+  (process.platform === "win32" ? "..\\.venv\\Scripts\\python.exe" : "../.venv/bin/python");
+const fresh = process.env.E2E_FRESH === "1";
 
 export default defineConfig({
   testDir: "./e2e",
@@ -23,9 +26,9 @@ export default defineConfig({
   },
   projects: [{ name: "chromium", use: { ...devices["Desktop Chrome"] } }],
   webServer: {
-    command: `${python} ../scripts/e2e_server.py --port ${port}`,
+    command: `"${python}" ../scripts/e2e_server.py --port ${port}${fresh ? " --fresh" : ""}`,
     // The last seeded application: 404 until seeding has finished.
-    url: `http://127.0.0.1:${port}/api/applications/e2e-queued`,
+    url: `http://127.0.0.1:${port}${fresh ? "/api/config" : "/api/applications/e2e-queued"}`,
     timeout: 240_000,
     reuseExistingServer: false,
     stdout: "pipe",

@@ -108,15 +108,25 @@ export function EeoFields({ eeo, onChange }: { eeo: Eeo; onChange: (next: Eeo) =
         Hispanic or Latino
         <select
           className="field mt-1"
-          value={eeo.hispanic_latino == null ? "" : String(eeo.hispanic_latino)}
+          value={
+            eeo.hispanic_latino_declined
+              ? "decline"
+              : eeo.hispanic_latino == null
+                ? ""
+                : String(eeo.hispanic_latino)
+          }
           onChange={(e) =>
             onChange({
               ...eeo,
-              hispanic_latino: e.target.value === "" ? null : e.target.value === "true",
+              hispanic_latino: ["", "decline"].includes(e.target.value)
+                ? null
+                : e.target.value === "true",
+              hispanic_latino_declined: e.target.value === "decline",
             })
           }
         >
-          <option value="">Not set</option>
+          <option value="">Skip this question</option>
+          <option value="decline">Decline to answer</option>
           <option value="true">Yes</option>
           <option value="false">No</option>
         </select>

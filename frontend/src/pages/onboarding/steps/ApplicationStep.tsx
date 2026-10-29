@@ -1,6 +1,6 @@
 import { useState } from "react";
-import { ALL_PROFILE_GROUP_IDS, GAP_FIELD_ALIASES, withGroupOpen } from "../../../lib/profileForm";
-import { SKIP_WARNINGS, openGaps } from "../../../lib/onboarding";
+import { withGroupOpen } from "../../../lib/profileForm";
+import { SKIP_WARNINGS } from "../../../lib/onboarding";
 import { useEditorState } from "../../../state/editorState";
 import { ApplicationTab } from "../../profile/ApplicationTab";
 import { useProfileFields } from "../../profile/useProfileFields";
@@ -13,23 +13,19 @@ import { saveProfileStep } from "./saveProfileStep";
  */
 export function ApplicationStep({ nav, onEditResume }: { nav: StepNav; onEditResume: () => void }) {
   const fields = useProfileFields();
-  const { applicant, draft, ctx } = fields;
+  const { applicant, draft, ctx, allErrors } = fields;
   const editor = useEditorState();
-  const [open, setOpen] = useState<Set<string>>(() => new Set(ALL_PROFILE_GROUP_IDS));
+  const [open, setOpen] = useState<Set<string>>(() => new Set<string>());
   const [error, setError] = useState<string | null>(null);
   const education = editor.resume?.sections.find((s) => s.kind === "education");
-  const required = applicant.gaps
-    .filter((gap) => gap.path === "/profile/application")
-    .map((gap) => GAP_FIELD_ALIASES[gap.key] ?? gap.key);
-  const remaining = openGaps(required, draft as Record<string, unknown> | null);
 
   return (
     <StepFrame
       title="Application details"
-      intro="The facts application forms ask for. Autofill uses them so it doesn't stop to ask you."
+      intro="Optional: add answers you want autofill to use. Leave any question blank to answer it yourself on each form. You can continue without completing these groups."
       nav={nav}
-      complete={!!draft && remaining.length === 0}
-      onSave={() => saveProfileStep(fields, editor, setError)}
+      complete={!!draft && Object.keys(allErrors).length === 0}
+      onSave={(mode) => saveProfileStep(fields, editor, setError, mode)}
       skipWarning={SKIP_WARNINGS.application}
       error={error}
     >

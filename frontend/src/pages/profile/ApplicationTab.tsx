@@ -101,7 +101,18 @@ export function ApplicationTab({
         Autofill answers application forms from these details. Changes apply from the next fill.
       </p>
       <ProfileGapBanner
-        gaps={applicant.gaps.filter((gap) => gap.path === "/profile/application")}
+        gaps={applicant.gaps.filter(
+          (gap) =>
+            gap.path === "/profile/application" &&
+            ctx.gapFields.has(
+              (
+                {
+                  requires_sponsorship: "requires_sponsorship_now",
+                  noncompete: "subject_to_noncompete",
+                } as Record<string, string>
+              )[gap.key] ?? gap.key,
+            ),
+        )}
         onOpen={onOpenGroup}
       />
       <Tile>

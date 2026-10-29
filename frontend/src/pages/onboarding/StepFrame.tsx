@@ -1,16 +1,18 @@
-import { useEffect, useState, type MutableRefObject, type ReactNode } from "react";
+import { useEffect, type MutableRefObject, type ReactNode } from "react";
 import { Button } from "../../components/ui";
 import { useConfirm } from "../../state/confirmState";
 
 /** What the wizard hands every step: where Back/Skip/Next go, and the save hook. */
 export type StepNav = {
-  onBack?: () => void;
-  onNext: () => void;
-  onSkip: () => void;
+  onBack?: () => Promise<unknown>;
+  onNext: () => Promise<unknown>;
+  onSkip: () => Promise<unknown>;
+  move: (save: () => Promise<boolean>, go: () => Promise<unknown>) => Promise<void>;
+  returning?: boolean;
   /** The wizard is writing its progress. */
   saving: boolean;
   /** Filled with the step's save so the stepper can save before jumping. */
-  saveRef: MutableRefObject<() => Promise<boolean>>;
+  saveRef: MutableRefObject<(mode?: "forward" | "leave") => Promise<boolean>>;
   /** Where this step sits ("Step 2 of 7"), shown over its title. */
   position?: string;
 };
@@ -20,8 +22,8 @@ const saved = () => Promise.resolve(true);
 /**
  * One wizard step: where it sits, its title and intro, the body in a readable column,
  * and the footer bar every step shares (it stays in view at the bottom of the window).
- * Back, Skip and Next all save the page first and stay put when the save fails. Next needs the step
- * complete; Skip is for an incomplete step (greyed once complete) and warns first.
+ * Next validates before saving. Back and Skip ask the step to save valid edits and
+ * retain invalid drafts in the mounted providers. The wizard serializes every move.
  */
 export function StepFrame({
   title,
@@ -39,36 +41,30 @@ export function StepFrame({
   children: ReactNode;
   nav: StepNav;
   complete: boolean;
-  onSave?: () => Promise<boolean>;
+  onSave?: (mode?: "forward" | "leave") => Promise<boolean>;
   /** What stops working if this step is skipped; omitted = no Skip button. */
   skipWarning?: string;
   nextLabel?: string;
   error?: string | null;
 }) {
   const { confirm } = useConfirm();
-  const [moving, setMoving] = useState(false);
-  const busy = moving || nav.saving;
+  const busy = nav.saving;
 
   useEffect(() => {
     nav.saveRef.current = onSave;
   });
 
-  async function move(go: () => void) {
-    setMoving(true);
-    try {
-      if (await onSave()) go();
-    } finally {
-      setMoving(false);
-    }
+  async function move(go: () => Promise<unknown>, mode: "forward" | "leave" = "forward") {
+    await nav.move(() => onSave(mode), go);
   }
 
   async function skip() {
     const ok = await confirm({
       title: "Skip this step?",
-      message: `${skipWarning} You can finish it later from Profile or Settings.`,
+      message: `${skipWarning} Saved answers are kept. Unsaved invalid edits stay in this window until you fix or discard them; closing it can lose those edits. You can finish this step later.`,
       confirmLabel: "Skip",
     });
-    if (ok) await move(nav.onSkip);
+    if (ok) await move(nav.onSkip, "leave");
   }
 
   return (
@@ -76,7 +72,11 @@ export function StepFrame({
       <div className="max-w-3xl flex-1 space-y-5">
         <div>
           {nav.position && <p className="text-xs text-ink-muted">{nav.position}</p>}
-          <h2 id="step-title" className="mt-1 font-display text-2xl font-medium text-ink">
+          <h2
+            id="step-title"
+            tabIndex={-1}
+            className="mt-1 font-display text-2xl font-medium text-ink"
+          >
             {title}
           </h2>
           <p className="mt-2 max-w-xl text-sm text-ink-2">{intro}</p>
@@ -91,19 +91,13 @@ export function StepFrame({
       <div className="sticky bottom-(--rt-bar-bottom) mt-8 flex max-w-3xl flex-wrap items-center gap-3 border-t border-line bg-paper py-3">
         <Button
           variant="ghost"
-          onClick={() => nav.onBack && void move(nav.onBack)}
+          onClick={() => nav.onBack && void move(nav.onBack, "leave")}
           disabled={!nav.onBack || busy}
         >
           Back
         </Button>
         {skipWarning !== undefined && (
-          <Button
-            variant="ghost"
-            className="ml-auto"
-            onClick={() => void skip()}
-            disabled={complete || busy}
-            title={complete ? "This step is complete" : undefined}
-          >
+          <Button variant="ghost" className="ml-auto" onClick={() => void skip()} disabled={busy}>
             Skip
           </Button>
         )}
@@ -115,7 +109,7 @@ export function StepFrame({
           loading={busy}
           title={complete ? undefined : "Fill in the required fields first, or skip this step"}
         >
-          {nextLabel}
+          {nav.returning ? "Save and return to review" : nextLabel}
         </Button>
       </div>
     </section>

@@ -12,6 +12,9 @@ function setup(complete: boolean, onSave = vi.fn(() => Promise.resolve(true))) {
     onNext: vi.fn(),
     onSkip: vi.fn(),
     saving: false,
+    move: async (save, go) => {
+      if (await save()) await go();
+    },
     saveRef: { current: () => Promise.resolve(true) },
   };
   render(
@@ -33,14 +36,14 @@ function setup(complete: boolean, onSave = vi.fn(() => Promise.resolve(true))) {
 
 const button = (name: string) => screen.getByRole("button", { name }) as HTMLButtonElement;
 
-it("greys out Next until complete, and Skip once complete", () => {
+it("greys out Next until complete, and always offers Skip", () => {
   setup(false);
   expect(button("Next").disabled).toBe(true);
   expect(button("Skip").disabled).toBe(false);
   cleanup();
   setup(true);
   expect(button("Next").disabled).toBe(false);
-  expect(button("Skip").disabled).toBe(true);
+  expect(button("Skip").disabled).toBe(false);
 });
 
 it("saves before going back or forward, and stays when the save fails", async () => {
@@ -48,6 +51,7 @@ it("saves before going back or forward, and stays when the save fails", async ()
   fireEvent.click(button("Back"));
   await waitFor(() => expect(nav.onBack).toHaveBeenCalled());
   expect(onSave).toHaveBeenCalledTimes(1);
+  expect(onSave).toHaveBeenCalledWith("leave");
   cleanup();
   const failing = setup(
     true,
@@ -69,6 +73,7 @@ it("warns before skipping, then saves and skips", async () => {
   );
   await waitFor(() => expect(nav.onSkip).toHaveBeenCalled());
   expect(onSave).toHaveBeenCalled();
+  expect(onSave).toHaveBeenCalledWith("leave");
 });
 
 it("hands the step's save to the wizard for stepper jumps", () => {

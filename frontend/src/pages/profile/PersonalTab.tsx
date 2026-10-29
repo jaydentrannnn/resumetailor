@@ -1,5 +1,6 @@
 import { ProfileGapBanner } from "../../components/ProfileGapBanner";
 import { Tile } from "../../components/ui";
+import { contactErrors, realContact } from "../../lib/onboardingContact";
 import { fieldLabel } from "../../lib/profileForm";
 import type { MasterResume } from "../../lib/resumeEdit";
 import { useApplicantProfile } from "../../state/applicantProfileState";
@@ -28,7 +29,12 @@ export function PersonalTab({
 }) {
   const applicant = useApplicantProfile();
   const { draft } = ctx;
-  const gaps = applicant.gaps.filter((gap) => gap.path === "/profile/personal");
+  const errors = contactErrors(resume?.contact);
+  const gaps = applicant.gaps.filter(
+    (gap) =>
+      gap.path === "/profile/personal" &&
+      !realContact(draft[gap.key as "email"] || resume?.contact[gap.key as "email"]),
+  );
   /** Scroll to the first blank field the banner lists (the Basics card if none renders). */
   function openFirstGap() {
     const target =
@@ -43,7 +49,16 @@ export function PersonalTab({
       <Tile id="profile-basics" title="Basics" description="The names forms ask for.">
         <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
           {(["first_name", "middle_name", "last_name", "preferred_name"] as const).map((key) => (
-            <ProfileField key={key} name={key} ctx={ctx} />
+            <ProfileField
+              key={key}
+              name={key}
+              ctx={ctx}
+              label={
+                ["first_name", "last_name"].includes(key)
+                  ? fieldLabel(key) + " (required for setup)"
+                  : undefined
+              }
+            />
           ))}
         </div>
       </Tile>
@@ -59,12 +74,19 @@ export function PersonalTab({
                     : fieldLabel(key)}
                 <input
                   className="field mt-1"
+                  aria-invalid={!!errors[key] || undefined}
+                  aria-describedby={errors[key] ? `contact-${key}-error` : undefined}
                   value={resume?.contact[key] ?? ""}
                   onChange={(e) =>
                     resume &&
                     setResume({ ...resume, contact: { ...resume.contact, [key]: e.target.value } })
                   }
                 />
+                {errors[key] && (
+                  <span id={`contact-${key}-error`} className="block text-xs text-danger">
+                    {errors[key]}
+                  </span>
+                )}
               </label>
             ))}
           </div>
@@ -77,7 +99,7 @@ export function PersonalTab({
           </p>
           <div className="mt-3 grid gap-3 sm:grid-cols-2">
             {CONTACT_PAIRS.map((pair) => {
-              const fallback = resume?.contact[pair.resume] ?? "";
+              const fallback = realContact(resume?.contact[pair.resume]);
               const overridden = !!draft[pair.applicant];
               return (
                 <div key={pair.applicant}>

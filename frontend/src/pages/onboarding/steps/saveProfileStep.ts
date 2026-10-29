@@ -1,18 +1,20 @@
+import { contactErrors } from "../../../lib/onboardingContact";
 import type { useEditorState } from "../../../state/editorState";
 import type { useProfileFields } from "../../profile/useProfileFields";
 
 /**
  * Save a profile step: the applicant profile and, when its contact block changed, the
- * master resume. A malformed field blocks the move and shows every problem instead of
- * dropping the input.
+ * master resume. Forward moves validate; leaving retains invalid drafts for correction.
  */
 export async function saveProfileStep(
   fields: ReturnType<typeof useProfileFields>,
   editor: ReturnType<typeof useEditorState>,
   setError: (message: string | null) => void,
+  mode: "forward" | "leave" = "forward",
 ): Promise<boolean> {
   setError(null);
-  const invalid = Object.keys(fields.allErrors);
+  const invalid = Object.keys({ ...fields.allErrors, ...contactErrors(editor.resume?.contact) });
+  if (mode === "leave" && invalid.length) return true; // retain the draft in its provider
   if (invalid.length) {
     fields.setAttempted(true);
     setError(

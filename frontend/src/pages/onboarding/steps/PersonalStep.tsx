@@ -1,3 +1,4 @@
+import { contactErrors } from "../../../lib/onboardingContact";
 import { useEffect, useState } from "react";
 import { SKIP_WARNINGS, personalComplete } from "../../../lib/onboarding";
 import { useEditorState } from "../../../state/editorState";
@@ -35,13 +36,24 @@ export function PersonalStep({ nav }: { nav: StepNav }) {
       title="Personal information"
       intro="Printed on your resume and used for the contact fields on application forms."
       nav={nav}
-      complete={personalComplete(draft, allErrors, editor.resume?.contact, applicant.fallbacks)}
-      onSave={() => saveProfileStep(fields, editor, setError)}
+      complete={personalComplete(
+        draft,
+        { ...allErrors, ...contactErrors(editor.resume?.contact) },
+        editor.resume?.contact,
+        applicant.fallbacks,
+      )}
+      onSave={(mode) => saveProfileStep(fields, editor, setError, mode)}
       skipWarning={SKIP_WARNINGS.personal}
       error={error}
     >
       {ctx ? (
-        <PersonalTab ctx={ctx} resume={editor.resume} setResume={editor.setResume} />
+        <>
+          <p className="text-sm">
+            First name, last name, a valid email and phone are required to continue. Resume contact
+            can supply email and phone. You can skip this step.
+          </p>
+          <PersonalTab ctx={ctx} resume={editor.resume} setResume={editor.setResume} />
+        </>
       ) : (
         <p className="text-sm text-ink-muted">{applicant.error ?? "Loading your profile…"}</p>
       )}

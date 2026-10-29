@@ -77,6 +77,8 @@ export function ApplicantProfileProvider({ children }: { children: ReactNode }) 
   const refreshSummaries = useCallback(async () => {
     const result = await getApplicantProfile();
     setExperienceSummaries(result.experience_summaries ?? {});
+    setGaps(result.gaps ?? []);
+    setFallbacks(result.fallbacks ?? {});
   }, []);
   useEffect(
     () =>

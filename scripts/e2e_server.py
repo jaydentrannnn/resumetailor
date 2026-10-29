@@ -106,6 +106,9 @@ def _seed(base: str) -> None:
 def main() -> None:
     parser = argparse.ArgumentParser(description=__doc__.splitlines()[0])
     parser.add_argument("--port", type=int, default=8777)
+    parser.add_argument(
+        "--fresh", action="store_true", help="Start without seeded resume or completed setup"
+    )
     args = parser.parse_args()
     root = Path(tempfile.mkdtemp(prefix="rt_e2e_"))
     _environment(root)
@@ -152,7 +155,8 @@ def main() -> None:
         except httpx.HTTPError:
             pass
         time.sleep(0.1)
-    _seed(base)
+    if not args.fresh:
+        _seed(base)
     # Playwright's readiness URL is the last seeded application, which 404s until now.
     print(f"e2e server ready at {base} (data in {root})", flush=True)
     thread.join()

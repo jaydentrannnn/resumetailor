@@ -275,6 +275,13 @@ def test_salary_is_manual_and_declared_eeo_answers_are_distinct():
     assert fields["hispanic_latino"] == "No"
 
 
+def test_hispanic_decline_is_distinct_from_skipping():
+    profile = ApplicantProfile(eeo=EEOAnswers(hispanic_latino_declined=True))
+    assert build_fields(profile, synthetic_resume())["hispanic_latino"] == "decline"
+    profile.eeo.hispanic_latino_declined = False
+    assert "hispanic_latino" not in build_fields(profile, synthetic_resume())
+
+
 
 def test_languages_reach_the_packet_and_a_free_text_answer(job_dir):
     profile = ApplicantProfile(languages=[

@@ -6,6 +6,8 @@ import { SKIP_WARNINGS } from "../../../lib/onboarding";
 import { useEditorState } from "../../../state/editorState";
 import { useTemplateState } from "../../../state/templateState";
 import { StepFrame, type StepNav } from "../StepFrame";
+import { completenessErrors } from "../../../lib/resumeEdit";
+import { contactErrors } from "../../../lib/onboardingContact";
 
 /** Step 3: upload the .docx; its design becomes the template and its words the content.
  * A PDF gives the content only, so a starter template supplies the design. */
@@ -23,14 +25,23 @@ export function ResumeStep({
   const { info } = useTemplateState();
   const hasContent = !!editor.resume?.sections.some((s) => s.entries.length > 0);
   const complete = fromScratch || !!info?.tagged.exists || hasContent;
+  const invalidContact = Object.values(contactErrors(editor.resume?.contact));
 
   return (
     <StepFrame
       title="Add your resume"
       intro="Upload your resume as a Word (.docx) file. ResumeTailor keeps its exact look and only changes the words."
       nav={nav}
-      complete={complete}
-      onSave={() => (editor.dirty ? editor.save() : Promise.resolve(true))}
+      complete={complete && invalidContact.length === 0}
+      onSave={(mode) =>
+        mode === "leave" &&
+        editor.resume &&
+        (completenessErrors(editor.resume).length || invalidContact.length)
+          ? Promise.resolve(true)
+          : editor.dirty
+            ? editor.save()
+            : Promise.resolve(true)
+      }
       skipWarning={SKIP_WARNINGS.resume}
       error={editor.dirty ? editor.errors[0] : null}
     >

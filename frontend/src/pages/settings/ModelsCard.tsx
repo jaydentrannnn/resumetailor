@@ -18,6 +18,7 @@ export function ModelsCard({
   light,
   heavy,
   advanced = false,
+  deferHeavy = false,
   embedded = false,
   className = "",
   description = "Pick a provider and model for each kind of work. Connections are tested automatically.",
@@ -26,6 +27,7 @@ export function ModelsCard({
   heavy: RoleModel;
   /** Offer the Advanced switch (Settings; not the setup wizard). */
   advanced?: boolean;
+  deferHeavy?: boolean;
   embedded?: boolean;
   className?: string;
   description?: ReactNode;
@@ -54,7 +56,16 @@ export function ModelsCard({
       <fieldset disabled={!settingsLoaded} className="min-w-0 divide-y divide-line">
         <legend className="sr-only">AI models</legend>
         <ModelRow model={light} queue={queue} />
-        <ModelRow model={heavy} queue={queue} />
+        {deferHeavy ? (
+          <details>
+            <summary className="cursor-pointer py-3 text-sm font-semibold">
+              Optional: model for autofill
+            </summary>
+            <ModelRow model={heavy} queue={queue} />
+          </details>
+        ) : (
+          <ModelRow model={heavy} queue={queue} />
+        )}
       </fieldset>
       {[light, heavy].some((m) => m.selection.provider === "vertex_ai") && (
         <VertexConnectionPanel />

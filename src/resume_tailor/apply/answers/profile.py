@@ -77,6 +77,7 @@ class EEOAnswers(BaseModel):
     race: str = "decline"
     race_detail: str = ""
     hispanic_latino: bool | None = None
+    hispanic_latino_declined: bool = False
     veteran: VeteranStatus = "decline"
     #: The free-text answer an older profile held ("No") when it was converted to a
     #: ``veteran`` category; the Profile page asks the applicant to confirm the

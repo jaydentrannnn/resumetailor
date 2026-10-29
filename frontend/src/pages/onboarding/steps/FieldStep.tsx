@@ -5,7 +5,7 @@ import {
   type SourceCatalog,
   type SourceField,
 } from "../../../api";
-import { Tile } from "../../../components/ui";
+import { Button, Tile } from "../../../components/ui";
 import { describe } from "../../../lib/errors";
 import {
   SKIP_WARNINGS,
@@ -41,16 +41,19 @@ export function FieldStep({
   const [error, setError] = useState<string | null>(null);
   const [choosing, setChoosing] = useState(false);
   const seeded = useRef(false);
+  const [catalogAttempt, setCatalogAttempt] = useState(0);
+  const [catalogError, setCatalogError] = useState(false);
 
   useEffect(() => {
     let live = true;
+    setCatalogError(false);
     fetchSourceCatalog()
       .then((c) => live && setCatalog(c))
-      .catch(() => undefined); // no catalog: job lists are chosen later on Applications
+      .catch(() => live && setCatalogError(true));
     return () => {
       live = false;
     };
-  }, []);
+  }, [catalogAttempt]);
 
   // Coming back to this step: lists the student unticked before stay unticked.
   useEffect(() => {
@@ -73,7 +76,6 @@ export function FieldStep({
     try {
       await setTargetField(id);
       setJobFields(sourceFieldsForTarget(id));
-      setSkipped(new Set());
     } catch (err) {
       setError(describe(err).detail);
     } finally {
@@ -109,6 +111,13 @@ export function FieldStep({
       skipWarning={SKIP_WARNINGS.field}
       error={error}
     >
+      {catalogError && (
+        <div role="alert">
+          Could not load job lists.{" "}
+          <Button onClick={() => setCatalogAttempt((n) => n + 1)}>Retry job lists</Button> You can
+          skip and choose lists later.
+        </div>
+      )}
       <div
         role="radiogroup"
         aria-labelledby="step-title"
@@ -146,7 +155,6 @@ export function FieldStep({
           fields={jobFields}
           onFields={(next) => {
             setJobFields(next);
-            setSkipped(new Set());
           }}
           suggestions={suggestions}
           skipped={skipped}

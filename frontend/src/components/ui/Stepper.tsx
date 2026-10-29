@@ -5,6 +5,7 @@ export interface StepItem {
   label: string;
   /** Quiet mono detail after the label (a duration, "9 / 14"). */
   meta?: string;
+  skipped?: boolean;
 }
 
 const DOT: Record<StepState, string> = {
@@ -31,6 +32,8 @@ export function Stepper({
   orientation = "horizontal",
   divided = false,
   stretch = false,
+  disabled = false,
+  allowJump = false,
 }: {
   steps: StepItem[];
   current: number;
@@ -44,6 +47,8 @@ export function Stepper({
   /** Horizontal only: on wide screens the steps span the full row on one line, the
    * connectors growing to fill it (narrower screens wrap as usual). */
   stretch?: boolean;
+  disabled?: boolean;
+  allowJump?: boolean;
 }) {
   const vertical = orientation === "vertical";
   const lined = vertical && divided;
@@ -60,13 +65,13 @@ export function Stepper({
     >
       {steps.map((step, index) => {
         const state = stepState(index, current, failed);
-        const clickable = onSelect && state === "done";
+        const clickable = onSelect && (allowJump || state === "done");
         const content = (
           <>
             <span
               className={`flex size-[18px] shrink-0 items-center justify-center rounded-sm border font-mono text-[10px] font-medium ${DOT[state]}`}
             >
-              {GLYPH[state] || index + 1}
+              {step.skipped ? "–" : GLYPH[state] || index + 1}
             </span>
             <span
               className={`whitespace-nowrap text-sm ${state === "current" ? "font-semibold text-ink" : "text-ink-muted"}`}
@@ -92,6 +97,7 @@ export function Stepper({
               <button
                 type="button"
                 className={`flex items-center gap-2 rounded-sm px-1 hover:bg-sunken ${lined ? "flex-1" : ""}`}
+                disabled={disabled}
                 onClick={() => onSelect(index)}
               >
                 {content}
@@ -110,7 +116,11 @@ export function Stepper({
               />
             )}
             {state === "error" && <span className="sr-only">(failed)</span>}
-            {state === "done" && <span className="sr-only">(done)</span>}
+            {step.skipped ? (
+              <span className="text-xs text-ink-muted">(skipped)</span>
+            ) : (
+              state === "done" && <span className="sr-only">(visited)</span>
+            )}
           </li>
         );
       })}

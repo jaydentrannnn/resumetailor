@@ -1,7 +1,10 @@
 import { useMemo, useState } from "react";
 import type { ApplicantProfile } from "../../api";
-import { GAP_FIELD_ALIASES, validateProfile } from "../../lib/profileForm";
+import { GAP_FIELD_ALIASES, validateProfile, sponsorshipFromVisa } from "../../lib/profileForm";
+import { realContact } from "../../lib/onboardingContact";
 import { useApplicantProfile } from "../../state/applicantProfileState";
+import { openGaps } from "../../lib/onboarding";
+import { useEditorState } from "../../state/editorState";
 import type { FieldContext, FieldValue } from "./fieldContext";
 
 /**
@@ -12,6 +15,20 @@ import type { FieldContext, FieldValue } from "./fieldContext";
 export function useProfileFields() {
   const applicant = useApplicantProfile();
   const draft = applicant.draft;
+  const { resume } = useEditorState();
+  const fromVisa = sponsorshipFromVisa(draft?.visa_status);
+  const live = draft
+    ? {
+        ...applicant.fallbacks,
+        ...Object.fromEntries(
+          Object.entries(draft).filter(([, value]) => value !== "" && value != null),
+        ),
+        email: draft.email || resume?.contact.email,
+        phone: draft.phone || resume?.contact.phone,
+        requires_sponsorship_now: draft.requires_sponsorship_now ?? fromVisa?.[0],
+        requires_sponsorship_future: draft.requires_sponsorship_future ?? fromVisa?.[1],
+      }
+    : null;
   const [touched, setTouched] = useState<Set<string>>(new Set());
   const [attempted, setAttempted] = useState(false);
 
@@ -31,9 +48,16 @@ export function useProfileFields() {
           applicant.setDraft({ ...draft, [key]: value }),
         setMany: (patch) => applicant.setDraft({ ...draft, ...patch }),
         errors: shownErrors,
-        gapFields: new Set(applicant.gaps.map((gap) => GAP_FIELD_ALIASES[gap.key] ?? gap.key)),
+        gapFields: new Set(
+          openGaps(
+            applicant.gaps.map((gap) => GAP_FIELD_ALIASES[gap.key] ?? gap.key),
+            live,
+          ),
+        ),
         defaults: applicant.defaults,
-        fallbacks: applicant.fallbacks,
+        fallbacks: Object.fromEntries(
+          Object.entries(applicant.fallbacks).map(([key, value]) => [key, realContact(value)]),
+        ),
         passwordSet: applicant.passwordSet,
         touch: (key) =>
           setTouched((current) => (current.has(key) ? current : new Set(current).add(key))),

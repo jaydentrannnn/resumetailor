@@ -18,8 +18,8 @@ export function ProfileGapBanner({
         Forms ask for these, and your profile leaves them blank
       </p>
       <p className="text-xs text-ink-muted">
-        Autofill skips a question whose answer is blank here. Set each one once and every form that
-        asks it is answered. Decline is a valid voluntary-information answer; blank is not.
+        Leave questions blank to answer them yourself on each form. Add an answer here to reuse it.
+        For voluntary information, you can choose Decline to answer.
       </p>
       <ul className="mt-2 flex flex-wrap gap-2">
         {gaps.map((gap) => (

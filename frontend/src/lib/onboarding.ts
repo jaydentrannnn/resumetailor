@@ -7,16 +7,17 @@ import type {
   SourceConfig,
   SourceField,
 } from "../api";
+import { realContact } from "./onboardingContact";
 import type { Bullet, MasterResume } from "./resumeEdit";
 import { DEFAULT_CATALOG_IDS, entriesForFields, sourceFromCatalog } from "./sources";
 import { newWatchlistSource } from "./watchlist";
 
 export const ONBOARDING_STEPS = [
   { id: "field", label: "Your field" },
-  { id: "tools", label: "AI & browser" },
   { id: "resume", label: "Your resume" },
   { id: "personal", label: "Personal info" },
   { id: "content", label: "Resume content" },
+  { id: "tools", label: "AI & browser" },
   { id: "application", label: "Application details" },
   { id: "review", label: "Review" },
   { id: "done", label: "Done" },
@@ -34,7 +35,7 @@ export const SKIP_WARNINGS: Record<Exclude<OnboardingStep, "review" | "done">, s
     "Without a target field, skill matching uses general tech words only and no job lists are searched for you.",
   tools: "Tailoring and autofill won't run until a model is connected.",
   resume: "There's nothing to tailor yet, and no template to keep your resume's design.",
-  personal: "Your resume header and the contact fields on application forms will be blank.",
+  personal: "Missing contact details may need to be entered on each application.",
   content: "Tailored resumes can only use the entries and bullets you've added.",
   application: "Autofill will stop at these questions and wait for you to answer them.",
 };
@@ -54,12 +55,23 @@ export function personalComplete(
   fallbacks: Record<string, string> = {},
 ): boolean {
   if (!draft) return false;
-  const resumeEmail = contact?.email === "you@example.com" ? "" : contact?.email;
+  const resumeEmail = realContact(contact?.email);
   const value = (key: (typeof REQUIRED_PERSONAL)[number]) =>
-    draft[key]?.trim() ||
-    fallbacks[key]?.trim() ||
+    realContact(draft[key]) ||
+    realContact(fallbacks[key]) ||
     (key === "email" ? resumeEmail?.trim() : key === "phone" ? contact?.phone?.trim() : "");
-  return REQUIRED_PERSONAL.every((key) => !!value(key) && !errors[key]);
+  return REQUIRED_PERSONAL.every((key) => {
+    const text = value(key) || "";
+    const valid =
+      key === "email"
+        ? /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(text)
+        : key === "phone"
+          ? text.replace(/\D/g, "").length >= 7 &&
+            text.replace(/\D/g, "").length <= 15 &&
+            !/[^\d\s()+.\-x]/i.test(text.replace(/\s*ext(ension)?\.?\s*/i, " x"))
+          : !!text;
+    return valid && !errors[key];
+  });
 }
 
 /**
@@ -74,7 +86,15 @@ export function contentComplete(review: ResumeReview): boolean {
 export function openGaps(keys: string[], draft: Record<string, unknown> | null): string[] {
   if (!draft) return keys;
   return keys.filter((key) => {
-    const value = draft[key];
+    const eeo = draft.eeo as Record<string, unknown> | undefined;
+    const aliases: Record<string, string> = {
+      veteran_status: "veteran",
+      disability_status: "disability",
+    };
+    const value =
+      key === "hispanic_latino" && eeo?.hispanic_latino_declined
+        ? "decline"
+        : (draft[key] ?? eeo?.[aliases[key] ?? key]);
     return value === null || value === undefined || (typeof value === "string" && !value.trim());
   });
 }

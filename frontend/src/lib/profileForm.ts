@@ -122,12 +122,6 @@ export function validateProfile(profile: ApplicantProfile): Record<string, strin
     const value = (profile[key] ?? "").trim();
     if (value && !EMAIL.test(value)) errors[key] = "Enter an email like name@example.com.";
   }
-  if (
-    profile.school_email?.trim() &&
-    !errors.school_email &&
-    !/\.edu$/i.test(profile.school_email.trim())
-  )
-    errors.school_email = "Use your school address (ending in .edu).";
   const phone = profile.phone.trim().replace(/\s*ext(ension)?\.?\s*/i, " x");
   if (phone) {
     const digits = phone.replace(/\D/g, "").length;
