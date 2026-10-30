@@ -227,6 +227,8 @@ export type ApplicantProfile = {
   salary_yearly_min: number | null;
   salary_yearly_max: number | null;
   willing_to_relocate: boolean | null;
+  /** "Available to work during the work period in the posting?"; blank = ask. */
+  available_for_work_period: boolean | null;
   location_preference: string;
   over_18: boolean | null;
   relatives_at_company: boolean | null;

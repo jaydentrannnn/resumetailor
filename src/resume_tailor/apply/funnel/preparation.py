@@ -33,6 +33,18 @@ def needs_expansion(ats: str | None) -> bool:
     return (ats or "").strip().lower() in EXPANSION_ATS
 
 
+def expansion_ats(app: store_models.Application) -> str | None:
+    """The ATS deciding whether ``app`` needs the expansion: its stored ``ats``, else the
+    one its requisition key names. A short-linked row is stored ``unknown`` though its key
+    says ``smartrecruiters:…``, and Prepare skipped the expansion its fill pastes
+    (AbbVie, Intuitive Mfg 2026-10-30)."""
+    ats = (app.ats or "").strip().lower()
+    if ats and ats != "unknown":
+        return ats
+    keyed = (app.canonical_key or "").partition(":")[0].lower()
+    return keyed if keyed in EXPANSION_ATS else app.ats
+
+
 class _PreparedEntry(BaseModel):
     """Validate prepared expansion content without coercing malformed applicant facts."""
 
@@ -147,7 +159,7 @@ def check(
         elif review.required and require_acknowledgement:
             reasons.append("resume_quality_ack_required")
     expansion_path = job_dir / "expansion.json"
-    if not needs_expansion(app.ats):
+    if not needs_expansion(expansion_ats(app)):
         pass
     elif not expansion_path.is_file():
         reasons.append("missing_expansion")

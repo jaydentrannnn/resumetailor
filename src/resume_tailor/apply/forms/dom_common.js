@@ -24,6 +24,14 @@
     return out;
   }
 
+  /** el.closest(sel) that also climbs out of a shadow root to its host. */
+  function closestDeep(el, sel) {
+    for (let node = el; node; node = node.parentElement || node.getRootNode().host) {
+      if (node.matches(sel)) return node;
+    }
+    return null;
+  }
+
   /** React Select's own control box (``select__control``, or an emotion ``css-…-control``
    * holding a value container), not any class ending in "-control": Jobvite wraps every
    * field in ``jv-form-field-control``. */

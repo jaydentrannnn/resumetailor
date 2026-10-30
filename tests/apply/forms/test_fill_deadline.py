@@ -41,3 +41,12 @@ def test_an_extension_keeps_the_credit():
     state.deadline = before + 10
     state.waits.seconds = 50.0
     assert state.deadline == before + 10 + 20
+
+
+def test_only_confirmed_smartrecruiters_steps_extend_the_budget():
+    assert fill_outcomes.is_forward_progress("SmartRecruiters: added experience Data Intern at Acme")
+    assert fill_outcomes.is_forward_progress("SmartRecruiters: answered Are you 18? = Yes")
+    assert not fill_outcomes.is_forward_progress("SmartRecruiters: adding experience Data Intern")
+    assert not fill_outcomes.is_forward_progress(
+        "SmartRecruiters: the form step did not finish loading"
+    )

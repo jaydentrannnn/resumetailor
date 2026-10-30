@@ -319,6 +319,11 @@ class _FillState:
     def _cancelled(self) -> bool:
         return bool(self.should_cancel and self.should_cancel())
 
+    def _flow_owned(self) -> Callable[[dict[str, Any]], bool] | None:
+        """Which of the generic pass's records belong to controls a platform flow fills
+        itself (`fill_ats_steps`); None when no flow owns any on this page."""
+        return None
+
     def _out_of_time(self) -> bool:
         return time.monotonic() >= self.deadline or self._cancelled()
 

@@ -66,6 +66,18 @@ def _experience_from_expansion(
     return rows
 
 
+def experience_rows(job_dir: Path) -> list[packet_models.PacketExperience]:
+    """The job's prepared experience expansion as packet rows; [] when it has none."""
+    from resume_tailor.apply.funnel import preparation
+
+    expansion_path = job_dir / "expansion.json"
+    if not expansion_path.is_file():
+        return []
+    return _experience_from_expansion(
+        preparation.read_expansion(expansion_path).as_expansion().entries
+    )
+
+
 def _experience_from_resume(resume: MasterResume) -> list[packet_models.PacketExperience]:
     """Build experience rows from the master resume with empty descriptions."""
     rows: list[packet_models.PacketExperience] = []

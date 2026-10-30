@@ -14,7 +14,7 @@ from pathlib import Path
 from resume_tailor import config
 from resume_tailor.apply.discovery import fetch_jd, identity
 from resume_tailor.apply.discovery.source_rows import SourceRow
-from resume_tailor.apply.funnel import store, store_models
+from resume_tailor.apply.funnel import preparation, store, store_models
 from resume_tailor.apply.funnel.screen import screen
 from resume_tailor.content import data
 from resume_tailor.pipeline import jd, runs
@@ -508,7 +508,9 @@ class _RowRun:
         recorded = run_inputs.recorded(config.OUTPUT_DIR / "jobs" / job_id)
         if not recorded:
             return False
-        run_settings = daily_rows._job_settings(self.job_defaults, self.settings, ats=app.ats)
+        run_settings = daily_rows._job_settings(
+            self.job_defaults, self.settings, ats=preparation.expansion_ats(app)
+        )
         guidance = job_routing.tailoring_guidance(run_settings, config.active_workspace_id())
         try:
             current = run_inputs.fingerprints(data.load(), run_settings, guidance)
@@ -525,7 +527,9 @@ class _RowRun:
             source_job_id=app.source_job_id,
             ats=app.ats,
         )
-        run_settings = daily_rows._job_settings(self.job_defaults, self.settings, ats=app.ats)
+        run_settings = daily_rows._job_settings(
+            self.job_defaults, self.settings, ats=preparation.expansion_ats(app)
+        )
         store.set_status(app, "tailoring")
         store.upsert(app)
 

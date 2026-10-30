@@ -572,8 +572,11 @@ def search_terms(key: str, value: str) -> list[str]:
 
 
 #: Keys whose options commonly decorate the answer ("University of California, Irvine
-#: (UCI)", "LinkedIn Job Posting"), so one option containing every word may stand for it.
-_CONTAINS_KEYS = frozenset({"school", "major", "how_heard", "degree_level", "language"})
+#: (UCI)", "LinkedIn Job Posting", "China (PRC, including Hong Kong and Macau)"), so one
+#: option containing every word may stand for it.
+_CONTAINS_KEYS = frozenset({
+    "school", "major", "how_heard", "degree_level", "language", "listed_country",
+})
 
 
 def closest_option(options: list[str], value: str, *, key: str = "") -> str | None:

@@ -5,6 +5,7 @@ from __future__ import annotations
 import os
 import re
 import sys
+import threading
 from functools import lru_cache
 
 # Managed text models from the owner's Model Garden list, checked 2026-10-13.
@@ -62,8 +63,20 @@ def endpoint(project: str, location: str) -> str:
     return f"https://{host}/v1/projects/{project}/locations/{location}"
 
 
-@lru_cache(maxsize=1)
+_SDK_LOCK = threading.Lock()
+
+
 def sdk():
+    # One thread imports LiteLLM at a time: a fill's answer and the cover letter written
+    # beside it imported it at once and deadlocked in its circular imports (2026-10-30).
+    # Python then drops the half-imported package, and LiteLLM's log filter, already on
+    # the root logger, failed on every later record, taking the server's event loop down.
+    with _SDK_LOCK:
+        return _load_sdk()
+
+
+@lru_cache(maxsize=1)
+def _load_sdk():
     # Importing LiteLLM must not download metadata or enable third-party logging.
     os.environ["LITELLM_LOCAL_MODEL_COST_MAP"] = "True"
     import litellm

@@ -64,6 +64,14 @@ class _FillWizard(fill_answers._FillAnswers, fill_ats_steps._FillAtsSteps):
         if fill_buttons.decline_cookie_banner(self.page):
             self.progress("declined the cookie banner covering the form")
 
+        # SmartRecruiters draws the step's controls a moment after its URL changes; a scan
+        # before then finds none (LinkedIn, Intuitive 2026-10-30).
+        if (
+            self.is_smartrecruiters
+            and smartrecruiters_page.is_form(self.page)
+            and not smartrecruiters_page.wait_for_form(self.page, self._ms_left(15_000))
+        ):
+            self.progress("SmartRecruiters: the form step did not finish loading")
         # The questions before anything is answered: what the answers reveal is the change.
         questions_before = self._question_signature()
         self._scan_frames()
@@ -82,6 +90,8 @@ class _FillWizard(fill_answers._FillAnswers, fill_ats_steps._FillAtsSteps):
         # specify" after "Other", a State list after Country): fill what changed, without
         # repeating unresolved model guesses.
         self._rescan_changed_questions(questions_before)
+        if self.is_smartrecruiters and smartrecruiters_page.is_form(self.page):
+            self._drop_smartrecruiters_owned()
         self._attach_waiting_covers()
         if self._stop_if_out_of_time("Fill stopped before this form step was complete"):
             return fill_outcomes._BREAK

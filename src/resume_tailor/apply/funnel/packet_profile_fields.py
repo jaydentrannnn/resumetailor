@@ -88,6 +88,9 @@ PROFILE_FIELDS: dict[str, ProfileFieldInfo] = {
     "earliest_start": ProfileFieldInfo(label="Earliest start", section=_AVAILABILITY, common=True),
     "notice_period": ProfileFieldInfo(label="Notice period", section=_AVAILABILITY),
     "willing_to_relocate": ProfileFieldInfo(label="Willing to relocate", section=_AVAILABILITY),
+    "available_for_work_period": ProfileFieldInfo(
+        label="Available for the posting's work period", section=_AVAILABILITY,
+    ),
     "location_preference": ProfileFieldInfo(
         label="Location preference", section=_AVAILABILITY
     ),

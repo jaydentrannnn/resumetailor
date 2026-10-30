@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+import contextlib
+import time
 from typing import Any
 
 from resume_tailor.apply.forms import field_matcher
@@ -68,7 +70,7 @@ _OPTIONS_JS = r"""(host) => {
 _HOST_VALUE_JS = "(host) => host.value === undefined ? null : host.value"
 
 #: Saved entries of a section, as their visible text parts. The title/institution line
-#: carries the date span ("AI Intern 2026 - 2026"), which is cut off.
+#: carries the date span ("AI Intern 2026 - 2026"), which is cut off and kept as ``date``.
 _ENTRIES_JS = r"""([section, kind]) => {
   const root = document.querySelector(`div[data-test="${section}"]`);
   if (!root) return null;
@@ -84,10 +86,54 @@ _ENTRIES_JS = r"""([section, kind]) => {
     let head = text(first);
     if (date && head.endsWith(date)) head = head.slice(0, head.length - date.length).trim();
     return kind === 'experience'
-      ? {title: head, company: text(e.querySelector('[data-test=experience-entry-company]'))}
+      ? {title: head, company: text(e.querySelector('[data-test=experience-entry-company]')), date}
       : {school: head, major: text(e.querySelector('[data-test=education-entry-major]')),
-         degree: text(e.querySelector('[data-test=education-entry-degree]'))};
+         degree: text(e.querySelector('[data-test=education-entry-degree]')), date};
   });
+}"""
+
+#: What an open entry editor holds (a saved entry re-renders as one after the applicant
+#: goes Back from the screening step, live 2026-10-30): the typeahead and plain inputs'
+#: text and the month pickers' "MM/YYYY", keyed by ``data-test``.
+_EDITOR_VALUES_JS = r"""(editor) => {
+  const deep = (root, sel) => {
+    const hit = root.querySelector(sel);
+    if (hit) return hit;
+    // The host's own shadow root first: the input usually lives there.
+    for (const el of [root, ...root.querySelectorAll('*')]) {
+      const found = el.shadowRoot && deep(el.shadowRoot, sel);
+      if (found) return found;
+    }
+    return null;
+  };
+  const out = {};
+  const HOSTS = 'spl-autocomplete[data-test], oc-input[data-test], oc-datepicker[data-test]';
+  for (const host of editor.querySelectorAll(HOSTS)) {
+    const picker = host.localName === 'oc-datepicker';
+    const field = deep(host, picker ? 'input.flatpickr-input' : 'input');
+    out[host.getAttribute('data-test')] = field ? (field.value || '').trim() : '';
+  }
+  const current = editor.querySelector('oc-checkbox[data-test$="-current"]');
+  const box = current && deep(current, 'input[type=checkbox]');
+  out.current = !!(box && box.checked);
+  return out;
+}"""
+
+#: Whether the step's own controls have rendered and show: page 1's name field, Add
+#: buttons or City, or a screening question. The app draws them a moment after the URL
+#: changes, so a scan right after "I'm interested" can find nothing (2026-10-30).
+_FORM_READY_JS = r"""() => {
+  const MARKERS = '#first-name-input, oc-button[data-test=add-experience], '
+    + 'div[data-test=personal-info-location], [data-test=question-container]';
+  const shown = (el) => el.getClientRects().length > 0;
+  const walk = (root) => {
+    for (const el of root.querySelectorAll(MARKERS)) if (shown(el)) return true;
+    for (const el of root.querySelectorAll('*')) {
+      if (el.shadowRoot && walk(el.shadowRoot)) return true;
+    }
+    return false;
+  };
+  return walk(document);
 }"""
 
 #: The resume dropzone's listed files: ``li.c-spl-file-list-item`` rows in its shadow
@@ -126,6 +172,17 @@ _POINT_JS = r"""(el) => {
 def is_form(page: Any) -> bool:
     """Whether ``page`` shows the one-click application form."""
     return "/oneclick-ui/" in str(getattr(page, "url", "") or "")
+
+def wait_for_form(page: Any, timeout_ms: float) -> bool:
+    """Until the form step's controls show (`_FORM_READY_JS`), at most ``timeout_ms``."""
+    deadline = time.monotonic() + max(timeout_ms, 0) / 1000
+    while True:
+        with contextlib.suppress(Exception):
+            if page.evaluate(_FORM_READY_JS):
+                return True
+        if time.monotonic() >= deadline:
+            return False
+        page.wait_for_timeout(250)
 
 def _present(locator: Any) -> bool:
     try:

@@ -36,6 +36,7 @@ HARD_CAP_S = 600
 #: Progress lines that mean the fill moved forward (not "needs review", not scanning).
 _FORWARD = re.compile(
     r"^(?:Workday: (?:filled|added skill)|scanning form step|uploading )"
+    r"|^SmartRecruiters: (?:added|answered) "
     r"|language list; removed",
 )
 

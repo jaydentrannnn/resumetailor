@@ -22,6 +22,7 @@ from resume_tailor.apply.ats import (
     smartrecruiters_page,
 )
 from resume_tailor.apply.ats import smartrecruiters_flow as sr
+from resume_tailor.apply.ats import smartrecruiters_screening as screening
 from resume_tailor.apply.funnel.packet_models import Packet, PacketEducation, PacketExperience
 
 _DIR = Path(__file__).parents[2] / "fixtures" / "smartrecruiters"
@@ -268,7 +269,7 @@ def test_an_experience_entry_is_added_saved_and_listed(browser):
     assert review == []
     assert filled == [{"label": "Experience 1 (Data Intern at Acme Corp)", "value": "Data Intern at Acme Corp"}]
     assert smartrecruiters_entries._entries(page, "experience") == [
-        {"title": "Data Intern", "company": "Acme Corp"}
+        {"title": "Data Intern", "company": "Acme Corp", "date": "2025 - 2025"}
     ]
     assert page.evaluate("window.__sr.saves") == 1
 
@@ -276,7 +277,7 @@ def test_an_experience_entry_is_added_saved_and_listed(browser):
 def test_a_listed_experience_entry_is_reused_not_duplicated(browser):
     page = _open(browser, replace={"experience": _fixture("experience_saved.html")})
     assert smartrecruiters_entries._entries(page, "experience") == [
-        {"title": "Data Intern", "company": "Acme Corp"}
+        {"title": "Data Intern", "company": "Acme Corp", "date": "2025 - 2025"}
     ]
     filled, review = smartrecruiters_entries.fill_experience(page, _packet(), _no_progress)
     assert review == []
@@ -340,7 +341,8 @@ def test_an_education_entry_is_added_with_the_catalog_school(browser):
     assert review == []
     assert filled == [{"label": "Education 1 (State University)", "value": "State University"}]
     assert smartrecruiters_entries._entries(page, "education") == [
-        {"school": "State University", "major": "Computer Science", "degree": "Bachelor of Science"},
+        {"school": "State University", "major": "Computer Science", "degree": "Bachelor of Science",
+         "date": "2023 - 2027"},
     ]
 
 
@@ -465,8 +467,8 @@ def test_the_whole_form_is_filled_and_verified(browser, tmp_path):
     filled, review = sr.fill(page, _packet(), _no_progress, resume_path=str(resume))
     assert review == []
     assert [item["label"] for item in filled] == [
-        "City", "Resume", "Message to the Hiring Team",
-        "Experience 1 (Data Intern at Acme Corp)", "Education 1 (State University)",
+        "City", "Resume", "Experience 1 (Data Intern at Acme Corp)",
+        "Education 1 (State University)", "Message to the Hiring Team",
     ]
     # Running it again adds nothing and keeps every answer.
     again, review = sr.fill(page, _packet(), _no_progress, resume_path=str(resume))
@@ -478,7 +480,7 @@ def test_the_whole_form_is_filled_and_verified(browser, tmp_path):
 def test_past_the_deadline_no_entry_is_added(browser):
     page = _open(browser)
     filled, review = smartrecruiters_entries.fill_experience(
-        page, _packet(), _no_progress, deadline=0.0
+        page, _packet(), _no_progress, deadline=lambda: 0.0
     )
     assert filled == []
     assert review == ["Experience 1 (Data Intern at Acme Corp)"]
@@ -491,8 +493,8 @@ def test_the_wellmark_form_has_no_city_but_every_other_area(browser, tmp_path):
     filled, review = sr.fill(page, _packet(), _no_progress, resume_path=str(resume))
     assert review == []
     assert [item["label"] for item in filled] == [
-        "Resume", "Message to the Hiring Team",
-        "Experience 1 (Data Intern at Acme Corp)", "Education 1 (State University)",
+        "Resume", "Experience 1 (Data Intern at Acme Corp)",
+        "Education 1 (State University)", "Message to the Hiring Team",
     ]
 
 
@@ -508,12 +510,12 @@ _SCREENING_FIELDS = {
 
 @pytest.fixture
 def no_memory(monkeypatch):
-    monkeypatch.setattr(sr.answer_memory, "recall", lambda *_args, **_kwargs: None)
+    monkeypatch.setattr(screening.answer_memory, "recall", lambda *_args, **_kwargs: None)
 
 
 def test_screening_questions_are_answered_from_profile_facts(browser, no_memory):
     page = _open(browser, "screening_resultant.html")
-    filled, review = sr.fill_screening(page, _packet(fields=_SCREENING_FIELDS), _no_progress)
+    filled, review = screening.fill_screening(page, _packet(fields=_SCREENING_FIELDS), _no_progress)
     answers = {item["label"][:40]: item["value"] for item in filled}
     assert answers == {question[:40]: value for question, value in [
         ("Are you authorized to work and accept new employment in the United States?", "Yes"),
@@ -544,9 +546,9 @@ def test_screening_questions_are_answered_from_profile_facts(browser, no_memory)
 
 def test_screening_keeps_answers_already_given(browser, no_memory):
     page = _open(browser, "screening_resultant.html")
-    sr.fill_screening(page, _packet(fields=_SCREENING_FIELDS), _no_progress)
+    screening.fill_screening(page, _packet(fields=_SCREENING_FIELDS), _no_progress)
     clicks = page.evaluate("window.__sr.radioClicks")
-    filled, _review = sr.fill_screening(page, _packet(fields={**_SCREENING_FIELDS, "authorized_to_work": "No"}), _no_progress)
+    filled, _review = screening.fill_screening(page, _packet(fields={**_SCREENING_FIELDS, "authorized_to_work": "No"}), _no_progress)
     assert page.evaluate("window.__sr.radioClicks") == clicks
     kept = {item["label"]: item for item in filled}
     work = kept["Are you authorized to work and accept new employment in the United States?"]
@@ -556,7 +558,7 @@ def test_screening_keeps_answers_already_given(browser, no_memory):
 def test_an_option_no_answer_names_is_left_for_review(browser, no_memory):
     page = _open(browser, "screening_resultant.html")
     fields = {"major": "Mathematics and Computer Science"}
-    filled, review = sr.fill_screening(page, _packet(fields=fields), _no_progress)
+    filled, review = screening.fill_screening(page, _packet(fields=fields), _no_progress)
     assert filled == []
     assert "What is your current or most recent major?: could not set 'Mathematics and Computer Science'" in review
     major = page.locator("spl-autocomplete#question_867d31ec-87ef-49f2-8c11-1f9fb51f9df5")
@@ -566,7 +568,7 @@ def test_an_option_no_answer_names_is_left_for_review(browser, no_memory):
 def test_a_long_select_is_searched_when_its_first_options_miss(browser, no_memory):
     # AbbVie (2026-09): the majors list opens on its first few options only.
     page = _open(browser, "screening_resultant.html", arrow_limit=5)
-    filled, _review = sr.fill_screening(page, _packet(fields=_SCREENING_FIELDS), _no_progress)
+    filled, _review = screening.fill_screening(page, _packet(fields=_SCREENING_FIELDS), _no_progress)
     answered = {item["label"]: item["value"] for item in filled}
     assert answered["What is your current or most recent major?"] == "Computer Science & Programming"
     major = page.locator("spl-autocomplete#question_867d31ec-87ef-49f2-8c11-1f9fb51f9df5")
@@ -582,9 +584,9 @@ def test_a_remembered_answer_covers_a_question_the_profile_does_not(browser, mon
         answer = remembered.get(normalize_label(label))
         return Recall(answer=answer, id=1) if answer else None
 
-    monkeypatch.setattr(sr.answer_memory, "recall", recall)
+    monkeypatch.setattr(screening.answer_memory, "recall", recall)
     page = _open(browser, "screening_resultant.html")
-    filled, review = sr.fill_screening(page, _packet(fields={}, company="Resultant"), _no_progress)
+    filled, review = screening.fill_screening(page, _packet(fields={}, company="Resultant"), _no_progress)
     assert {"label": "Are you currently subject to a non-compete agreement?", "value": "No"} in filled
     assert not any("non-compete" in line for line in review)
 

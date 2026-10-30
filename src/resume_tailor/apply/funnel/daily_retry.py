@@ -13,7 +13,7 @@ from typing import Literal
 
 from resume_tailor import workspace
 from resume_tailor.apply.discovery import fetch_jd
-from resume_tailor.apply.funnel import store, store_models
+from resume_tailor.apply.funnel import preparation, store, store_models
 from resume_tailor.web import template_ops
 from resume_tailor.web.jobs import get_queue
 from resume_tailor.web.schemas import JobSettings, RunMetadata
@@ -104,7 +104,9 @@ def retry_application(source_job_id: str) -> store_models.Application:
         jd_text = Path(app.jd_text_path).read_text(encoding="utf-8")
         raw = workspace.load_settings()
         job_defaults = JobSettings.model_validate(raw["defaults"])
-        settings = daily_rows._job_settings(job_defaults, job_defaults.apply, ats=app.ats)
+        settings = daily_rows._job_settings(
+            job_defaults, job_defaults.apply, ats=preparation.expansion_ats(app)
+        )
         metadata = RunMetadata(
             posting_url=app.posting_url,
             company=app.company,

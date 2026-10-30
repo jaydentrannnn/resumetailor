@@ -229,6 +229,7 @@ _PROFILE_BOOL: dict[str, str] = {
     "requires_sponsorship": "requires_sponsorship_now",
     "requires_sponsorship_future": "requires_sponsorship_future",
     "willing_to_relocate": "willing_to_relocate",
+    "available_for_work_period": "available_for_work_period",
     "relatives_at_company": "relatives_at_company",
     "noncompete": "subject_to_noncompete",
     "drivers_license": "drivers_license",

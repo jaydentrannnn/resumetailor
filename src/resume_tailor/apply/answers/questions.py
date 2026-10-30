@@ -114,7 +114,7 @@ YES_NO_KEYS = frozenset({
     "located_or_relocate", "has_prior_internship", "us_citizen", "us_person_status",
     "government_employee", "conflict_of_interest", "export_control_country",
     "consider_other_positions", "minimum_qualifications", "recent_graduate_or_student",
-    "advertising_consent",
+    "advertising_consent", "available_for_work_period",
 }) | field_matcher.EEO_KEYS
 
 _MONTH_RE = "|".join(month.lower() for month in MONTHS)
@@ -194,6 +194,7 @@ SOURCE_FIELD = {
     "returning_to_school": "graduation_month",
     "gpa_at_least": "gpa",
     "located_or_relocate": "willing_to_relocate",
+    "listed_country": "citizenship",
 }
 
 
@@ -343,6 +344,13 @@ _GPA = re.compile(r"\bgpa\b|\bgrade\s*point\s*average\b")
 _RESIDENCE_LANGUAGE = re.compile(
     r"\b(?:location|country|place)\s+of\s+residence\s+and\s+language\b"
 )
+#: "Do you hold Citizenship or Permanent Residency status from any of the following
+#: countries or administrative regions? Please select one." (Intuitive's export check,
+#: 2026-10-30): a pick from a country list, not Yes/No.
+_LISTED_COUNTRIES = re.compile(
+    r"\b(?:citizen\w*|nationality|permanent\s+residen\w*)\b.{0,80}"
+    r"\b(?:following|these|listed|below)\s+(?:countries|countr\w+|regions)"
+)
 
 
 def _option_shaped_key(low: str, question: Question) -> str | None:
@@ -399,6 +407,9 @@ def classify(question: Question) -> Match | None:
     option_key = _option_shaped_key(low, question)
     if option_key:
         return Match(option_key)
+    if (_LISTED_COUNTRIES.search(low) and question.kind in {"choice", "typeahead"}
+            and not yes_no_options(question.options)):
+        return Match("listed_country")
     for pattern, key in _DERIVED:
         if re.search(pattern, low) and _compatible(key, question):
             return Match(key, _param(key, text))
@@ -522,16 +533,46 @@ def _named_employer(facts: Facts, question: str) -> bool:
 _DECLINE = ["No", "I do not consent", "Do not consent", "I do not agree"]
 
 
+def _home_countries(fields: dict[str, str]) -> list[str] | None:
+    """The applicant's citizenship and home country other than the United States, which
+    is never on an export-control list while the questions often cite U.S. law; None when
+    the profile names neither."""
+    mine = [field_matcher.normalize(fields.get(key, "")) for key in ("citizenship", "country")]
+    mine = [country for country in mine if country and country not in {"united states", "usa"}]
+    if not mine:
+        return [] if fields.get("country") else None
+    return list(dict.fromkeys(mine))
+
+
 def _named_country(question: str, fields: dict[str, str]) -> bool | None:
     """Whether the applicant's citizenship or home country is one the question lists
     (export control: "a citizen, national or resident of Iran, Cuba, ...")."""
-    asked = field_matcher.normalize(question)
-    mine = [field_matcher.normalize(fields.get(key, "")) for key in ("citizenship", "country")]
-    # The United States is never on these lists, while the questions often cite U.S. law.
-    mine = [country for country in mine if country and country not in {"united states", "usa"}]
+    mine = _home_countries(fields)
     if not mine:
-        return False if fields.get("country") else None
+        return None if mine is None else False
+    asked = field_matcher.normalize(question)
     return any(re.search(rf"\b{re.escape(country)}\b", asked) for country in mine)
+
+
+#: The "none of them" option of a listed-countries pick.
+_NONE_LISTED = ["None of these", "None of the above", "None", "Not applicable"]
+
+
+def _listed_country(fields: dict[str, str]) -> list[str]:
+    """The pick for "citizenship or permanent residency from any of the following
+    countries?": the applicant's own country by its names (a list without it is left for
+    review: a name the list spells differently must never become "None of these"); "None
+    of these" only for a stated U.S. citizenship. Living in the United States says nothing
+    about citizenship, so a non-citizen with no citizenship given is left for review."""
+    mine = _home_countries(fields)
+    if mine:
+        names: list[str] = []
+        for country in mine:
+            found = reference_data.country(country)
+            names += [found["name"], *found["aliases"]] if found else [country]
+        return list(dict.fromkeys(names))
+    citizen = fields.get("citizenship") or fields.get("us_citizen") == "Yes"
+    return list(_NONE_LISTED) if citizen else []
 
 
 def _date_part(value: str, part: str) -> str:
@@ -641,6 +682,8 @@ def _answers(match: Match | None, question: Question, facts: Facts) -> list[str]
         return [match.param]
     if match.key == "export_control_country":
         return _yes(_named_country(question.text, facts.fields))
+    if match.key == "listed_country":
+        return _listed_country(facts.fields)
     if match.key == form_facts.TALENT_POOL:
         return _DECLINE
     if match.key == "relatives_at_company":
@@ -765,7 +808,9 @@ def date_text(value: str, *, placeholder: str = "", input_type: str = "") -> str
 
 
 #: Keys whose answer the fill runner cannot read from the packet's fields.
-_COMPUTED = frozenset({key for _pattern, key in _DERIVED} | {"location", education.MIXED_KEY})
+_COMPUTED = frozenset(
+    {key for _pattern, key in _DERIVED} | {"location", "listed_country", education.MIXED_KEY}
+)
 _DATE_KEYS = frozenset({"graduation_month", "education_start_month"})
 _PLACEHOLDER_OPTION = re.compile(r"^(?:select|choose|please select|month|year|day)\b|^-+$|^$", re.I)
 
@@ -779,6 +824,7 @@ MODEL_KEYS: dict[str, str] = {
     "requires_sponsorship_any": "needs employer visa sponsorship now or in the future",
     "over_18": "is at least 18 years old",
     "willing_to_relocate": "is willing to relocate for the job",
+    "available_for_work_period": "is available for the whole work period the posting gives",
     "noncompete": "is subject to a non-compete or non-solicitation agreement",
     "currently_enrolled": "is currently enrolled in a degree program",
     "degree_by": "will have completed their degree by a date the question names",

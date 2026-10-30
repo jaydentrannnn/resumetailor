@@ -37,6 +37,7 @@ _LABELS = {
     "citizenship": r"citizen|nationalit",
     "over_18": r"\b18\b|\bage\b",
     "willing_to_relocate": r"relocat",
+    "available_for_work_period": r"availab|work period|dates",
     "drivers_license": r"driv",
     "security_clearance": r"clearance",
     "noncompete": r"non[- ]?compet|non[- ]?solicit|restrictive|agreement",

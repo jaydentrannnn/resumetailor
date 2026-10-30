@@ -50,3 +50,21 @@ def test_prepare_skips_the_expand_stage_where_no_fill_uses_it(ats, no_expand):
     defaults = JobSettings()
     settings = daily_rows._job_settings(defaults, defaults.apply, ats=ats)  # noqa: SLF001
     assert settings.no_expand is no_expand
+
+
+def test_a_short_linked_row_takes_its_site_from_its_requisition_key(finished_run):
+    # AbbVie / Intuitive Mfg (2026-10-30): found through zapply, stored "unknown".
+    row = store.upsert(
+        store_models.Application(
+            source="test", source_job_id="zapply-1", company="AbbVie", role="Intern",
+            status="ready", job_id="run1", ats="unknown",
+            canonical_key="smartrecruiters:abbvie:744000",
+        )
+    )
+    assert preparation.expansion_ats(row) == "smartrecruiters"
+    assert preparation.check(row).reasons == ["missing_expansion"]
+    other = row.model_copy(update={"canonical_key": "other:unknown:x"})
+    assert preparation.expansion_ats(other) == "unknown"
+    assert preparation.check(other).eligible
+    stored = row.model_copy(update={"ats": "greenhouse"})
+    assert preparation.expansion_ats(stored) == "greenhouse"

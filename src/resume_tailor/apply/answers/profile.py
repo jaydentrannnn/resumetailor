@@ -187,6 +187,9 @@ class ApplicantProfile(BaseModel):
     salary_yearly_min: float | None = None
     salary_yearly_max: float | None = None
     willing_to_relocate: bool | None = None
+    #: "Are you available to work during the work period specified in the job posting?"
+    #: (an internship's dates); blank leaves the question for the applicant.
+    available_for_work_period: bool | None = None
     location_preference: str = ""
     over_18: bool | None = None
     relatives_at_company: bool | None = None

@@ -641,6 +641,11 @@ class _FillAnswers(fill_state._FillState):
                 item for item in revealed.get("required_empty") or []
                 if item not in merged["required_empty"]
             )
+        owns = self._flow_owned()
+        if owns is not None:
+            # A platform flow answered or listed these itself; handled again here they
+            # come back as blank leftovers (SmartRecruiters' "*" questions, 2026-10-30).
+            new = {key: [item for item in items if not owns(item)] for key, items in new.items()}
         self._handle_revealed(new)
 
     def _handle_revealed(self, new: dict[str, list[dict[str, Any]]]) -> None:

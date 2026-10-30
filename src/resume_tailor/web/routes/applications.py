@@ -819,7 +819,7 @@ def get_application(source_job_id: str) -> ApplicationDetailResponse:
         application=_application_out(app),
         packet=packet,
         jd_text=jd_text,
-        expansion_needed=preparation.needs_expansion(app.ats),
+        expansion_needed=preparation.needs_expansion(preparation.expansion_ats(app)),
     )
 
 

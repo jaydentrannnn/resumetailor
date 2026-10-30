@@ -93,7 +93,8 @@ def _rows_run(monkeypatch, snap: dict) -> list[str]:
         lambda *_a: (calls.append("rows") or [{"label": "Education: UC Irvine", "value": "BS"}], []),
     )
     run = fill_ats_steps._FillAtsSteps.__new__(fill_ats_steps._FillAtsSteps)
-    run.page, run.pkt, run.progress = object(), object(), lambda _m: None
+    run.page, run.progress = object(), lambda _m: None
+    run.pkt, run.resume = SimpleNamespace(experience=[]), None  # no entries to write
     run.merged, run.needs_review = {"filled": []}, []
     run.fields, run.blank_facts = {}, []
     run._workday_rows()  # noqa: SLF001

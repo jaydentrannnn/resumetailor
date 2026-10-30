@@ -1,5 +1,7 @@
 """Catalog and endpoint checks without Google, credentials or an SDK download."""
 
+import threading
+import time
 from types import SimpleNamespace
 
 import pytest
@@ -58,3 +60,23 @@ def test_other_models_keep_sdk_regions_and_unknown_models_allow_custom_locations
     with pytest.raises(ValueError, match="us-central1"):
         vertex_catalog.validate_location("gemini-2.5-pro", "global")
     vertex_catalog.validate_location("custom-model", "us-east1")
+
+
+def test_the_sdk_is_imported_by_one_thread_at_a_time(monkeypatch):
+    # Two first imports at once deadlocked in LiteLLM's circular imports (2026-10-30).
+    inside, most = [0], [0]
+
+    def load():
+        inside[0] += 1
+        most[0] = max(most[0], inside[0])
+        time.sleep(0.05)
+        inside[0] -= 1
+        return "sdk"
+
+    monkeypatch.setattr(vertex_catalog, "_load_sdk", load)
+    threads = [threading.Thread(target=vertex_catalog.sdk) for _ in range(4)]
+    for thread in threads:
+        thread.start()
+    for thread in threads:
+        thread.join()
+    assert most[0] == 1

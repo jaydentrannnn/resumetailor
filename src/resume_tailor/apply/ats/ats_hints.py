@@ -60,6 +60,7 @@ CANONICAL_FIELD_KEYS: frozenset[str] = frozenset(
         "salary_yearly",
         "salary_yearly_number",
         "willing_to_relocate",
+        "available_for_work_period",
         "how_heard",
         "how_heard_detail",
         "gender",
@@ -169,6 +170,12 @@ SYNONYMS: list[tuple[str, str]] = [
     (r"portfolio|personal site|personal website", "portfolio_url"),
     (r"authorized to work|work authorization|legally authorized", "work_authorization"),
     (r"sponsorship", "requires_sponsorship"),
+    # "Are you available to work during the work period specified in the job posting?"
+    # is Yes/No, not a start date (Intuitive, 2026-10-30).
+    (
+        r"available\s*to\s*work\s*(?:during|for|throughout)|work\s*period",
+        "available_for_work_period",
+    ),
     (r"when can you start|start date|available to start|availability", "earliest_start"),
     (r"graduation|expected graduation", "graduation_month"),
     # "If other, how did you hear about us? Please specify" is the free-text follow-up.
@@ -227,7 +234,12 @@ SYNONYMS: list[tuple[str, str]] = [
     ),
     (r"first name|given name", "first_name"),
     (r"middle name", "middle_name"),
-    (r"last name|family name|surname", "last_name"),
+    # Not AbbVie's "Secondary Last Name (optional)" (2026-10-30) or a maiden/former name.
+    (
+        r"^(?![\s\S]*\b(?:second(?:ary)?|maternal|paternal|maiden|former|previous|other|alternate)\b)"
+        r"[\s\S]*(?:last name|family name|surname)",
+        "last_name",
+    ),
     (r"preferred name", "preferred_name"),
     # A personal email request can mention "non-school"; keep it ahead of school email.
     (r"(?:\bpersonal\b|\bnon[- ]school\b).{0,40}e-?mail", "email"),

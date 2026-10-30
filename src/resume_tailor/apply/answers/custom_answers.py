@@ -35,6 +35,7 @@ _TARGETS: dict[str, tuple[str, Kind]] = {
     "requires_sponsorship": ("requires_sponsorship_now", "bool"),
     "requires_sponsorship_future": ("requires_sponsorship_future", "bool"),
     "willing_to_relocate": ("willing_to_relocate", "bool"),
+    "available_for_work_period": ("available_for_work_period", "bool"),
     "relatives_at_company": ("relatives_at_company", "bool"),
     "noncompete": ("subject_to_noncompete", "bool"),
     "drivers_license": ("drivers_license", "bool"),

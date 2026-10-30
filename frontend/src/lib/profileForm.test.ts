@@ -46,6 +46,7 @@ const base = {
   salary_yearly_min: null,
   salary_yearly_max: null,
   willing_to_relocate: null,
+  available_for_work_period: null,
   location_preference: "",
   over_18: null,
   relatives_at_company: null,

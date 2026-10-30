@@ -1119,6 +1119,11 @@
     // (2026-10-24) got the newest title, the home city and a graduation date in the VNPT
     // row. Readiness (`filler_readiness.js`) still checks these rows.
     if (/^(?:workExperience|education|language)-\d+--/.test(el.id || "")) continue;
+    // SmartRecruiters' experience and education editors belong to `smartrecruiters_entries`
+    // the same way. Back from the screening step reopens every saved entry as an editor
+    // (2026-10-30): read as questions, Description went to the model to draft and
+    // Title/Institution were listed for review.
+    if (closestDeep(el, "[data-test=experience-edit-form], [data-test=education-edit-form]")) continue;
     const code = codeBoxes(el);
     if (code) {
       if (el !== code[0]) continue;

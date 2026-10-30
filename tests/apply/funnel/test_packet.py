@@ -125,12 +125,14 @@ def test_build_fields_yes_no_and_omit_none():
         requires_sponsorship_now=False,
         requires_sponsorship_future=None,
         willing_to_relocate=True,
+        available_for_work_period=False,
         work_authorization="citizen",
         eeo=EEOAnswers(gender="decline", race="decline", veteran="No", disability="No"),
     )
     fields = build_fields(profile, resume)
     assert fields["requires_sponsorship"] == "No"
     assert fields["willing_to_relocate"] == "Yes"
+    assert fields["available_for_work_period"] == "No"
     assert fields["work_authorization"] == "U.S. Citizen"
     assert fields["full_name"] == "Jordan Rivera"
     assert "requires_sponsorship_future" not in fields

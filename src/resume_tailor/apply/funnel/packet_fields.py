@@ -240,6 +240,9 @@ def build_fields(profile: ApplicantProfile, resume: MasterResume) -> dict[str, s
         fields["hours_per_week"] = str(profile.hours_per_week_available)
     # Salary depends on the posting (`apply/salary.py`); the fill runner adds it.
     _maybe_set(fields, "willing_to_relocate", _yes_no(profile.willing_to_relocate))
+    _maybe_set(
+        fields, "available_for_work_period", _yes_no(profile.available_for_work_period)
+    )
     _maybe_set(fields, "location_preference", profile.location_preference or None)
     _maybe_set(fields, "how_heard", profile.how_heard or None)
     # Typed into "If other, please specify" when the source list has no such option.

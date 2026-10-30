@@ -714,9 +714,13 @@ one-field corrections share the Apply operation lock; a correction requires a fr
 snapshot and state hash. Prepare records the source employment count with expansion output
 so an empty expansion is accepted only when no source employment existed at preparation.
 Prepare writes the expansion only for rows whose fill pastes it (`preparation.EXPANSION_ATS`:
-Workday, SmartRecruiters); other rows are eligible without it and generate it on demand
-from the application's Files tab (`POST /api/jobs/{id}/expansion`, `?force=true` to
-regenerate). Workday fills a missing description from the resume bullets.
+Workday, SmartRecruiters; `preparation.expansion_ats` reads a row stored `unknown` by its
+requisition key, so a short-linked SmartRecruiters row counts); other rows are eligible
+without it and generate it on demand from the application's Files tab
+(`POST /api/jobs/{id}/expansion`, `?force=true` to regenerate). A fill that lands on
+Workday or SmartRecruiters with no entries in its packet writes the expansion then
+(`fill_ats_steps._ensure_experience`), else adds the resume's entries without descriptions.
+Workday fills a missing description from the resume bullets.
 
 Platforms (plan P4-A): `store_models.AtsKind` also names Taleo, SuccessFactors, Oracle Cloud,
 Jobvite, BambooHR, LinkedIn, Indeed and Handshake; `fetch_jd.detect_ats` and

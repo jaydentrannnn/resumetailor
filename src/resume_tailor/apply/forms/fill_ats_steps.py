@@ -2,8 +2,11 @@
 
 from __future__ import annotations
 
+import contextlib
+import logging
 import re
 import time
+from collections.abc import Callable
 from datetime import date
 from typing import Any
 
@@ -12,6 +15,7 @@ from resume_tailor.apply.answers import answer_memory, form_facts, hybrid_resolv
 from resume_tailor.apply.ats import (
     smartrecruiters_flow,
     smartrecruiters_page,
+    smartrecruiters_screening,
     workday_auth,
     workday_choices,
     workday_dates,
@@ -27,6 +31,7 @@ from resume_tailor.infra import llm, telemetry
 
 from . import fill_outcomes, fill_page, fill_state, fill_widgets
 
+_log = logging.getLogger(__name__)
 #: A form statement that the job itself requires citizenship or a clearance, as opposed
 #: to a plain "Are you a U.S. citizen?" asked for export-control or EEO records.
 _CITIZENSHIP_REQUIRED = re.compile(
@@ -249,6 +254,7 @@ class _FillAtsSteps(fill_state._FillState):
         )
         self.merged["filled"].extend({**item, "frame_index": 0} for item in dates)
         self._review(date_review)
+        self._ensure_experience()
         rows_filled, rows_review = fill_widgets._fill_workday_experience_and_education(
             self.page, self.pkt, self.progress
         )
@@ -292,30 +298,12 @@ class _FillAtsSteps(fill_state._FillState):
             "SmartRecruiters: filling city, experience, education, resume, message and "
             "screening"
         )
+        self._ensure_experience()
         sr_filled, sr_review = smartrecruiters_flow.fill(
             page, self.pkt, self.progress, resume_path=self.resume_path,
-            deadline=self.deadline - 45, cover_text=self._cover_text,
+            deadline=lambda: self.deadline - 45, cover_text=self._cover_text,
         )
-        # The screening step's controls read as "*" to the generic pass; the flow answered
-        # or listed them, so those records are dropped too.
-        handled = smartrecruiters_page.HANDLED_SELECTORS
-        owned = handled | smartrecruiters_flow.screening_selectors(page)
-        for key in ("filled", "leftovers", "long_text"):
-            merged[key] = [
-                item for item in merged[key] if not isinstance(item, dict) or (
-                    item.get("key") != "city" and item.get("label") != "City"
-                    and item.get("selector") not in owned
-                )
-            ]
-        if owned - handled:
-            merged["required_empty"] = [
-                label for label in merged.get("required_empty") or []
-                if str(label).strip() not in {"", "*"}
-            ]
-        merged["file_inputs"] = [
-            item for item in merged["file_inputs"]
-            if not isinstance(item, dict) or item.get("selector") not in handled
-        ]
+        self._drop_smartrecruiters_owned()
         done = {
             item.get("label") for item in merged["filled"]
             if item.get("key") == "smartrecruiters_entry"
@@ -325,3 +313,75 @@ class _FillAtsSteps(fill_state._FillState):
             for item in sr_filled if item["label"] not in done
         )
         self._review(sr_review)
+
+    def _flow_owned(self) -> Callable[[dict[str, Any]], bool] | None:
+        """On a SmartRecruiters form: City, the shared ``#file-input``, the message box and
+        the screening questions (read as "*" by the generic pass), which
+        `smartrecruiters_flow` fills or lists itself; never the flow's own records."""
+        if not (self.is_smartrecruiters and smartrecruiters_page.is_form(self.page)):
+            return None
+        owned = (smartrecruiters_page.HANDLED_SELECTORS
+                 | smartrecruiters_screening.screening_selectors(self.page))
+
+        def owns(item: dict[str, Any]) -> bool:
+            if item.get("key") == "smartrecruiters_entry":
+                return False
+            label = str(item.get("label") or "").rstrip(" *:")
+            return item.get("key") == "city" or label == "City" or item.get("selector") in owned
+
+        return owns
+
+    def _drop_smartrecruiters_owned(self) -> None:
+        """Drop the generic pass's records for controls `smartrecruiters_flow` owns
+        (`_flow_owned`). Run after the flow and again after a rescan."""
+        owns = self._flow_owned()
+        if owns is None:
+            return
+        merged = self.merged
+        handled = smartrecruiters_page.HANDLED_SELECTORS
+        for key in ("filled", "leftovers", "long_text"):
+            merged[key] = [
+                item for item in merged.get(key) or []
+                if not isinstance(item, dict) or not owns(item)
+            ]
+        if smartrecruiters_screening.screening_selectors(self.page):  # its "*" labels
+            merged["required_empty"] = [
+                label for label in merged.get("required_empty") or []
+                if str(label).strip() not in {"", "*"}
+            ]
+        merged["file_inputs"] = [
+            item for item in merged.get("file_inputs") or []
+            if not isinstance(item, dict) or item.get("selector") not in handled
+        ]
+
+    def _ensure_experience(self) -> None:
+        """Give a form with Experience rows the experience entries Prepare did not write.
+
+        Prepare writes the expansion only for a row it knows is on Workday or
+        SmartRecruiters; one found through a short link (zapply) was "unknown" then, and its
+        packet has no entries (AbbVie, 2026-10-30). The expansion is written now, as
+        Prepare's repair does (`daily._heal_missing_expansion`); its time is the job's own,
+        not the fill's, so it is tallied like a queued wait. Failing that, the resume's
+        entries go in without descriptions.
+        """
+        if self.pkt.experience or not getattr(self.resume, "experience", None):
+            return
+        if getattr(self, "experience_written", False):
+            return
+        self.experience_written = True
+        from resume_tailor.apply.funnel import packet as apply_packet  # noqa: PLC0415
+        from resume_tailor.web import job_followups  # noqa: PLC0415
+
+        self.progress("writing experience entries for this form")
+        rows: list[Any] = []
+        waits = self.waits.waiting() if self.waits is not None else contextlib.nullcontext()
+        try:
+            with waits:
+                job_followups.generate_expansion(self.pkt.job_id)
+            rows = apply_packet.experience_rows(config.OUTPUT_DIR / "jobs" / self.pkt.job_id)
+        except Exception as exc:  # noqa: BLE001 - the resume's entries below still go in
+            _log.warning("experience expansion for %s failed: %s", self.pkt.job_id, exc)
+        if not rows:
+            rows = apply_packet._experience_from_resume(self.resume)  # noqa: SLF001
+            self.progress("experience entries added without descriptions")
+        self.pkt = self.pkt.model_copy(update={"experience": rows})

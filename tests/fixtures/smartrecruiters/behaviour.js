@@ -7,7 +7,11 @@
 //   otherwise renders a saved entry; Cancel removes it;
 // - a month picker takes typed "MM/YYYY" + Enter;
 // - a dropzone lists the chosen file's name in its shadow root, unless
-//   `uploadFailures` asks for the upload error dialog first.
+//   `uploadFailures` asks for the upload error dialog first;
+// - `sr.reopen()` is going Back from the screening step: every saved entry comes back
+//   as an open editor holding its values (live 2026-10-30);
+// - `sr.reveals[groupId] = {value, html}`: pressing that radio adds a follow-up question
+//   inside its container a moment later (Intuitive's citizenship list).
 // window.__sr = {catalog: {dataTest: [[value, text]]}, locations: {value: object},
 //                editors: {experience: html, education: html}} is set by the test.
 (() => {
@@ -181,9 +185,52 @@
       html = `<oc-education-entry data-test="experience-entry"><div data-test="education-entry"><div data-test="education-entry-is-edit-enabled"><p data-test="education-entry-institution"> ${school} <span data-test="education-entry-date">${year(from)} - ${year(to)}</span></p><p data-test="education-entry-major"> ${major} </p><p data-test="education-entry-degree"> ${degree} </p><p data-test="education-entry-description">${description}</p></div></div></oc-education-entry>`;
     }
     entry.insertAdjacentHTML("afterend", html);
+    entry.nextElementSibling.__values = {
+      kind, from, to, current,
+      title: ac("job-title-autocomplete"), company: ac("company-autocomplete"),
+      school: ac("institution-autocomplete"),
+      major: kind === "education" ? inside(entry, "oc-input[data-test=education-major]", "input").value : "",
+      degree: kind === "education" ? inside(entry, "oc-input[data-test=education-degree]", "input").value : "",
+    };
     entry.remove();
     sr.saves += 1;
     return true;
+  };
+
+  sr.reopen = () => {
+    for (const saved of document.querySelectorAll("oc-experience-entry, oc-education-entry")) {
+      const values = saved.__values;
+      if (!values) continue;
+      const holder = document.createElement("div");
+      holder.setHTMLUnsafe(sr.editors[values.kind]);
+      const entry = holder.firstElementChild;
+      saved.replaceWith(entry);
+      init(entry);
+      const typeahead = (test, value) => {
+        const host = inside(entry, `spl-autocomplete[data-test=${test}]`);
+        if (!host || !value) return;
+        host.value = value;
+        deep(host.shadowRoot, "input[role=combobox]")[0].value = value;
+      };
+      const month = (test, value) => {
+        const field = inside(entry, `oc-datepicker[data-test=${test}] spl-date-field`);
+        const input = inside(entry, `oc-datepicker[data-test=${test}]`, "input.flatpickr-input");
+        if (!field || !value) return;
+        field.value = value;
+        if (input) input.value = `${value.slice(5, 7)}/${value.slice(0, 4)}`;
+      };
+      typeahead("job-title-autocomplete", values.title);
+      typeahead("company-autocomplete", values.company);
+      typeahead("institution-autocomplete", values.school);
+      month(`${values.kind}-date-from`, values.from);
+      month(`${values.kind}-date-to`, values.to);
+      for (const [test, value] of [["education-major", values.major], ["education-degree", values.degree]]) {
+        const input = inside(entry, `oc-input[data-test=${test}]`, "input");
+        if (input && value) input.value = value;
+      }
+      const box = inside(entry, `oc-checkbox[data-test=${values.kind}-current]`, "input[type=checkbox]");
+      if (box) box.checked = !!values.current;
+    }
   };
 
   // A screening radio: a trusted press checks it and unchecks its siblings; the group's
@@ -196,6 +243,15 @@
     radio.setAttribute("aria-checked", "true");
     group.value = radio.getAttribute("value");
     sr.radioClicks = (sr.radioClicks || 0) + 1;
+    const reveal = (sr.reveals || {})[group.id];
+    if (reveal && reveal.value === radio.getAttribute("value")) {
+      setTimeout(() => {
+        const holder = document.createElement("div");
+        holder.setHTMLUnsafe(reveal.html);
+        group.closest("[data-test=question-container]").appendChild(holder);
+        init(holder);
+      }, 100);
+    }
   }, true);
 
   document.addEventListener("click", (e) => {

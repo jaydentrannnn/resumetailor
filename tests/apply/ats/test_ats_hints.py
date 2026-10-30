@@ -58,6 +58,7 @@ def test_canonical_field_keys_match_plan():
         "salary_yearly",
         "salary_yearly_number",
         "willing_to_relocate",
+        "available_for_work_period",
         "how_heard",
         "how_heard_detail",
         "gender",
@@ -169,3 +170,20 @@ def test_hints_for_known_ats():
     assert hints["#email"] == "email"
     hints["#email"] = "mutated"
     assert ats_hints.ATS_HINTS["greenhouse"]["#email"] == "email"
+
+
+@pytest.mark.parametrize(
+    ("label", "key"),
+    [
+        ("Last Name", "last_name"),
+        ("Legal last name*", "last_name"),
+        ("Surname", "last_name"),
+        # AbbVie (2026-10-30) got the last name typed into its optional second one.
+        ("Secondary Last Name (optional):", None),
+        ("Maiden name / former last name", None),
+        ("Other last names used", None),
+    ],
+)
+def test_only_the_applicants_own_last_name_is_the_last_name(label, key):
+    found = next((k for pattern, k in ats_hints.SYNONYMS if re.search(pattern, label.lower())), None)
+    assert (found if found == "last_name" else None) == key

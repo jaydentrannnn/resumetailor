@@ -19,7 +19,20 @@
 
   /*DOM_COMMON*/
 
+  /** The SmartRecruiters field (outermost `spl-*` host: a select wraps an `spl-input`)
+   * around `el`, whose input sits in nested shadow roots; null elsewhere. */
+  function splField(el) {
+    let field = null;
+    for (let node = el; node; node = node.parentNode || node.host) {
+      if (/^spl-(autocomplete|input|textarea|checkbox|radio-group)$/.test(node.localName || "")) field = node;
+    }
+    return field;
+  }
+
   function labelFor(el) {
+    // SmartRecruiters slots the question into its shadow label, which then reads "*".
+    const slotted = splField(el)?.querySelector(":scope > [slot=label-content]:not(slot)");
+    if (slotted) return (slotted.textContent || "").replace(/\s+/g, " ").trim();
     const id = el.id;
     const root = rootOf(el);
     if (id) {
@@ -58,6 +71,10 @@
       return !field?.querySelector("[data-automation-id='selectedItem']");
     }
     if (el.getAttribute("role") === "combobox") {
+      // A SmartRecruiters typeahead holds its pick as the host's value (2026-10-30: every
+      // answered select read as an empty "*").
+      const spl = splField(el);
+      if (spl?.localName === "spl-autocomplete") return spl.value == null || spl.value === "";
       const container = el.closest(".select__control, [class*='-control'], [data-automation-id*='formField']");
       return !container?.querySelector(".select__single-value, [class*='-singleValue'], .select__multi-value, [class*='-multiValue'], [data-automation-id*='selected']");
     }
