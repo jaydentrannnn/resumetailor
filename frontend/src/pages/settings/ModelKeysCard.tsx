@@ -15,6 +15,7 @@ export function ModelKeysCard({
   storeBackend,
   reload,
   onlyNeeded = false,
+  keepSet = false,
   embedded,
   className,
 }: {
@@ -24,6 +25,8 @@ export function ModelKeysCard({
   reload: () => void;
   /** List only the keys the chosen providers need (the setup wizard). */
   onlyNeeded?: boolean;
+  /** With `onlyNeeded`, also list every key that is already set (Settings in Simple view). */
+  keepSet?: boolean;
   embedded?: boolean;
   className?: string;
 }) {
@@ -36,7 +39,8 @@ export function ModelKeysCard({
     for (const key of m.connection.keys)
       if (!checks[key.name] || (m.check && m.check !== "testing" && !m.check.ok))
         checks[key.name] = m.check;
-  if (onlyNeeded && !needed.length && !custom.length) return null;
+  const anySet = keepSet && secrets.some((s) => s.set);
+  if (onlyNeeded && !needed.length && !custom.length && !anySet) return null;
   // A needed key is listed even before the server reports its slot.
   const missing = named
     .flatMap((m) => m.connection.keys)
@@ -54,7 +58,11 @@ export function ModelKeysCard({
       reload={reload}
       highlighted={needed}
       checks={checks}
-      only={onlyNeeded ? needed : undefined}
+      only={
+        onlyNeeded
+          ? [...needed, ...(keepSet ? secrets.filter((s) => s.set).map((s) => s.name) : [])]
+          : undefined
+      }
       before={custom.map((m) => (
         <CustomServerBlock key={m.role} model={m} reload={reload} />
       ))}

@@ -409,18 +409,34 @@ export const SIMPLE_PROFILE_FIELDS = new Set<keyof ApplicantProfile>([
   "country",
 ]);
 
-/** A value someone typed or chose: not blank, not an empty list. */
-export function hasProfileValue(value: unknown): boolean {
+/**
+ * Defaults the server fills in (`apply/answers/profile.py`): a field still holding one was
+ * never chosen by the student, so Simple can leave it out.
+ */
+const PROFILE_DEFAULTS: Partial<Record<keyof ApplicantProfile, unknown>> = {
+  phone_country_code: "+1",
+  portfolio_only_when_asked: true,
+  how_heard: "Found through a job postings aggregator.",
+  experience_basis: "experience",
+};
+
+/** EEO answers the server starts with ("decline", empty, unanswered). */
+const EEO_UNSET = new Set<unknown>([undefined, null, "", "decline", false]);
+
+/** A value someone typed or chose: not blank, not an empty list, not a server default. */
+export function hasProfileValue(value: unknown, key?: keyof ApplicantProfile): boolean {
   if (value == null || value === "") return false;
+  if (key && key in PROFILE_DEFAULTS && PROFILE_DEFAULTS[key] === value) return false;
   if (Array.isArray(value)) return value.length > 0;
-  if (typeof value === "object") return Object.values(value).some(hasProfileValue);
+  if (typeof value === "object") return Object.values(value).some((v) => hasProfileValue(v));
   return true;
 }
 
 /** Groups without their own field list, kept in Simple only once they hold something. */
-const GROUP_VALUES: Partial<Record<string, (draft: ApplicantProfile) => unknown>> = {
-  Languages: (draft) => draft.languages,
-  "Voluntary information": (draft) => draft.eeo,
+const GROUP_VALUES: Partial<Record<string, (draft: ApplicantProfile) => boolean>> = {
+  Languages: (draft) => hasProfileValue(draft.languages),
+  "Voluntary information": (draft) =>
+    Object.values(draft.eeo ?? {}).some((value) => !EEO_UNSET.has(value)),
 };
 
 /**
@@ -433,10 +449,11 @@ export function simpleProfileGroups(
 ): ProfileGroup[] {
   return PROFILE_GROUPS.flatMap((group) => {
     const fields = group.fields.filter(
-      (key) => SIMPLE_PROFILE_FIELDS.has(key) || hasProfileValue(draft[key]) || gapFields.has(key),
+      (key) =>
+        SIMPLE_PROFILE_FIELDS.has(key) || hasProfileValue(draft[key], key) || gapFields.has(key),
     );
     const extra = GROUP_VALUES[group.id];
-    if (!fields.length && !(extra && hasProfileValue(extra(draft)))) return [];
+    if (!fields.length && !extra?.(draft)) return [];
     return [{ ...group, fields }];
   });
 }

@@ -28,6 +28,8 @@ export function AiSection() {
           secrets={secrets}
           storeBackend={storeBackend}
           reload={reload}
+          onlyNeeded={simple}
+          keepSet
         />
       )}
       <FullOnly>

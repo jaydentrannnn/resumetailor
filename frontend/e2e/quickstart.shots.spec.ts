@@ -57,6 +57,7 @@ test("quick-start screenshots", async ({ page, request }) => {
   await page.goto("/applications");
   await page.getByRole("tab", { name: /In progress/ }).click();
   await expect(page.getByText("Gamma Labs").first()).toBeVisible();
+  await page.waitForTimeout(500); // let the tab switch finish fading
   await shot("5-apply");
   // One demo application marked sent, so Tracker has something to show.
   await page.goto("/applications/e2e-review");

@@ -8,6 +8,7 @@ import {
   PROFILE_GROUPS,
   REMEMBERED_ANSWERS_GROUP,
   classYearFor,
+  hasProfileValue,
   simpleProfileGroups,
   sponsorshipFromVisa,
   type ProfileGroup,
@@ -176,7 +177,7 @@ export function ApplicationTab({
         )}
         onOpen={onOpenGroup}
       />
-      {(!simple || draft.experience_basis != null) && (
+      {(!simple || hasProfileValue(draft.experience_basis, "experience_basis")) && (
         <Tile>
           <h3 className="rt-tile-title">Experience</h3>
           <ExperienceFields ctx={ctx} />

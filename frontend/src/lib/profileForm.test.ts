@@ -208,6 +208,19 @@ describe("simpleProfileGroups", () => {
     expect(groups["Languages"]).toBeUndefined();
   });
 
+  it("treats the server's defaults as unset", () => {
+    const draft = {
+      phone_country_code: "+1",
+      portfolio_only_when_asked: true,
+      how_heard: "Found through a job postings aggregator.",
+      eeo: { gender: "decline", race: "decline", hispanic_latino: null },
+    };
+    const groups = ids(simpleProfileGroups(draft as unknown as ApplicantProfile, new Set()));
+    expect(groups["Address and phone details"]).not.toContain("phone_country_code");
+    expect(groups["Saved answers and other preferences"]).toBeUndefined();
+    expect(groups["Voluntary information"]).toBeUndefined();
+  });
+
   it("never hides a value someone set or a field a form found blank", () => {
     const draft = { salary_yearly_max: 90000, languages: [{ language: "Spanish" }] };
     const groups = ids(
