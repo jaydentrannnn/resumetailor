@@ -13,8 +13,10 @@ export type StepNav = {
   saving: boolean;
   /** Filled with the step's save so the stepper can save before jumping. */
   saveRef: MutableRefObject<(mode?: "forward" | "leave") => Promise<boolean>>;
-  /** Where this step sits ("Step 2 of 7"), shown over its title. */
+  /** Where this step sits ("Step 2 of 4"), shown over its title. */
   position?: string;
+  /** Leaving this step forward finishes stage 1 and opens the app. */
+  finishes?: boolean;
 };
 
 const saved = () => Promise.resolve(true);

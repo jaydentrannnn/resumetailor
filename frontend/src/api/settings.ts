@@ -351,7 +351,15 @@ export function clearCache(): Promise<{ removed: number; freed: number }> {
 export type OnboardingField = "" | "cs" | "business" | "engineering" | "other";
 
 export type OnboardingStepId =
-  "field" | "tools" | "resume" | "personal" | "content" | "application" | "review" | "done";
+  | "field"
+  | "tools"
+  | "resume"
+  | "personal"
+  | "content"
+  | "application"
+  | "apply_tools"
+  | "review"
+  | "done";
 
 export interface OnboardingState {
   step: OnboardingStepId;
@@ -362,6 +370,10 @@ export interface OnboardingState {
   skipped_steps: OnboardingStepId[];
   /** "Start from scratch" on the Resume step (no upload, step answered). */
   resume_from_scratch: boolean;
+  /** Stage two (what applying needs) is finished; `completed` is stage one. */
+  apply_done: boolean;
+  /** The student hid the Getting started guide. */
+  guide_dismissed: boolean;
   updated_at: string;
 }
 
@@ -374,7 +386,14 @@ export function putOnboarding(
   patch: Partial<
     Pick<
       OnboardingState,
-      "step" | "field" | "completed" | "skipped" | "skipped_steps" | "resume_from_scratch"
+      | "step"
+      | "field"
+      | "completed"
+      | "skipped"
+      | "skipped_steps"
+      | "resume_from_scratch"
+      | "apply_done"
+      | "guide_dismissed"
     >
   >,
 ): Promise<OnboardingState> {

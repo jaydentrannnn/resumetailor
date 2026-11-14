@@ -5,5 +5,6 @@ export { ResumeStep } from "./steps/ResumeStep";
 export { PersonalStep } from "./steps/PersonalStep";
 export { ContentStep } from "./steps/ContentStep";
 export { ApplicationStep } from "./steps/ApplicationStep";
+export { ApplySetupStep } from "./steps/ApplySetupStep";
 export { SummaryStep } from "./steps/SummaryStep";
 export { DoneStep } from "./steps/DoneStep";

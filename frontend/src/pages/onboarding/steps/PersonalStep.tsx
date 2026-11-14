@@ -7,7 +7,7 @@ import { useProfileFields } from "../../profile/useProfileFields";
 import { StepFrame, type StepNav } from "../StepFrame";
 import { saveProfileStep } from "./saveProfileStep";
 
-/** Step 4: the Profile page's Personal information tab, prefilled from the resume header. */
+/** Stage 2: the Profile page's Personal information tab, prefilled from the resume header. */
 export function PersonalStep({ nav }: { nav: StepNav }) {
   const fields = useProfileFields();
   const { applicant, draft, ctx, allErrors } = fields;

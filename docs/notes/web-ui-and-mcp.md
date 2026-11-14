@@ -1067,3 +1067,28 @@ the role at the company). They are plain user-clicked links; nothing in the app 
 extension fetches LinkedIn, which keeps the capture-only rule. The role keyword strips
 term, year, level and location words so "Data Analyst Intern (Summer 2026) - NYC"
 searches "Data Analyst"; a title with no job words left gets only the recruiter search.
+
+## 2026-11-13 — Setup wizard split into two stages
+
+**What.** The first-run wizard now has two stages. Stage 1 is field, resume, resume
+content and AI model: the four things tailoring needs. Leaving its last step forward
+(Next or Skip) sets `completed`, parks the wizard at `personal` and opens Tailor. Stage 2
+is personal info, application details, job lists & browser (new step `apply_tools`) and
+review; it runs with the app open and ends by setting `apply_done`. The job-list picker
+moved out of the field step and the browser picker out of the AI step, both into
+`apply_tools`. The content step shows the editor's contact block, because the personal
+step no longer comes before it and a missing name blocks tailoring.
+
+**Why.** A new student had seven steps between opening the app and a first tailored
+resume, three of them needed only by Apply. A Simple/Advanced mode was considered and
+rejected: it forks every page, and the delay was in the wizard order, not in the number
+of controls on screen. All rail pages stay visible because Apply is a core part of the
+pitch.
+
+**Impact.** Steps before the first tailored resume: 7 → 4. Rows written by the one-stage
+wizard are mapped on read (`onboarding._upgrade`, keyed on the missing `apply_done`):
+finished rows get `apply_done` and `guide_dismissed`, so existing users see nothing new;
+a row left at `personal` resumes at `content`; a row left at `application` or `review`
+is marked `completed` and resumes there. `save()` forces `step = "done"` only when both
+stages are finished and the caller named no step, so editing a finished step never closes
+the app. The e2e seed sets all three flags (an established user).

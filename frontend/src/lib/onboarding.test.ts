@@ -7,15 +7,19 @@ import type {
   SourceConfig,
 } from "../api";
 import {
+  FIRST_APPLY_STEP,
   ONBOARDING_STEPS,
   applicationSummary,
   contentComplete,
+  endsStageOne,
   needsWelcome,
   openGaps,
   personalComplete,
   reviewResume,
   sourceFieldsForTarget,
   sourcesFromCatalogPicks,
+  stageOf,
+  stageSteps,
   studyFieldForTarget,
   suggestedEntries,
   stepIndex,
@@ -43,6 +47,8 @@ const state = (over: Partial<OnboardingState> = {}): OnboardingState => ({
   skipped: false,
   skipped_steps: [],
   resume_from_scratch: false,
+  apply_done: false,
+  guide_dismissed: false,
   updated_at: "",
   ...over,
 });
@@ -51,6 +57,23 @@ describe("onboarding helpers", () => {
   it("orders the steps", () => {
     expect(stepIndex("field")).toBe(0);
     expect(stepIndex("done")).toBe(ONBOARDING_STEPS.length - 1);
+  });
+
+  it("puts only what tailoring needs before the app opens", () => {
+    expect(stageSteps(1).map((s) => s.id)).toEqual(["field", "resume", "content", "tools"]);
+    expect(stageSteps(2).map((s) => s.id)).toEqual([
+      "personal",
+      "application",
+      "apply_tools",
+      "review",
+    ]);
+    expect(endsStageOne("tools")).toBe(true);
+    expect(endsStageOne("content")).toBe(false);
+    expect(FIRST_APPLY_STEP).toBe("personal");
+    expect(stageOf("content")).toBe(1);
+    expect(stageOf("done")).toBe(2);
+    // Stage 2 never closes the app: the gate lifts once stage 1 is complete.
+    expect(needsWelcome(state({ completed: true, step: "personal" }), "/")).toBe(false);
   });
 
   it("preselects job fields from the target field", () => {

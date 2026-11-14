@@ -9,7 +9,7 @@ import { StepFrame, type StepNav } from "../StepFrame";
 import { completenessErrors } from "../../../lib/resumeEdit";
 import { contactErrors } from "../../../lib/onboardingContact";
 
-/** Step 3: upload the .docx; its design becomes the template and its words the content.
+/** Step 2: upload the .docx; its design becomes the template and its words the content.
  * A PDF gives the content only, so a starter template supplies the design. */
 export function ResumeStep({
   nav,

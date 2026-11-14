@@ -4,6 +4,11 @@ The wizard itself is the SPA's `/welcome` page; this module only remembers where
 student got to, so closing the app mid-wizard resumes at the same step. Onboarding is
 per profile because the database is.
 
+Setup has two stages. Stage one (field, resume, content, tools) is what tailoring needs
+and keeps the rest of the app closed until `completed`. Stage two (personal,
+application, apply_tools, review) is what applying needs and runs with the app open,
+until `apply_done`.
+
 A profile that already has real content (an entry in the master resume, or an
 installed template) and no onboarding row is an install from before onboarding
 existed; it is recorded as complete the first time it is read, so an upgrade never
@@ -23,7 +28,8 @@ from resume_tailor.storage import db
 
 KEY = "onboarding"
 Step = Literal[
-    "field", "tools", "resume", "personal", "content", "application", "review", "done"
+    "field", "tools", "resume", "personal", "content", "application", "apply_tools",
+    "review", "done",
 ]
 Field = Literal["", "cs", "business", "engineering", "other"]
 
@@ -41,17 +47,34 @@ class OnboardingState(BaseModel):
     skipped_steps: list[Step] = []
     #: "Start from scratch" on the Resume step: no upload, but the step is answered.
     resume_from_scratch: bool = False
+    #: Stage two is finished: the answers and tools that applying needs are set up.
+    apply_done: bool = False
+    #: The student hid the Getting started guide.
+    guide_dismissed: bool = False
     updated_at: str = ""
 
 
 def _upgrade(raw: dict) -> dict:
-    """Map a stored row from the older wizard onto the current step ids."""
+    """Map a stored row from an older wizard onto the current steps and stages."""
     step = raw.get("step")
     if step in _LEGACY_STEPS:
-        return {**raw, "step": _LEGACY_STEPS[step]}
-    if step == "review" and "skipped_steps" not in raw:
+        raw = {**raw, "step": _LEGACY_STEPS[step]}
+    elif step == "review" and "skipped_steps" not in raw:
         # The old "review" step checked the imported content; that is "content" now.
+        raw = {**raw, "step": "content"}
+    if "apply_done" in raw:
+        return raw
+    # A row from the one-stage wizard, where every step came before the app opened.
+    if raw.get("completed"):
+        # Setup was finished there: nothing new to walk through, and no guide.
+        return {**raw, "apply_done": True, "guide_dismissed": True}
+    step = raw.get("step")
+    if step == "personal":
+        # Personal info came third; the next stage-one step still to do is the content check.
         return {**raw, "step": "content"}
+    if step in ("application", "review"):
+        # Every stage-one step was already behind them: the app opens, stage two resumes here.
+        return {**raw, "completed": True}
     return raw
 
 
@@ -80,7 +103,10 @@ def load() -> OnboardingState:
                 pass  # a malformed row restarts the wizard rather than 500ing
         state = OnboardingState()
         if raw is None and _has_existing_content():
-            state = OnboardingState(step="done", completed=True, updated_at=_now())
+            state = OnboardingState(
+                step="done", completed=True, apply_done=True, guide_dismissed=True,
+                updated_at=_now(),
+            )
             db.kv_set(conn, KEY, state.model_dump())
         return state
 
@@ -98,7 +124,7 @@ def save(**changes) -> OnboardingState:
         merged = (current or OnboardingState()).model_dump() | changes
         merged["updated_at"] = _now()
         state = OnboardingState.model_validate(merged)
-        if state.completed:
+        if state.completed and state.apply_done and "step" not in changes:
             state.step = "done"
         db.kv_set(conn, KEY, state.model_dump())
         return state

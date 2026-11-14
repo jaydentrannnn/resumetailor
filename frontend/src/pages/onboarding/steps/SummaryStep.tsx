@@ -21,7 +21,7 @@ function listSummary(names: string[]): string {
     : `${names.slice(0, 3).join(", ")} and ${names.length - 3} more`;
 }
 
-/** Step 7: what the student entered, step by step and in that order, before finishing. */
+/** The last step: what the student entered, step by step and in that order, before finishing. */
 export function SummaryStep({
   nav,
   skipped,
@@ -76,8 +76,8 @@ export function SummaryStep({
     >
       <div className="space-y-4">
         <p className="text-sm text-attn">
-          Finishing saves your setup progress. Tailoring still needs a working model, a template and
-          resume content. Skipped steps can be edited later.
+          Finishing saves your setup. Skipped steps can be edited later; Fill stops and asks you
+          for any application answer that is still missing.
         </p>
         {(profileDirty || resumeDirty) && (
           <p role="alert" className="text-sm text-attn">
@@ -88,38 +88,7 @@ export function SummaryStep({
         {section(
           "field",
           "Your field",
-          <DataList
-            items={[
-              { label: "Target field", value: target?.label ?? none },
-              {
-                label: "Jobs to look for",
-                value: (apply.fields ?? []).map((f) => FIELD_LABELS[f]).join(", ") || none,
-              },
-              {
-                label: "Job lists",
-                value: listSummary(
-                  apply.sources.filter((s) => s.enabled).map((s) => s.name || s.id),
-                ),
-              },
-            ]}
-          />,
-        )}
-        {section(
-          "tools",
-          "AI & browser",
-          <DataList
-            items={[
-              { label: "Light task model", value: tailorModelLabel(settings, config) },
-              {
-                label: "Heavy task model",
-                value: selectionLabel(modelsFor(settings).heavy, config),
-              },
-              {
-                label: "Browser",
-                value: apply.browser ? browserLabel(apply.browser) : "Automatic",
-              },
-            ]}
-          />,
+          <DataList items={[{ label: "Target field", value: target?.label ?? none }]} />,
         )}
         {section(
           "resume",
@@ -138,6 +107,29 @@ export function SummaryStep({
           />,
         )}
         {section(
+          "content",
+          "Resume content",
+          <DataList
+            items={[
+              { label: "Entries", value: review.entries },
+              { label: "Bullet points", value: review.bullets },
+            ]}
+          />,
+        )}
+        {section(
+          "tools",
+          "AI model",
+          <DataList
+            items={[
+              { label: "Light task model", value: tailorModelLabel(settings, config) },
+              {
+                label: "Heavy task model",
+                value: selectionLabel(modelsFor(settings).heavy, config),
+              },
+            ]}
+          />,
+        )}
+        {section(
           "personal",
           "Personal information",
           <DataList
@@ -151,16 +143,6 @@ export function SummaryStep({
           />,
         )}
         {section(
-          "content",
-          "Resume content",
-          <DataList
-            items={[
-              { label: "Entries", value: review.entries },
-              { label: "Bullet points", value: review.bullets },
-            ]}
-          />,
-        )}
-        {section(
           "application",
           "Application details",
           answers.length ? (
@@ -168,6 +150,28 @@ export function SummaryStep({
           ) : (
             <p className="text-sm text-ink-muted">Nothing entered yet.</p>
           ),
+        )}
+        {section(
+          "apply_tools",
+          "Job lists & browser",
+          <DataList
+            items={[
+              {
+                label: "Jobs to look for",
+                value: (apply.fields ?? []).map((f) => FIELD_LABELS[f]).join(", ") || none,
+              },
+              {
+                label: "Job lists",
+                value: listSummary(
+                  apply.sources.filter((s) => s.enabled).map((s) => s.name || s.id),
+                ),
+              },
+              {
+                label: "Browser",
+                value: apply.browser ? browserLabel(apply.browser) : "Automatic",
+              },
+            ]}
+          />,
         )}
       </div>
     </StepFrame>

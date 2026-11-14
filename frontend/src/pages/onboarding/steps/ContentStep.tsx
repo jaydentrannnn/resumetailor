@@ -8,7 +8,7 @@ import { StepFrame, type StepNav } from "../StepFrame";
 import { completenessErrors } from "../../../lib/resumeEdit";
 import { contactErrors } from "../../../lib/onboardingContact";
 
-/** Step 5: what was imported, what is worth fixing, and the full editor to fix it in. */
+/** Step 3: what was imported, what is worth fixing, and the full editor to fix it in. */
 export function ContentStep({ nav }: { nav: StepNav }) {
   const editor = useEditorState();
   const { gaps } = useApplicantProfile();
@@ -33,7 +33,7 @@ export function ContentStep({ nav }: { nav: StepNav }) {
       skipWarning={SKIP_WARNINGS.content}
       error={
         invalidContact.length
-          ? "Fix your resume contact in Personal info: " + invalidContact.join(" ")
+          ? "Fix your contact details in the editor above: " + invalidContact.join(" ")
           : editor.dirty && editor.errors.length
             ? editor.errors[0]
             : null
@@ -73,7 +73,9 @@ export function ContentStep({ nav }: { nav: StepNav }) {
         }}
       />
       <div className="border-t border-line pt-4">
-        <EditorPage showContact={false} embedded />
+        {/* The contact block stays: a missing name blocks tailoring, and this is the
+            only stage-1 step where it can be fixed. */}
+        <EditorPage embedded />
       </div>
     </StepFrame>
   );

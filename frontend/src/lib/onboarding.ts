@@ -12,32 +12,62 @@ import type { Bullet, MasterResume } from "./resumeEdit";
 import { DEFAULT_CATALOG_IDS, entriesForFields, sourceFromCatalog } from "./sources";
 import { newWatchlistSource } from "./watchlist";
 
+/**
+ * The wizard's steps in order. Stage 1 is what tailoring needs and keeps the app closed
+ * until it is finished; stage 2 is what applying needs and runs with the app open.
+ */
 export const ONBOARDING_STEPS = [
-  { id: "field", label: "Your field" },
-  { id: "resume", label: "Your resume" },
-  { id: "personal", label: "Personal info" },
-  { id: "content", label: "Resume content" },
-  { id: "tools", label: "AI & browser" },
-  { id: "application", label: "Application details" },
-  { id: "review", label: "Review" },
-  { id: "done", label: "Done" },
+  { id: "field", label: "Your field", stage: 1 },
+  { id: "resume", label: "Your resume", stage: 1 },
+  { id: "content", label: "Resume content", stage: 1 },
+  { id: "tools", label: "AI model", stage: 1 },
+  { id: "personal", label: "Personal info", stage: 2 },
+  { id: "application", label: "Application details", stage: 2 },
+  { id: "apply_tools", label: "Job lists & browser", stage: 2 },
+  { id: "review", label: "Review", stage: 2 },
+  { id: "done", label: "Done", stage: 2 },
 ] as const;
 
 export type OnboardingStep = (typeof ONBOARDING_STEPS)[number]["id"];
+export type OnboardingStage = (typeof ONBOARDING_STEPS)[number]["stage"];
+
+export const STAGE_TITLES: Record<OnboardingStage, string> = {
+  1: "Your first resume",
+  2: "Applying",
+};
 
 export function stepIndex(step: OnboardingStep): number {
   return ONBOARDING_STEPS.findIndex((s) => s.id === step);
 }
 
+/** A stage's steps as the wizard lists them ("Done" is a screen, not a listed step). */
+export function stageSteps(stage: OnboardingStage) {
+  return ONBOARDING_STEPS.filter((s) => s.stage === stage && s.id !== "done");
+}
+
+export function stageOf(step: OnboardingStep): OnboardingStage {
+  return ONBOARDING_STEPS[stepIndex(step)].stage;
+}
+
+/** The last stage-1 step: leaving it forward finishes stage 1 and opens the app. */
+export function endsStageOne(step: OnboardingStep): boolean {
+  const steps = stageSteps(1);
+  return steps[steps.length - 1].id === step;
+}
+
+/** The first stage-2 step, where "Set up applying" starts. */
+export const FIRST_APPLY_STEP: OnboardingStep = stageSteps(2)[0].id;
+
 /** What stops working when a step is skipped; shown before the skip goes through. */
 export const SKIP_WARNINGS: Record<Exclude<OnboardingStep, "review" | "done">, string> = {
-  field:
-    "Without a target field, skill matching uses general tech words only and no job lists are searched for you.",
+  field: "Without a target field, skill matching uses general tech words only.",
   tools: "Tailoring and autofill won't run until a model is connected.",
   resume: "There's nothing to tailor yet, and no template to keep your resume's design.",
   personal: "Missing contact details may need to be entered on each application.",
   content: "Tailored resumes can only use the entries and bullets you've added.",
   application: "Autofill will stop at these questions and wait for you to answer them.",
+  apply_tools:
+    "Find jobs searches only the built-in job lists, and Fill picks a browser by itself.",
 };
 
 /** Personal-information fields the step requires (beyond being well formed). */

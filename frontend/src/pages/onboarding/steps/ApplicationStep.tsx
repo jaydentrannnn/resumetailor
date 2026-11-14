@@ -8,7 +8,7 @@ import { StepFrame, type StepNav } from "../StepFrame";
 import { saveProfileStep } from "./saveProfileStep";
 
 /**
- * Step 6: the Profile page's Application details tab. Complete once every question the
+ * Stage 2: the Profile page's Application details tab. Complete once every question the
  * app knows forms ask (the profile gaps) has an answer.
  */
 export function ApplicationStep({ nav, onEditResume }: { nav: StepNav; onEditResume: () => void }) {

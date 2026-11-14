@@ -57,7 +57,12 @@ def _seed(base: str) -> None:
         files={"file": ("resume.docx", upload, "application/octet-stream")},
         timeout=300,
     ).raise_for_status()
-    httpx.put(f"{base}/api/onboarding", json={"completed": True}, timeout=30).raise_for_status()
+    # An established user: both setup stages finished, the Getting started guide hidden.
+    httpx.put(
+        f"{base}/api/onboarding",
+        json={"completed": True, "apply_done": True, "guide_dismissed": True},
+        timeout=30,
+    ).raise_for_status()
     answer_memory.remember(
         "Which office would you prefer?", "New York", company="Acme Capital", ats="greenhouse"
     )

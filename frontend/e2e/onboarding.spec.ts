@@ -21,7 +21,9 @@ test("fresh setup: skip invalid drafts, optional answers, review edits and resum
   await expect(page.locator("#pf-email")).toHaveValue("bad");
   await page.getByRole("button", { name: "Skip", exact: true }).click();
   await page.getByRole("dialog").getByRole("button", { name: "Skip", exact: true }).click();
-  await expect(page.getByRole("heading", { name: "Check your resume content" })).toBeFocused();
+  await expect(
+    page.getByRole("heading", { name: "Application details", exact: true }),
+  ).toBeFocused();
   await expect(page.getByRole("navigation", { name: "Setup", exact: true })).toContainText(
     "(skipped)",
   );
@@ -52,6 +54,8 @@ test("fresh setup: skip invalid drafts, optional answers, review edits and resum
   await page.getByLabel("Hispanic or Latino").selectOption("decline");
   await page.locator("#pf-eeo-gender").selectOption("");
   await expect(page.getByRole("button", { name: "Next", exact: true })).toBeEnabled();
+  await page.getByRole("button", { name: "Next", exact: true }).click();
+  await expect(page.getByRole("heading", { name: "Job lists and browser" })).toBeVisible();
   await page.getByRole("button", { name: "Next", exact: true }).click();
   await expect(page.getByRole("heading", { name: "Review your setup" })).toBeVisible();
   const profile = await (await request.get("/api/applicant-profile")).json();
@@ -84,11 +88,16 @@ test("job lists retry, keep exclusions and lock navigation while saving", async 
   page,
   request,
 }) => {
+  // Job lists are suggested from the target field, picked on the first step.
   await request.put("/api/onboarding", {
     data: { step: "field", completed: false, skipped: false },
   });
-  await page.route("**/api/apply/catalog", (route) => route.fulfill({ status: 503, body: "{}" }));
   await page.goto("/welcome");
+  await page.getByRole("radio", { name: /Software & Data/ }).click();
+  await expect(page.getByRole("radio", { name: /Software & Data/ })).toBeChecked();
+  await request.put("/api/onboarding", { data: { step: "apply_tools" } });
+  await page.route("**/api/apply/catalog", (route) => route.fulfill({ status: 503, body: "{}" }));
+  await page.reload();
   await expect(page.getByRole("button", { name: "Retry job lists" })).toBeVisible();
   await page.unroute("**/api/apply/catalog");
   await page.route("**/api/apply/catalog", (route) =>
@@ -116,8 +125,6 @@ test("job lists retry, keep exclusions and lock navigation while saving", async 
     }),
   );
   await page.getByRole("button", { name: "Retry job lists" }).click();
-  await page.getByRole("radio", { name: /Software & Data/ }).click();
-  await expect(page.getByRole("radio", { name: /Software & Data/ })).toBeChecked();
   const excluded = page.getByRole("checkbox", { name: "Keep excluded" });
   await excluded.uncheck();
   await page.getByRole("checkbox", { name: "Quant", exact: true }).check();
@@ -129,5 +136,27 @@ test("job lists retry, keep exclusions and lock navigation while saving", async 
   });
   await page.getByRole("button", { name: "Next", exact: true }).click();
   await expect(page.getByRole("button", { name: "Skip setup for now" })).toBeDisabled();
-  await expect(page.getByRole("heading", { name: "Add your resume", exact: true })).toBeVisible();
+  await expect(page.getByRole("heading", { name: "Review your setup" })).toBeVisible();
+});
+
+test("the app opens after the fourth step, with applying left for later", async ({
+  page,
+  request,
+}) => {
+  await request.put("/api/onboarding", {
+    data: { step: "tools", completed: false, skipped: false, apply_done: false },
+  });
+  await page.goto("/welcome");
+  await expect(page.getByRole("heading", { name: "AI model", exact: true })).toBeVisible();
+  await expect(page.getByText("Your first resume · Step 4 of 4")).toBeVisible();
+  await page.getByRole("button", { name: "Skip", exact: true }).click();
+  await page.getByRole("dialog").getByRole("button", { name: "Skip", exact: true }).click();
+  await expect(page).toHaveURL(/\/$/);
+  await expect(page.getByRole("navigation", { name: "Main" })).toBeVisible();
+  const state = await (await request.get("/api/onboarding")).json();
+  expect([state.completed, state.apply_done, state.step]).toEqual([true, false, "personal"]);
+  // Stage 2 runs with the app open: the rail stays.
+  await page.goto("/welcome");
+  await expect(page.getByText("Applying · Step 1 of 4")).toBeVisible();
+  await expect(page.getByRole("navigation", { name: "Main" })).toBeVisible();
 });

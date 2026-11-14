@@ -1,27 +1,14 @@
-import { useEffect, useRef, useState } from "react";
-import {
-  fetchSourceCatalog,
-  type OnboardingField,
-  type SourceCatalog,
-  type SourceField,
-} from "../../../api";
-import { Button, Tile } from "../../../components/ui";
+import { useState } from "react";
+import type { OnboardingField } from "../../../api";
+import { Tile } from "../../../components/ui";
 import { describe } from "../../../lib/errors";
-import {
-  SKIP_WARNINGS,
-  sourceFieldsForTarget,
-  sourcesFromCatalogPicks,
-  studyFieldForTarget,
-  suggestedEntries,
-  withSourceChoice,
-} from "../../../lib/onboarding";
+import { SKIP_WARNINGS, studyFieldForTarget } from "../../../lib/onboarding";
 import { useRunState } from "../../../state/runState";
 import { StepFrame, type StepNav } from "../StepFrame";
-import { JobSourcePicker } from "./JobSourcePicker";
 
 /**
- * Step 1: the target field. It steers the writing and preselects which job lists to
- * search.
+ * Step 1: the target field. It steers the writing and the skill words recognised; the
+ * job lists it suggests are picked later, on the "Job lists & browser" step.
  */
 export function FieldStep({
   nav,
@@ -30,52 +17,16 @@ export function FieldStep({
   nav: StepNav;
   saveField: (field: OnboardingField) => Promise<boolean>;
 }) {
-  const { config, settings, setSettings, settingsLoaded, setTargetField, flushSettings } =
-    useRunState();
+  const { config, settingsLoaded, setTargetField } = useRunState();
   const target = config?.target_field ?? null;
-  const [catalog, setCatalog] = useState<SourceCatalog | null>(null);
-  const [jobFields, setJobFields] = useState<SourceField[]>(() =>
-    settings.apply.fields?.length ? settings.apply.fields : sourceFieldsForTarget(target),
-  );
-  const [skipped, setSkipped] = useState<Set<string>>(new Set());
   const [error, setError] = useState<string | null>(null);
   const [choosing, setChoosing] = useState(false);
-  const seeded = useRef(false);
-  const [catalogAttempt, setCatalogAttempt] = useState(0);
-  const [catalogError, setCatalogError] = useState(false);
-
-  useEffect(() => {
-    let live = true;
-    setCatalogError(false);
-    fetchSourceCatalog()
-      .then((c) => live && setCatalog(c))
-      .catch(() => live && setCatalogError(true));
-    return () => {
-      live = false;
-    };
-  }, [catalogAttempt]);
-
-  // Coming back to this step: lists the student unticked before stay unticked.
-  useEffect(() => {
-    if (seeded.current || !catalog || !settingsLoaded) return;
-    seeded.current = true;
-    if (!settings.apply.fields?.length) return;
-    const have = new Set(settings.apply.sources.map((s) => s.catalog_id));
-    setSkipped(
-      new Set(
-        suggestedEntries(catalog, jobFields)
-          .filter((e) => !have.has(e.id))
-          .map((e) => e.id),
-      ),
-    );
-  }, [catalog, settingsLoaded, settings.apply, jobFields]);
 
   async function pick(id: string) {
     setChoosing(true);
     setError(null);
     try {
       await setTargetField(id);
-      setJobFields(sourceFieldsForTarget(id));
     } catch (err) {
       setError(describe(err).detail);
     } finally {
@@ -83,41 +34,16 @@ export function FieldStep({
     }
   }
 
-  const suggestions = catalog ? suggestedEntries(catalog, jobFields) : [];
-
-  async function save(): Promise<boolean> {
-    if (catalog && target) {
-      const sources = sourcesFromCatalogPicks(
-        settings.apply.sources,
-        suggestions.filter((entry) => !skipped.has(entry.id)),
-        studyFieldForTarget(target),
-      );
-      setSettings({ ...settings, apply: withSourceChoice(settings.apply, sources, jobFields) });
-    }
-    if (!(await flushSettings())) {
-      setError("Could not save your job lists. Try again.");
-      return false;
-    }
-    return saveField(studyFieldForTarget(target));
-  }
-
   return (
     <StepFrame
       title="What field are you targeting?"
-      intro="This sets how your bullets are written, the skill words ResumeTailor recognises, and which job lists to search."
+      intro="This sets how your bullets are written and the skill words ResumeTailor recognises."
       nav={nav}
       complete={!!target}
-      onSave={save}
+      onSave={() => saveField(studyFieldForTarget(target))}
       skipWarning={SKIP_WARNINGS.field}
       error={error}
     >
-      {catalogError && (
-        <div role="alert">
-          Could not load job lists.{" "}
-          <Button onClick={() => setCatalogAttempt((n) => n + 1)}>Retry job lists</Button> You can
-          skip and choose lists later.
-        </div>
-      )}
       <div
         role="radiogroup"
         aria-labelledby="step-title"
@@ -150,23 +76,6 @@ export function FieldStep({
           </Tile>
         ))}
       </div>
-      {target && catalog && (
-        <JobSourcePicker
-          fields={jobFields}
-          onFields={(next) => {
-            setJobFields(next);
-          }}
-          suggestions={suggestions}
-          skipped={skipped}
-          onToggle={(id) =>
-            setSkipped((prev) => {
-              const next = new Set(prev);
-              if (!next.delete(id)) next.add(id);
-              return next;
-            })
-          }
-        />
-      )}
     </StepFrame>
   );
 }

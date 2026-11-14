@@ -39,14 +39,23 @@ def test_progress_is_saved_and_resumed(profile_dir):
     onboarding.save(field="business", step="resume")
     state = onboarding.load()
     assert (state.field, state.step, state.completed) == ("business", "resume", False)
-    assert onboarding.save(completed=True).step == "done"
+
+
+def test_the_app_opens_after_stage_one_and_setup_ends_after_stage_two(profile_dir):
+    state = onboarding.save(completed=True, step="personal")
+    assert (state.step, state.completed, state.apply_done) == ("personal", True, False)
+    assert onboarding.save(apply_done=True).step == "done"
+    # Going back to edit a finished step names that step, so it is not forced to "done".
+    assert onboarding.save(step="field").step == "field"
+    assert onboarding.save(guide_dismissed=True).guide_dismissed is True
 
 
 def test_existing_install_is_marked_complete(profile_dir):
     (profile_dir / "master_resume.json").write_text(
         json.dumps(synthetic_resume().model_dump(mode="json", by_alias=True))
     )
-    assert onboarding.load().completed is True
+    state = onboarding.load()
+    assert (state.completed, state.apply_done, state.guide_dismissed) == (True, True, True)
     # Recorded, so emptying the resume later does not reopen the wizard.
     (profile_dir / "master_resume.json").write_text(json.dumps(_STARTER))
     assert onboarding.load().completed is True
@@ -76,6 +85,37 @@ def test_old_wizard_steps_resume_at_their_replacement(profile_dir, old, new):
     assert onboarding.load().step == "review"
 
 
+@pytest.mark.parametrize(
+    ("row", "step", "completed", "apply_done", "dismissed"),
+    [
+        # Finished in the one-stage wizard: nothing new to do, and no guide.
+        ({"step": "done", "completed": True}, "done", True, True, True),
+        # Personal info used to come third; the content check is the next stage-one step.
+        ({"step": "personal", "skipped_steps": []}, "content", False, False, False),
+        # Past every stage-one step: the app opens and stage two resumes where they were.
+        ({"step": "application", "skipped_steps": []}, "application", True, False, False),
+        ({"step": "review", "skipped_steps": []}, "review", True, False, False),
+        # Still inside stage one: unchanged.
+        ({"step": "tools", "skipped_steps": []}, "tools", False, False, False),
+    ],
+)
+def test_one_stage_rows_map_onto_the_two_stages(
+    profile_dir, row, step, completed, apply_done, dismissed
+):
+    conn = db.connect(db.db_path(profile_dir))
+    db.kv_set(conn, onboarding.KEY, row)
+    state = onboarding.load()
+    assert (state.step, state.completed, state.apply_done, state.guide_dismissed) == (
+        step, completed, apply_done, dismissed,
+    )
+
+
+def test_a_two_stage_row_is_read_as_saved(profile_dir):
+    onboarding.save(step="personal", completed=True)
+    state = onboarding.load()
+    assert (state.step, state.completed, state.apply_done) == ("personal", True, False)
+
+
 def test_skipped_steps_and_scratch_round_trip(profile_dir):
     onboarding.save(skipped_steps=["tools", "personal"], resume_from_scratch=True)
     state = onboarding.load()
@@ -89,4 +129,6 @@ def test_api_round_trip_and_validation(profile_dir):
         assert (body["field"], body["step"]) == ("cs", "tools")
         assert c.put("/api/onboarding", json={"step": "bogus"}).status_code == 422
         assert c.put("/api/onboarding", json={"skipped": True}).json()["skipped"] is True
+        body = c.put("/api/onboarding", json={"apply_done": True, "guide_dismissed": True}).json()
+        assert (body["apply_done"], body["guide_dismissed"]) == (True, True)
         assert c.get("/api/onboarding").json()["field"] == "cs"

@@ -4,11 +4,21 @@ import { getOnboarding, putOnboarding, type OnboardingState } from "../../api";
 import { Button, CommandBar, Page, Stepper } from "../../components/ui";
 import { WIDE, useMediaQuery } from "../../lib/useMediaQuery";
 import { describe } from "../../lib/errors";
-import { ONBOARDING_STEPS, stepIndex, type OnboardingStep } from "../../lib/onboarding";
+import {
+  FIRST_APPLY_STEP,
+  ONBOARDING_STEPS,
+  STAGE_TITLES,
+  endsStageOne,
+  stageOf,
+  stageSteps,
+  stepIndex,
+  type OnboardingStep,
+} from "../../lib/onboarding";
 import { useToast } from "../../lib/toast";
 import { useConfirm } from "../../state/confirmState";
 import {
   ApplicationStep,
+  ApplySetupStep,
   ContentStep,
   DoneStep,
   FieldStep,
@@ -20,9 +30,11 @@ import {
 import type { StepNav } from "./StepFrame";
 
 /**
- * First-run wizard (`/welcome`). Valid edits and progress are saved on navigation;
- * invalid drafts stay in the providers when leaving a step.
- * The rest of the app stays closed until setup is finished or "Skip setup for now".
+ * Setup wizard (`/welcome`), in two stages. Stage 1 is what tailoring needs: the rest of
+ * the app stays closed until its last step is left or "Skip setup for now". Stage 2 is
+ * what applying needs and runs with the app open, started from the Getting started guide.
+ * Valid edits and progress are saved on navigation; invalid drafts stay in the providers
+ * when leaving a step.
  */
 export function OnboardingPage() {
   const toast = useToast();
@@ -102,34 +114,49 @@ export function OnboardingPage() {
 
   const step = state.step;
   const current = stepIndex(step);
+  const stage = stageOf(step);
+  const inStage = stageSteps(stage);
   const skippedSteps = state.skipped_steps ?? [];
+  // Once the app is open, moving between steps never closes it again.
   const goTo = (target: OnboardingStep) =>
-    update({ step: target, completed: false, skipped: false });
+    update(
+      state.completed ? { step: target } : { step: target, completed: false, skipped: false },
+    );
   const following = ONBOARDING_STEPS[Math.min(current + 1, ONBOARDING_STEPS.length - 1)].id;
   const without = skippedSteps.filter((s) => s !== step);
+  // Leaving the last stage-1 step forward (Next or Skip) opens the app on the Tailor page.
+  const finishes = endsStageOne(step) && !state.completed;
+  const openApp = async (skipped_steps: OnboardingStep[]) => {
+    if (await update({ completed: true, step: FIRST_APPLY_STEP, skipped_steps })) navigate("/");
+  };
+  const forward = (skipped_steps: OnboardingStep[]) =>
+    finishes
+      ? openApp(skipped_steps)
+      : update({ step: returning ? "review" : following, skipped_steps });
   const nav: StepNav = {
     onBack:
       current > 0 ? () => goTo(returning ? "review" : ONBOARDING_STEPS[current - 1].id) : undefined,
     onNext: () =>
-      update(
-        step === "review"
-          ? { completed: true, skipped_steps: without }
-          : { step: returning ? "review" : following, skipped_steps: without },
-      ),
-    onSkip: () =>
-      update({ step: returning ? "review" : following, skipped_steps: [...without, step] }),
+      step === "review"
+        ? update({ completed: true, apply_done: true, step: "done", skipped_steps: without })
+        : forward(without),
+    onSkip: () => forward([...without, step]),
     saving,
     saveRef,
     move,
     returning: returning && step !== "review",
-    position: step === "done" ? undefined : `Step ${current + 1} of ${ONBOARDING_STEPS.length - 1}`,
+    finishes,
+    position:
+      step === "done"
+        ? undefined
+        : `${STAGE_TITLES[stage]} · Step ${inStage.findIndex((s) => s.id === step) + 1} of ${inStage.length}`,
   };
 
   async function jump(index: number) {
     await move(
       () => saveRef.current("leave"),
       async () => {
-        setReturning(step === "review" || state?.completed === true);
+        setReturning(step === "review" || state?.apply_done === true);
         await goTo(ONBOARDING_STEPS[index].id);
       },
     );
@@ -153,24 +180,30 @@ export function OnboardingPage() {
 
   return (
     <Page width="wide" className="-mb-12 -mt-5">
-      <CommandBar title="Set up ResumeTailor" />
+      <CommandBar title={state.completed ? "Set up applying" : "Set up ResumeTailor"} />
       <div className="grid min-w-0 lg:grid-cols-[16rem_minmax(0,1fr)]">
         <nav
           aria-label="Setup"
           className="-mx-4 flex flex-col gap-4 border-b border-line bg-panel px-4 py-5 sm:-mx-6 sm:px-6 lg:mx-0 lg:-ml-6 lg:min-h-[calc(100vh-var(--rt-bar-top)-var(--rt-bar-bottom))] lg:border-b-0 lg:border-r"
         >
-          <Stepper
-            steps={ONBOARDING_STEPS.filter((s) => s.id !== "done").map((s) => ({
-              ...s,
-              skipped: skippedSteps.includes(s.id),
-            }))}
-            current={current}
-            label="Setup steps"
-            orientation={wide ? "vertical" : "horizontal"}
-            disabled={saving}
-            allowJump={state.completed || step === "review"}
-            onSelect={(index) => void jump(index)}
-          />
+          {([1, 2] as const).map((n) => {
+            const steps = stageSteps(n);
+            const offset = stepIndex(steps[0].id);
+            return (
+              <div key={n}>
+                <p className="mb-2 px-1 text-xs font-medium text-ink-muted">{STAGE_TITLES[n]}</p>
+                <Stepper
+                  steps={steps.map((s) => ({ ...s, skipped: skippedSteps.includes(s.id) }))}
+                  current={current - offset}
+                  label={`${STAGE_TITLES[n]} steps`}
+                  orientation={wide ? "vertical" : "horizontal"}
+                  disabled={saving}
+                  allowJump={n === 1 ? state.completed : state.apply_done || step === "review"}
+                  onSelect={(index) => void jump(offset + index)}
+                />
+              </div>
+            );
+          })}
           {!state.completed && (
             <button
               type="button"
@@ -209,6 +242,7 @@ export function OnboardingPage() {
           {step === "application" && (
             <ApplicationStep nav={nav} onEditResume={() => void goTo("content")} />
           )}
+          {step === "apply_tools" && <ApplySetupStep nav={nav} />}
           {step === "review" && (
             <SummaryStep
               nav={nav}
@@ -227,7 +261,7 @@ export function OnboardingPage() {
           )}
           {step === "done" && (
             <DoneStep
-              onFinish={() => navigate("/")}
+              onFinish={(ready) => navigate(ready ? "/applications" : "/")}
               onEdit={() =>
                 void move(
                   () => Promise.resolve(true),
