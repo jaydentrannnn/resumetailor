@@ -318,11 +318,14 @@ export function applicationColumns({
   actions,
   extraColumns,
   navigate,
+  simple = false,
 }: {
   scope: Scope;
   actions: TableActions;
   extraColumns: string[];
   navigate: NavigateFunction;
+  /** Simple view: no Platform or optional columns; on In progress, Skill match leads. */
+  simple?: boolean;
 }): TableColumn<ApplicationRow>[] {
   const archived = scope === "archive";
   const dateColumn = archived ? "archived_at" : scope === "review" ? "status_at" : "posted_at";
@@ -389,7 +392,7 @@ export function applicationColumns({
       return row.archived_at ? new Date(row.archived_at).toLocaleDateString() : "—";
     },
   };
-  return [
+  const columns: TableColumn<ApplicationRow>[] = [
     {
       id: "company",
       heading: "Company",
@@ -439,7 +442,7 @@ export function applicationColumns({
       cell: (row) => <span className="text-ink-muted">{row.ats || "—"}</span>,
     },
     ...(scope === "review" ? [status, date] : [date, ...coverage, status]),
-    ...extraColumns.map((id) => ({
+    ...(simple ? [] : extraColumns).map((id) => ({
       id,
       heading:
         id === "coverage"
@@ -473,4 +476,9 @@ export function applicationColumns({
       ),
     },
   ];
+  if (!simple) return columns;
+  const kept = columns.filter((column) => column.id !== "ats");
+  // In progress: Match, Company, Job posting, Posted, Status, Next step.
+  const match = kept.find((column) => column.id === "coverage");
+  return match ? [match, ...kept.filter((column) => column !== match)] : kept;
 }

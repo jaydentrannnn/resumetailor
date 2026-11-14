@@ -1,3 +1,4 @@
+import { useUiMode } from "../../lib/uiMode";
 import { useCallback, type ReactNode } from "react";
 import { useNavigate, type To } from "react-router-dom";
 import type { ApplicationRow } from "../../api";
@@ -92,6 +93,7 @@ export function ApplicationsTable({
   const navigate = useNavigate();
   const { settings, setSettings } = useRunState();
   const { busy } = actions;
+  const { simple } = useUiMode();
   // Optional columns are per tab, remembered in Apply settings for this profile.
   const prefs = settings.apply.table_prefs ?? {};
   const extraColumns = prefs[scope]?.columns ?? [];
@@ -119,6 +121,7 @@ export function ApplicationsTable({
   return (
     <div className="space-y-3">
       <TableFilters
+        simple={simple}
         scope={scope}
         state={state}
         extraColumns={extraColumns}
@@ -132,54 +135,61 @@ export function ApplicationsTable({
       <div role="tabpanel" className="space-y-3">
         {intro}
         {note}
-        {/* Always on screen (0 selected, actions off): selecting never shifts the rows. */}
-        <SelectionBar count={selectedIds.length} onClear={state.clearSelection} clearLabel="Clear">
-          {elsewhere > 0 && (
-            <span className="mr-1 text-xs text-ink-muted">({elsewhere} on other pages)</span>
-          )}
-          {bulk}
-          <Button
-            variant="plain"
-            size="sm"
-            disabled={busy || actions.exclusiveBusy || !movable.length}
-            title={
-              actions.exclusiveBusy
-                ? EXCLUSIVE_NOTE
-                : leftOut
-                  ? `${leftOut} held by a running Apply task ${leftOut === 1 ? "is" : "are"} left out`
-                  : undefined
-            }
-            onClick={() =>
-              actions.move(
-                movable.map((row) => row.source_job_id),
-                !archived,
-              )
-            }
+        {/* Always on screen (0 selected, actions off): selecting never shifts the rows.
+            Simple view has no row checkboxes, so no bar either. */}
+        {!simple && (
+          <SelectionBar
+            count={selectedIds.length}
+            onClear={state.clearSelection}
+            clearLabel="Clear"
           >
-            {archived ? "Restore" : "Archive"}
-          </Button>
-          {!archived && (
-            <>
-              <Button
-                size="sm"
-                disabled={busy || !markable.length}
-                title="You sent these yourself: mark them submitted and move them to Done"
-                onClick={() => actions.markSubmitted(markable)}
-              >
-                Mark submitted ({markable.length})
-              </Button>
-              <Button
-                size="sm"
-                variant="danger"
-                disabled={busy || !markable.length}
-                title="Mark the selected applications as skipped and move them to Done"
-                onClick={() => actions.skip(markable)}
-              >
-                Skip ({markable.length})
-              </Button>
-            </>
-          )}
-        </SelectionBar>
+            {elsewhere > 0 && (
+              <span className="mr-1 text-xs text-ink-muted">({elsewhere} on other pages)</span>
+            )}
+            {bulk}
+            <Button
+              variant="plain"
+              size="sm"
+              disabled={busy || actions.exclusiveBusy || !movable.length}
+              title={
+                actions.exclusiveBusy
+                  ? EXCLUSIVE_NOTE
+                  : leftOut
+                    ? `${leftOut} held by a running Apply task ${leftOut === 1 ? "is" : "are"} left out`
+                    : undefined
+              }
+              onClick={() =>
+                actions.move(
+                  movable.map((row) => row.source_job_id),
+                  !archived,
+                )
+              }
+            >
+              {archived ? "Restore" : "Archive"}
+            </Button>
+            {!archived && (
+              <>
+                <Button
+                  size="sm"
+                  disabled={busy || !markable.length}
+                  title="You sent these yourself: mark them submitted and move them to Done"
+                  onClick={() => actions.markSubmitted(markable)}
+                >
+                  Mark submitted ({markable.length})
+                </Button>
+                <Button
+                  size="sm"
+                  variant="danger"
+                  disabled={busy || !markable.length}
+                  title="Mark the selected applications as skipped and move them to Done"
+                  onClick={() => actions.skip(markable)}
+                >
+                  Skip ({markable.length})
+                </Button>
+              </>
+            )}
+          </SelectionBar>
+        )}
         {/* The table sits on the tile itself: no second box around it. */}
         <DataTable
           bare
@@ -187,7 +197,8 @@ export function ApplicationsTable({
           rows={rows}
           id={(row) => row.source_job_id}
           rowLabel={(row) => `${row.company} ${row.role}`}
-          columns={applicationColumns({ scope, actions, extraColumns, navigate })}
+          columns={applicationColumns({ scope, actions, extraColumns, navigate, simple })}
+          selectable={!simple}
           selected={state.selected}
           onSelected={state.setSelected}
           sort={state.sort}

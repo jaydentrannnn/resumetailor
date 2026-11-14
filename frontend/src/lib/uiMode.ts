@@ -32,13 +32,22 @@ export function revealedIds(search: string | URLSearchParams): Set<string> {
   );
 }
 
+/** The view, read from the saved settings; Full outside `RunProvider` (standalone renders). */
 export function useUiMode(): { simple: boolean; setMode: (mode: UiMode) => void } {
-  const { settings, setSettings } = useRunState();
+  let run: ReturnType<typeof useRunState> | null = null;
+  try {
+    // Throws only after its one useContext call, so the hook order never changes.
+    run = useRunState();
+  } catch {
+    run = null;
+  }
+  const settings = run?.settings;
+  const setSettings = run?.setSettings;
   const setMode = useCallback(
-    (mode: UiMode) => setSettings({ ...settings, ui_mode: mode }),
+    (mode: UiMode) => settings && setSettings?.({ ...settings, ui_mode: mode }),
     [settings, setSettings],
   );
-  return { simple: isSimple(settings), setMode };
+  return { simple: !!settings && isSimple(settings), setMode };
 }
 
 /** True when the page was opened with `?reveal=` naming `id`. */

@@ -46,6 +46,7 @@ export function TableFilters({
   lead,
   search,
   tools,
+  simple = false,
 }: {
   scope: Scope;
   state: ApplicationTableState;
@@ -57,6 +58,8 @@ export function TableFilters({
   search?: ReactNode;
   /** The tab's own tools after Refresh (Find jobs and its options). */
   tools?: ReactNode;
+  /** Simple view: the tabs, search and tools only (a status filter in use still shows). */
+  simple?: boolean;
 }) {
   const archived = scope === "archive";
   return (
@@ -64,67 +67,73 @@ export function TableFilters({
       {lead}
       {search && <div className="min-w-56 flex-1">{search}</div>}
       <div className="flex flex-wrap items-center gap-2">
-        <select
-          aria-label="Filter by status"
-          className="field rt-control w-auto max-w-[14rem] py-0 text-[13px]"
-          value={state.status}
-          onChange={(e) => state.change({ status: e.target.value })}
-        >
-          <option value="">All statuses</option>
-          {[...new Set([...ALL_STATUSES, ...Object.keys(state.data?.counts ?? {})])]
-            // `counts` covers this table's rows: a running row stays where it ran from, so
-            // "Filling" can show up under Needs you as well.
-            .filter(
-              (value) =>
-                archived ||
-                !!state.data?.counts[value] ||
-                REVIEW_STATUSES.has(value) === (scope === "review"),
-            )
-            .map((value) => (
-              <option value={value} key={value}>
-                {applicationStatusLabel(value)} ({state.data?.counts[value] ?? 0})
-              </option>
-            ))}
-          {archived && (
-            <optgroup label="What happened">
-              {HIRING_OPTIONS.map(([key, label]) => (
-                <option value={HIRING_FILTER + key} key={key}>
-                  {label}
+        {(!simple || !!state.status) && (
+          <select
+            aria-label="Filter by status"
+            className="field rt-control w-auto max-w-[14rem] py-0 text-[13px]"
+            value={state.status}
+            onChange={(e) => state.change({ status: e.target.value })}
+          >
+            <option value="">All statuses</option>
+            {[...new Set([...ALL_STATUSES, ...Object.keys(state.data?.counts ?? {})])]
+              // `counts` covers this table's rows: a running row stays where it ran from, so
+              // "Filling" can show up under Needs you as well.
+              .filter(
+                (value) =>
+                  archived ||
+                  !!state.data?.counts[value] ||
+                  REVIEW_STATUSES.has(value) === (scope === "review"),
+              )
+              .map((value) => (
+                <option value={value} key={value}>
+                  {applicationStatusLabel(value)} ({state.data?.counts[value] ?? 0})
                 </option>
               ))}
-            </optgroup>
-          )}
-        </select>
-        <details className="relative">
-          <summary className="rt-control inline-flex cursor-pointer list-none items-center rounded-sm bg-plain font-medium text-ink hover:bg-plain-hover px-3 text-[13px]">
-            Columns
-          </summary>
-          <div className="absolute right-0 z-20 mt-1 w-40 space-y-2 rounded-sm border border-line bg-chrome p-3 text-xs shadow-lg">
-            {optionalColumns(scope).map((id) => (
-              <label className="flex items-center gap-2" key={id}>
-                <input
-                  type="checkbox"
-                  checked={extraColumns.includes(id)}
-                  onChange={(e) =>
-                    onExtraColumns(
-                      e.target.checked
-                        ? [...extraColumns, id]
-                        : extraColumns.filter((v) => v !== id),
-                    )
-                  }
-                />
-                {id === "coverage"
-                  ? "skill match"
-                  : id === "discovered_at"
-                    ? "found"
-                    : id.replaceAll("_", " ")}
-              </label>
-            ))}
-          </div>
-        </details>
-        <Button variant="plain" onClick={state.refresh}>
-          Refresh
-        </Button>
+            {archived && (
+              <optgroup label="What happened">
+                {HIRING_OPTIONS.map(([key, label]) => (
+                  <option value={HIRING_FILTER + key} key={key}>
+                    {label}
+                  </option>
+                ))}
+              </optgroup>
+            )}
+          </select>
+        )}
+        {!simple && (
+          <details className="relative">
+            <summary className="rt-control inline-flex cursor-pointer list-none items-center rounded-sm bg-plain font-medium text-ink hover:bg-plain-hover px-3 text-[13px]">
+              Columns
+            </summary>
+            <div className="absolute right-0 z-20 mt-1 w-40 space-y-2 rounded-sm border border-line bg-chrome p-3 text-xs shadow-lg">
+              {optionalColumns(scope).map((id) => (
+                <label className="flex items-center gap-2" key={id}>
+                  <input
+                    type="checkbox"
+                    checked={extraColumns.includes(id)}
+                    onChange={(e) =>
+                      onExtraColumns(
+                        e.target.checked
+                          ? [...extraColumns, id]
+                          : extraColumns.filter((v) => v !== id),
+                      )
+                    }
+                  />
+                  {id === "coverage"
+                    ? "skill match"
+                    : id === "discovered_at"
+                      ? "found"
+                      : id.replaceAll("_", " ")}
+                </label>
+              ))}
+            </div>
+          </details>
+        )}
+        {!simple && (
+          <Button variant="plain" onClick={state.refresh}>
+            Refresh
+          </Button>
+        )}
         {tools}
       </div>
     </div>

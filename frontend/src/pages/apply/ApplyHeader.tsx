@@ -4,6 +4,7 @@ import { AutomationSwitch } from "../../components/AutomationSwitch";
 import { Button, buttonClass, CommandBar } from "../../components/ui";
 import { nightlyRunLabel, SOURCES_PATH } from "../../lib/applyPage";
 import type { BrowserView } from "../../lib/browserState";
+import { FullOnly } from "../../components/FullOnly";
 import { ConnectionStatus } from "./BrowserConnection";
 import type { PollSync } from "./useApplyOperation";
 
@@ -18,7 +19,7 @@ export function ApplyHeader({
   sync,
   onSettings,
 }: {
-  apply: Pick<ApplySettings, "enabled" | "schedule_time">;
+  apply: Pick<ApplySettings, "enabled" | "schedule_time" | "auto_submit_enabled">;
   browser: BrowserView;
   sync?: PollSync;
   onSettings: () => void;
@@ -39,18 +40,24 @@ export function ApplyHeader({
       actions={
         <>
           <ConnectionStatus view={browser} />
-          <AutomationSwitch />
-          <Link className={buttonClass("plain", "sm")} to={SOURCES_PATH}>
-            Job sources
-          </Link>
-          <Button
-            variant="plain"
-            size="sm"
-            title="Change the nightly run in Apply settings"
-            onClick={onSettings}
-          >
-            {nightlyRunLabel(apply)}
-          </Button>
+          <FullOnly keep={apply.enabled || apply.auto_submit_enabled}>
+            <AutomationSwitch />
+          </FullOnly>
+          <FullOnly>
+            <Link className={buttonClass("plain", "sm")} to={SOURCES_PATH}>
+              Job sources
+            </Link>
+          </FullOnly>
+          <FullOnly keep={apply.enabled}>
+            <Button
+              variant="plain"
+              size="sm"
+              title="Change the nightly run in Apply settings"
+              onClick={onSettings}
+            >
+              {nightlyRunLabel(apply)}
+            </Button>
+          </FullOnly>
           <Button size="sm" onClick={onSettings}>
             Apply settings
           </Button>

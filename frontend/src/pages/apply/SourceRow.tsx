@@ -40,6 +40,7 @@ export function SourceRow({
   onEdit,
   onDuplicate,
   onRemove,
+  selectable = true,
 }: {
   source: SourceConfig;
   /** How the source did on its latest run; undefined when it has never run. */
@@ -56,6 +57,8 @@ export function SourceRow({
   onEdit: () => void;
   onDuplicate: () => void;
   onRemove: () => void;
+  /** False in Simple view: no checkbox and no click-to-tick (there is no bulk bar). */
+  selectable?: boolean;
 }) {
   const name = sourceDisplayName(source);
   const [renaming, setRenaming] = useState(false);
@@ -73,22 +76,24 @@ export function SourceRow({
   return (
     // A click anywhere on the row ticks it, as on the Apply tables; its controls keep theirs.
     <li
-      className="rt-record cursor-pointer py-3 first:pt-0 last:pb-0"
-      data-selected={selected}
+      className={`rt-record py-3 first:pt-0 last:pb-0 ${selectable ? "cursor-pointer" : ""}`}
+      data-selected={selectable && selected}
       onClick={(e) => {
-        if (isRowSelectClick(e, e.currentTarget)) onToggle(e.shiftKey);
+        if (selectable && isRowSelectClick(e, e.currentTarget)) onToggle(e.shiftKey);
       }}
-      onMouseDown={preventRowHighlight}
+      onMouseDown={selectable ? preventRowHighlight : undefined}
     >
       <div className="flex flex-wrap items-center gap-x-3 gap-y-2">
-        <input
-          type="checkbox"
-          aria-label={`Select ${name}`}
-          className="h-4 w-4 shrink-0 accent-[var(--color-accent)]"
-          checked={selected}
-          onChange={() => {}}
-          onClick={(e) => onToggle(e.shiftKey)}
-        />
+        {selectable && (
+          <input
+            type="checkbox"
+            aria-label={`Select ${name}`}
+            className="h-4 w-4 shrink-0 accent-[var(--color-accent)]"
+            checked={selected}
+            onChange={() => {}}
+            onClick={(e) => onToggle(e.shiftKey)}
+          />
+        )}
         <div className="min-w-0 flex-1 basis-[calc(100%-2rem)] sm:basis-0">
           {renaming ? (
             <input

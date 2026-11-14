@@ -20,6 +20,7 @@ import { RecommendedStrip } from "./RecommendedStrip";
 import { eligibilitySummary, globalFiltersOf } from "../../lib/globalFilters";
 import { EverySourceContext, type EverySource } from "./everySource";
 import { GlobalFiltersTile } from "./GlobalFiltersTile";
+import { useUiMode } from "../../lib/uiMode";
 
 /**
  * The job-sources page body: every place the nightly run looks for jobs, in three
@@ -81,6 +82,9 @@ export function SourcesTab({
     searchNotice,
   } = controller;
   const [editingGlobal, setEditingGlobal] = useState(false);
+  // Simple view: job lists and the filters; no bulk bar, and search engines and
+  // watchlists only once the student has one.
+  const { simple } = useUiMode();
   const everySource = useMemo<EverySource | null>(
     () =>
       apply
@@ -132,6 +136,7 @@ export function SourcesTab({
         onEdit={() => setEditing(source.id)}
         onDuplicate={() => commit(duplicateSource(source, sourcesRef.current))}
         onRemove={() => remove(new Set([source.id]))}
+        selectable={!simple}
       />
     );
   }
@@ -186,51 +191,53 @@ export function SourcesTab({
 
         {/* Right above the lists it acts on, and always on screen (0 selected, actions off):
             selecting never shifts the rows. */}
-        <SelectionBar
-          count={selectedIds.size}
-          noun="selected"
-          clearLabel="Clear"
-          label="Selected sources"
-          onClear={() => setSelected(new Set())}
-          lead={
-            sources.length > 0 && (
-              <input
-                type="checkbox"
-                aria-label="Select all sources"
-                className="h-4 w-4 accent-[var(--color-accent)]"
-                checked={selectedIds.size === sources.length}
-                onChange={(e) =>
-                  setSelected(e.target.checked ? new Set(sources.map((s) => s.id)) : new Set())
-                }
-              />
-            )
-          }
-        >
-          <Button
-            size="sm"
-            variant="secondary"
-            disabled={!selectedIds.size}
-            onClick={() => setEnabled(selectedIds, true)}
+        {!simple && (
+          <SelectionBar
+            count={selectedIds.size}
+            noun="selected"
+            clearLabel="Clear"
+            label="Selected sources"
+            onClear={() => setSelected(new Set())}
+            lead={
+              sources.length > 0 && (
+                <input
+                  type="checkbox"
+                  aria-label="Select all sources"
+                  className="h-4 w-4 accent-[var(--color-accent)]"
+                  checked={selectedIds.size === sources.length}
+                  onChange={(e) =>
+                    setSelected(e.target.checked ? new Set(sources.map((s) => s.id)) : new Set())
+                  }
+                />
+              )
+            }
           >
-            Turn on
-          </Button>
-          <Button
-            size="sm"
-            variant="secondary"
-            disabled={!selectedIds.size}
-            onClick={() => setEnabled(selectedIds, false)}
-          >
-            Turn off
-          </Button>
-          <Button
-            size="sm"
-            variant="secondary"
-            disabled={!selectedIds.size}
-            onClick={() => remove(selectedIds)}
-          >
-            Remove
-          </Button>
-        </SelectionBar>
+            <Button
+              size="sm"
+              variant="secondary"
+              disabled={!selectedIds.size}
+              onClick={() => setEnabled(selectedIds, true)}
+            >
+              Turn on
+            </Button>
+            <Button
+              size="sm"
+              variant="secondary"
+              disabled={!selectedIds.size}
+              onClick={() => setEnabled(selectedIds, false)}
+            >
+              Turn off
+            </Button>
+            <Button
+              size="sm"
+              variant="secondary"
+              disabled={!selectedIds.size}
+              onClick={() => remove(selectedIds)}
+            >
+              Remove
+            </Button>
+          </SelectionBar>
+        )}
 
         <SourceGroup
           id="lists"
@@ -245,43 +252,47 @@ export function SourcesTab({
           rows={lists.map(renderRow)}
         />
 
-        <SourceGroup
-          id="search"
-          title="Search engines"
-          explanation="Keyword searches through Adzuna, USAJobs or freehire.me. Adzuna and USAJobs need a free API key, connected once; freehire.me needs none."
-          action={
-            <Button size="sm" variant="secondary" onClick={newSearch}>
-              + Add search
-            </Button>
-          }
-          extra={
-            <div className="divide-y divide-line text-xs">
-              {(["adzuna", "usajobs"] as const).map((provider) => (
-                <ProviderStatus
-                  key={provider}
-                  provider={provider}
-                  connected={connections ? connections[provider] : null}
-                  onConnect={() => setConnecting(provider)}
-                />
-              ))}
-            </div>
-          }
-          empty="No searches yet."
-          rows={searches.map(renderRow)}
-        />
+        {(!simple || searches.length > 0) && (
+          <SourceGroup
+            id="search"
+            title="Search engines"
+            explanation="Keyword searches through Adzuna, USAJobs or freehire.me. Adzuna and USAJobs need a free API key, connected once; freehire.me needs none."
+            action={
+              <Button size="sm" variant="secondary" onClick={newSearch}>
+                + Add search
+              </Button>
+            }
+            extra={
+              <div className="divide-y divide-line text-xs">
+                {(["adzuna", "usajobs"] as const).map((provider) => (
+                  <ProviderStatus
+                    key={provider}
+                    provider={provider}
+                    connected={connections ? connections[provider] : null}
+                    onConnect={() => setConnecting(provider)}
+                  />
+                ))}
+              </div>
+            }
+            empty="No searches yet."
+            rows={searches.map(renderRow)}
+          />
+        )}
 
-        <SourceGroup
-          id="watchlists"
-          title="Company watchlists"
-          explanation="Companies whose careers pages are read directly (Greenhouse, Lever, Ashby and more). The best way to catch finance and consulting roles."
-          action={
-            <Button size="sm" variant="secondary" onClick={() => newWatchlist()}>
-              + Add watchlist
-            </Button>
-          }
-          empty="No watchlists yet."
-          rows={watchlists.map(renderRow)}
-        />
+        {(!simple || watchlists.length > 0) && (
+          <SourceGroup
+            id="watchlists"
+            title="Company watchlists"
+            explanation="Companies whose careers pages are read directly (Greenhouse, Lever, Ashby and more). The best way to catch finance and consulting roles."
+            action={
+              <Button size="sm" variant="secondary" onClick={() => newWatchlist()}>
+                + Add watchlist
+              </Button>
+            }
+            empty="No watchlists yet."
+            rows={watchlists.map(renderRow)}
+          />
+        )}
 
         <SourceFlows
           controller={controller}

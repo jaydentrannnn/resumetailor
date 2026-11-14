@@ -1,3 +1,4 @@
+import { useUiMode } from "../../lib/uiMode";
 import {
   applicationsExportUrl,
   applicationsReportUrl,
@@ -49,6 +50,7 @@ export function FindJobsTools({
 }) {
   const { limit, dryRun, ageDays } = options;
   const { desktop, save } = useSaveOrDownload();
+  const { simple } = useUiMode();
   useCommands(() => [
     {
       id: "apply-find",
@@ -73,6 +75,17 @@ export function FindJobsTools({
       run: () => save(applicationsReportUrl(), "applications-report.html"),
     },
   ]);
+  const findButton = (
+    <Button
+      disabled={busy || active || !anySource}
+      title={anySource ? "Look for new postings now" : "Choose what to search for first"}
+      onClick={onFind}
+    >
+      Find jobs
+    </Button>
+  );
+  // Simple view: Find jobs alone (export stays in Ctrl+K; search options are one-off).
+  if (simple) return findButton;
   return (
     <>
       <details className="relative">
@@ -130,13 +143,7 @@ export function FindJobsTools({
         variant="plain"
         size="md"
       />
-      <Button
-        disabled={busy || active || !anySource}
-        title={anySource ? "Look for new postings now" : "Choose what to search for first"}
-        onClick={onFind}
-      >
-        Find jobs
-      </Button>
+      {findButton}
     </>
   );
 }

@@ -1,7 +1,9 @@
+import { FullOnly } from "../../components/FullOnly";
 import { useCallback, useEffect, useRef, useState } from "react";
 import { listApplications } from "../../api";
 import { AttentionRow, ProfileGapsNotice } from "../../components/ProfileGapsNotice";
 import { Button, Page, Skeleton } from "../../components/ui";
+import { emitAppEvent } from "../../lib/appEvents";
 import { consumeApplicationListScroll } from "../../lib/applicationNavigation";
 import { resolveApplyTab, type ApplyTab } from "../../lib/applyPage";
 import { IN_FLIGHT_STATUSES } from "../../lib/applyPoll";
@@ -70,6 +72,7 @@ export function ApplyPage() {
     if (showDone) refreshArchive();
     recheckTabs();
     setRevision((n) => n + 1);
+    emitAppEvent("rt:applications-changed");
   }, [refreshQueue, refreshReview, refreshArchive, showDone, recheckTabs]);
 
   useEffect(() => {
@@ -125,13 +128,15 @@ export function ApplyPage() {
         sync={op.sync}
         onSettings={() => setDrawerOpen(true)}
       />
-      <ProgressBanner
-        apply={settings.apply}
-        workspaceId={workspaceId}
-        revision={revision}
-        onTab={setTab}
-        onSettings={() => setBannerOpen(true)}
-      />
+      <FullOnly>
+        <ProgressBanner
+          apply={settings.apply}
+          workspaceId={workspaceId}
+          revision={revision}
+          onTab={setTab}
+          onSettings={() => setBannerOpen(true)}
+        />
+      </FullOnly>
       {op.operations.map((operation) => (
         <OperationBanner
           key={operation.operation_id}
@@ -160,7 +165,9 @@ export function ApplyPage() {
           text={`${op.browser.reason || "The browser isn't available."} ${readyCount} application${readyCount === 1 ? " is" : "s are"} ready or waiting on you.`}
         />
       )}
-      <NightlyRunStrip daily={op.daily} />
+      <FullOnly keep={settings.apply.enabled}>
+        <NightlyRunStrip daily={op.daily} />
+      </FullOnly>
       {!tabDecided ? (
         <Skeleton className="h-48" />
       ) : (
@@ -199,11 +206,13 @@ export function ApplyPage() {
               />
             ),
             note: (
-              <ProgressNote
-                apply={settings.apply}
-                sourcesStatus={sourcesStatus}
-                selected={queue.selectedRows}
-              />
+              <FullOnly>
+                <ProgressNote
+                  apply={settings.apply}
+                  sourcesStatus={sourcesStatus}
+                  selected={queue.selectedRows}
+                />
+              </FullOnly>
             ),
           }}
         />
