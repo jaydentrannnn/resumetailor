@@ -274,3 +274,43 @@ def test_come_back_to_stuck_fills_is_on_by_default_and_saves_off(client, tmp_pat
 
     apply.update(come_back_after_min=0)
     assert c.put("/api/settings", json={"settings": {"apply": apply}}).status_code == 422
+
+
+def test_ui_mode_is_simple_for_a_new_install_and_saved_once(client, tmp_path, monkeypatch):
+    """Nothing saved and setup not finished: Simple, written so finishing setup never flips it."""
+    from resume_tailor import app_settings
+    from resume_tailor.content import onboarding
+
+    c, _ = client
+    _point_settings_at(tmp_path, monkeypatch)
+    monkeypatch.setattr(onboarding, "load", lambda: onboarding.OnboardingState())
+    assert c.get("/api/settings").json()["settings"]["ui_mode"] == "simple"
+    assert app_settings.load()["ui_mode"] == "simple"
+
+    monkeypatch.setattr(onboarding, "load", lambda: onboarding.OnboardingState(completed=True))
+    assert c.get("/api/settings").json()["settings"]["ui_mode"] == "simple"
+
+
+def test_ui_mode_is_full_for_an_install_already_set_up(client, tmp_path, monkeypatch):
+    """The owner's install (setup long finished) keeps every control it had."""
+    from resume_tailor.content import onboarding
+
+    c, _ = client
+    _point_settings_at(tmp_path, monkeypatch)
+    monkeypatch.setattr(onboarding, "load", lambda: onboarding.OnboardingState(completed=True))
+    assert c.get("/api/settings").json()["settings"]["ui_mode"] == "full"
+
+
+def test_ui_mode_round_trips_app_wide(client, tmp_path, monkeypatch):
+    """A saved choice wins over the first-read rule and lives in the app-wide file."""
+    from resume_tailor import app_settings
+    from resume_tailor.content import onboarding
+
+    c, _ = client
+    path = _point_settings_at(tmp_path, monkeypatch)
+    monkeypatch.setattr(onboarding, "load", lambda: onboarding.OnboardingState())
+    res = c.put("/api/settings", json={"settings": {"ui_mode": "full"}})
+    assert res.json()["settings"]["ui_mode"] == "full"
+    assert app_settings.load()["ui_mode"] == "full"
+    assert "ui_mode" not in json.loads(path.read_text(encoding="utf-8"))["defaults"]
+    assert c.get("/api/settings").json()["settings"]["ui_mode"] == "full"

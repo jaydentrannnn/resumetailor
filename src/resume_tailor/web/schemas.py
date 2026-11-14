@@ -452,6 +452,9 @@ class JobSettings(BaseModel):
     start_page: str = "/"
     #: Side bar page order and hidden pages (app-wide); empty = shipped defaults.
     rail_layout: RailLayout = Field(default_factory=RailLayout)
+    #: Simple shows a new student only what they act on; Full shows every control
+    #: (app-wide). Never saved yet → decided once on first read (`routes/config.py`).
+    ui_mode: Literal["simple", "full"] = "full"
     custom_effort: EffortLevel | dict[EffortStep, EffortLevel] | None = None
     #: Ollama tag for *every* Ollama-routed stage of the chosen profile, overriding the
     #: `OLLAMA_MODEL` env default without an edit-and-restart. Under `hybrid` this leaves

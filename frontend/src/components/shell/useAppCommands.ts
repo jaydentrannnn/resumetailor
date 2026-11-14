@@ -1,6 +1,7 @@
 import { useNavigate } from "react-router-dom";
 import type { Command } from "../../lib/commands";
 import { currentPrintTarget, printDocument } from "../../lib/printTarget";
+import { useUiMode } from "../../lib/uiMode";
 import { useCommands } from "../../state/commandState";
 import { useGuide } from "../../state/guideState";
 import { type ThemePreference, useTheme } from "../../state/themeState";
@@ -15,6 +16,7 @@ export function useAppCommands(): void {
   const { preference, setPreference } = useTheme();
   const { settings } = useRunState();
   const guide = useGuide();
+  const view = useUiMode();
   useCommands((): Command[] => {
     const printable = currentPrintTarget();
     const visible = visibleRailItems(settings.rail_layout);
@@ -65,6 +67,13 @@ export function useAppCommands(): void {
         group: "App",
         keywords: "help tutorial first steps onboarding checklist",
         run: () => void (guide.dismissed ? guide.show() : guide.hide()),
+      },
+      {
+        id: "ui-mode",
+        title: view.simple ? "Switch to Full view" : "Switch to Simple view",
+        group: "Appearance",
+        keywords: "simple full advanced basic all features mode view",
+        run: () => view.setMode(view.simple ? "full" : "simple"),
       },
       {
         id: "reload",

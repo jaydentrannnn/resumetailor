@@ -4,6 +4,8 @@ import { Button, Card, Segmented, SettingRow, Switch } from "../../components/ui
 import { RAIL_ITEMS, visibleRailItems, type RailLayout } from "../../components/shell/railItems";
 import { buttonClass } from "../../lib/buttonClass";
 import { useDesktop } from "../../lib/useDesktop";
+import { type UiMode, useUiMode } from "../../lib/uiMode";
+import { FullOnly } from "../../components/FullOnly";
 import { useRunState } from "../../state/runState";
 import { type ThemePreference, useTheme } from "../../state/themeState";
 import { BannerCustomizeDialog } from "../apply/progress/BannerCustomizeDialog";
@@ -24,6 +26,16 @@ const ACCENT_SWATCHES = [
   { hex: "#4f46e5", label: "Indigo" },
 ];
 
+const VIEW_ITEMS: { id: UiMode; label: string }[] = [
+  { id: "simple", label: "Simple" },
+  { id: "full", label: "Full" },
+];
+
+const VIEW_HELP: Record<UiMode, string> = {
+  simple: "Shows what you need to tailor and apply. Anything you have set always shows.",
+  full: "Shows every option on every page.",
+};
+
 const SCALES = [
   { value: 0.9, label: "90%" },
   { value: 1.0, label: "100%" },
@@ -40,6 +52,7 @@ export function AppearanceSection() {
   const desktop = useDesktop();
   const { preference, setPreference, accent, setAccent } = useTheme();
   const { settings, setSettings } = useRunState();
+  const view = useUiMode();
   const [bannerOpen, setBannerOpen] = useState(false);
   const custom = !!accent && !ACCENT_SWATCHES.some((s) => s.hex === accent.toLowerCase());
   const [scale, setScale] = useState(1.0);
@@ -88,6 +101,15 @@ export function AppearanceSection() {
 
   return (
     <div className="space-y-10">
+      <Card title="View" description={VIEW_HELP[view.simple ? "simple" : "full"]}>
+        <Segmented
+          label="View"
+          items={VIEW_ITEMS}
+          value={view.simple ? "simple" : "full"}
+          onChange={(id) => view.setMode(id as UiMode)}
+        />
+      </Card>
+
       <Card title="Theme" description="Light, dark, or follow the computer.">
         <Segmented
           label="Theme"
@@ -97,63 +119,65 @@ export function AppearanceSection() {
         />
       </Card>
 
-      <Card
-        title="Accent color"
-        description="Used for selected tabs, focus rings and the activity heatmap. Success stays green."
-      >
-        <div role="radiogroup" aria-label="Accent color" className="flex flex-wrap gap-2">
-          {ACCENT_SWATCHES.map((swatch) => {
-            const selected =
-              swatch.hex === null ? accent === null : accent?.toLowerCase() === swatch.hex;
-            return (
-              <button
-                key={swatch.label}
-                type="button"
-                role="radio"
-                aria-checked={selected}
-                onClick={() => setAccent(swatch.hex)}
-                className={`flex items-center gap-2 rounded-sm border px-2.5 py-1.5 text-sm ${
-                  selected ? "border-ink text-ink" : "border-line text-ink-2"
-                }`}
-              >
-                <span
-                  aria-hidden
-                  className="size-3.5 rounded-[3px]"
-                  style={{
-                    background: swatch.hex ?? "var(--color-accent)",
-                  }}
-                />
-                {swatch.label}
-              </button>
-            );
-          })}
-          <label
-            className={`relative flex cursor-pointer items-center gap-2 rounded-sm border px-2.5 py-1.5 text-sm focus-within:outline focus-within:outline-2 focus-within:outline-[var(--color-accent)] ${
-              custom ? "border-ink text-ink" : "border-line text-ink-2"
-            }`}
-          >
-            {/* The native picker's own swatch is a bar that matches nothing else here, so it
+      <FullOnly keep={accent !== null}>
+        <Card
+          title="Accent color"
+          description="Used for selected tabs, focus rings and the activity heatmap. Success stays green."
+        >
+          <div role="radiogroup" aria-label="Accent color" className="flex flex-wrap gap-2">
+            {ACCENT_SWATCHES.map((swatch) => {
+              const selected =
+                swatch.hex === null ? accent === null : accent?.toLowerCase() === swatch.hex;
+              return (
+                <button
+                  key={swatch.label}
+                  type="button"
+                  role="radio"
+                  aria-checked={selected}
+                  onClick={() => setAccent(swatch.hex)}
+                  className={`flex items-center gap-2 rounded-sm border px-2.5 py-1.5 text-sm ${
+                    selected ? "border-ink text-ink" : "border-line text-ink-2"
+                  }`}
+                >
+                  <span
+                    aria-hidden
+                    className="size-3.5 rounded-[3px]"
+                    style={{
+                      background: swatch.hex ?? "var(--color-accent)",
+                    }}
+                  />
+                  {swatch.label}
+                </button>
+              );
+            })}
+            <label
+              className={`relative flex cursor-pointer items-center gap-2 rounded-sm border px-2.5 py-1.5 text-sm focus-within:outline focus-within:outline-2 focus-within:outline-[var(--color-accent)] ${
+                custom ? "border-ink text-ink" : "border-line text-ink-2"
+              }`}
+            >
+              {/* The native picker's own swatch is a bar that matches nothing else here, so it
                 stays invisible over the whole button (its dialog anchors to the button). */}
-            <input
-              type="color"
-              aria-label="Custom accent"
-              className="absolute inset-0 size-full cursor-pointer opacity-0"
-              value={accent ?? "#1f6b4a"}
-              onChange={(e) => setAccent(e.target.value)}
-            />
-            <span
-              aria-hidden
-              className="size-3.5 rounded-[3px]"
-              style={{
-                background: custom
-                  ? accent!
-                  : "conic-gradient(#2563eb, #7c3aed, #0d9488, #0891b2, #4f46e5, #2563eb)",
-              }}
-            />
-            Custom
-          </label>
-        </div>
-      </Card>
+              <input
+                type="color"
+                aria-label="Custom accent"
+                className="absolute inset-0 size-full cursor-pointer opacity-0"
+                value={accent ?? "#1f6b4a"}
+                onChange={(e) => setAccent(e.target.value)}
+              />
+              <span
+                aria-hidden
+                className="size-3.5 rounded-[3px]"
+                style={{
+                  background: custom
+                    ? accent!
+                    : "conic-gradient(#2563eb, #7c3aed, #0d9488, #0891b2, #4f46e5, #2563eb)",
+                }}
+              />
+              Custom
+            </label>
+          </div>
+        </Card>
+      </FullOnly>
 
       {desktop && (
         <Card title="UI scale" description="Makes everything larger or smaller in the desktop app.">
@@ -168,22 +192,24 @@ export function AppearanceSection() {
         </Card>
       )}
 
-      <Card title="Opening page" description="Which page opens when the app starts.">
-        <SettingRow label="Start on" layout="action">
-          <select
-            aria-label="Opening page"
-            className="field w-auto"
-            value={settings.start_page ?? "/"}
-            onChange={(e) => setSettings({ ...settings, start_page: e.target.value })}
-          >
-            {visible.map((item) => (
-              <option key={item.to} value={item.to}>
-                {item.label}
-              </option>
-            ))}
-          </select>
-        </SettingRow>
-      </Card>
+      <FullOnly keep={(settings.start_page ?? "/") !== "/"}>
+        <Card title="Opening page" description="Which page opens when the app starts.">
+          <SettingRow label="Start on" layout="action">
+            <select
+              aria-label="Opening page"
+              className="field w-auto"
+              value={settings.start_page ?? "/"}
+              onChange={(e) => setSettings({ ...settings, start_page: e.target.value })}
+            >
+              {visible.map((item) => (
+                <option key={item.to} value={item.to}>
+                  {item.label}
+                </option>
+              ))}
+            </select>
+          </SettingRow>
+        </Card>
+      </FullOnly>
 
       <Card title="Sidebar" description="Show, hide and reorder pages. Settings always stays.">
         {desktop && (
@@ -253,18 +279,20 @@ export function AppearanceSection() {
         </div>
       </Card>
 
-      <Card
-        title="Progress banner"
-        description="The banner over the Apply list. Options are saved for this profile."
-      >
-        <SettingRow label="Customize" layout="action">
-          <Button className="ml-auto" onClick={() => setBannerOpen(true)}>
-            Customize progress banner
-          </Button>
-        </SettingRow>
-      </Card>
+      <FullOnly>
+        <Card
+          title="Progress banner"
+          description="The banner over the Apply list. Options are saved for this profile."
+        >
+          <SettingRow label="Customize" layout="action">
+            <Button className="ml-auto" onClick={() => setBannerOpen(true)}>
+              Customize progress banner
+            </Button>
+          </SettingRow>
+        </Card>
+      </FullOnly>
 
-      {desktop && autostart?.supported && (
+      {desktop && autostart?.supported && (view.simple ? autostart.enabled : true) && (
         <Card
           title="Start with computer"
           description="Opens in the tray so the nightly Apply run can still fire. The app must be installed as the desktop app."

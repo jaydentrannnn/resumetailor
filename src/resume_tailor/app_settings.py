@@ -37,6 +37,7 @@ TOP_KEYS = (
     "show_shortcut_hints",
     "start_page",
     "rail_layout",
+    "ui_mode",
 )
 #: `JobSettings.apply` keys that are app-wide (the Heavy task model).
 APPLY_KEYS = ("model_provider", "model_name", "model_selection")

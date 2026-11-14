@@ -1,6 +1,7 @@
 import { useEffect, useRef, useState } from "react";
 import { NavLink } from "react-router-dom";
 import { useDesktop } from "../../lib/useDesktop";
+import { useUiMode } from "../../lib/uiMode";
 import { useRunState } from "../../state/runState";
 import { LogoMark } from "../LogoMark";
 import { ProfileMenu } from "../ProfileMenu";
@@ -70,6 +71,7 @@ export function AppRail() {
         </NavLink>
       ))}
       <div className="min-h-6 flex-1" />
+      <ShowAllRow />
       <ThemeRow />
       <RailStatus />
       <NavLink to="/settings" className={rowClass} title="Settings">
@@ -82,6 +84,25 @@ export function AppRail() {
         )}
       </NavLink>
     </nav>
+  );
+}
+
+/** In Simple view only: one click to Full, which shows every control on every page. */
+function ShowAllRow() {
+  const { simple, setMode } = useUiMode();
+  if (!simple) return null;
+  const label = "Show all features (switch to Full view)";
+  return (
+    <button
+      type="button"
+      onClick={() => setMode("full")}
+      aria-label={label}
+      title={label}
+      className={`${rowClass({ isActive: false })} w-full text-left`}
+    >
+      <RailIcon path="M3 3h4v4H3zM9 3h4v4H9zM3 9h4v4H3zM11 9v4M9 11h4" />
+      <span className="hidden flex-1 min-[900px]:inline">Show all features</span>
+    </button>
   );
 }
 

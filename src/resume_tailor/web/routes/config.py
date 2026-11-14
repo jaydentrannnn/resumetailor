@@ -9,8 +9,8 @@ from dataclasses import replace
 from fastapi import APIRouter
 from pydantic import BaseModel
 
-from resume_tailor import config, workspace
-from resume_tailor.content import bullet_tags, data, industries, style
+from resume_tailor import app_settings, config, workspace
+from resume_tailor.content import bullet_tags, data, industries, onboarding, style
 from resume_tailor.infra import appearance, model_queue
 from resume_tailor.model_selection import migrated_models
 from resume_tailor.pipeline import coverletter, expand, fit_types, rewrite_prompts
@@ -253,6 +253,21 @@ def _seed_include_gpa_if_missing(defaults: dict, settings: JobSettings) -> None:
     settings.include.gpa = any(edu.show_gpa and edu.gpa.strip() for edu in resume.education)
 
 
+def _first_ui_mode() -> str:
+    """Simple for a new install, Full for one already set up; saved so it is decided once.
+
+    Read before anything was saved, so finishing setup later never flips the view: a
+    student stays in Simple until they switch, and the owner's existing install (setup
+    long finished) keeps every control it had.
+    """
+    try:
+        mode = "full" if onboarding.load().completed else "simple"
+    except Exception:  # noqa: BLE001 - an unreadable setup row must not break settings
+        return "full"
+    app_settings.save({**app_settings.load(), "ui_mode": mode})
+    return mode
+
+
 @router.get("/api/settings", response_model=SettingsResponse)
 def get_settings() -> SettingsResponse:
     """The active profile's saved run defaults, seeded from `JobSettings()` if unset."""
@@ -274,6 +289,8 @@ def get_settings() -> SettingsResponse:
         except ValueError:
             pass  # Keep invalid legacy choices editable.
     _seed_include_gpa_if_missing(raw["defaults"], settings)
+    if "ui_mode" not in raw["defaults"]:
+        settings.ui_mode = _first_ui_mode()
     return SettingsResponse(
         workspace_id=config.active_workspace_id(),
         settings=settings,

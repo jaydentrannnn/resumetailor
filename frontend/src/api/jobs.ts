@@ -52,6 +52,8 @@ export type JobSettings = {
   start_page?: string;
   /** Side bar page order and hidden pages (app-wide). */
   rail_layout?: { order: string[]; hidden: string[] };
+  /** Simple shows only what a new student acts on; Full shows every control (app-wide). */
+  ui_mode?: "simple" | "full";
   advanced_settings?: import("../lib/advancedSettings").AdvancedSettings | null;
   custom_effort?: import("../lib/effortSteps").EffortSetting;
   pages: number;
