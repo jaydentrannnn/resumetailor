@@ -1,3 +1,4 @@
+import { FullOnly } from "../../components/FullOnly";
 import { StatusMark } from "../../components/ui";
 import { ChipListField } from "../../components/ChipListField";
 import { AddButton, EntryControls } from "../../components/ListControls";
@@ -159,12 +160,16 @@ function BulletRow({
           ))}
         </ul>
       )}
-      <BulletSkillsLine bulletId={b.id} />
-      <ExtraSkills
-        tags={b.tags}
-        vocabList={vocabList}
-        onChange={(tags) => onChange({ tags: uniqueTags(tags) })}
-      />
+      <FullOnly>
+        <BulletSkillsLine bulletId={b.id} />
+      </FullOnly>
+      <FullOnly keep={b.tags.length > 0}>
+        <ExtraSkills
+          tags={b.tags}
+          vocabList={vocabList}
+          onChange={(tags) => onChange({ tags: uniqueTags(tags) })}
+        />
+      </FullOnly>
     </div>
   );
 }

@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 import type { ApplicantProfile } from "../api";
 import {
+  simpleProfileGroups,
   ALL_PROFILE_GROUP_IDS,
   PROFILE_GROUPS,
   REMEMBERED_ANSWERS_GROUP,
@@ -187,5 +188,33 @@ describe("open-group store", () => {
     expect(withGroupOpen(opened, "Education", true)).toBe(opened);
     expect(withGroupOpen(opened, "Education", false).has("Education")).toBe(false);
     expect(withGroupOpen(empty, "Education", false)).toBe(empty);
+  });
+});
+
+describe("simpleProfileGroups", () => {
+  const ids = (groups: { id: string; fields: string[] }[]) =>
+    Object.fromEntries(groups.map((group) => [group.id, group.fields]));
+
+  it("keeps only the questions nearly every form asks on an empty profile", () => {
+    const groups = ids(simpleProfileGroups({} as ApplicantProfile, new Set()));
+    expect(groups["Work authorization and sponsorship"]).toEqual([
+      "visa_status",
+      "authorized_to_work",
+      "requires_sponsorship_now",
+      "requires_sponsorship_future",
+    ]);
+    expect(groups["Salary"]).toBeUndefined();
+    expect(groups["Voluntary information"]).toBeUndefined();
+    expect(groups["Languages"]).toBeUndefined();
+  });
+
+  it("never hides a value someone set or a field a form found blank", () => {
+    const draft = { salary_yearly_max: 90000, languages: [{ language: "Spanish" }] };
+    const groups = ids(
+      simpleProfileGroups(draft as unknown as ApplicantProfile, new Set(["drivers_license"])),
+    );
+    expect(groups["Salary"]).toEqual(["salary_yearly_max"]);
+    expect(groups["Languages"]).toEqual([]);
+    expect(groups["Availability and location preferences"]).toContain("drivers_license");
   });
 });

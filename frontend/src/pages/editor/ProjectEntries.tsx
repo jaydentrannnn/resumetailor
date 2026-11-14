@@ -1,3 +1,4 @@
+import { FullOnly } from "../../components/FullOnly";
 import { EntryCard } from "./EntryCard";
 import { useEntryEditor } from "./EntryEditorContext";
 import { resumeEntryKey } from "../../lib/resumeEntryEdit";
@@ -122,16 +123,18 @@ export function ProjectEntries({
                     placeholder="Add a technology"
                   />
                 </div>
-                <TextField
-                  label="Link label"
-                  value={link}
-                  placeholder={labelForUrl(url) || undefined}
-                  onChange={(v) => {
-                    const next = [...entries];
-                    next[i] = { ...proj, link: v };
-                    setEntries(next);
-                  }}
-                />
+                <FullOnly keep={!!link && link !== labelForUrl(url)}>
+                  <TextField
+                    label="Link label"
+                    value={link}
+                    placeholder={labelForUrl(url) || undefined}
+                    onChange={(v) => {
+                      const next = [...entries];
+                      next[i] = { ...proj, link: v };
+                      setEntries(next);
+                    }}
+                  />
+                </FullOnly>
                 <TextField
                   label="Project link"
                   value={url}

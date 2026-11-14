@@ -1,3 +1,4 @@
+import { FullOnly } from "../../components/FullOnly";
 import { useCallback, useEffect, useRef, useState } from "react";
 import {
   clearCache,
@@ -88,51 +89,53 @@ export function DataSection() {
 
   return (
     <div className="space-y-10">
-      <Card
-        title="Where your data lives"
-        description="Everything stays on this computer."
-        actions={PROFILE_ONLY}
-      >
-        {info ? (
-          <dl className="space-y-3 text-sm">
-            {[
-              ["Profile data", info.data_dir, info.data_bytes],
-              ["Generated files", info.output_dir, info.output_bytes],
-              ["Templates", info.templates_dir, null],
-            ].map(([label, path, bytes]) => (
-              <div
-                key={label as string}
-                className="grid grid-cols-[minmax(0,1fr)_auto] items-center gap-x-3 gap-y-1 sm:grid-cols-[8rem_minmax(0,1fr)_5.5rem_auto]"
-              >
-                <dt className="col-span-2 text-ink-muted sm:col-span-1">
-                  {label}
-                  {bytes !== null && (
-                    <span className="ml-2 font-mono text-xs sm:hidden">
-                      {formatBytes(bytes as number)}
-                    </span>
-                  )}
-                </dt>
-                <dd className="m-0 min-w-0">
-                  <code
-                    className="block truncate font-mono text-xs text-ink"
-                    title={path as string}
-                  >
-                    {path}
-                  </code>
-                </dd>
-                <dd className="m-0 hidden text-right font-mono text-xs tabular-nums text-ink-muted sm:block">
-                  {bytes !== null ? formatBytes(bytes as number) : null}
-                </dd>
-                <dd className="m-0 justify-self-end">
-                  <CopyButton label="Copy path" text={path as string} />
-                </dd>
-              </div>
-            ))}
-          </dl>
-        ) : (
-          <p className="text-sm text-ink-muted">Loading…</p>
-        )}
-      </Card>
+      <FullOnly>
+        <Card
+          title="Where your data lives"
+          description="Everything stays on this computer."
+          actions={PROFILE_ONLY}
+        >
+          {info ? (
+            <dl className="space-y-3 text-sm">
+              {[
+                ["Profile data", info.data_dir, info.data_bytes],
+                ["Generated files", info.output_dir, info.output_bytes],
+                ["Templates", info.templates_dir, null],
+              ].map(([label, path, bytes]) => (
+                <div
+                  key={label as string}
+                  className="grid grid-cols-[minmax(0,1fr)_auto] items-center gap-x-3 gap-y-1 sm:grid-cols-[8rem_minmax(0,1fr)_5.5rem_auto]"
+                >
+                  <dt className="col-span-2 text-ink-muted sm:col-span-1">
+                    {label}
+                    {bytes !== null && (
+                      <span className="ml-2 font-mono text-xs sm:hidden">
+                        {formatBytes(bytes as number)}
+                      </span>
+                    )}
+                  </dt>
+                  <dd className="m-0 min-w-0">
+                    <code
+                      className="block truncate font-mono text-xs text-ink"
+                      title={path as string}
+                    >
+                      {path}
+                    </code>
+                  </dd>
+                  <dd className="m-0 hidden text-right font-mono text-xs tabular-nums text-ink-muted sm:block">
+                    {bytes !== null ? formatBytes(bytes as number) : null}
+                  </dd>
+                  <dd className="m-0 justify-self-end">
+                    <CopyButton label="Copy path" text={path as string} />
+                  </dd>
+                </div>
+              ))}
+            </dl>
+          ) : (
+            <p className="text-sm text-ink-muted">Loading…</p>
+          )}
+        </Card>
+      </FullOnly>
 
       <Card title="Back up or move to another computer" actions={PROFILE_ONLY}>
         <SettingRow
@@ -183,31 +186,37 @@ export function DataSection() {
         </SettingRow>
       </Card>
 
-      <PayDataCard />
+      <FullOnly>
+        <PayDataCard />
+      </FullOnly>
 
-      <Card title="Saved AI results">
-        <SettingRow
-          label="Cache"
-          layout="action"
-          description={
-            <>
-              <p>
-                Results are reused when you tailor for the same posting again, which saves time and
-                money. Clearing them is safe.
-              </p>
-              <p className="mt-2 font-mono">
-                {cache ? `${cache.files} saved results · ${formatBytes(cache.bytes)}` : "…"}
-              </p>
-            </>
-          }
-        >
-          <Button onClick={onClearCache} loading={clearing} disabled={!cache?.files}>
-            Clear cache
-          </Button>
-        </SettingRow>
-      </Card>
+      <FullOnly>
+        <Card title="Saved AI results">
+          <SettingRow
+            label="Cache"
+            layout="action"
+            description={
+              <>
+                <p>
+                  Results are reused when you tailor for the same posting again, which saves time
+                  and money. Clearing them is safe.
+                </p>
+                <p className="mt-2 font-mono">
+                  {cache ? `${cache.files} saved results · ${formatBytes(cache.bytes)}` : "…"}
+                </p>
+              </>
+            }
+          >
+            <Button onClick={onClearCache} loading={clearing} disabled={!cache?.files}>
+              Clear cache
+            </Button>
+          </SettingRow>
+        </Card>
+      </FullOnly>
 
-      <ResetSettingsCard />
+      <FullOnly>
+        <ResetSettingsCard />
+      </FullOnly>
       <Card title="Delete all data" actions={PROFILE_ONLY}>
         <SettingRow
           label="This profile"

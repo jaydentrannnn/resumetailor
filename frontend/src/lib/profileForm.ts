@@ -387,3 +387,56 @@ export function classYearFor(graduation: string | undefined, today = new Date())
   if (months < 0) return null;
   return ["Senior", "Junior", "Sophomore", "Freshman"][Math.min(Math.floor(months / 12), 3)];
 }
+
+/**
+ * Simple view's Application details: the questions nearly every form asks. Everything
+ * else is asked when a form needs it, and shows here once it holds a value or a form
+ * found it blank (`simpleProfileGroups`).
+ */
+export const SIMPLE_PROFILE_FIELDS = new Set<keyof ApplicantProfile>([
+  "visa_status",
+  "authorized_to_work",
+  "requires_sponsorship_now",
+  "requires_sponsorship_future",
+  "graduation_date",
+  "gpa_display",
+  "earliest_start",
+  "willing_to_relocate",
+  "location_preference",
+  "city",
+  "state",
+  "postal_code",
+  "country",
+]);
+
+/** A value someone typed or chose: not blank, not an empty list. */
+export function hasProfileValue(value: unknown): boolean {
+  if (value == null || value === "") return false;
+  if (Array.isArray(value)) return value.length > 0;
+  if (typeof value === "object") return Object.values(value).some(hasProfileValue);
+  return true;
+}
+
+/** Groups without their own field list, kept in Simple only once they hold something. */
+const GROUP_VALUES: Partial<Record<string, (draft: ApplicantProfile) => unknown>> = {
+  Languages: (draft) => draft.languages,
+  "Voluntary information": (draft) => draft.eeo,
+};
+
+/**
+ * Each group cut to the Simple fields, any field with a value and any field a form found
+ * blank (`gapFields`); a group left with nothing to show is dropped.
+ */
+export function simpleProfileGroups(
+  draft: ApplicantProfile,
+  gapFields: Set<string>,
+): ProfileGroup[] {
+  return PROFILE_GROUPS.flatMap((group) => {
+    const fields = group.fields.filter(
+      (key) => SIMPLE_PROFILE_FIELDS.has(key) || hasProfileValue(draft[key]) || gapFields.has(key),
+    );
+    const extra = GROUP_VALUES[group.id];
+    if (!fields.length && !(extra && hasProfileValue(extra(draft)))) return [];
+    return [{ ...group, fields }];
+  });
+}

@@ -1,3 +1,4 @@
+import { FullOnly } from "../../components/FullOnly";
 import { EntryEditorProvider } from "./EntryEditorContext";
 import { moveEntryToSection } from "../../lib/resumeEntryEdit";
 import { useState } from "react";
@@ -168,9 +169,11 @@ export function EditorPage({
       <Button variant="plain" size="sm" onClick={() => setHistoryOpen(true)}>
         History
       </Button>
-      <Button variant="plain" size="sm" onClick={onValidate} disabled={busy}>
-        Validate
-      </Button>
+      <FullOnly>
+        <Button variant="plain" size="sm" onClick={onValidate} disabled={busy}>
+          Validate
+        </Button>
+      </FullOnly>
     </>
   );
 
@@ -180,9 +183,11 @@ export function EditorPage({
         <div className="space-y-6">
           {embedded ? (
             <div className="flex flex-wrap items-center justify-between gap-3">
-              <p className="text-sm text-ink-muted">
-                The skills each bullet shows are worked out automatically when you save.
-              </p>
+              <FullOnly>
+                <p className="text-sm text-ink-muted">
+                  The skills each bullet shows are worked out automatically when you save.
+                </p>
+              </FullOnly>
               <div className="flex flex-wrap items-center gap-2">{tools}</div>
             </div>
           ) : (
@@ -243,7 +248,9 @@ export function EditorPage({
           <div className="lg:grid lg:grid-cols-[11rem_minmax(0,1fr)] lg:items-start lg:gap-5">
             <SectionIndex sections={resume.sections} />
             <div className="space-y-5">
-              <EntryFilterField value={filter} onChange={setFilter} />
+              <FullOnly keep={!!filter}>
+                <EntryFilterField value={filter} onChange={setFilter} />
+              </FullOnly>
               {filter && !resume.sections.some((section) => sectionMatches(section, filter)) && (
                 <p className="text-sm text-ink-muted">No entries match “{filter}”.</p>
               )}
@@ -258,16 +265,18 @@ export function EditorPage({
                     </div>
                   </details>
                   {!embedded && (
-                    <p className="mt-3 text-sm">
-                      <Link className="rt-link" to="/resume/evidence">
-                        Add from GitHub or documents
-                      </Link>
-                      <span className="text-ink-muted">
-                        {" "}
-                        · items quoted from your repositories, syllabi or letters, added only when
-                        you choose
-                      </span>
-                    </p>
+                    <FullOnly>
+                      <p className="mt-3 text-sm">
+                        <Link className="rt-link" to="/resume/evidence">
+                          Add from GitHub or documents
+                        </Link>
+                        <span className="text-ink-muted">
+                          {" "}
+                          · items quoted from your repositories, syllabi or letters, added only when
+                          you choose
+                        </span>
+                      </p>
+                    </FullOnly>
                   )}
                 </Tile>
               )}
@@ -309,10 +318,12 @@ export function EditorPage({
             </div>
           </div>
 
-          <p className="text-xs text-ink-muted">
-            Reordering sections changes bullet scoring order — the next Tailor run will re-score
-            once (one extra LLM call) before using the new order.
-          </p>
+          <FullOnly>
+            <p className="text-xs text-ink-muted">
+              Reordering sections changes bullet scoring order — the next Tailor run will re-score
+              once (one extra LLM call) before using the new order.
+            </p>
+          </FullOnly>
 
           <AddSectionPanel onAdd={addSection} />
         </div>

@@ -2,6 +2,7 @@ import { ProfileGapBanner } from "../../components/ProfileGapBanner";
 import { Tile } from "../../components/ui";
 import { contactErrors, realContact } from "../../lib/onboardingContact";
 import { fieldLabel } from "../../lib/profileForm";
+import { useUiMode } from "../../lib/uiMode";
 import type { MasterResume } from "../../lib/resumeEdit";
 import { useApplicantProfile } from "../../state/applicantProfileState";
 import type { FieldContext } from "./fieldContext";
@@ -29,6 +30,15 @@ export function PersonalTab({
 }) {
   const applicant = useApplicantProfile();
   const { draft } = ctx;
+  // Simple view: first and last name, and the application contact only once it differs
+  // from the resume (or a form found it blank).
+  const { simple } = useUiMode();
+  const names = (["first_name", "middle_name", "last_name", "preferred_name"] as const).filter(
+    (key) => !simple || key === "first_name" || key === "last_name" || !!draft[key],
+  );
+  const showApplicationContact =
+    !simple ||
+    CONTACT_PAIRS.some((pair) => !!draft[pair.applicant] || ctx.gapFields.has(pair.applicant));
   const errors = contactErrors(resume?.contact);
   const gaps = applicant.gaps.filter(
     (gap) =>
@@ -48,7 +58,7 @@ export function PersonalTab({
       <ProfileGapBanner gaps={gaps} onOpen={openFirstGap} />
       <Tile id="profile-basics" title="Basics" description="The names forms ask for.">
         <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
-          {(["first_name", "middle_name", "last_name", "preferred_name"] as const).map((key) => (
+          {names.map((key) => (
             <ProfileField
               key={key}
               name={key}
@@ -62,7 +72,7 @@ export function PersonalTab({
           ))}
         </div>
       </Tile>
-      <div className="grid items-start gap-4 lg:grid-cols-2">
+      <div className={`grid items-start gap-4 ${showApplicationContact ? "lg:grid-cols-2" : ""}`}>
         <Tile title="Resume contact" description="Printed at the top of every tailored resume.">
           <div className="grid gap-4 sm:grid-cols-2">
             {RESUME_CONTACT.map((key) => (
@@ -92,39 +102,41 @@ export function PersonalTab({
           </div>
           {resume && <CustomLinesFields resume={resume} setResume={setResume} />}
         </Tile>
-        <Tile id="application-contact" title="Application contact">
-          <p className="text-xs text-ink-muted">
-            Leave a field blank to use your resume contact. Fill it in to give forms something
-            different (say, a personal email instead of a school one).
-          </p>
-          <div className="mt-3 grid gap-3 sm:grid-cols-2">
-            {CONTACT_PAIRS.map((pair) => {
-              const fallback = realContact(resume?.contact[pair.resume]);
-              const overridden = !!draft[pair.applicant];
-              return (
-                <div key={pair.applicant}>
-                  <ProfileField
-                    name={pair.applicant}
-                    ctx={{
-                      ...ctx,
-                      fallbacks: { ...ctx.fallbacks, [pair.applicant]: fallback },
-                    }}
-                    label={`${fieldLabel(pair.applicant)} · ${overridden ? "different from resume" : "from resume"}`}
-                  />
-                  {overridden && (
-                    <button
-                      type="button"
-                      className="rt-link mt-1 text-xs"
-                      onClick={() => ctx.set(pair.applicant, "")}
-                    >
-                      Use resume value
-                    </button>
-                  )}
-                </div>
-              );
-            })}
-          </div>
-        </Tile>
+        {showApplicationContact && (
+          <Tile id="application-contact" title="Application contact">
+            <p className="text-xs text-ink-muted">
+              Leave a field blank to use your resume contact. Fill it in to give forms something
+              different (say, a personal email instead of a school one).
+            </p>
+            <div className="mt-3 grid gap-3 sm:grid-cols-2">
+              {CONTACT_PAIRS.map((pair) => {
+                const fallback = realContact(resume?.contact[pair.resume]);
+                const overridden = !!draft[pair.applicant];
+                return (
+                  <div key={pair.applicant}>
+                    <ProfileField
+                      name={pair.applicant}
+                      ctx={{
+                        ...ctx,
+                        fallbacks: { ...ctx.fallbacks, [pair.applicant]: fallback },
+                      }}
+                      label={`${fieldLabel(pair.applicant)} · ${overridden ? "different from resume" : "from resume"}`}
+                    />
+                    {overridden && (
+                      <button
+                        type="button"
+                        className="rt-link mt-1 text-xs"
+                        onClick={() => ctx.set(pair.applicant, "")}
+                      >
+                        Use resume value
+                      </button>
+                    )}
+                  </div>
+                );
+              })}
+            </div>
+          </Tile>
+        )}
       </div>
     </div>
   );

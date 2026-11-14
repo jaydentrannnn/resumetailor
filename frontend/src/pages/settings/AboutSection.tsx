@@ -1,3 +1,4 @@
+import { FullOnly } from "../../components/FullOnly";
 import { useCallback, useEffect, useState } from "react";
 import {
   checkForUpdate,
@@ -54,20 +55,22 @@ export function AboutSection() {
           </Button>
         </SettingRow>
       </Card>
-      <Card title="Keyboard shortcuts">
-        <ul className="grid gap-x-16 gap-y-2 text-sm xl:grid-cols-2">
-          {SHORTCUTS.map((s) => (
-            <li key={s.action} className="flex items-center justify-between gap-4">
-              <span>{s.description}</span>
-              <span className="flex gap-1">
-                {s.keys.map((k) => (
-                  <Kbd key={k}>{k}</Kbd>
-                ))}
-              </span>
-            </li>
-          ))}
-        </ul>
-      </Card>
+      <FullOnly>
+        <Card title="Keyboard shortcuts">
+          <ul className="grid gap-x-16 gap-y-2 text-sm xl:grid-cols-2">
+            {SHORTCUTS.map((s) => (
+              <li key={s.action} className="flex items-center justify-between gap-4">
+                <span>{s.description}</span>
+                <span className="flex gap-1">
+                  {s.keys.map((k) => (
+                    <Kbd key={k}>{k}</Kbd>
+                  ))}
+                </span>
+              </li>
+            ))}
+          </ul>
+        </Card>
+      </FullOnly>
     </div>
   );
 }

@@ -1,6 +1,7 @@
 import { Link } from "react-router-dom";
 import { Card } from "../../components/ui";
 import { buttonClass } from "../../lib/buttonClass";
+import { FullOnly } from "../../components/FullOnly";
 import { TargetFieldSection } from "./TargetFieldSection";
 
 /**
@@ -12,19 +13,21 @@ export function TailoringTab() {
   return (
     <div className="space-y-4">
       <TargetFieldSection />
-      <Card
-        title="Skill vocabulary"
-        actions={
-          <Link to="/vocabulary" className={buttonClass("secondary", "md")}>
-            Open vocabulary
-          </Link>
-        }
-      >
-        <p className="text-sm text-ink-muted">
-          Skills are recognised across spellings automatically (“Postgres” matches “PostgreSQL”).
-          Add your own terms or spellings on the Vocabulary page.
-        </p>
-      </Card>
+      <FullOnly>
+        <Card
+          title="Skill vocabulary"
+          actions={
+            <Link to="/vocabulary" className={buttonClass("secondary", "md")}>
+              Open vocabulary
+            </Link>
+          }
+        >
+          <p className="text-sm text-ink-muted">
+            Skills are recognised across spellings automatically (“Postgres” matches “PostgreSQL”).
+            Add your own terms or spellings on the Vocabulary page.
+          </p>
+        </Card>
+      </FullOnly>
     </div>
   );
 }

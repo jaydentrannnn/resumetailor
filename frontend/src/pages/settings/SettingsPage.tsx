@@ -1,6 +1,7 @@
 import { useSearchParams } from "react-router-dom";
 import { CommandBar, Page, Tabs, TileLayout } from "../../components/ui";
 import { WIDE, useMediaQuery } from "../../lib/useMediaQuery";
+import { useUiMode } from "../../lib/uiMode";
 import { AboutSection } from "./AboutSection";
 import { AiSection } from "./AiSection";
 import { AppearanceSection } from "./AppearanceSection";
@@ -40,6 +41,9 @@ export function SettingsPage() {
   const wide = useMediaQuery(WIDE);
   const [params, setParams] = useSearchParams();
   const tab = tabFor(params.get("tab"));
+  // Simple view: the browser extension tab only when opened by link (`?tab=browser`).
+  const { simple } = useUiMode();
+  const tabs = TABS.filter((t) => !simple || t.id !== "browser" || tab === "browser");
   return (
     <Page width="wide" className="lg:-mb-12 lg:-mt-5">
       <CommandBar title="Settings" />
@@ -47,7 +51,7 @@ export function SettingsPage() {
         <div className="lg:-ml-2 lg:min-h-[calc(100vh-var(--rt-bar-top)-var(--rt-bar-bottom))] lg:border-r lg:border-line lg:py-5 lg:pr-3">
           <Tabs
             label="Settings sections"
-            items={TABS.map((t) => ({ id: t.id, label: t.label }))}
+            items={tabs.map((t) => ({ id: t.id, label: t.label }))}
             value={tab}
             orientation={wide ? "vertical" : "horizontal"}
             onChange={(id) => setParams({ tab: id }, { replace: true })}
