@@ -119,9 +119,7 @@ export function OnboardingPage() {
   const skippedSteps = state.skipped_steps ?? [];
   // Once the app is open, moving between steps never closes it again.
   const goTo = (target: OnboardingStep) =>
-    update(
-      state.completed ? { step: target } : { step: target, completed: false, skipped: false },
-    );
+    update(state.completed ? { step: target } : { step: target, completed: false, skipped: false });
   const following = ONBOARDING_STEPS[Math.min(current + 1, ONBOARDING_STEPS.length - 1)].id;
   const without = skippedSteps.filter((s) => s !== step);
   // Leaving the last stage-1 step forward (Next or Skip) opens the app on the Tailor page.

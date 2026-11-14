@@ -133,6 +133,11 @@ export function ApplySetupStep({ nav }: { nav: StepNav }) {
           skip and choose lists later.
         </div>
       )}
+      {!catalog && !catalogError && (
+        <p role="status" className="border-t border-line pt-4 text-sm text-ink-muted">
+          Loading job lists…
+        </p>
+      )}
       {catalog &&
         (target ? (
           <JobSourcePicker

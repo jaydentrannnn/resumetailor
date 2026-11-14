@@ -155,6 +155,22 @@ test("the app opens after the fourth step, with applying left for later", async 
   await expect(page.getByRole("navigation", { name: "Main" })).toBeVisible();
   const state = await (await request.get("/api/onboarding")).json();
   expect([state.completed, state.apply_done, state.step]).toEqual([true, false, "personal"]);
+  // The Getting started guide takes the empty document pane and the rail pill.
+  const guide = page.getByRole("region", { name: "Getting started" });
+  await expect(guide.getByText(/of 6 done/)).toBeVisible();
+  await expect(guide.getByText("Finish setup")).toBeVisible();
+  await expect(
+    page.getByRole("button", { name: /^Getting started: \d of 6 steps done$/ }),
+  ).toBeVisible();
+  await expectAccessible(page);
+  await guide.getByRole("button", { name: "Hide guide" }).click();
+  await expect(guide).toBeHidden();
+  await expect(page.getByText("Your tailored resume shows here")).toBeVisible();
+  // Ctrl+K brings a hidden guide back.
+  await page.keyboard.press("Control+k");
+  await page.keyboard.type("Show the Getting started guide");
+  await page.keyboard.press("Enter");
+  await expect(guide).toBeVisible();
   // Stage 2 runs with the app open: the rail stays.
   await page.goto("/welcome");
   await expect(page.getByText("Applying · Step 1 of 4")).toBeVisible();

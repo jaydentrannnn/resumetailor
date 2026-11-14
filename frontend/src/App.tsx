@@ -34,6 +34,7 @@ import { useEditorState } from "./state/editorState";
 import { useConfirm } from "./state/confirmState";
 import { LogoMark } from "./components/LogoMark";
 import { CommandProvider } from "./state/commandState";
+import { GuideProvider } from "./state/guideState";
 import { ShellContext, type ShellSlots } from "./lib/shell";
 import { useWindowTitle } from "./lib/useWindowTitle";
 import { useStartPage } from "./lib/useStartPage";
@@ -139,48 +140,53 @@ function Shell() {
   return (
     <ShellContext.Provider value={slots}>
       <CommandProvider>
-        <div className="flex min-h-screen">
-          <NavigationGuard />
-          {/* During first-run setup the wizard is the only page: no rail to wander off by. */}
-          {!settingUp && <AppRail />}
-          <div className="flex min-w-0 flex-1 flex-col">
-            <div ref={setCommandBar} className="sticky top-0 z-30" />
-            <KeyboardShortcuts />
-            {/* Like the rail, Ctrl+K stays out of first-run setup. */}
-            {!settingUp && (
-              <>
-                <AppCommands />
-                <CommandPalette />
-              </>
-            )}
-            <TextContextMenu />
-            <main className="w-full flex-1 px-4 pb-12 pt-5 sm:px-6">
-              <Suspense fallback={<PageLoading />}>
-                <Routes>
-                  <Route path="/" element={<RunPage />} />
-                  <Route path="/applications" element={<ApplyPage />} />
-                  <Route path="/applications/sources" element={<SourcesPage />} />
-                  <Route path="/applications/:applicationId" element={<ApplicationDetailPage />} />
-                  <Route path="/tracker" element={<TrackerPage />} />
-                  <Route path="/resume" element={<ResumePage />} />
-                  <Route path="/resume/evidence" element={<EvidencePage />} />
-                  <Route path="/profile" element={<Navigate to="/profile/personal" replace />} />
-                  <Route path="/profile/personal" element={<ProfilePage />} />
-                  <Route path="/profile/application" element={<ProfilePage />} />
-                  <Route path="/profile/tailoring" element={<ProfilePage />} />
-                  <Route path="/profile/resume" element={<Navigate to="/resume" replace />} />
-                  <Route path="/editor" element={<Navigate to="/resume" replace />} />
-                  <Route path="/template" element={<TemplatePage />} />
-                  <Route path="/vocabulary" element={<VocabularyPage />} />
-                  <Route path="/settings" element={<SettingsPage />} />
-                  <Route path="/welcome" element={<OnboardingPage />} />
-                </Routes>
-              </Suspense>
-            </main>
-            <TabCloseNotice />
-            <StatusBar />
+        <GuideProvider>
+          <div className="flex min-h-screen">
+            <NavigationGuard />
+            {/* During first-run setup the wizard is the only page: no rail to wander off by. */}
+            {!settingUp && <AppRail />}
+            <div className="flex min-w-0 flex-1 flex-col">
+              <div ref={setCommandBar} className="sticky top-0 z-30" />
+              <KeyboardShortcuts />
+              {/* Like the rail, Ctrl+K stays out of first-run setup. */}
+              {!settingUp && (
+                <>
+                  <AppCommands />
+                  <CommandPalette />
+                </>
+              )}
+              <TextContextMenu />
+              <main className="w-full flex-1 px-4 pb-12 pt-5 sm:px-6">
+                <Suspense fallback={<PageLoading />}>
+                  <Routes>
+                    <Route path="/" element={<RunPage />} />
+                    <Route path="/applications" element={<ApplyPage />} />
+                    <Route path="/applications/sources" element={<SourcesPage />} />
+                    <Route
+                      path="/applications/:applicationId"
+                      element={<ApplicationDetailPage />}
+                    />
+                    <Route path="/tracker" element={<TrackerPage />} />
+                    <Route path="/resume" element={<ResumePage />} />
+                    <Route path="/resume/evidence" element={<EvidencePage />} />
+                    <Route path="/profile" element={<Navigate to="/profile/personal" replace />} />
+                    <Route path="/profile/personal" element={<ProfilePage />} />
+                    <Route path="/profile/application" element={<ProfilePage />} />
+                    <Route path="/profile/tailoring" element={<ProfilePage />} />
+                    <Route path="/profile/resume" element={<Navigate to="/resume" replace />} />
+                    <Route path="/editor" element={<Navigate to="/resume" replace />} />
+                    <Route path="/template" element={<TemplatePage />} />
+                    <Route path="/vocabulary" element={<VocabularyPage />} />
+                    <Route path="/settings" element={<SettingsPage />} />
+                    <Route path="/welcome" element={<OnboardingPage />} />
+                  </Routes>
+                </Suspense>
+              </main>
+              <TabCloseNotice />
+              <StatusBar />
+            </div>
           </div>
-        </div>
+        </GuideProvider>
       </CommandProvider>
     </ShellContext.Provider>
   );

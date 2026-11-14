@@ -1092,3 +1092,24 @@ a row left at `personal` resumes at `content`; a row left at `application` or `r
 is marked `completed` and resumes there. `save()` forces `step = "done"` only when both
 stages are finished and the caller named no step, so editing a finished step never closes
 the app. The e2e seed sets all three flags (an established user).
+
+## 2026-11-13 — Getting started guide
+
+**What.** A six-step guide for a new student: finish setup, tailor a first resume, set up
+applying, find jobs, fill a first application, send it and track replies. It sits in
+Tailor's empty document pane and replaces the rail's setup pill ("Get started · 2/6");
+the pill's panel lists the guide instead of the setup checklist while it shows. Apply's
+empty state offers "Set up applying" until stage 2 of setup is finished. "Hide guide"
+sets `guide_dismissed`; Ctrl+K has a command to show it again.
+
+**Why.** Shortening the wizard got a student to a first resume sooner, but nothing told
+them what came next. A written-only guide was rejected as the sole answer (students
+rarely read one); a spotlight tour was rejected as more to maintain than a checklist.
+
+**Impact.** No new route: `lib/guide.ts` builds the steps from `/api/setup-status`, run
+history, onboarding `apply_done` and `/api/applications/progress`. A step is ticked only
+by what the app records, never by clicking the guide. `GuideProvider` re-reads on
+navigation, on `rt:setup-changed` and when a run finishes; a hidden guide costs one
+onboarding read per navigation. "Finish setup" links to the first required item still
+missing, not to the wizard. The panel shows one list at a time because guide plus
+checklist together ran off the top of an 800px window.

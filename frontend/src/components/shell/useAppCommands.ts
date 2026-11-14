@@ -2,17 +2,19 @@ import { useNavigate } from "react-router-dom";
 import type { Command } from "../../lib/commands";
 import { currentPrintTarget, printDocument } from "../../lib/printTarget";
 import { useCommands } from "../../state/commandState";
+import { useGuide } from "../../state/guideState";
 import { type ThemePreference, useTheme } from "../../state/themeState";
 import { useRunState } from "../../state/runState";
 import { RAIL_ITEMS, visibleRailItems } from "./railItems";
 
 const THEMES: ThemePreference[] = ["system", "light", "dark"];
 
-/** The shell's own Ctrl+K commands: every page, the theme, printing and reloading. */
+/** The shell's own Ctrl+K commands: every page, the theme, printing, the guide and reloading. */
 export function useAppCommands(): void {
   const navigate = useNavigate();
   const { preference, setPreference } = useTheme();
   const { settings } = useRunState();
+  const guide = useGuide();
   useCommands((): Command[] => {
     const printable = currentPrintTarget();
     const visible = visibleRailItems(settings.rail_layout);
@@ -55,6 +57,15 @@ export function useAppCommands(): void {
         disabled: theme === preference,
         run: () => setPreference(theme),
       })),
+      {
+        id: "guide",
+        title: guide.dismissed
+          ? "Show the Getting started guide"
+          : "Hide the Getting started guide",
+        group: "App",
+        keywords: "help tutorial first steps onboarding checklist",
+        run: () => void (guide.dismissed ? guide.show() : guide.hide()),
+      },
       {
         id: "reload",
         title: "Reload window",

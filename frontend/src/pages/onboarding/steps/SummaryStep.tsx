@@ -76,8 +76,8 @@ export function SummaryStep({
     >
       <div className="space-y-4">
         <p className="text-sm text-attn">
-          Finishing saves your setup. Skipped steps can be edited later; Fill stops and asks you
-          for any application answer that is still missing.
+          Finishing saves your setup. Skipped steps can be edited later; Fill stops and asks you for
+          any application answer that is still missing.
         </p>
         {(profileDirty || resumeDirty) && (
           <p role="alert" className="text-sm text-attn">

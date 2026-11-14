@@ -1,12 +1,14 @@
 import { useState } from "react";
 import { useSearchParams } from "react-router-dom";
 import { DocumentsCard } from "../../components/DocumentsCard";
+import { GettingStarted } from "../../components/GettingStarted";
 import { RunCostEstimate } from "../../components/RunCostEstimate";
 import { RunHistoryPanel } from "../../components/RunHistoryPanel";
 import { Tabs } from "../../components/Tabs";
 import { Button, CommandBar, EmptyState, Page, TileLayout } from "../../components/ui";
 import { BESIDE_DOCUMENT, VIEWER_HEIGHT } from "../../lib/viewer";
 import { useCommands } from "../../state/commandState";
+import { useGuide } from "../../state/guideState";
 import { useRunState } from "../../state/runState";
 import { useWorkspaceState } from "../../state/workspaceState";
 import { JobInput } from "./JobInput";
@@ -36,13 +38,15 @@ const PANES: { id: Pane; label: string; command: string }[] = [
  * application content) on the left; the tailored documents on the right, one page wide
  * at the window's height, or the run's progress while it works. Tailor resume sits
  * under the posting it reads. History is the page's second view, the whole width for
- * the runs table; opening a run comes back here. Below `lg` the panes stack.
+ * the runs table; opening a run comes back here. Below `lg` the panes stack. With no
+ * run open, the document pane holds the Getting started guide while it is showing.
  *
  * State lives in `RunProvider`, so leaving the page mid-run keeps the JD, settings,
  * stream and results. The left pane (`pane`) and the view (`view`) live in the URL.
  */
 export function RunPage() {
   const run = useRunState();
+  const guide = useGuide();
   const { jobId, status, busy } = run;
   const [params, setParams] = useSearchParams();
   const [docsRevision, setDocsRevision] = useState(0);
@@ -174,9 +178,13 @@ export function RunPage() {
               <div
                 className={`flex items-center justify-center rounded-sm border border-line bg-panel ${VIEWER_HEIGHT}`}
               >
-                <EmptyState title="Your tailored resume shows here">
-                  Paste a job posting on the left and press Tailor resume (Ctrl+Enter).
-                </EmptyState>
+                {guide.active ? (
+                  <GettingStarted className="w-full max-w-md p-6" />
+                ) : (
+                  <EmptyState title="Your tailored resume shows here">
+                    Paste a job posting on the left and press Tailor resume (Ctrl+Enter).
+                  </EmptyState>
+                )}
               </div>
             )}
           </section>
