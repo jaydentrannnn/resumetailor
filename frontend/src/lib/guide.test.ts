@@ -92,3 +92,27 @@ describe("getting started guide", () => {
     expect(guideActive(false, null)).toBe(false);
   });
 });
+
+describe("the optional nightly step", () => {
+  const base = {
+    setup: { ready: true, items: [] } as unknown as Parameters<typeof guideSteps>[0]["setup"],
+    runs: 1,
+    applyDone: true,
+  };
+
+  it("is offered once a form has been filled, and never counted", () => {
+    const before = guideSteps({ ...base, progress: { found: 3, autofilled: 0, sent_total: 0 } });
+    expect(before.map((s) => s.id)).not.toContain("nightly");
+    const steps = guideSteps({ ...base, progress: { found: 3, autofilled: 1, sent_total: 0 } });
+    expect(steps.at(-1)).toMatchObject({ id: "nightly", optional: true });
+    expect(guideProgress(steps)).toMatchObject({ done: 5, total: 6, next: { id: "send" } });
+  });
+
+  it("goes away when the nightly run is on, and never keeps the guide open", () => {
+    const progress = { found: 3, autofilled: 1, sent_total: 1 };
+    expect(guideSteps({ ...base, progress, nightly: true }).map((s) => s.id)).not.toContain(
+      "nightly",
+    );
+    expect(guideActive(false, guideSteps({ ...base, progress }))).toBe(false);
+  });
+});

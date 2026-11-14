@@ -45,7 +45,9 @@ const GuideContext = createContext<GuideValue>(OFF);
  */
 export function GuideProvider({ children }: { children: ReactNode }) {
   const { pathname } = useLocation();
-  const runs = useRunState().history.length;
+  const run = useRunState();
+  const runs = run.history.length;
+  const nightly = run.settings?.apply?.enabled ?? false;
   const [dismissed, setDismissed] = useState(false);
   const [applyDone, setApplyDone] = useState<boolean | null>(null);
   const [steps, setSteps] = useState<GuideStep[] | null>(null);
@@ -67,7 +69,10 @@ export function GuideProvider({ children }: { children: ReactNode }) {
           return;
         }
         const [setup, progress] = await Promise.all([fetchSetupStatus(), getApplyProgress()]);
-        if (live) setSteps(guideSteps({ setup, runs, applyDone: onboarding.apply_done, progress }));
+        if (live)
+          setSteps(
+            guideSteps({ setup, runs, applyDone: onboarding.apply_done, progress, nightly }),
+          );
       } catch {
         /* advisory: keep what was known */
       }
@@ -75,7 +80,7 @@ export function GuideProvider({ children }: { children: ReactNode }) {
     return () => {
       live = false;
     };
-  }, [pathname, runs, revision]);
+  }, [pathname, runs, nightly, revision]);
 
   const set = useCallback(async (hidden: boolean) => {
     setDismissed(hidden);

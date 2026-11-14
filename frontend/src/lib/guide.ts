@@ -4,7 +4,7 @@ import type { ApplyProgress, SetupStatus } from "../api";
  * The Getting started guide: the six things a new student does, in order, each ticked
  * from what the app already knows (never from a click on the guide itself).
  */
-export type GuideStepId = "setup" | "tailor" | "apply_setup" | "find" | "fill" | "send";
+export type GuideStepId = "setup" | "tailor" | "apply_setup" | "find" | "fill" | "send" | "nightly";
 
 export interface GuideStep {
   id: GuideStepId;
@@ -15,6 +15,8 @@ export interface GuideStep {
   /** Where the step is done, and what the button that goes there says. */
   to: string;
   action: string;
+  /** Offered, never required: not counted, and never the "next" step. */
+  optional?: boolean;
 }
 
 export interface GuideInputs {
@@ -24,9 +26,17 @@ export interface GuideInputs {
   /** Stage 2 of setup (what applying needs) is finished. */
   applyDone: boolean;
   progress: Pick<ApplyProgress, "found" | "autofilled" | "sent_total">;
+  /** The nightly run is on (`apply.enabled`). */
+  nightly?: boolean;
 }
 
-export function guideSteps({ setup, runs, applyDone, progress }: GuideInputs): GuideStep[] {
+export function guideSteps({
+  setup,
+  runs,
+  applyDone,
+  progress,
+  nightly = false,
+}: GuideInputs): GuideStep[] {
   // "Finish setup" opens the first thing still missing, not the wizard's current step.
   const missing = setup.items.find((item) => !item.ok && !item.optional);
   return [
@@ -81,6 +91,21 @@ export function guideSteps({ setup, runs, applyDone, progress }: GuideInputs): G
       to: "/tracker",
       action: "Open Tracker",
     },
+    // Offered once a first form has been filled, so the student knows what Fill does.
+    ...(progress.autofilled > 0 && !nightly
+      ? [
+          {
+            id: "nightly" as const,
+            title: "Find jobs for me every night",
+            detail:
+              "Optional: each night the app finds new postings and tailors a resume for each, ready for you to Fill. It never fills or submits, and the app must be open or in the tray.",
+            done: false,
+            to: "/applications?settings=1&reveal=nightly",
+            action: "Turn on the nightly run",
+            optional: true,
+          },
+        ]
+      : []),
   ];
 }
 
@@ -90,16 +115,17 @@ export function guideProgress(steps: GuideStep[]): {
   total: number;
   next: GuideStep | null;
 } {
+  const required = steps.filter((step) => !step.optional);
   return {
-    done: steps.filter((step) => step.done).length,
-    total: steps.length,
-    next: steps.find((step) => !step.done) ?? null,
+    done: required.filter((step) => step.done).length,
+    total: required.length,
+    next: required.find((step) => !step.done) ?? null,
   };
 }
 
 /** The guide shows until it is hidden or every step is done. */
 export function guideActive(dismissed: boolean, steps: GuideStep[] | null): boolean {
-  return !dismissed && !!steps && steps.some((step) => !step.done);
+  return !dismissed && !!steps && steps.some((step) => !step.done && !step.optional);
 }
 
 /** The rail pill while the guide is showing; short enough for the 184px rail. */

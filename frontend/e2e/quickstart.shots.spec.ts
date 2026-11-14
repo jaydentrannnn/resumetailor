@@ -16,6 +16,12 @@ work with stakeholders, and present findings. Experience with search and ranking
 test("quick-start screenshots", async ({ page, request }) => {
   const setup = (data: Record<string, unknown>) => request.put("/api/onboarding", { data });
   const shot = (name: string) => page.screenshot({ path: `${OUT}${name}.png` });
+  // Students start in Simple view, so the screenshots do too.
+  const view = async (ui_mode: "simple" | "full") => {
+    const { settings } = await (await request.get("/api/settings")).json();
+    await request.put("/api/settings", { data: { settings: { ...settings, ui_mode } } });
+  };
+  await view("simple");
   await page.setViewportSize({ width: 1280, height: 800 });
   await page.emulateMedia({ colorScheme: "light" });
 
@@ -68,4 +74,5 @@ test("quick-start screenshots", async ({ page, request }) => {
   });
   expect((await restored.json()).updated).toEqual(["e2e-review"]);
   await setup({ completed: true, apply_done: true, guide_dismissed: true });
+  await view("full");
 });

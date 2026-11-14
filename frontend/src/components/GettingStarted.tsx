@@ -17,13 +17,14 @@ export function GuideSteps({ steps, onNavigate }: { steps: GuideStep[]; onNaviga
   return (
     <ol className="space-y-3">
       {steps.map((step) => {
-        const current = step.id === next?.id;
-        const tone = step.done ? "done" : current ? "attention" : "muted";
+        // An optional step is offered as soon as it shows, beside the next required one.
+        const current = step.id === next?.id || (!!step.optional && !step.done);
+        const tone = step.done ? "done" : current && !step.optional ? "attention" : "muted";
         return (
           <li
             key={step.id}
             className="flex gap-3 text-sm"
-            aria-current={current ? "step" : undefined}
+            aria-current={step.id === next?.id ? "step" : undefined}
           >
             <span
               aria-hidden="true"
@@ -34,8 +35,9 @@ export function GuideSteps({ steps, onNavigate }: { steps: GuideStep[]; onNaviga
             <div className="min-w-0 flex-1">
               <p className={current ? "font-medium text-ink" : "text-ink-muted"}>
                 {step.title}
+                {step.optional && <span className="ml-1.5 text-xs text-ink-muted">Optional</span>}
                 <span className="sr-only">
-                  {step.done ? " (done)" : current ? " (next)" : " (later)"}
+                  {step.done ? " (done)" : step.optional ? "" : current ? " (next)" : " (later)"}
                 </span>
               </p>
               {current && (

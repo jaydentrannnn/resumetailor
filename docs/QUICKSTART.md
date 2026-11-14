@@ -108,3 +108,8 @@ the replies you get; you still decide.
 
 Once you know your way around, hide the checklist with **Hide guide**. To bring it back,
 press **Ctrl+K** and type "Getting started".
+
+The app starts in **Simple** view, which shows only what you need to tailor and apply.
+To see every option, press **Show all features** in the sidebar (or Settings ›
+Appearance › View). You can switch back the same way; anything you have changed always
+shows in either view.
