@@ -51,15 +51,21 @@ The macOS installer does not run on Intel Macs.
 
 ## First run
 
-The setup screen walks you through:
+A student-facing walkthrough with screenshots is [`docs/QUICKSTART.md`](docs/QUICKSTART.md).
 
-1. **What you're studying and targeting** — choose job sources and a target field for
-   tailoring guidance. The target field is saved separately from job discovery.
-2. **Upload your resume** (`.docx`) — the app analyzes its layout and turns it into a
-   template. You can also import the content of a PDF resume.
-3. **Your content** — review the sections, entries and bullets it read; this becomes your
-   master resume, which you can edit any time in the **Editor**.
-4. **Template and page fit** — tunes how much text fits on your page.
+Setup comes in two parts. The first four steps are what tailoring needs, and the rest of
+the app opens after them:
+
+1. **Your field** — the target field for tailoring guidance.
+2. **Your resume** (`.docx`) — the app analyzes its layout and turns it into a template.
+   You can also import the content of a PDF resume.
+3. **Resume content** — review the sections, entries and bullets it read; this becomes
+   your master resume, which you can edit any time on the **Resume** page.
+4. **AI model** — the model that tailors and the one that fills application forms.
+
+The second part, **Set up applying** (personal info, application details, job lists and
+browser), runs later with the app open. A **Getting started** checklist in the sidebar
+and on the Tailor page shows what to do next and ticks each step off by itself.
 
 Then open **Tailor**, paste a job description, and run. Each run produces the tailored
 `.docx` and `.pdf`, plus an optional cover letter, reviewer notes and application answers.
