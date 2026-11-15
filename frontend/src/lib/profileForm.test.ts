@@ -230,4 +230,29 @@ describe("simpleProfileGroups", () => {
     expect(groups["Languages"]).toEqual([]);
     expect(groups["Availability and location preferences"]).toContain("drivers_license");
   });
+
+  it("keeps a saved field visible while its draft is cleared for replacement", () => {
+    const saved = { salary_yearly_max: 90000 } as ApplicantProfile;
+    const draft = { ...saved, salary_yearly_max: null };
+    expect(ids(simpleProfileGroups(draft, new Set(), saved))["Salary"]).toEqual([
+      "salary_yearly_max",
+    ]);
+    // Once the blank value is saved, Simple may leave it out again.
+    expect(ids(simpleProfileGroups(draft, new Set(), draft))["Salary"]).toBeUndefined();
+  });
+
+  it("keeps an empty Languages editor when a form asks for languages", () => {
+    const draft = { languages: [] } as unknown as ApplicantProfile;
+    expect(ids(simpleProfileGroups(draft, new Set(["languages"])))["Languages"]).toEqual([]);
+  });
+
+  it("keeps groups whose only saved content is an uploaded document", () => {
+    const draft = {
+      transcript_path: "files/transcript.pdf",
+      portfolio_path: "files/portfolio.pdf",
+    } as ApplicantProfile;
+    const groups = ids(simpleProfileGroups(draft, new Set()));
+    expect(groups["Education"]).toBeDefined();
+    expect(groups["Saved answers and other preferences"]).toEqual([]);
+  });
 });

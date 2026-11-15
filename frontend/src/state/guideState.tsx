@@ -39,14 +39,14 @@ const GuideContext = createContext<GuideValue>(OFF);
 /**
  * The Getting started guide's state, read by the Tailor page, the rail pill, Apply's empty
  * state and Ctrl+K. Everything comes from endpoints that already exist; it is re-read on
- * navigation, when setup changes and when a run finishes. A hidden guide costs one small
- * request per navigation (setup progress) and nothing more. Advisory: a failed read
- * leaves the last known state.
+ * navigation, when setup changes, a run succeeds or application data refreshes. A hidden
+ * guide costs one small request per navigation (setup progress) and nothing more.
+ * Advisory: a failed read leaves the last known state.
  */
 export function GuideProvider({ children }: { children: ReactNode }) {
   const { pathname } = useLocation();
   const run = useRunState();
-  const runs = run.history.length;
+  const runs = run.history.filter((item) => item.status === "succeeded").length;
   const nightly = run.settings?.apply?.enabled ?? false;
   const [dismissed, setDismissed] = useState(false);
   const [applyDone, setApplyDone] = useState<boolean | null>(null);
@@ -54,6 +54,10 @@ export function GuideProvider({ children }: { children: ReactNode }) {
   const [revision, setRevision] = useState(0);
 
   useEffect(() => onAppEvent("rt:setup-changed", () => setRevision((n) => n + 1)), []);
+
+  useEffect(() => {
+    if (!dismissed) return onAppEvent("rt:applications-changed", () => setRevision((n) => n + 1));
+  }, [dismissed]);
 
   useEffect(() => {
     let live = true;

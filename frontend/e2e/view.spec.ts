@@ -8,12 +8,14 @@ test("a new install opens in Simple, switches to Full, and never hides what was 
   page,
   request,
 }) => {
-  // Past stage 1 so the app is open; the view was decided by the first settings read.
+  // Decide the new install's view before marking setup complete (existing users get Full).
+  const settings = async () => (await (await request.get("/api/settings")).json()).settings;
+  const initial = await settings();
+  expect(initial.ui_mode).toBe("simple");
+  // Past stage 1 so the app is open, retaining the view chosen above.
   await request.put("/api/onboarding", {
     data: { completed: true, apply_done: true, guide_dismissed: true },
   });
-  const settings = async () => (await (await request.get("/api/settings")).json()).settings;
-  expect((await settings()).ui_mode).toBe("simple");
 
   // Simple: the drawer leaves out auto-submit while it is off.
   await page.goto("/applications?settings=1");
@@ -51,6 +53,6 @@ test("a new install opens in Simple, switches to Full, and never hides what was 
 
   // Leave the profile as other fresh specs expect it.
   await request.put("/api/settings", {
-    data: { settings: { ...current, apply: { ...current.apply, auto_submit_enabled: false } } },
+    data: { settings: initial },
   });
 });

@@ -54,6 +54,11 @@ const state = (over: Partial<OnboardingState> = {}): OnboardingState => ({
 });
 
 describe("onboarding helpers", () => {
+  it("keeps a missing-list gap open until the list has an entry", () => {
+    expect(openGaps(["languages"], { languages: [] })).toEqual(["languages"]);
+    expect(openGaps(["languages"], { languages: [{ language: "Spanish" }] })).toEqual([]);
+  });
+
   it("orders the steps", () => {
     expect(stepIndex("field")).toBe(0);
     expect(stepIndex("done")).toBe(ONBOARDING_STEPS.length - 1);

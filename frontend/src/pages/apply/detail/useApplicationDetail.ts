@@ -16,6 +16,7 @@ import {
   type Packet,
 } from "../../../api";
 import { startAdaptivePoll } from "../../../lib/adaptivePoll";
+import { emitAppEvent } from "../../../lib/appEvents";
 import { IN_FLIGHT_STATUSES } from "../../../lib/applyPoll";
 
 export type Detail = {
@@ -91,6 +92,11 @@ export function useApplicationDetail(applicationId: string | undefined, workspac
   const app = detail?.application;
   const jobId = app?.job_id ?? null;
   const status = app?.status;
+
+  // Keep the rail guide current after a fill or a submitted mark on this page.
+  useEffect(() => {
+    if (app) emitAppEvent("rt:applications-changed");
+  }, [app]);
 
   // The run is read for the row's current run and again whenever its status moves (a
   // retry re-tailors under the same id), then followed while it is still working.

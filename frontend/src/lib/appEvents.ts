@@ -9,6 +9,8 @@ export type AppEvent =
   | "rt:setup-changed"
   /** The active template changed: page-fit numbers and previews are stale. */
   | "rt:template-changed"
+  /** Application data refreshed: the Getting started guide's progress may have changed. */
+  | "rt:applications-changed"
   | "rt:resume-saved";
 
 export function emitAppEvent(name: AppEvent): void {

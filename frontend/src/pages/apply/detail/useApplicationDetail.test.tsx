@@ -1,9 +1,10 @@
 // @vitest-environment jsdom
-import { act, renderHook, waitFor } from "@testing-library/react";
+import { act, cleanup, renderHook, waitFor } from "@testing-library/react";
 import type { ReactNode } from "react";
 import { MemoryRouter } from "react-router-dom";
-import { describe, expect, it, vi } from "vitest";
+import { afterEach, describe, expect, it, vi } from "vitest";
 import { archiveApplications, getApplication } from "../../../api";
+import { onAppEvent } from "../../../lib/appEvents";
 import { useApplicationDetail } from "./useApplicationDetail";
 
 vi.mock("../../../api", () => ({
@@ -24,8 +25,22 @@ vi.mock("../../../api", () => ({
 vi.mock("../../../lib/adaptivePoll", () => ({ startAdaptivePoll: () => ({ stop: () => {} }) }));
 
 const wrapper = ({ children }: { children: ReactNode }) => <MemoryRouter>{children}</MemoryRouter>;
+afterEach(cleanup);
 
 describe("useApplicationDetail", () => {
+  it("notifies the guide when an application is marked submitted in place", async () => {
+    const { result } = renderHook(() => useApplicationDetail("A", "w"), { wrapper });
+    await waitFor(() => expect(result.current.app?.source_job_id).toBe("A"));
+    const changed = vi.fn();
+    const off = onAppEvent("rt:applications-changed", changed);
+    try {
+      act(() => result.current.setApplication({ ...result.current.app!, status: "submitted" }));
+      await waitFor(() => expect(changed).toHaveBeenCalledTimes(1));
+    } finally {
+      off();
+    }
+  });
+
   it("never puts an action's result for one application on another's page", async () => {
     let finish: (value: { updated: string[]; errors: Record<string, string> }) => void = () => {};
     vi.mocked(archiveApplications).mockImplementation(

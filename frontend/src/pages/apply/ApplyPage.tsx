@@ -46,13 +46,17 @@ export function ApplyPage() {
   const archive = useApplicationTable("archive", workspaceId, params, setParams, showDone, search);
   const [archiveTotal, setArchiveTotal] = useState(0);
   const [revision, setRevision] = useState(0);
-  const [drawerOpen, setDrawerOpen] = useState(params.get("settings") === "1");
+  const settingsRequested = params.get("settings") === "1";
+  const [drawerOpen, setDrawerOpen] = useState(settingsRequested);
   const [bannerOpen, setBannerOpen] = useState(false);
   const { openTabs, reachable: tabsReachable, recheck: recheckTabs } = useOpenTabs();
   const showError = useCallback(
     (title: string, reason: unknown) => toast.error(title, describe(reason).detail),
     [toast],
   );
+
+  // A guide link can change only the query while this page is already mounted.
+  useEffect(() => setDrawerOpen(settingsRequested), [settingsRequested]);
 
   const scrollRestored = useRef(false);
   useEffect(() => {

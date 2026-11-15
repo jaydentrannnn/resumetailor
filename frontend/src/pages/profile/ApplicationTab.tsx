@@ -102,61 +102,74 @@ export function ApplicationTab({
   // Simple view: the questions nearly every form asks, plus anything set or found blank,
   // open (few fields) instead of collapsed.
   const { simple } = useUiMode();
-  const groups = simple ? simpleProfileGroups(draft, ctx.gapFields) : PROFILE_GROUPS;
-  const body = (group: ProfileGroup) => (
-    <>
-      {group.id === "Education" && (
-        <EducationSummary education={education} onEditResume={onEditResume} />
-      )}
-      {group.id === "Salary" && (
-        <p className="mt-3 text-xs text-ink-muted">
-          Salary questions are answered from your maximum: the posting's top pay when it is below
-          your maximum, otherwise your maximum, in the posting's unit (hourly ↔ yearly at 2,080
-          hours). With no posted pay, intern and co-op roles use your hourly maximum and other roles
-          your yearly maximum. Leave the maximums empty to answer salary questions yourself.
-        </p>
-      )}
-      {group.id === "Voluntary information" && (
-        <p className="mt-3 text-xs text-ink-muted">
-          Only used to answer voluntary EEO questions; "Decline to answer" is always allowed. These
-          answers never affect how your resume is tailored.
-        </p>
-      )}
-      {group.id === "Application accounts" && (
-        <p className="mt-3 text-xs text-ink-muted">
-          The Workday password is kept in your system's password store (or an encrypted file), never
-          in your profile file.
-        </p>
-      )}
-      {group.fields.length > 0 && (
-        <div className="mt-3 grid gap-3 sm:grid-cols-2">
-          {group.fields.map((key) => (
-            <ProfileField
-              key={key}
-              name={key}
-              ctx={ctx}
-              hint={hintFor(key)}
-              blankLabel={blankLabelFor(key, draft)}
-              auto={autoAnswered(key, draft)}
-            />
-          ))}
-          {!simple && group.id === "Education" && <DocumentUpload kind="transcript" />}
-          {!simple && group.id === "Saved answers and other preferences" && (
-            <DocumentUpload kind="portfolio" />
-          )}
-        </div>
-      )}
-      {group.id === "Voluntary information" && (
-        <EeoFields eeo={draft.eeo} onChange={(eeo) => setDraft({ eeo })} />
-      )}
-      {group.id === "Languages" && (
-        <LanguagesEditor
-          languages={draft.languages ?? []}
-          onChange={(languages) => setDraft({ languages })}
-        />
-      )}
-    </>
-  );
+  const groups = simple
+    ? simpleProfileGroups(draft, ctx.gapFields, applicant.saved)
+    : PROFILE_GROUPS;
+  const body = (group: ProfileGroup) => {
+    const documentKind =
+      group.id === "Education"
+        ? "transcript"
+        : group.id === "Saved answers and other preferences"
+          ? "portfolio"
+          : null;
+    const showDocument =
+      documentKind !== null &&
+      (!simple ||
+        !!draft[`${documentKind}_path`] ||
+        !!applicant.saved?.[`${documentKind}_path`] ||
+        ctx.gapFields.has(`${documentKind}_path`));
+    return (
+      <>
+        {group.id === "Education" && (
+          <EducationSummary education={education} onEditResume={onEditResume} />
+        )}
+        {group.id === "Salary" && (
+          <p className="mt-3 text-xs text-ink-muted">
+            Salary questions are answered from your maximum: the posting's top pay when it is below
+            your maximum, otherwise your maximum, in the posting's unit (hourly ↔ yearly at 2,080
+            hours). With no posted pay, intern and co-op roles use your hourly maximum and other
+            roles your yearly maximum. Leave the maximums empty to answer salary questions yourself.
+          </p>
+        )}
+        {group.id === "Voluntary information" && (
+          <p className="mt-3 text-xs text-ink-muted">
+            Only used to answer voluntary EEO questions; "Decline to answer" is always allowed.
+            These answers never affect how your resume is tailored.
+          </p>
+        )}
+        {group.id === "Application accounts" && (
+          <p className="mt-3 text-xs text-ink-muted">
+            The Workday password is kept in your system's password store (or an encrypted file),
+            never in your profile file.
+          </p>
+        )}
+        {(group.fields.length > 0 || showDocument) && (
+          <div className="mt-3 grid gap-3 sm:grid-cols-2">
+            {group.fields.map((key) => (
+              <ProfileField
+                key={key}
+                name={key}
+                ctx={ctx}
+                hint={hintFor(key)}
+                blankLabel={blankLabelFor(key, draft)}
+                auto={autoAnswered(key, draft)}
+              />
+            ))}
+            {showDocument && documentKind && <DocumentUpload kind={documentKind} />}
+          </div>
+        )}
+        {group.id === "Voluntary information" && (
+          <EeoFields eeo={draft.eeo} onChange={(eeo) => setDraft({ eeo })} />
+        )}
+        {group.id === "Languages" && (
+          <LanguagesEditor
+            languages={draft.languages ?? []}
+            onChange={(languages) => setDraft({ languages })}
+          />
+        )}
+      </>
+    );
+  };
   return (
     <div className="space-y-3">
       <p className="text-sm text-ink-muted">
@@ -177,7 +190,9 @@ export function ApplicationTab({
         )}
         onOpen={onOpenGroup}
       />
-      {(!simple || hasProfileValue(draft.experience_basis, "experience_basis")) && (
+      {(!simple ||
+        hasProfileValue(draft.experience_basis, "experience_basis") ||
+        hasProfileValue(applicant.saved?.experience_basis, "experience_basis")) && (
         <Tile>
           <h3 className="rt-tile-title">Experience</h3>
           <ExperienceFields ctx={ctx} />

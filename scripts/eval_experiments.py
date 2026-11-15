@@ -24,6 +24,10 @@ with base on must-have coverage (a second base arm gives the old-vs-old noise):
 
     python scripts\\eval_experiments.py cases --limit 20
     python scripts\\eval_experiments.py e2e-coverage --arm ship --limit 20
+
+The judge is the profile's Vertex connection (`JUDGE_MODEL`, default gemini-4-argon), or
+the Codex CLI on the user's sign-in with `JUDGE_BACKEND=codex` (`JUDGE_MODEL=gpt-6.1-sol`,
+`JUDGE_EFFORT`, default medium; `evals/judge_codex.py`).
 """
 
 from __future__ import annotations
@@ -56,6 +60,10 @@ from evals import e2e, judge, report, report_seq, sequential, survey, variants  
 from evals.stages import Replay  # noqa: E402
 
 JUDGE_MODEL = os.environ.get("JUDGE_MODEL", "gemini-4-argon")
+#: `vertex` (the profile's Vertex connection) or `codex` (`evals/judge_codex.py`: the
+#: Codex CLI on the user's sign-in, at `JUDGE_EFFORT`).
+JUDGE_BACKEND = os.environ.get("JUDGE_BACKEND", "vertex")
+JUDGE_EFFORT = os.environ.get("JUDGE_EFFORT", "medium")
 PAIRS = {"e1": [(report_seq.BASE, "polish-none#0"), (report_seq.BASE, "polish-low#0")],
          "e2": [(report_seq.BASE, "clause#0")],
          "polish": [(survey.POLISHED, survey.UNPOLISHED)]}
@@ -194,10 +202,16 @@ def _judge(jobs: list, replay: Replay, eval_dir: Path, workers: int) -> None:
         else:
             todo.append(job)
     spec = judge_spec(replay)
-    print(f"{len(todo)} pair(s) to judge on {spec['model']} ({len(jobs) - len(todo)} done "
-          "or identical)")
+    extra = {}
+    if JUDGE_BACKEND == "codex":  # the Codex CLI on the user's sign-in, no API key
+        from evals import judge_codex
+
+        extra["asker"] = judge_codex.codex_asker(JUDGE_MODEL, JUDGE_EFFORT)
+    print(f"{len(todo)} pair(s) to judge on {spec['model']} via {JUDGE_BACKEND} "
+          f"({len(jobs) - len(todo)} done or identical)")
     judge.run(todo, "rewrite", spec, verdicts, workers=workers, progress=lambda r: print(
-        f"  {r.get('winner', 'error'):5} {r['key']} {r.get('error', '')[:160]}", flush=True))
+        f"  {r.get('winner', 'error'):5} {r['key']} {r.get('error', '')[:160]}", flush=True),
+        **extra)
 
 
 def cmd_judge(args, replay: Replay) -> None:

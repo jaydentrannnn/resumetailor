@@ -304,3 +304,11 @@ loop handled only `RunEvent::Exit`, so after a close the Dock click did nothing 
 only way back was Dock → Quit and relaunch. `app.run` now calls `show_main` on
 `Reopen { has_visible_windows: false }`. The arm is `cfg(target_os = "macos")`, so only
 the macOS release build compiles it; Windows CI cannot catch a mistake there.
+
+## 2026-11-13 — Codex CLI as the blind judge (`evals/judge_codex.py`)
+
+**What:** `JUDGE_BACKEND=codex` (with `JUDGE_MODEL`, `JUDGE_EFFORT`, default medium) makes `eval_experiments.py`'s judge send each verdict to one fresh `codex exec` session: empty temp folder, `--ignore-user-config --ignore-rules --ephemeral`, read-only sandbox, `--output-schema` for `{winner, reason}`, prompt on stdin. It plugs in as `judge.run(..., asker=...)`.
+
+**Why:** It runs on the user's Codex (ChatGPT) sign-in, so no API key is spent. A fresh session per order is what makes `both_orders` meaningful; one long-lived agent (e.g. an Orca terminal) would see both orders and every arm. Ignoring the user config keeps MCP servers, hooks and instructions out of the verdict. About 6 s per verdict at medium effort on gpt-6.1-sol.
+
+**Impact:** Pick gpt-6.1-sol (general workhorse) over gpt-6.1-terra (coding-tuned) for prose judging. Verdicts go in the same `judge.v2.jsonl`; use a separate eval folder per judge so verdicts from different judges never mix.

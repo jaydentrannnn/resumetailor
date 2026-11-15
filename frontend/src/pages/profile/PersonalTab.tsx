@@ -34,11 +34,21 @@ export function PersonalTab({
   // from the resume (or a form found it blank).
   const { simple } = useUiMode();
   const names = (["first_name", "middle_name", "last_name", "preferred_name"] as const).filter(
-    (key) => !simple || key === "first_name" || key === "last_name" || !!draft[key],
+    (key) =>
+      !simple ||
+      key === "first_name" ||
+      key === "last_name" ||
+      !!draft[key] ||
+      !!applicant.saved?.[key],
   );
   const showApplicationContact =
     !simple ||
-    CONTACT_PAIRS.some((pair) => !!draft[pair.applicant] || ctx.gapFields.has(pair.applicant));
+    CONTACT_PAIRS.some(
+      (pair) =>
+        !!draft[pair.applicant] ||
+        !!applicant.saved?.[pair.applicant] ||
+        ctx.gapFields.has(pair.applicant),
+    );
   const errors = contactErrors(resume?.contact);
   const gaps = applicant.gaps.filter(
     (gap) =>

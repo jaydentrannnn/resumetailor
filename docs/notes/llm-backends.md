@@ -529,3 +529,22 @@ Google documents temperature, top_p and top_k as deprecated and ignored on Gemin
 Cleanup, not a behaviour change: the backend already ignored the field, so no cache key
 moves. Every other model (older Gemini, Gemini Pro/Argon, gemma, Ollama, LM Studio)
 still sends temperature=0.
+
+## 2026-11-13 — gemini-4-hydrogen vs gemini-3.8-flash, end to end: hydrogen writes better bullets, fits pages worse
+
+**What:** 20 saved postings, seed 0, each tailored end to end (CLI fit loop, no expansion or cover letter) on Vertex `us` at each stage's recommended effort: flash (`base`), flash again (`base2`, the noise baseline) and hydrogen. Judge: Codex CLI `gpt-6.1-sol` at medium effort, blind, both orders, on the bullets both pages carry (`JUDGE_BACKEND=codex`, `output/eval/hydrogen-vs-flash`, commit 426115c plus the Codex judge).
+
+| | flash | flash rerun | hydrogen |
+|---|---|---|---|
+| judge vs flash (win/loss/tie, net) | — | 6/7/7, −0.05 [−0.40, +0.30] | 13/3/4, **+0.50 [+0.15, +0.80]**, sign p=0.021 |
+| must-haves on the page | 41.8% | 42.0% | 38.4% (5 cases down, 1 up) |
+| fit rounds | 1.40 | 1.30 | 3.30 |
+| near-widows left per page | 0.10 | 0.05 | 0.85 (on 8+ of 20 pages, up to 3) |
+| bullets left verbatim | 7.9% | 6.4% | 33.9% |
+| widow/length repair calls per run | 0.26 | | 1.45 |
+| factual (guard) retries per run | 0.71 | | 0.55 |
+| selection overlap with flash (Jaccard) | | 0.99 | 0.56 |
+
+**Why:** The judge's reasons, and a blind read of 5 cases (hydrogen preferred in all 5, matching the judge), agree: flash pads bullets with unsupported scope ("enforcing unit testing", "runtime errors", "volunteer schedules", "MySQL"); hydrogen keeps strong source bullets nearly verbatim. Its two clear losses were small overstatements ("entirely identical", an unsupported "weekly"). The same conservatism makes hydrogen fail the fit loop's widow repair: it returns versions whose length barely changes, so repairs are rejected and the page keeps near-widows.
+
+**Impact:** Hydrogen is better on wording (net +0.50 against a ±0.35 noise band) but not ready as a drop-in: fix or tune widow repair for it first, and look at the small must-have coverage drop. Cost: hydrogen used about 24k input / 22k output tokens per full run against flash's ~15-19k output; the cost gate is within the flash-vs-flash noise (+13% vs +20%), and hydrogen's price is not in `report.PRICES` (all Gemini priced alike).

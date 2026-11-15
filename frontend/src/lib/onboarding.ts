@@ -125,7 +125,12 @@ export function openGaps(keys: string[], draft: Record<string, unknown> | null):
       key === "hispanic_latino" && eeo?.hispanic_latino_declined
         ? "decline"
         : (draft[key] ?? eeo?.[aliases[key] ?? key]);
-    return value === null || value === undefined || (typeof value === "string" && !value.trim());
+    return (
+      value === null ||
+      value === undefined ||
+      (typeof value === "string" && !value.trim()) ||
+      (Array.isArray(value) && value.length === 0)
+    );
   });
 }
 

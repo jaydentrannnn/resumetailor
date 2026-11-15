@@ -21,7 +21,7 @@ export interface GuideStep {
 
 export interface GuideInputs {
   setup: SetupStatus;
-  /** Tailored resumes in this profile's history. */
+  /** Successful tailoring runs in this profile's history. */
   runs: number;
   /** Stage 2 of setup (what applying needs) is finished. */
   applyDone: boolean;

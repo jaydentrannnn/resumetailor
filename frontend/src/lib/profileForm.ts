@@ -432,28 +432,39 @@ export function hasProfileValue(value: unknown, key?: keyof ApplicantProfile): b
   return true;
 }
 
-/** Groups without their own field list, kept in Simple only once they hold something. */
-const GROUP_VALUES: Partial<Record<string, (draft: ApplicantProfile) => boolean>> = {
-  Languages: (draft) => hasProfileValue(draft.languages),
+/** Non-scalar values and requested fields that also keep a Simple group visible. */
+const GROUP_VALUES: Partial<
+  Record<string, (draft: ApplicantProfile, gapFields: Set<string>) => boolean>
+> = {
+  Languages: (draft, gaps) => hasProfileValue(draft.languages) || gaps.has("languages"),
+  Education: (draft, gaps) => hasProfileValue(draft.transcript_path) || gaps.has("transcript_path"),
+  "Saved answers and other preferences": (draft, gaps) =>
+    hasProfileValue(draft.portfolio_path) || gaps.has("portfolio_path"),
   "Voluntary information": (draft) =>
     Object.values(draft.eeo ?? {}).some((value) => !EEO_UNSET.has(value)),
 };
 
 /**
  * Each group cut to the Simple fields, any field with a value and any field a form found
- * blank (`gapFields`); a group left with nothing to show is dropped.
+ * blank (`gapFields`). Saved values keep controls visible while their draft is edited;
+ * a group left with nothing to show is dropped after the cleared value is saved.
  */
 export function simpleProfileGroups(
   draft: ApplicantProfile,
   gapFields: Set<string>,
+  saved: ApplicantProfile | null = null,
 ): ProfileGroup[] {
   return PROFILE_GROUPS.flatMap((group) => {
     const fields = group.fields.filter(
       (key) =>
-        SIMPLE_PROFILE_FIELDS.has(key) || hasProfileValue(draft[key], key) || gapFields.has(key),
+        SIMPLE_PROFILE_FIELDS.has(key) ||
+        hasProfileValue(draft[key], key) ||
+        hasProfileValue(saved?.[key], key) ||
+        gapFields.has(key),
     );
     const extra = GROUP_VALUES[group.id];
-    if (!fields.length && !extra?.(draft)) return [];
+    if (!fields.length && !extra?.(draft, gapFields) && !(saved && extra?.(saved, gapFields)))
+      return [];
     return [{ ...group, fields }];
   });
 }
