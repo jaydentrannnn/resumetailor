@@ -25,6 +25,7 @@ import {
   readyBlockLabel,
   reviewReason,
 } from "../../lib/applyPage";
+import { GLOSSARY } from "../../lib/glossary";
 import { SkillMatchMeter } from "../../components/SkillMatchMeter";
 import { DetailChip } from "../../components/ui/DetailChip";
 import { CapturedBadge } from "../CapturedStubs";
@@ -132,8 +133,9 @@ function rowMenu(row: ApplicationRow, archived: boolean, actions: TableActions):
 }
 
 /**
- * The row's next step as one button (Continue / Start over / Fill / Retry / Review / View) plus
- * its menu. A ready row the server won't fill ("Check resume") gets Review, not View.
+ * The row's next step as one button (Continue / Start over / Tailor files / Fill / Retry /
+ * Review / View) plus its menu. A ready row the server won't fill ("Check resume") gets
+ * Review, not View. Both views show it: in Simple it is the only way to tailor and fill.
  */
 function RowAction({
   row,
@@ -231,6 +233,18 @@ function RowAction({
         onClick={() => actions.start("fill", [row.source_job_id])}
       >
         Fill
+      </button>
+    );
+  else if (kind === "prepare")
+    primary = (
+      <button
+        type="button"
+        className={action("plain")}
+        title={workflowNote || GLOSSARY.prepare.help}
+        disabled={workflowOff}
+        onClick={() => actions.start("prepare", [row.source_job_id])}
+      >
+        {GLOSSARY.prepare.label}
       </button>
     );
   else if (kind === "retry")

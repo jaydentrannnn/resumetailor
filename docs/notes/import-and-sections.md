@@ -807,3 +807,35 @@ comes back `updated` (not `added`), still exactly one education entry, coursewor
 Education stores authoritative `major_entries` (name plus degree type), with `majors`, `major`, and `degree_type` retained as legacy projections. Old JSON seeds structured rows without changing manual degree text; old writers that populate legacy fields on an empty structured list remain supported. The editor uses Add entry > Major/Minor, per-major degree choices, and mutually exclusive punctuation buttons beside the stronger generated preview. Same credential aliases share one printed degree; different credentials remain separate clauses. Packet serialization retains per-major credentials so application rows cannot borrow a sibling's degree type.
 
 Education start/end dates accept YYYY-MM or YYYY-MM-DD. Month-only entries remain valid and printed Dates stay independently editable. Application fields preserve a supplied day; a required day absent from the source is left for the applicant, replacing the earlier day-01 convention. Matching legacy month overrides retain a newly recorded resume day. Split Workday dates and generic native day fields follow the same rule.
+
+## Merging a second resume: pairs, review, no lost bullets (2026-11-17)
+
+A reworded copy of one resume became 4 jobs instead of 3 and lost a bullet: matching was exact on the company name, and a matched entry's bullets were replaced by the upload's.
+
+**Decision.** `importing/import_merge_plan.py` pairs jobs and projects deterministically (no LLM): the same name first, then one unclaimed entry with the same start and end dates plus a similar name (one grew or lost words at an end) or, for a job, a similar title (at least half the words shared). The dates are always required for a differently-named pair, and two candidates is a guess, so the entry is added as new. A matched entry keeps every bullet with its id and Extra skills; an incoming bullet at 0.9 similarity or above refreshes its twin's text, any other is added. Fields are only overwritten where the upload has a value, and a pair made on anything but the same name keeps the existing name. Before writing, the merge dialog lists each incoming job and project with its proposed pair; the student can choose another entry or "New entry", and only changed picks are sent as `decisions`. The Resume page lists the same job or project entered twice (same name and dates, or the rule above) with one-click merge.
+
+**Rejected.** Replacing a matched entry's bullets (the bug); fuzzy company-name matching without dates ("Acme Corp" vs "Acme Corp Consulting Division" over different years are two jobs); an LLM judge for pairing (not deterministic, and the review list already lets the student decide); a duplicates button always on the Resume page (the notice shows only when there is something to merge).
+
+**Impact.** `merge_into(existing, incoming, decisions=None)`; `POST /api/master-resume/merge` also takes `{"resume", "decisions"}`; new `POST /api/master-resume/merge/preview`, `GET /api/master-resume/duplicates`, `POST /api/master-resume/duplicates/merge` (backs up first). On the test pair the result is 3 jobs and every bullet kept. A student who uploads a truly reworded bullet below 0.9 similarity gets both lines and removes one by hand.
+
+## 2026-11-18 — Merge review hardening (external review findings)
+
+- **Auto-pairing needs employer evidence.** Different names pair on their own only with the
+  same dates and a near-miss name (`_is_near_miss`). The same dates and a similar title (the
+  same role at another employer is common for students) are only a suggestion: the pair
+  stays "New entry", the suggested entry is listed first, and the note names it. Supersedes
+  the earlier "same dates + similar title pairs" rule; `find_duplicates` follows the same
+  rule.
+- **Bullets fold only on added or removed words.** `_bullet_overlap` compares word tokens
+  (numbers kept whole, so `1.5` is one token) as a subsequence with ratio ≥ 0.7: the longer
+  wording wins and keeps the old id and skills; a changed word or number ("Canada" vs
+  "Mexico", 30% vs 35%) keeps both bullets. The old similarity ratio erased distinct facts.
+- **Picks name entry ids, not section:row.** A reorder between preview and merge no longer
+  redirects a reviewed pick. The preview returns `revision` (sha256[:16] of the saved
+  resume) and the merge refuses a stale one with 409 (`STALE_MERGE_REVIEW`), checked under
+  the template lock.
+- **Empty means the saved resume.** `useTemplateContentImport` asks unless the preview's
+  `existing_empty` is true and the editor is clean; unsaved edits add a note that either
+  choice replaces them. The editor copy decides only when the preview fails.
+- **Simple setup keeps a retry.** A failed words import shows Try again (same file, same
+  path) and Upload another file; Next stays available rather than blocking.

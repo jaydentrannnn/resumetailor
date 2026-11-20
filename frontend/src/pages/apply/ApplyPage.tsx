@@ -11,6 +11,7 @@ import { describe } from "../../lib/errors";
 import { useToast } from "../../lib/toast";
 import { useOpenTabs } from "../../lib/useOpenTabs";
 import { useProfileGaps } from "../../state/applicantProfileState";
+import { useGuide } from "../../state/guideState";
 import { useRunState } from "../../state/runState";
 import { useWorkspaceState } from "../../state/workspaceState";
 import { ApplicationsPanel } from "./ApplicationsPanel";
@@ -37,6 +38,7 @@ export function ApplyPage() {
   const workspaceId = useWorkspaceState().activeId ?? "";
   const toast = useToast();
   const profileGaps = useProfileGaps();
+  const { applyDone } = useGuide();
   const { params, setParams, write, q, search, setQuery, setTab } = useApplyParams(workspaceId);
   const review = useApplicationTable("review", workspaceId, params, setParams, true, search);
   const queue = useApplicationTable("queue", workspaceId, params, setParams, true, search);
@@ -120,6 +122,7 @@ export function ApplyPage() {
     showError,
   });
   const readyCount = (queue.data?.counts.ready ?? 0) + (review.data?.total ?? 0);
+  const anyPosting = (queue.data?.total ?? 0) + (review.data?.total ?? 0) > 0;
   const anySource = settings.apply.sources.some((source) => source.enabled);
   const flags = { busy, exclusiveBusy, held, browserUsable };
   const find = () => actions.start("find");
@@ -152,7 +155,9 @@ export function ApplyPage() {
           pinned={op.operations.length === 1}
         />
       ))}
-      <ProfileGapsNotice gaps={profileGaps} />
+      {/* Before applying is set up and before anything is found, the empty state's
+          "Set up applying" already says this; the list of blanks waits for a posting. */}
+      {(applyDone !== false || anyPosting) && <ProfileGapsNotice gaps={profileGaps} />}
       {!browserUsable && readyCount > 0 && (
         <AttentionRow
           label="Browser"

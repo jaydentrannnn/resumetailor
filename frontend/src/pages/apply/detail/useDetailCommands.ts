@@ -16,6 +16,7 @@ import {
 } from "../../../lib/applicationActions";
 import { canContinueWithNewFiles, isTabClosed, type OpenTabs } from "../../../lib/applicationRows";
 import { describe } from "../../../lib/errors";
+import { GLOSSARY } from "../../../lib/glossary";
 import { announceTabsChanged } from "../../../lib/tabsChanged";
 import { useToast } from "../../../lib/toast";
 import { useConfirm } from "../../../state/confirmState";
@@ -85,6 +86,18 @@ export function useDetailCommands(
     await startApplyOperation(operationRequest(settings.apply, "fill", [id], mode));
   }
 
+  /** Tailor this posting's files: the step between Find jobs and Fill. */
+  async function prepare(id: string) {
+    if (!(await flushSettings())) {
+      toast.error(
+        "Your settings are not saved yet",
+        "Nothing was started. Check the settings, then try again.",
+      );
+      return;
+    }
+    await startApplyOperation(operationRequest(settings.apply, "prepare", [id]));
+  }
+
   function runNext() {
     if (!app || working) return;
     const id = app.source_job_id;
@@ -93,6 +106,7 @@ export function useDetailCommands(
     if (next === "continue" || withNewFiles)
       return void run(() => fill(id, "continue"), "Could not start");
     if (next === "fill") return void run(() => fill(id, "initial"), "Could not start");
+    if (next === "prepare") return void run(() => prepare(id), "Could not start");
     if (next !== "reopen") return;
     const tabOpen = !!app.fill?.browser_target_id && !isTabClosed(app, openTabs);
     void (
@@ -144,11 +158,13 @@ export function useDetailCommands(
         ? "Start over"
         : next === "fill"
           ? "Fill"
-          : next === "retry"
-            ? retryLabel
-            : next === "review"
-              ? "Review"
-              : null;
+          : next === "prepare"
+            ? GLOSSARY.prepare.label
+            : next === "retry"
+              ? retryLabel
+              : next === "review"
+                ? "Review"
+                : null;
   return {
     next,
     label,

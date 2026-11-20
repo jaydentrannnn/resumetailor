@@ -2,6 +2,7 @@ import { ProfileGapBanner } from "../../components/ProfileGapBanner";
 import { Page } from "../../components/ui";
 import { useApplicantProfile } from "../../state/applicantProfileState";
 import { useEditorState } from "../../state/editorState";
+import { useGuide } from "../../state/guideState";
 import { EditorPage } from "../editor/EditorPage";
 
 /**
@@ -11,11 +12,13 @@ import { EditorPage } from "../editor/EditorPage";
 export function ResumePage() {
   const applicant = useApplicantProfile();
   const editor = useEditorState();
+  const { applyDone } = useGuide();
   const education = editor.resume?.sections.find((section) => section.kind === "education");
   return (
     <Page className="pb-4">
+      {/* What application forms ask for: nothing a student needs before applying is set up. */}
       <ProfileGapBanner
-        gaps={applicant.gaps.filter((gap) => gap.path === "/resume")}
+        gaps={applyDone === false ? [] : applicant.gaps.filter((gap) => gap.path === "/resume")}
         onOpen={() =>
           education &&
           document

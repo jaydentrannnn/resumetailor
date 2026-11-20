@@ -77,9 +77,11 @@ postings and checks each one against your resume. Postings land in three tabs:
 
 ## 5. Fill your first application
 
-Select a posting and press **Fill**. The app tailors a resume for it, opens the
-application in your browser and fills in the form. **It stops before submitting** so you
-can check every answer. If a question needs you, the posting moves to **Needs you**.
+On the **In progress** tab, press **Tailor files** on a posting. The app tailors a resume
+for it, which takes a minute or two. When the button changes to **Fill**, press it: the
+app opens the application in your browser and fills in the form. **It stops before
+submitting** so you can check every answer. If a question needs you, the posting moves to
+**Needs you**.
 
 Read the form, fix anything, and submit it yourself. Then press **Mark submitted** on the
 posting so the app knows it was sent.

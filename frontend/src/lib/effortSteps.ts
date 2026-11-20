@@ -32,7 +32,7 @@ export const EFFORT_STEPS: { id: EffortStep; label: string; help: string; role: 
   {
     id: "answer",
     label: "Application answers",
-    help: "Free-text answers while Fill completes a form (heavy task model).",
+    help: "Free-text answers while Fill completes a form (the AI for filling forms).",
     role: "heavy",
   },
   {

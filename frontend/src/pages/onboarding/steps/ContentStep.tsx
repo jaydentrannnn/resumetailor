@@ -1,17 +1,15 @@
-import { ProfileGapBanner } from "../../../components/ProfileGapBanner";
 import { DataList } from "../../../components/ui";
 import { SKIP_WARNINGS, contentComplete, reviewResume } from "../../../lib/onboarding";
-import { useApplicantProfile } from "../../../state/applicantProfileState";
 import { useEditorState } from "../../../state/editorState";
 import { EditorPage } from "../../editor/EditorPage";
 import { StepFrame, type StepNav } from "../StepFrame";
 import { completenessErrors } from "../../../lib/resumeEdit";
 import { contactErrors } from "../../../lib/onboardingContact";
 
-/** Step 3: what was imported, what is worth fixing, and the full editor to fix it in. */
+/** Step 3: what was imported, what is worth fixing, and the full editor to fix it in.
+ * What application forms ask for (the profile-gap list) belongs to stage 2, not here. */
 export function ContentStep({ nav }: { nav: StepNav }) {
   const editor = useEditorState();
-  const { gaps } = useApplicantProfile();
   const review = reviewResume(editor.resume);
   const invalidContact = Object.values(contactErrors(editor.resume?.contact));
 
@@ -62,16 +60,6 @@ export function ContentStep({ nav }: { nav: StepNav }) {
           {review.warnings.length > 8 && <li>…and {review.warnings.length - 8} more.</li>}
         </ul>
       )}
-      <ProfileGapBanner
-        gaps={gaps.filter((gap) => gap.path === "/resume")}
-        onOpen={() => {
-          const education = editor.resume?.sections.find((s) => s.kind === "education");
-          if (education)
-            document
-              .getElementById(`resume-section-${education.id}`)
-              ?.scrollIntoView({ block: "start" });
-        }}
-      />
       <div className="border-t border-line pt-4">
         {/* The contact block stays: a missing name blocks tailoring, and this is the
             only stage-1 step where it can be fixed. */}

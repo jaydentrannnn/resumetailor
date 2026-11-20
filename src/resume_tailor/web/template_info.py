@@ -100,7 +100,7 @@ def _calibration_info(tagged: Path) -> CalibrationInfo:
             stale=True,
             message=(
                 "Page fit isn't tuned for this template yet, so page length is estimated. "
-                "Use “Tune page fit” (or run `python scripts/calibrate.py`)." + hint
+                "Use “Tune page fit”." + hint
             ),
             calibrated_at=calibrated_at,
         )
@@ -122,8 +122,7 @@ def _calibration_info(tagged: Path) -> CalibrationInfo:
         lines_per_page=lines,
         stale=stale,
         message=(
-            "The template changed after page fit was tuned. Use “Tune page fit” (or run "
-            "`python scripts/calibrate.py`)."
+            "The template changed after page fit was tuned. Use “Tune page fit”."
             if stale
             else None
         ),

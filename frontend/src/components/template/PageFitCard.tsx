@@ -5,6 +5,7 @@ import { describe } from "../../lib/errors";
 import { useToast } from "../../lib/toast";
 import { useTemplateState } from "../../state/templateState";
 import { Button, Stat, StatusChip } from "../ui";
+import { FullOnly } from "../FullOnly";
 
 /**
  * "Page fit tuning": how precisely the app knows this template's line width and page
@@ -51,10 +52,13 @@ export function PageFitCard({ calibration }: { calibration: CalibrationInfo }) {
         </div>
       </div>
       <div className="mt-5 flex flex-wrap items-center justify-between gap-4">
-        <div className="flex flex-wrap gap-x-10 gap-y-4">
-          <Stat value={calibration.lines_per_page} label="lines per page" />
-          <Stat value={calibration.chars_per_line} label="characters per line" />
-        </div>
+        {/* The measured numbers mean something only to whoever debugs a fit: Full view. */}
+        <FullOnly>
+          <div className="flex flex-wrap gap-x-10 gap-y-4">
+            <Stat value={calibration.lines_per_page} label="lines per page" />
+            <Stat value={calibration.chars_per_line} label="characters per line" />
+          </div>
+        </FullOnly>
         <Button
           variant={tuned && !calibration.stale ? "secondary" : "primary"}
           size="xl"
@@ -72,10 +76,12 @@ export function PageFitCard({ calibration }: { calibration: CalibrationInfo }) {
       )}
       {calibration.message && <p className="mt-2 text-sm text-attn">{calibration.message}</p>}
       {log && (
-        <details className="mt-2 text-xs text-ink-muted">
-          <summary className="cursor-pointer">Measurement log</summary>
-          <pre className="mt-1 max-h-48 overflow-auto whitespace-pre-wrap">{log}</pre>
-        </details>
+        <FullOnly>
+          <details className="mt-2 text-xs text-ink-muted">
+            <summary className="cursor-pointer">Measurement log</summary>
+            <pre className="mt-1 max-h-48 overflow-auto whitespace-pre-wrap">{log}</pre>
+          </details>
+        </FullOnly>
       )}
     </Tile>
   );

@@ -23,6 +23,13 @@
       "cautions": "Analyzed assets are not managed assets; forecasts are not realized results; recommendations are not implemented decisions. Academic cases and simulated portfolios are not professional advisory or investment authority."
     },
     {
+      "id": "economics",
+      "label": "Economics",
+      "summary": "Data analysis, research, policy and market reasoning, and clear findings.",
+      "priorities": "Emphasize quantitative and statistical analysis, econometric methods, research, data work, policy or market analysis, and clearly communicated findings where documented and relevant to this posting.",
+      "cautions": "Coursework, replications, and research assistance are not independent or published research. An estimated relationship is not a causal effect unless the source states it; a forecast or projection is not a realized outcome."
+    },
+    {
       "id": "accounting",
       "label": "Accounting",
       "summary": "Reconciliation, reporting, controls, and documented accuracy.",

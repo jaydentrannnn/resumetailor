@@ -28,6 +28,23 @@
 
   const init = (root) => {
     for (const ac of deep(root, "spl-autocomplete")) if (!("value" in ac)) ac.value = null;
+    if (sr.modernDates) for (const input of deep(root, "input.flatpickr-input")) {
+      const wrapper = input.parentElement;
+      if (wrapper._flatpickr) continue;
+      wrapper._flatpickr = {
+        config: {dateFormat: "Y-m-d"},
+        selectedDates: [],
+        formatDate: (date) => date,
+        setDate: (date, triggerChange, format) => {
+          if (!triggerChange || format !== "Y-m-d") return;
+          wrapper._flatpickr.selectedDates = [date];
+          input.value = date;
+          let host = wrapper.getRootNode().host;
+          while (host && host.tagName !== "SPL-DATE-FIELD") host = host.getRootNode().host;
+          if (host) host.value = date.slice(0, 7);
+        },
+      };
+    }
     for (const input of deep(root, "input[type=file]")) {
       const owner = input.getRootNode().host;
       if (input.__sr || !owner || owner.tagName !== "SPL-DROPZONE") continue;
@@ -127,6 +144,12 @@
     } else {
       ac.value = value === "#spl-custom-option" ? text(option.textContent) : value;
       input.value = ac.value;
+      if (sr.rejectText === ac.getAttribute("data-test")) {
+        ac.value = null;
+        input.setAttribute("aria-invalid", "true");
+      } else {
+        input.setAttribute("aria-invalid", "false");
+      }
     }
     closeMenu(ac);
   }, true);
@@ -136,7 +159,7 @@
     const ac = find(path, "SPL-AUTOCOMPLETE");
     if (!ac || path[0].getAttribute("role") !== "combobox") return;
     setTimeout(() => {
-      if (!ac.value) path[0].value = "";
+      if (!ac.value && path[0].getAttribute("aria-invalid") !== "true") path[0].value = "";
       closeMenu(ac);
     }, 30);
   }, true);
@@ -185,8 +208,10 @@
       html = `<oc-education-entry data-test="experience-entry"><div data-test="education-entry"><div data-test="education-entry-is-edit-enabled"><p data-test="education-entry-institution"> ${school} <span data-test="education-entry-date">${year(from)} - ${year(to)}</span></p><p data-test="education-entry-major"> ${major} </p><p data-test="education-entry-degree"> ${degree} </p><p data-test="education-entry-description">${description}</p></div></div></oc-education-entry>`;
     }
     entry.insertAdjacentHTML("afterend", html);
+    if (sr.modernDates) entry.nextElementSibling.insertAdjacentHTML("beforeend",
+      `<spl-button data-test="${kind}-entry-edit"><button type="button">Edit</button></spl-button>`);
     entry.nextElementSibling.__values = {
-      kind, from, to, current,
+      kind, from: sr.corruptSavedMonth ? from?.replace(/-\d{2}$/, "-01") : from, to, current,
       title: ac("job-title-autocomplete"), company: ac("company-autocomplete"),
       school: ac("institution-autocomplete"),
       major: kind === "education" ? inside(entry, "oc-input[data-test=education-major]", "input").value : "",
@@ -197,8 +222,8 @@
     return true;
   };
 
-  sr.reopen = () => {
-    for (const saved of document.querySelectorAll("oc-experience-entry, oc-education-entry")) {
+  sr.reopen = (only) => {
+    for (const saved of only ? [only] : document.querySelectorAll("oc-experience-entry, oc-education-entry")) {
       const values = saved.__values;
       if (!values) continue;
       const holder = document.createElement("div");
@@ -217,7 +242,8 @@
         const input = inside(entry, `oc-datepicker[data-test=${test}]`, "input.flatpickr-input");
         if (!field || !value) return;
         field.value = value;
-        if (input) input.value = `${value.slice(5, 7)}/${value.slice(0, 4)}`;
+        if (input) input.value = sr.modernDates
+          ? `${value}-01` : `${value.slice(5, 7)}/${value.slice(0, 4)}`;
       };
       typeahead("job-title-autocomplete", values.title);
       typeahead("company-autocomplete", values.company);
@@ -256,6 +282,11 @@
 
   document.addEventListener("click", (e) => {
     const path = e.composedPath();
+    const edit = find(path, "SPL-BUTTON");
+    if (/^(experience|education)-entry-edit$/.test(edit?.getAttribute("data-test") || "")) {
+      sr.reopen(edit.closest("oc-experience-entry, oc-education-entry"));
+      return;
+    }
     const button = find(path, "OC-BUTTON");
     if (!button) return;
     const test = button.getAttribute("data-test") || "";

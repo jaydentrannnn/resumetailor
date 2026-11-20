@@ -12,6 +12,7 @@ import { useEditorState } from "../../../state/editorState";
 import { useRunState } from "../../../state/runState";
 import { useTemplateState } from "../../../state/templateState";
 import { StepFrame, type StepNav } from "../StepFrame";
+import { GLOSSARY } from "../../../lib/glossary";
 
 /** The first few names, then a count, so a long list stays one line. */
 function listSummary(names: string[]): string {
@@ -121,9 +122,9 @@ export function SummaryStep({
           "AI model",
           <DataList
             items={[
-              { label: "Light task model", value: tailorModelLabel(settings, config) },
+              { label: GLOSSARY.lightModel.label, value: tailorModelLabel(settings, config) },
               {
-                label: "Heavy task model",
+                label: GLOSSARY.heavyModel.label,
                 value: selectionLabel(modelsFor(settings).heavy, config),
               },
             ]}

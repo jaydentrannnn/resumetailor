@@ -29,6 +29,7 @@ from resume_tailor.importing import (
     import_common,
     import_layout,
     import_merge,
+    import_merge_plan,
     pdf_lines,
     resume_import,
     resume_import_pdf,
@@ -364,6 +365,88 @@ def _import_docx(raw: bytes, filename: str, known_tags: set[str]) -> import_comm
         raise HTTPException(status_code=400, detail=str(exc)) from exc
 
 
+def _incoming_resume(body: dict[str, Any]) -> MasterResume:
+    """The draft a merge request carries, or a 400 naming what is wrong with it."""
+    try:
+        return MasterResume.model_validate(body)
+    except ValidationError as exc:
+        raise HTTPException(
+            status_code=400,
+            detail="; ".join(
+                f"{'.'.join(str(p) for p in e['loc'])}: {e['msg']}" for e in exc.errors()
+            ),
+        ) from exc
+
+
+def _merge_request(body: dict[str, Any]) -> tuple[MasterResume, dict[str, str], str]:
+    """A merge body is the draft itself, or `{"resume": draft, "decisions": {...},
+    "revision": "..."}` after the review list (`import_merge_plan.plan_pairs`)."""
+    if "resume" in body and "sections" not in body:
+        decisions = body.get("decisions") or {}
+        if not isinstance(decisions, dict):
+            raise HTTPException(status_code=400, detail="decisions must be an object")
+        return (
+            _incoming_resume(body["resume"]),
+            {str(k): str(v) for k, v in decisions.items()},
+            str(body.get("revision") or ""),
+        )
+    return _incoming_resume(body), {}, ""
+
+
+#: The 409 a merge gets when the saved resume changed after its review list was made.
+STALE_MERGE_REVIEW = (
+    "Your resume changed after the merge was reviewed. Upload the file again to review it."
+)
+
+
+@router.post("/api/master-resume/merge/preview", response_model=import_merge_plan.MergePlan)
+def preview_master_resume_merge(body: dict[str, Any]) -> import_merge_plan.MergePlan:
+    """What merging this draft would do to jobs and projects: each incoming entry, the
+    existing entry it would be folded into (and why), and how many bullets it adds, plus
+    whether the saved resume is empty and its revision. Reads only; `POST
+    /api/master-resume/merge` takes the student's changes to these pairs as `decisions`
+    and the revision back."""
+    incoming, decisions, _ = _merge_request(body)
+    with template_ops.LOCK:
+        try:
+            existing = data.load()
+        except (FileNotFoundError, ValueError):
+            existing = MasterResume(contact=incoming.contact, sections=[])
+    return import_merge_plan.plan_merge(existing, incoming.sections, decisions)
+
+
+@router.get(
+    "/api/master-resume/duplicates", response_model=list[import_merge_plan.DuplicatePair]
+)
+def list_master_resume_duplicates() -> list[import_merge_plan.DuplicatePair]:
+    """Jobs and projects the saved resume seems to hold twice (`find_duplicates`)."""
+    with template_ops.LOCK:
+        try:
+            resume = data.load()
+        except (FileNotFoundError, ValueError):
+            return []
+    return import_merge_plan.find_duplicates(resume.sections)
+
+
+@router.post("/api/master-resume/duplicates/merge", response_model=MasterResumeMergeResponse)
+def merge_master_resume_duplicates(body: dict[str, Any]) -> MasterResumeMergeResponse:
+    """Fold entry `drop` into entry `keep` (both ids) and save, backing up first. Same
+    read-merge-write under `template_ops.LOCK` as `merge_master_resume`."""
+    keep, drop = str(body.get("keep") or ""), str(body.get("drop") or "")
+    with template_ops.LOCK:
+        try:
+            existing = data.load()
+            merged = import_merge_plan.merge_duplicate(existing, keep, drop)
+        except (FileNotFoundError, ValueError) as exc:
+            raise HTTPException(status_code=400, detail=str(exc)) from exc
+        backup = _write_master_resume(merged, note="merged duplicate entries")
+    return MasterResumeMergeResponse(
+        resume=merged.model_dump(by_alias=True),
+        updated=[keep],
+        backup=backup.name if backup else None,
+    )
+
+
 @router.post("/api/master-resume/merge", response_model=MasterResumeMergeResponse)
 def merge_master_resume(body: dict[str, Any]) -> MasterResumeMergeResponse:
     """Fold an already-parsed draft (typically the `.resume` from `POST
@@ -380,24 +463,21 @@ def merge_master_resume(body: dict[str, Any]) -> MasterResumeMergeResponse:
     rebindable path globals, and a workspace switch landing between the read and the
     write would merge workspace A's existing content with the incoming draft and save
     the result into workspace B's file.
+
+    A body carrying the preview's `revision` is refused with 409 when the saved resume
+    changed since that preview, so a review is never applied to a resume it did not see.
     """
-    try:
-        incoming = MasterResume.model_validate(body)
-    except ValidationError as exc:
-        raise HTTPException(
-            status_code=400,
-            detail="; ".join(
-                f"{'.'.join(str(p) for p in e['loc'])}: {e['msg']}" for e in exc.errors()
-            ),
-        ) from exc
+    incoming, decisions, revision = _merge_request(body)
 
     with template_ops.LOCK:
         try:
             existing = data.load()
         except (FileNotFoundError, ValueError):
             existing = MasterResume(contact=incoming.contact, sections=[])
+        if revision and revision != import_merge_plan.resume_revision(existing):
+            raise HTTPException(status_code=409, detail=STALE_MERGE_REVIEW)
 
-        merged, stats = import_merge.merge_into(existing, incoming)
+        merged, stats = import_merge.merge_into(existing, incoming, decisions)
         backup = _write_master_resume(merged, note="merged an import")
 
     return MasterResumeMergeResponse(

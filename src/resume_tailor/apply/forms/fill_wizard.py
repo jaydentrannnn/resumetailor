@@ -8,6 +8,7 @@ from typing import Any
 
 from resume_tailor.apply.answers import hybrid_resolver, questions, resolver_types
 from resume_tailor.apply.ats import (
+    oracle_email,
     smartrecruiters_page,
     workday_dropdowns,
     workday_flow,
@@ -64,6 +65,9 @@ class _FillWizard(fill_answers._FillAnswers, fill_ats_steps._FillAtsSteps):
         if fill_buttons.decline_cookie_banner(self.page):
             self.progress("declined the cookie banner covering the form")
 
+        if isinstance(self.wizard, wizards.OracleWizard) and oracle_email.is_step(self.page.url):
+            return self._advance_oracle_email(self.wizard)
+
         # SmartRecruiters draws the step's controls a moment after its URL changes; a scan
         # before then finds none (LinkedIn, Intuitive 2026-10-30).
         if (
@@ -77,8 +81,11 @@ class _FillWizard(fill_answers._FillAnswers, fill_ats_steps._FillAtsSteps):
         self._scan_frames()
         if self.is_workday and self._workday_blank_step():
             return fill_outcomes._CONTINUE
-        if self.is_smartrecruiters and smartrecruiters_page.is_form(self.page):
-            self._smartrecruiters_step()
+        entries_need_review = (
+            self.is_smartrecruiters
+            and smartrecruiters_page.is_form(self.page)
+            and self._smartrecruiters_step()
+        )
         self._upload_attachments()
         if self._stop_if_out_of_time("Fill stopped before this form step was complete"):
             return fill_outcomes._BREAK
@@ -112,7 +119,7 @@ class _FillWizard(fill_answers._FillAnswers, fill_ats_steps._FillAtsSteps):
                         "it and rescanning this step"
                     )
                     return fill_outcomes._CONTINUE
-        if self._final_step():
+        if entries_need_review or self._final_step():
             return fill_outcomes._BREAK
         return self._advance(step)
 
@@ -127,6 +134,21 @@ class _FillWizard(fill_answers._FillAnswers, fill_ats_steps._FillAtsSteps):
         for key in ("leftovers", "long_text", "file_inputs", "required_empty"):
             self.merged[key] = []
         self.step_filled_start = len(self.merged["filled"])
+
+    def _advance_oracle_email(self, wizard: wizards.OracleWizard) -> FillResult | str:
+        """Advance the email-only gate; the next pass handles verification or form fields."""
+        page = self.page
+        before = fill_page._form_step_signature(page)
+        reason = oracle_email.advance(page, self.fields, timeout_ms=self._ms_left(5000))
+        if reason:
+            return self._handoff(reason)
+        self.progress("Oracle: continuing from the email step")
+        fill_page.wait_for_new_step(page, before, timeout_ms=self._ms_left(8000))
+        if oracle_email.is_step(page.url):
+            state = wizard.detect_state(page)
+            if state not in {"otp", "verify_email"}:
+                return self._handoff(oracle_email.EMAIL_REVIEW)
+        return fill_outcomes._CONTINUE
 
     def _wizard_gate(self, wizard: wizards.WizardAdapter) -> FillResult | None:
         # A sign-in, an emailed code or a closed posting is the applicant's; checked

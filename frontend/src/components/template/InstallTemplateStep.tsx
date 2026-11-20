@@ -22,8 +22,8 @@ export function InstallTemplateStep({
     <div className="mt-5 border-t border-line pt-4">
       {" "}
       <label className="mt-4 block text-sm">
-        <span className="font-medium text-ink">Save as</span>
-        <span className="ml-1 text-xs text-ink-muted">(library label; must be unique)</span>
+        <span className="font-medium text-ink">Name</span>
+        <span className="ml-1 text-xs text-ink-muted">(shown in your saved templates)</span>
         <input
           type="text"
           value={installLabel}
@@ -43,10 +43,10 @@ export function InstallTemplateStep({
           onChange={(e) => setCalibrateAlso(e.target.checked)}
         />
         <span>
-          <span className="font-medium text-ink">Also calibrate fit constants</span>
+          <span className="font-medium text-ink">Also tune page fit</span>
           <span className="block text-xs text-ink-muted">
-            Runs build + measure (Word/LibreOffice) so page packing matches the new template.
-            Slower; constants reload without restarting the server.
+            Measures how much fits on a page in this template, so tailored resumes fill the page.
+            Takes about 30 seconds.
           </span>
         </span>
       </label>
@@ -61,12 +61,11 @@ export function InstallTemplateStep({
           />
           <span>
             <span className="font-medium text-ink">
-              Also merge this file's content into the master resume
+              Also bring this file's words into your resume
             </span>
             <span className="block text-xs text-ink-muted">
-              Matches entries by company/school/project name: matching entries are updated (their
-              bullets refreshed), new ones are added, and everything else in your master resume is
-              left as-is. Backs up the current file first, and asks for confirmation before writing.
+              Entries that match by company, school or project name are updated, new ones are added,
+              and the rest of your resume stays as it is. The current resume is backed up first.
             </span>
           </span>
         </label>
@@ -80,13 +79,13 @@ export function InstallTemplateStep({
         >
           {wizardStep === "installing"
             ? calibrateAlso
-              ? "Installing & calibrating…"
+              ? "Installing and tuning page fit…"
               : "Installing…"
             : importBusy
-              ? "Importing content…"
+              ? "Bringing in the words…"
               : calibrateAlso
-                ? "Confirm, install & calibrate"
-                : "Confirm & install"}
+                ? "Install and tune page fit"
+                : "Install"}
         </button>
       </div>
     </div>

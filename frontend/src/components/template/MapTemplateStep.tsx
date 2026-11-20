@@ -11,7 +11,7 @@ export function MapTemplateStep({
 }: {
   state: TemplateState;
   importBusy: boolean;
-  importContent: (file: File) => Promise<void>;
+  importContent: (file: File) => Promise<unknown>;
 }) {
   const {
     draftFile,

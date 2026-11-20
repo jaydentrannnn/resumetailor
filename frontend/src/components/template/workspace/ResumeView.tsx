@@ -1,4 +1,6 @@
 import { useState, type ReactNode } from "react";
+import { countLabel } from "../../../lib/countLabel";
+import { useUiMode } from "../../../lib/uiMode";
 import { useLayoutSummary } from "../../../lib/useLayoutSummary";
 import { useTemplateState } from "../../../state/templateState";
 import { DataList } from "../../ui";
@@ -17,6 +19,7 @@ export function ResumeView({ switcher }: { switcher: ReactNode }) {
   const { info, previewKey, previewRevision, pendingTemplate } = useTemplateState();
   const layout = useLayoutSummary(previewRevision);
   const [adjusting, setAdjusting] = useState(false);
+  const { simple } = useUiMode();
   if (!info) return null;
   if (adjusting) return <AdjustMode onDone={() => setAdjusting(false)} />;
 
@@ -38,21 +41,30 @@ export function ResumeView({ switcher }: { switcher: ReactNode }) {
               : info.active_label || "Current template"}
           </h2>
           <p className="mt-1 text-sm text-ink-muted">
-            Your template filled with your full master resume. Only the words change when a resume
-            is tailored.
+            Your template filled with everything on your Resume page. Only the words change when a
+            resume is tailored.
           </p>
           <DataList
             className="mt-4 flex-col"
             items={[
               { label: "Layout", value: layout?.table ? "Table" : "Single column" },
               {
-                label: "Master resume",
-                value: `${info.experience_entries} jobs · ${info.project_entries} projects · ${info.bullets} bullets`,
+                label: "Your resume",
+                value: [
+                  countLabel(info.experience_entries, "job"),
+                  countLabel(info.project_entries, "project"),
+                  countLabel(info.bullets, "bullet"),
+                ].join(" · "),
               },
-              {
-                label: "Lines per page",
-                value: <span className="font-mono">{info.calibration.lines_per_page}</span>,
-              },
+              // The measured page length is a debugging number: Full view only.
+              ...(simple
+                ? []
+                : [
+                    {
+                      label: "Lines per page",
+                      value: <span className="font-mono">{info.calibration.lines_per_page}</span>,
+                    },
+                  ]),
             ]}
           />
         </div>

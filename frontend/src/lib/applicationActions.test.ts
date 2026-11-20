@@ -24,6 +24,10 @@ describe("nextAction", () => {
     ["tailor_failed", { retry_kind: "tailor" }, null, "retry"],
     ["submitted", {}, null, "view"],
     ["ready", { archived_at: "2026-10-01T00:00:00Z" }, null, "view"],
+    // A found posting with no tailored files: the row itself offers the tailoring step.
+    ["screened_in", { job_id: null }, null, "prepare"],
+    ["tailoring", { job_id: null }, null, "view"],
+    ["screened_in", { job_id: null, archived_at: "2026-10-01T00:00:00Z" }, null, "view"],
   ] as const)("%s %j → %s", (status, patch, openTabs, expected) => {
     expect(nextAction(row(status, patch as Partial<ApplicationRow>), openTabs)).toBe(expected);
   });

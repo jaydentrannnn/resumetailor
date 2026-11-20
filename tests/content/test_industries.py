@@ -84,7 +84,7 @@ def test_settings_field_survives_old_clients_and_invalid_ids_are_rejected(profil
         })
         assert result.status_code == 200
         body = result.json()
-        assert len(body["target_fields"]) == 6
+        assert len(body["target_fields"]) == 7
         assert "financial modeling" in body["rewrite_style_default"]
         assert "or the job posting" not in body["cover_core_rules"]
         assert client.get("/api/settings").json()["settings"]["rewrite_style"] == "My custom style."

@@ -231,6 +231,9 @@
   "#postalCode-32": "Postal Code *",
   "#US-STANDARD-ORA_GENDER-STANDARD-11": "Gender"
  },
+ "oracle_cx_email.html": {
+  "#primary-email-0": "Email Address"
+ },
  "paylocity_resume_parse.html": {
   "#useAttachedResumeToFillOutApplication": "Fill out application with my resume",
   "#info\\.firstName": "First Name (required)",

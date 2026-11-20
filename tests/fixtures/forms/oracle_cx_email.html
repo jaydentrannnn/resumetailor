@@ -1,0 +1,33 @@
+<main>
+  <h1>Job application form</h1>
+  <h2>Authentication screen. You don't need to have an account</h2>
+  <form data-bind="submit: next, setBodyScrollTo: { to: 0 }">
+    <label for="primary-email-0">Email Address</label>
+    <input id="primary-email-0" name="primary-email" type="email" aria-required="true">
+    <input id="honey-pot-1" name="honeypot" style="position:absolute;left:-1000px">
+    <input type="checkbox" id="legal-disclaimer-checkbox" required hidden>
+    <label for="legal-disclaimer-checkbox" style="display:inline-block; padding:8px">
+      I acknowledge that I have read and agree to the terms to the
+      <a href="#notice">Privacy Statement and Acknowledgement</a>
+    </label>
+    <button type="button">Cancel</button>
+    <button type="submit" class="apply-flow-pagination__button"
+            data-bind="enable :$parent.isNextButtonEnabled">Next</button>
+  </form>
+</main>
+<script>
+  const email = document.querySelector('#primary-email-0');
+  email.addEventListener('blur', () => { email.dataset.committed = email.value; });
+  document.querySelector('form').addEventListener('submit', (event) => {
+    event.preventDefault();
+    if (!email.dataset.committed || document.querySelector('#honey-pot-1').value) return;
+    if (location.search === '?code') {
+      history.pushState({}, '', 'verify');
+      document.querySelector('form').innerHTML = '<input autocomplete="one-time-code">';
+    } else if (location.search !== '?blocked') {
+      history.pushState({}, '', 'section/1');
+      document.querySelector('form').innerHTML =
+        '<input name="firstName"><input name="lastName"><button type="button">Submit</button>';
+    }
+  });
+</script>

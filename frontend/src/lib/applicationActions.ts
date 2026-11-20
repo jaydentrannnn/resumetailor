@@ -13,14 +13,16 @@ import {
   retryShortLabel,
   type OpenTabs,
 } from "./applicationRows";
-import { REVIEW_STATUSES, TERMINAL_STATUSES, readyBlockLabel } from "./applyPage";
+import { REVIEW_STATUSES, TERMINAL_STATUSES, canTailorFiles, readyBlockLabel } from "./applyPage";
 import type { ToastApi } from "./toast";
 
 /**
  * What can be done to an application row, shared by the Apply table, its selection bar
  * and the application's detail header, so the three always offer the same next step.
+ * "prepare" is a found posting with no tailored files yet: Simple view has no selection
+ * bar, so the row's own button is the only way from Find jobs to Fill there.
  */
-export type NextAction = "continue" | "reopen" | "review" | "fill" | "retry" | "view";
+export type NextAction = "continue" | "reopen" | "review" | "prepare" | "fill" | "retry" | "view";
 
 /** The short Retry label when retrying is the row's next step, else null. */
 export function retryAction(row: ApplicationRow, archived = !!row.archived_at): string | null {
@@ -45,7 +47,8 @@ export function nextAction(
   }
   if (row.status === "ready" && canFillAfterReview(row)) return "fill";
   if (readyBlockLabel(row)) return "review";
-  return retryAction(row, archived) ? "retry" : "view";
+  if (retryAction(row, archived)) return "retry";
+  return canTailorFiles(row) ? "prepare" : "view";
 }
 
 /** Mark submitted and Skip apply to every unfinished row, a filling one included: the

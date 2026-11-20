@@ -4,8 +4,16 @@ screening questions came back as blank "*" leftovers)."""
 
 from __future__ import annotations
 
-from resume_tailor.apply.ats import smartrecruiters_page, smartrecruiters_screening
+from types import SimpleNamespace
+
+from resume_tailor.apply.ats import (
+    smartrecruiters_flow,
+    smartrecruiters_page,
+    smartrecruiters_screening,
+)
 from resume_tailor.apply.forms import fill_widgets, fill_wizard
+from resume_tailor.apply.funnel.packet_models import Packet
+from resume_tailor.apply.funnel.store_models import FillResult
 
 
 def _run(monkeypatch, *, smartrecruiters: bool = True) -> fill_wizard._FillWizard:
@@ -60,3 +68,19 @@ def test_a_rescan_hands_on_only_what_no_flow_owns(monkeypatch):
 def test_other_sites_keep_every_record(monkeypatch):
     run = _run(monkeypatch, smartrecruiters=False)
     assert run._flow_owned() is None  # noqa: SLF001
+
+
+def test_continue_on_screening_keeps_a_previous_entry_date_warning(monkeypatch):
+    run = _run(monkeypatch)
+    run.page = SimpleNamespace(url="https://jobs.smartrecruiters.com/oneclick-ui/acme/screening")
+    run.pkt = Packet(job_id="job", built_at="now", ats="smartrecruiters")
+    run.progress = lambda _message: None
+    run._ensure_experience = lambda: None
+    run._cover_text = lambda _label: None
+    run.needs_review = []
+    warning = "Education 1 (State University): start date"
+    run.previous_fill = FillResult(leftovers=[{"label": warning, "reason": "needs_review"}])
+    monkeypatch.setattr(smartrecruiters_flow, "fill", lambda *_args, **_kwargs: ([], []))
+    assert run._smartrecruiters_step()
+    assert run.needs_review[0] == warning
+    assert "Go back to the SmartRecruiters application" in run.needs_review[1]

@@ -5,6 +5,7 @@ import { modelsFor, selectionDefault, type ModelProvider } from "../../lib/aiMod
 import { limitLabel } from "../../lib/modelLimits";
 import { PROVIDERS, privacyFor, providerInfo } from "../../lib/providers";
 import { useRunState } from "../../state/runState";
+import { GLOSSARY } from "../../lib/glossary";
 import { CheckResultLine } from "./CheckResultLine";
 import { CustomServerFields, PlanField } from "./ModelRowFields";
 import type { RoleModel } from "./useRoleModel";
@@ -12,8 +13,8 @@ import { VertexFields } from "./VertexFields";
 import { VertexModelField } from "./VertexModelField";
 
 const ROLES = {
-  light: { name: "Light task model", uses: "Tailoring, cover letters, extraction and app tools." },
-  heavy: { name: "Heavy task model", uses: "Application answers and AI-assisted form filling." },
+  light: { name: GLOSSARY.lightModel.label, uses: GLOSSARY.lightModel.help },
+  heavy: { name: GLOSSARY.heavyModel.label, uses: GLOSSARY.heavyModel.help },
 } as const;
 
 const LOCAL_PRIVACY = providerInfo("ollama")?.privacy;

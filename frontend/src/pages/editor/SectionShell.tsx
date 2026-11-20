@@ -1,6 +1,7 @@
 import { Tile } from "../../components/ui";
 import { useState } from "react";
 import { AddButton, EntryControls } from "../../components/ListControls";
+import { FullOnly } from "../../components/FullOnly";
 import { EducationEntries } from "./EducationEntries";
 import { ExperienceEntries } from "./ExperienceEntries";
 import { ProjectEntries } from "./ProjectEntries";
@@ -110,11 +111,16 @@ export function SectionShell({
                 placeholder="Section title"
                 className="min-h-9 w-full max-w-sm rounded-sm border border-transparent bg-transparent text-[15px] font-semibold hover:border-line focus:border-accent"
               />
-              <span className="shrink-0 font-mono text-xs text-ink-muted">
-                {SECTION_KIND_LABELS[section.kind]}
-              </span>
+              {/* How the section is laid out and its internal id: Full view only. */}
+              <FullOnly>
+                <span className="shrink-0 font-mono text-xs text-ink-muted">
+                  {SECTION_KIND_LABELS[section.kind]}
+                </span>
+              </FullOnly>
             </div>
-            <code className="mt-1 block text-xs text-ink-muted">{section.id}</code>
+            <FullOnly>
+              <code className="mt-1 block text-xs text-ink-muted">{section.id}</code>
+            </FullOnly>
           </div>
           <EntryControls index={index} total={total} onMove={onMove} onRemove={onRemove} />
         </div>

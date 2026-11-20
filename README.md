@@ -80,8 +80,8 @@ action-verb libraries the rewriter uses), **Apply** (see [Automation](#automatio
 and **Settings** (models, browser, extension pairing, updates).
 
 Choose **Target field** in **Profile → Tailoring** or during setup. Options are General,
-Software & Data, Finance & Consulting, Accounting, Marketing, and Operations & Supply
-Chain. The choice applies to every tailoring run for that profile; each posting determines
+Software & Data, Finance & Consulting, Economics, Accounting, Marketing, and Operations &
+Supply Chain. The choice applies to every tailoring run for that profile; each posting determines
 which evidence is most relevant. Custom writing styles stay intact. Existing profiles
 keep their current guidance until you select a field, and new profiles start with General.
 Saved runs retain their original guidance when you regenerate a cover letter.
@@ -220,7 +220,7 @@ Add, edit and remove sources on their own **Job sources** page: Apply settings �
 | --- | --- |
 | **Job lists** | GitHub README lists: pick from the catalog (SimplifyJobs, speedyapply and more, tagged by field) or paste a link to any repo. Tech lists are on by default; the setup screen picks lists for your field |
 | **Company watchlist** | Paste a company's careers page or job-board link; it finds the Greenhouse, Lever, Ashby, SmartRecruiters or Workday board behind it and watches every posting there |
-| **Keyword search** | Adzuna, USAJobs or freehire.me by keywords, for any industry. Adzuna and USAJobs need free API keys, connected once on the Job sources page; freehire.me needs none |
+| **Keyword search** | Adzuna, USAJobs or freehire.me by keywords, for any industry. Adzuna and USAJobs need free API keys, connected once on the Job sources page; freehire.me needs none. Without keys, the catalog's **Shared feed** lists carry the same Adzuna and USAJobs searches: a GitHub Action runs them a few times a day and publishes the postings as a job list |
 
 Every source, of every kind, has the same filters (keep titles containing, skip titles containing, only these locations) and a maximum
 posting age. Postings that duplicate one you already have are merged, and eligibility
@@ -273,7 +273,7 @@ sessions. (The [browser extension](#browser-extension) is an alternative.)
      SmartRecruiters. There you always press Submit yourself.
    - **Pause all automation** in the header stops everything at once.
 
-Settings → **AI model** has unified **Light task model** and **Heavy task model** selectors.
+Settings → **AI model** has two selectors: **AI for tailoring** (the Light task model) and **AI for filling forms** (the Heavy task model).
 Light handles tailoring, rewrite, expansion, cover letters and app tools; Heavy handles
 autofill and application answers. Both support OpenAI and custom OpenAI-compatible or
 Anthropic-compatible servers. For calling-code menus shared by several countries, set the

@@ -1,4 +1,5 @@
 import { useId, type ReactNode } from "react";
+import { countLabel } from "../../lib/countLabel";
 import { entryMatches } from "../../lib/entryFilter";
 import type { Section } from "../../lib/resumeEdit";
 import { resumeEntryKey } from "../../lib/resumeEntryEdit";
@@ -36,9 +37,9 @@ export function EntryCard({
           : "";
   const detail =
     "bullets" in entry
-      ? `${entry.bullets.length} bullets`
+      ? countLabel(entry.bullets.length, "bullet")
       : "items" in entry
-        ? `${entry.items.length} skills`
+        ? countLabel(entry.items.length, "skill")
         : "degree" in entry
           ? entry.degree
           : "";

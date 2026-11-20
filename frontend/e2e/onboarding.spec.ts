@@ -120,6 +120,20 @@ test("job lists retry, keep exclusions and lock navigation while saving", async 
               enabled: true,
             },
           },
+          {
+            id: "test-swe-2",
+            name: "Stays on",
+            description: "",
+            fields: ["swe"],
+            version: "1",
+            template: {
+              id: "test-swe-2",
+              kind: "pipe_table",
+              url: "https://example.com/more-jobs",
+              categories: [],
+              enabled: true,
+            },
+          },
         ],
       },
     }),
@@ -127,6 +141,12 @@ test("job lists retry, keep exclusions and lock navigation while saving", async 
   await page.getByRole("button", { name: "Retry job lists" }).click();
   const excluded = page.getByRole("checkbox", { name: "Keep excluded" });
   await excluded.uncheck();
+  // With every offered list unticked there is nothing to search: Next waits for one.
+  const kept = page.getByRole("checkbox", { name: "Stays on" });
+  await kept.uncheck();
+  await expect(page.getByRole("button", { name: "Next", exact: true })).toBeDisabled();
+  await expect(page.getByText("Tick at least one job list")).toBeVisible();
+  await kept.check();
   await page.getByRole("checkbox", { name: "Quant", exact: true }).check();
   await expect(excluded).not.toBeChecked();
   await page.route("**/api/onboarding", async (route) => {

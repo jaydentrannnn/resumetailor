@@ -9,6 +9,15 @@ export interface GlossaryEntry {
 }
 
 export const GLOSSARY = {
+  // The two app-wide model roles ("light" and "heavy" in code and settings).
+  lightModel: {
+    label: "AI for tailoring",
+    help: "Tailoring, cover letters, extraction and app tools.",
+  },
+  heavyModel: {
+    label: "AI for filling forms",
+    help: "Application answers and AI-assisted form filling.",
+  },
   mustHaves: {
     label: "Required skills covered",
     help: "How many of the posting's must-have skills the tailored page names (soft skills count when the work shows them), and how many your main resume mentions as written, before tailoring.",

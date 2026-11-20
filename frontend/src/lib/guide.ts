@@ -78,7 +78,7 @@ export function guideSteps({
       id: "fill",
       title: "Fill your first application",
       detail:
-        "Pick a posting on Apply and press Fill: the form is filled in your browser, and the app stops wherever it needs you.",
+        "On Apply, press Tailor files on a posting, then Fill when it is ready: the form is filled in your browser, and the app stops wherever it needs you.",
       done: progress.autofilled > 0,
       to: "/applications",
       action: "Open Apply",

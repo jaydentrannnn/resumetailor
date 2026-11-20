@@ -17,55 +17,83 @@ from ..content.data import (
     SkillGroup,
     SkillsSection,
 )
-from . import import_common, import_merge_match
+from . import import_common, import_merge_match, import_merge_plan
+
+#: The fields an incoming entry may refresh on its match, per kind. The name comes
+#: first: it is adopted only on a same-name match (a different spelling the student
+#: chose to pair keeps the name already in the resume).
+_REFRESHED = {
+    "experience": ("company", "title", "location", "start", "end"),
+    "project": ("name", "tech", "start", "end", "date", "link", "url"),
+}
+_SECTION_CLASS = {"experience": ExperienceSection, "project": ProjectSection}
 
 
-def _merge_experience(
+def _merge_paired(
     sections: list[Section],
     incoming_sections: list[Section],
+    kind: import_merge_plan.PairKind,
+    decisions: dict[str, str] | None,
     taken_entry_ids: set[str],
     taken_section_ids: set[str],
     stats: import_merge_match.MergeStats,
 ) -> None:
-    existing_by_key: dict[str, list[tuple[int, int]]] = {}
-    for si, sec in enumerate(sections):
-        if sec.kind != "experience":
+    """Merge every incoming job (or project) into its pair, or add it as new.
+
+    A matched entry keeps its id, its bullets and their Extra skills; the incoming
+    entry refreshes only the fields it has a value for and adds the bullets the entry
+    does not already hold (`import_merge_plan.union_bullets`). Pairing is global, never
+    by section; a new entry goes where `_place_leftovers` puts its section.
+    """
+    pairs = {
+        pair.key: pair
+        for pair in import_merge_plan.plan_pairs(sections, incoming_sections, kind, decisions)
+    }
+    name_field = _REFRESHED[kind][0]
+    for isi, inc_sec in enumerate(incoming_sections):
+        if inc_sec.kind != kind:
             continue
-        for ei, e in enumerate(sec.entries):
-            existing_by_key.setdefault(import_merge_match._match_key(e.company), []).append(
+        leftovers: list[Experience | Project] = []
+        for iei, inc in enumerate(inc_sec.entries):
+            pair = pairs[f"{kind}:{isi}:{iei}"]
+            if pair.match is None:
+                leftovers.append(inc)
+                continue
+            si, ei = next(
                 (si, ei)
+                for si, sec in enumerate(sections)
+                if sec.kind == kind
+                for ei, entry in enumerate(sec.entries)
+                if entry.id == pair.match
             )
-
-    for inc_sec in incoming_sections:
-        if inc_sec.kind != "experience":
-            continue
-        leftovers: list[Experience] = []
-        for inc in inc_sec.entries:
-            queue = existing_by_key.get(import_merge_match._match_key(inc.company))
-            if queue:
-                si, ei = queue.pop(0)
-                existing = sections[si].entries[ei]
-                sections[si].entries[ei] = existing.model_copy(
-                    update={
-                        "company": inc.company,
-                        "title": inc.title,
-                        "location": inc.location,
-                        "start": inc.start,
-                        "end": inc.end,
-                        "bullets": import_merge_match._remint_bullets(inc.bullets, existing.id),
-                    }
+            existing = sections[si].entries[ei]
+            same_name = pair.reason == import_merge_plan.SAME_NAME
+            updates: dict[str, object] = {
+                field: value
+                for field in _REFRESHED[kind]
+                if (value := getattr(inc, field)) and (same_name or field != name_field)
+            }
+            updates["bullets"], _ = import_merge_plan.union_bullets(
+                existing.bullets, inc.bullets, existing.id
+            )
+            sections[si].entries[ei] = existing.model_copy(update=updates)
+            stats.updated.append(getattr(inc, name_field))
+            if not same_name:
+                stats.warnings.append(
+                    f'"{getattr(inc, name_field)}" was merged into your existing '
+                    f'"{getattr(existing, name_field)}" ({pair.reason}).'
                 )
-                stats.updated.append(inc.company)
-            else:
-                leftovers.append(inc)
 
         if not leftovers:
             continue
         target_idx = import_merge_match._place_leftovers(
-            sections, "experience", inc_sec.title, taken_section_ids, stats, ExperienceSection
+            sections, kind, inc_sec.title, taken_section_ids, stats, _SECTION_CLASS[kind]
         )
         for inc in leftovers:
-            entry_id = import_common._fresh_id(inc.company or "role", taken_entry_ids)
+            name = getattr(inc, name_field)
+            entry_id = import_common._fresh_id(
+                name or ("role" if kind == "experience" else "project"), taken_entry_ids
+            )
             sections[target_idx].entries.append(
                 inc.model_copy(
                     update={
@@ -74,63 +102,7 @@ def _merge_experience(
                     }
                 )
             )
-            stats.added.append(inc.company)
-
-def _merge_projects(
-    sections: list[Section],
-    incoming_sections: list[Section],
-    taken_entry_ids: set[str],
-    taken_section_ids: set[str],
-    stats: import_merge_match.MergeStats,
-) -> None:
-    existing_by_key: dict[str, list[tuple[int, int]]] = {}
-    for si, sec in enumerate(sections):
-        if sec.kind != "project":
-            continue
-        for ei, e in enumerate(sec.entries):
-            existing_by_key.setdefault(import_merge_match._match_key(e.name), []).append((si, ei))
-
-    for inc_sec in incoming_sections:
-        if inc_sec.kind != "project":
-            continue
-        leftovers: list[Project] = []
-        for inc in inc_sec.entries:
-            queue = existing_by_key.get(import_merge_match._match_key(inc.name))
-            if queue:
-                si, ei = queue.pop(0)
-                existing = sections[si].entries[ei]
-                sections[si].entries[ei] = existing.model_copy(
-                    update={
-                        "name": inc.name,
-                        "tech": inc.tech,
-                        "start": inc.start,
-                        "end": inc.end,
-                        "date": inc.date,
-                        "link": inc.link,
-                        "url": inc.url,
-                        "bullets": import_merge_match._remint_bullets(inc.bullets, existing.id),
-                    }
-                )
-                stats.updated.append(inc.name)
-            else:
-                leftovers.append(inc)
-
-        if not leftovers:
-            continue
-        target_idx = import_merge_match._place_leftovers(
-            sections, "project", inc_sec.title, taken_section_ids, stats, ProjectSection
-        )
-        for inc in leftovers:
-            entry_id = import_common._fresh_id(inc.name or "project", taken_entry_ids)
-            sections[target_idx].entries.append(
-                inc.model_copy(
-                    update={
-                        "id": entry_id,
-                        "bullets": import_merge_match._remint_bullets(inc.bullets, entry_id),
-                    }
-                )
-            )
-            stats.added.append(inc.name)
+            stats.added.append(name)
 
 def _merge_education(
     sections: list[Section],
@@ -314,7 +286,9 @@ def _merge_contact(existing: Contact, incoming: Contact) -> Contact:
     return existing.model_copy(update=updates)
 
 def merge_into(
-    existing: MasterResume, incoming: MasterResume
+    existing: MasterResume,
+    incoming: MasterResume,
+    decisions: dict[str, str] | None = None,
 ) -> tuple[MasterResume, import_merge_match.MergeStats]:
     """Fold `incoming` (typically the `.resume` of an `ImportedResume`) into `existing`
     by matching entries on company/project name, school, skills label, or exact list
@@ -323,16 +297,18 @@ def merge_into(
     entry that already lives in that differently-titled section to be duplicated.
     Education additionally matches on a boundary-anchored suffix (`_is_near_miss`) after
     exact matching fails, since one export commonly names a school's college/school where
-    another doesn't — every other kind matches exactly only.
+    another doesn't. Jobs and projects pair on the same name, then on a similar name or
+    (jobs) the same title over the same dates; `decisions` overrides any of those pairs
+    (`import_merge_plan.plan_pairs`). Skills and plain lists match exactly only.
 
-    A matched entry is updated *in place*, keeping its existing id (and, for
-    experience/project, its bullets re-minted under that id) so nothing referencing it
-    elsewhere breaks; education additionally only overwrites fields the incoming entry
-    actually has a value for (`_merge_education_entry`), so a curated `gpa`/`show_gpa`
-    the incoming .docx has no way to express survives. An unmatched incoming entry is
-    added — see `_target_section_index` for where. Anything in `existing` with no
-    counterpart in `incoming` is left completely untouched, including its id, bullets,
-    and tags.
+    A matched entry is updated *in place*, keeping its existing id so nothing
+    referencing it elsewhere breaks, and only the fields the incoming entry actually has
+    a value for are overwritten (so a curated `gpa`/`show_gpa`, or a location the upload
+    lacks, survives). A matched job or project keeps every bullet it had, with its tags,
+    and gains the incoming bullets it did not have (`import_merge_plan.union_bullets`):
+    nothing is dropped. An unmatched incoming entry is added — see
+    `_target_section_index` for where. Anything in `existing` with no counterpart in
+    `incoming` is left completely untouched, including its id, bullets, and tags.
 
     Pure: no I/O, no LLM call. `MasterResume.tag_vocabulary` is the union of both
     sides; `summary_variants` and `_comment` are carried over from `existing` verbatim,
@@ -346,8 +322,10 @@ def merge_into(
     }
     taken_section_ids: set[str] = {s.id for s in sections}
 
-    _merge_experience(sections, incoming.sections, taken_entry_ids, taken_section_ids, stats)
-    _merge_projects(sections, incoming.sections, taken_entry_ids, taken_section_ids, stats)
+    for kind in ("experience", "project"):
+        _merge_paired(
+            sections, incoming.sections, kind, decisions, taken_entry_ids, taken_section_ids, stats
+        )
     _merge_education(sections, incoming.sections, taken_section_ids, stats)
     _merge_skills(sections, incoming.sections, taken_section_ids, stats)
     _merge_list_items(sections, incoming.sections, taken_entry_ids, taken_section_ids, stats)

@@ -4,12 +4,13 @@ import { Button, Card } from "../../components/ui";
 import { emitAppEvent } from "../../lib/appEvents";
 import { describe } from "../../lib/errors";
 import { useRunState } from "../../state/runState";
+import { GLOSSARY } from "../../lib/glossary";
 import { CheckResultLine } from "./CheckResultLine";
 
 const ENGINE_NAMES: Record<string, string> = { soffice: "LibreOffice", word: "Microsoft Word" };
 const CHECKS = [
-  { id: "tailor", label: "Light task model" },
-  { id: "autofill", label: "Heavy task model" },
+  { id: "tailor", label: GLOSSARY.lightModel.label },
+  { id: "autofill", label: GLOSSARY.heavyModel.label },
   { id: "pdf", label: "PDF conversion" },
 ] as const;
 type CheckId = (typeof CHECKS)[number]["id"];

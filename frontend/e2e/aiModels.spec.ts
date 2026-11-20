@@ -57,8 +57,8 @@ for (const width of [1280, 390]) {
       .locator("section")
       .filter({ has: page.getByRole("heading", { name: "AI models", exact: true }) })
       .last();
-    const light = tile.getByRole("group", { name: "Light task model", exact: true });
-    const heavy = tile.getByRole("group", { name: "Heavy task model", exact: true });
+    const light = tile.getByRole("group", { name: "AI for tailoring", exact: true });
+    const heavy = tile.getByRole("group", { name: "AI for filling forms", exact: true });
     const keys = page
       .locator("section")
       .filter({ has: page.getByRole("heading", { name: "API keys", exact: true }) })

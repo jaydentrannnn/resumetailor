@@ -15,6 +15,7 @@ import { AnswerPreferences } from "./AnswerPreferences";
 import { ComeBackSetting } from "./ComeBackSetting";
 import { FullOnly } from "../../components/FullOnly";
 import { useRevealed } from "../../lib/uiMode";
+import { GLOSSARY } from "../../lib/glossary";
 import { useApplicantProfile } from "../../state/applicantProfileState";
 
 /**
@@ -329,11 +330,11 @@ export function ApplySettingsDrawer({
         <FullOnly>
           <Section title="AI models">
             <p className="text-xs text-ink-muted">
-              Heavy task model:{" "}
+              {GLOSSARY.heavyModel.label}:{" "}
               <span className="font-mono text-ink">
                 {selectionLabel(modelsFor(settings).heavy, config)}
               </span>
-              ; light task model:{" "}
+              ; {GLOSSARY.lightModel.label}:{" "}
               <span className="font-mono text-ink">{tailorModelLabel(settings, config)}</span>.{" "}
               <Link className="rt-link" to="/settings?tab=ai" onClick={onClose}>
                 Change in Settings

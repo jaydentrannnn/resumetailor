@@ -26,7 +26,7 @@ import { JobSourcePicker } from "./JobSourcePicker";
 
 /**
  * Stage 2: which job lists Find jobs searches (preselected from the target field) and
- * the browser Fill opens. Nothing here is required.
+ * the browser Fill opens. The only requirement: when lists are offered, one stays on.
  */
 export function ApplySetupStep({ nav }: { nav: StepNav }) {
   const { config, settings, setSettings, settingsLoaded, flushSettings } = useRunState();
@@ -74,14 +74,14 @@ export function ApplySetupStep({ nav }: { nav: StepNav }) {
     const have = new Set(apply.sources.map((s) => s.catalog_id));
     setSkipped(
       new Set(
-        suggestedEntries(catalog, jobFields)
+        suggestedEntries(catalog, jobFields, target)
           .filter((e) => !have.has(e.id))
           .map((e) => e.id),
       ),
     );
-  }, [catalog, settingsLoaded, apply, jobFields]);
+  }, [catalog, settingsLoaded, apply, jobFields, target]);
 
-  const suggestions = catalog ? suggestedEntries(catalog, jobFields) : [];
+  const suggestions = catalog ? suggestedEntries(catalog, jobFields, target) : [];
 
   /** The settings with this step's job lists written in (unchanged without a field). */
   function withJobLists(): ApplySettings {
@@ -116,12 +116,17 @@ export function ApplySetupStep({ nav }: { nav: StepNav }) {
   }
 
   const view = browserView(browser, apply.browser ?? null);
+  // With lists on offer and every one unticked, Find jobs would have nothing of the
+  // student's to search: Next waits for one list (Skip still leaves the step, with its
+  // warning). No field, or a failed catalog, offers nothing to tick and never blocks.
+  const noListOn =
+    !!target && suggestions.length > 0 && suggestions.every((entry) => skipped.has(entry.id));
   return (
     <StepFrame
       title="Job lists and browser"
       intro="Which job lists Find jobs searches, and the browser that opens to fill in applications. Both can be changed later on the Apply page."
       nav={nav}
-      complete
+      complete={!noListOn}
       onSave={save}
       skipWarning={SKIP_WARNINGS.apply_tools}
       error={error}
@@ -159,6 +164,11 @@ export function ApplySetupStep({ nav }: { nav: StepNav }) {
             add lists later on the Apply page.
           </p>
         ))}
+      {noListOn && (
+        <p role="status" className="text-sm text-attn">
+          Tick at least one job list so Find jobs has somewhere to look, or press Skip.
+        </p>
+      )}
       <Card
         embedded
         className="border-t border-line pt-4"

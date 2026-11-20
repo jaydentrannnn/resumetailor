@@ -22,6 +22,16 @@ def _paragraph_hyperlink_url(para: _Para) -> str:
             return target
     return ""
 
+def _is_address(text: str) -> bool:
+    """Whether a LinkedIn/GitHub segment is an address, not the bare word.
+
+    A header whose link lost its target on export reads just "LinkedIn". Stored as the
+    profile address, that word fails the editor's URL check; leaving the field empty is
+    the honest import.
+    """
+    return "." in text or "/" in text
+
+
 def _import_contact_from_paragraph(name: str, contact_para: _Para | None) -> Contact:
     """One joined contact line, split on its own separator — today's exact contract,
     used whenever the contact block is a single paragraph (every paragraph-layout
@@ -71,11 +81,11 @@ def _import_contact_from_paragraph(name: str, contact_para: _Para | None) -> Con
             continue
         low = seg.lower()
         if "linkedin" in low:
-            if not linkedin:
+            if not linkedin and _is_address(seg):
                 linkedin = seg
             continue
         if "github" in low:
-            if not github:
+            if not github and _is_address(seg):
                 github = seg
             continue
         if analysis_types._PHONE_RE.fullmatch(seg.replace(" ", "")):
@@ -106,7 +116,9 @@ def _import_contact_from_slots(
                 m = analysis_types._EMAIL_RE.search(text)
                 fields["email"] = m.group(0) if m else text
             elif field in ("linkedin", "github"):
-                fields[field] = _paragraph_hyperlink_url(para) or text
+                fields[field] = _paragraph_hyperlink_url(para) or (
+                    text if _is_address(text) else ""
+                )
             elif field in fields:
                 fields[field] = text
     return Contact(

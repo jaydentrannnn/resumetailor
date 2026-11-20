@@ -28,6 +28,7 @@ import {
   uploadTemplate,
 } from "../api";
 import { emitAppEvent } from "../lib/appEvents";
+import { labelFromFilename, uniqueLabel } from "../lib/templateLabel";
 import { useToast } from "../lib/toast";
 
 export type WizardStep = "idle" | "analyzing" | "mapping" | "installing" | "done" | "error";
@@ -88,17 +89,6 @@ type TemplateStateValue = {
 const TemplateStateContext = createContext<TemplateStateValue | null>(null);
 
 /**
- * Derive a default install label from an upload filename stem.
- */
-function labelFromFilename(name: string): string {
-  const stem = name.replace(/\.docx$/i, "").trim() || "Untitled";
-  return stem
-    .replace(/[\s_]+/g, " ")
-    .trim()
-    .slice(0, 80);
-}
-
-/**
  * Owns Template-tab state above the router so a slow rebuild (Word ~9s) survives
  * switching away to Tailor / Master resume and back.
  */
@@ -122,7 +112,14 @@ export function TemplateProvider({ children }: { children: ReactNode }) {
   const [headingOverrides, setHeadingOverrides] = useState<Record<number, TemplateHeadingKind>>({});
   const [remapBusy, setRemapBusy] = useState(false);
   const [calibrateAlso, setCalibrateAlso] = useState(true);
-  const [installLabel, setInstallLabel] = useState("");
+  const [installLabel, setLabel] = useState("");
+  // True while the name still comes from the filename: only then is it made unique
+  // without asking (a name the user typed is theirs, and a clash is reported).
+  const labelAuto = useRef(false);
+  const setInstallLabel = useCallback((value: string) => {
+    labelAuto.current = false;
+    setLabel(value);
+  }, []);
   const [convertBullets, setConvertBullets] = useState(false);
   const [library, setLibrary] = useState<TemplateLibraryEntry[]>([]);
   const [libraryActiveId, setLibraryActiveId] = useState<string | null>(null);
@@ -204,7 +201,7 @@ export function TemplateProvider({ children }: { children: ReactNode }) {
     setAnalysis(null);
     setProfileDraft(null);
     setHeadingOverrides({});
-    setInstallLabel("");
+    setLabel("");
     setFromLayout(false);
     setConvertBullets(false);
     setError(null);
@@ -222,7 +219,8 @@ export function TemplateProvider({ children }: { children: ReactNode }) {
     setLastBuildOk(null);
     setDraftFile(file);
     setFromLayout(false);
-    setInstallLabel(labelFromFilename(file.name));
+    labelAuto.current = true;
+    setLabel(labelFromFilename(file.name));
     setWizardStep("analyzing");
     setAnalysis(null);
     setProfileDraft(null);
@@ -249,7 +247,8 @@ export function TemplateProvider({ children }: { children: ReactNode }) {
       setLastBuildOk(null);
       setDraftFile(file);
       setFromLayout(true);
-      setInstallLabel(label.slice(0, 80));
+      labelAuto.current = false;
+      setLabel(label.slice(0, 80));
       setHeadingOverrides({});
       setAnalysis(result);
       setProfileDraft(result.suggested_profile);
@@ -298,7 +297,13 @@ export function TemplateProvider({ children }: { children: ReactNode }) {
     try {
       const result: TemplateBuildResponse = await uploadTemplate(draftFile, profileDraft, {
         calibrate: calibrateAlso,
-        label: installLabel.trim() || undefined,
+        label:
+          (labelAuto.current
+            ? uniqueLabel(
+                installLabel,
+                library.map((entry) => entry.label),
+              )
+            : installLabel.trim()) || undefined,
         convertBullets,
       });
       setBuildLog(buildLogWithTitles(result));
@@ -327,6 +332,7 @@ export function TemplateProvider({ children }: { children: ReactNode }) {
     profileDraft,
     calibrateAlso,
     installLabel,
+    library,
     convertBullets,
     refresh,
     refreshLibrary,
@@ -504,6 +510,7 @@ export function TemplateProvider({ children }: { children: ReactNode }) {
       remapHeading,
       calibrateAlso,
       installLabel,
+      setInstallLabel,
       library,
       libraryActiveId,
       libraryBusy,

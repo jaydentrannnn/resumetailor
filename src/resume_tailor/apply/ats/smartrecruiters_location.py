@@ -15,7 +15,7 @@ from . import smartrecruiters_page
 
 def month_year(value: str) -> str:
     """The pickers' typed format: "2026-06" -> "06/2026"; "" when the month is unknown."""
-    match = re.fullmatch(r"\s*(\d{4})-(\d{1,2})(?:-\d{1,2})?\s*", value or "")
+    match = re.fullmatch(r"\s*(\d{4})-(0?[1-9]|1[0-2])(?:-\d{1,2})?\s*", value or "")
     if not match:
         return ""
     return f"{int(match.group(2)):02d}/{match.group(1)}"
@@ -198,6 +198,7 @@ def _type_and_pick(
     choose: Callable[[list[tuple[str, str]]], str | None],
     *,
     want_results: bool,
+    whole_query: bool = False,
 ) -> bool:
     """Type ``query`` into the typeahead and click the option ``choose`` names.
 
@@ -206,9 +207,14 @@ def _type_and_pick(
     """
     field = host.locator("input[role=combobox]").first
     try:
-        field.fill("", timeout=3000)
-        field.focus(timeout=3000)
-        field.press_sequentially(query, delay=20, timeout=10000)
+        if whole_query:
+            # The inline editor can re-render during sequential typing and lose
+            # the rest of a title. Send the complete query in one input event.
+            field.fill(query, timeout=3000)
+        else:
+            field.fill("", timeout=3000)
+            field.focus(timeout=3000)
+            field.press_sequentially(query, delay=20, timeout=10000)
     except Exception:  # noqa: BLE001
         _clear_typeahead(host)
         return False
@@ -232,10 +238,23 @@ def _text_typeahead(host: Any, wanted: str) -> bool:
     def choose(options: list[tuple[str, str]]) -> str | None:
         return pick_text(options, wanted)
 
-    if not _type_and_pick(host, wanted, choose, want_results=False):
-        return False
-    committed = _committed(host)
-    return isinstance(committed, str) and smartrecruiters_page._same(committed, wanted, "school")
+    field = host.locator("input[role=combobox]").first
+    for attempt in range(3):
+        committed = _committed(host)
+        try:
+            if (
+                isinstance(committed, str)
+                and smartrecruiters_page._same(committed, wanted, "school")
+                and field.get_attribute("aria-invalid", timeout=2000) != "true"
+            ):
+                return True
+        except Exception:  # noqa: BLE001
+            return False
+        if attempt < 2:
+            # A previous attempt can leave the right text visible with no selected value.
+            _clear_typeahead(host)
+            _type_and_pick(host, wanted, choose, want_results=False, whole_query=True)
+    return False
 
 def _location_typeahead(host: Any, city: str, state: str, country: str) -> bool:
     if not city or not smartrecruiters_page._present(host):

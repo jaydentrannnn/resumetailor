@@ -29,6 +29,8 @@ type ChoiceOption = {
 type ChoiceOpts = {
   title: string;
   message: string;
+  /** Extra content between the message and the buttons (a review list, say). */
+  body?: ReactNode;
   options: ChoiceOption[];
   cancelLabel?: string;
 };
@@ -138,6 +140,7 @@ export function ConfirmProvider({ children }: { children: ReactNode }) {
       {active?.kind === "choice" && (
         <Modal title={active.opts.title} onClose={() => closeWith(null)}>
           <p className="mt-3 whitespace-pre-line text-sm text-ink">{active.opts.message}</p>
+          {active.opts.body}
           <div className="mt-4 flex flex-wrap justify-end gap-2">
             <button
               type="button"

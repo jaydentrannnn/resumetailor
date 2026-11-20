@@ -124,8 +124,8 @@ test("resume editor: import a PDF's content as a draft", async ({ page, request 
     mimeType: "application/pdf",
     buffer: await pdf.body(),
   });
-  await page.getByRole("button", { name: "Review as draft" }).click();
-  await expect(panel.getByText(/imported as an unsaved draft/)).toBeVisible();
+  await page.getByRole("button", { name: "Check it first" }).click();
+  await expect(panel.getByText(/loaded but not saved/)).toBeVisible();
   await expect(
     page.getByRole("navigation", { name: "Resume sections" }).getByText("CERTIFICATIONS"),
   ).toBeVisible();

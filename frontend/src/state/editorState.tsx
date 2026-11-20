@@ -214,7 +214,7 @@ export function EditorProvider({ children }: { children: ReactNode }) {
     setResumeState(withKeys);
     setSavedSnapshot(JSON.stringify(stripRowKeys(withKeys)));
     setErrors([]);
-    setMessage(syncMessage ?? "Master resume updated.");
+    setMessage(syncMessage ?? "Resume updated.");
     emitAppEvent("rt:resume-saved");
   }, []);
 

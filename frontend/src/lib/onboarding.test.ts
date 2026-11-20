@@ -85,6 +85,8 @@ describe("onboarding helpers", () => {
     expect(sourceFieldsForTarget("software-data")).toEqual(["swe", "data"]);
     expect(sourceFieldsForTarget("finance-consulting")).toContain("finance");
     expect(sourceFieldsForTarget("general")).toEqual([]);
+    expect(sourceFieldsForTarget("economics")).toEqual(["consulting"]);
+    expect(studyFieldForTarget("economics")).toBe("business");
     expect(sourceFieldsForTarget("unknown")).toEqual([]);
     expect(sourceFieldsForTarget(null)).toEqual([]);
     expect(studyFieldForTarget("marketing")).toBe("business");
@@ -119,6 +121,31 @@ describe("onboarding helpers", () => {
     expect(sourcesFromCatalogPicks(SOURCES, picked, "cs").some((s) => s.kind === "ats_board")).toBe(
       false,
     );
+  });
+
+  it("adds the lists a target field names, keyless searches included, in catalog order", () => {
+    const entry = (id: string, kind: "pipe_table" | "job_search"): CatalogEntry => ({
+      id,
+      name: id,
+      description: "",
+      fields: ["business"],
+      version: "1",
+      template: { id, kind, url: "", categories: [], enabled: true },
+    });
+    const catalog: SourceCatalog = {
+      schema_version: 1,
+      origin: "bundled",
+      entries: [entry("freehire-business", "job_search"), entry("zapply", "pipe_table")],
+    };
+    expect(suggestedEntries(catalog, [], "general").map((e) => e.id)).toEqual([
+      "freehire-business",
+    ]);
+    // Without the target, a field match never brings in a keyword search.
+    expect(suggestedEntries(catalog, ["business"]).map((e) => e.id)).toEqual(["zapply"]);
+    expect(suggestedEntries(catalog, ["business"], "general").map((e) => e.id)).toEqual([
+      "freehire-business",
+      "zapply",
+    ]);
   });
 
   it("never preselects keyword searches, which need an API key", () => {

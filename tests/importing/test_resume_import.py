@@ -188,6 +188,22 @@ def test_contact_plain_text_profile_url_is_recovered():
     assert imported.resume.contact.location == ""
 
 
+def test_contact_bare_link_label_is_not_stored_as_the_address():
+    """A header whose links lost their targets reads just "LinkedIn" / "GitHub". Those
+    words are labels, not addresses: stored, they fail the editor's URL check and used
+    to block setup with no message."""
+
+    def build(document):
+        document.add_paragraph("Ada Park")
+        document.add_paragraph("London • ada@example.com • LinkedIn • GitHub")
+
+    contact = _import(build).resume.contact
+    assert contact.linkedin == ""
+    assert contact.github == ""
+    assert contact.email == "ada@example.com"
+    assert contact.location == "London"
+
+
 def test_phone_with_leading_parenthesis_is_not_truncated():
     """`_PHONE_RE` requires its match to start on a digit, so "(555) 123-4567" would
     lose its opening paren without the explicit restore."""
@@ -352,9 +368,15 @@ def test_merge_experience_match_is_case_and_punctuation_insensitive():
     assert entry.company == "ACME INC"  # refreshed from incoming
     assert entry.title == "New Title"
     assert entry.location == "New Loc"
-    # bullets re-minted under the SURVIVING (existing) id, not the incoming entry's own
-    assert [b.id for b in entry.bullets] == ["acme-id_b1", "acme-id_b2"]
-    assert [b.text for b in entry.bullets] == ["New bullet one.", "New bullet two."]
+    # The existing bullet stays, with its id and Extra skills; the incoming ones are
+    # added under the SURVIVING (existing) id, not the incoming entry's own.
+    assert [b.id for b in entry.bullets] == ["acme-id_b1", "acme-id_b2", "acme-id_b3"]
+    assert [b.text for b in entry.bullets] == [
+        "Old bullet.",
+        "New bullet one.",
+        "New bullet two.",
+    ]
+    assert entry.bullets[0].tags == ["x"]
 
 
 def test_merge_experience_matches_globally_not_by_section_title():
@@ -411,7 +433,7 @@ def test_merge_experience_matches_globally_not_by_section_title():
     assert titles == ["WORK EXPERIENCE", "LEADERSHIP EXPERIENCE"]
     entry = merged.experience[0]
     assert entry.id == "itg-uci"
-    assert entry.bullets[0].text == "Refreshed bullet."
+    assert entry.bullets[-1].text == "Refreshed bullet."
 
 
 def test_merge_experience_does_not_confuse_companies_sharing_a_slugify_prefix():

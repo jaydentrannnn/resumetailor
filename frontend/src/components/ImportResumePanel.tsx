@@ -1,35 +1,15 @@
 import { StatusMark, Tile } from "./ui";
 import { useState } from "react";
-import { importMasterResumeContent, mergeMasterResume } from "../api";
-import type { MasterResume } from "../lib/resumeEdit";
-import {
-  MERGE_CHOICE_MESSAGE,
-  MERGE_CHOICE_OPTIONS,
-  MERGE_CHOICE_TITLE,
-} from "../lib/mergeConfirm";
-import { useConfirm } from "../state/confirmState";
-import { useEditorState } from "../state/editorState";
 import { UploadDropzone } from "./template/UploadDropzone";
-
-type Outcome =
-  | {
-      kind: "merged";
-      updated: string[];
-      added: string[];
-      addedSections: string[];
-      warnings: string[];
-      backup: string | null;
-    }
-  | { kind: "draft"; warnings: string[] }
-  | { kind: "error"; error: string };
+import { useTemplateContentImport } from "./template/useTemplateContentImport";
 
 /**
  * Standalone import entry point for the Master resume tab. Previously the only path
  * to `POST /api/master-resume/import` was a checkbox buried inside the Template tab's
  * *Replace template* wizard — a new user landing here on a placeholder resume had no
- * way to import one at all. Mirrors that wizard's confirm-merge-or-load-draft flow
- * (see `TemplateImportWizard.tsx`) but standalone, since this page has no wizard step
- * machine to hang off of.
+ * way to import one at all. Shares the wizard's import path
+ * (`useTemplateContentImport`), standalone since this page has no wizard step machine
+ * to hang off of.
  */
 export function ImportResumePanel({
   title = "Import from a document",
@@ -40,56 +20,19 @@ export function ImportResumePanel({
   intro?: string;
   embedded?: boolean;
 } = {}) {
-  const { loadDraft, syncFromDisk } = useEditorState();
-  const { choice } = useConfirm();
   const [useModel, setUseModel] = useState(false);
-  const [busy, setBusy] = useState(false);
-  const [outcome, setOutcome] = useState<Outcome | null>(null);
-
-  async function handleFile(file: File) {
-    setBusy(true);
-    setOutcome(null);
-    try {
-      const result = await importMasterResumeContent(file, { useModel });
-      const picked = await choice({
-        title: MERGE_CHOICE_TITLE,
-        message: MERGE_CHOICE_MESSAGE,
-        options: [...MERGE_CHOICE_OPTIONS],
-      });
-      if (picked === "merge") {
-        const merged = await mergeMasterResume(result.resume);
-        syncFromDisk(
-          merged.resume as MasterResume,
-          "Master resume merged from the uploaded document.",
-        );
-        setOutcome({
-          kind: "merged",
-          updated: merged.updated,
-          added: merged.added,
-          addedSections: merged.added_sections,
-          warnings: merged.warnings,
-          backup: merged.backup,
-        });
-      } else if (picked === "draft") {
-        loadDraft(
-          result.resume as MasterResume,
-          "Imported from the uploaded document — review below and save to keep it.",
-        );
-        setOutcome({ kind: "draft", warnings: result.warnings });
-      }
-      // picked === null → user cancelled; leave the editor unchanged.
-    } catch (err) {
-      setOutcome({ kind: "error", error: err instanceof Error ? err.message : String(err) });
-    } finally {
-      setBusy(false);
-    }
-  }
+  const {
+    importBusy: busy,
+    importOutcome: outcome,
+    importContent,
+  } = useTemplateContentImport({ from: "resume" });
+  const handleFile = (file: File) => importContent(file, { useModel });
 
   return (
     <Tile title={title} className={embedded ? "border-0 bg-transparent p-0 sm:px-0" : ""}>
       <p className="mt-1 text-sm text-ink-muted">
         {intro ??
-          "Upload a .docx or PDF resume to fold its content into the master resume below — matching entries are updated, new ones are added, nothing else changes."}
+          "Upload a Word or PDF resume to add its content to the resume below. Matching entries are updated, new ones are added, and nothing else changes."}
       </p>
 
       <UploadDropzone allowPdf disabled={busy} onFile={(file) => void handleFile(file)} />
@@ -118,7 +61,7 @@ export function ImportResumePanel({
       )}
       {outcome?.kind === "draft" && (
         <div className="mt-4 border-t border-line pt-4 text-sm text-ink">
-          <p>Content imported as an unsaved draft — review below and Save to keep it.</p>
+          <p>The content is loaded but not saved. Check it below and press Save to keep it.</p>
           {outcome.warnings.length > 0 && (
             <ul className="mt-1 list-disc pl-5 text-xs text-ink-muted">
               {outcome.warnings.map((w) => (
@@ -131,7 +74,7 @@ export function ImportResumePanel({
       {outcome?.kind === "merged" && (
         <div className="mt-4 border-t border-line pt-4 text-sm text-ink">
           <p>
-            Master resume merged — {outcome.updated.length} updated, {outcome.added.length} added
+            Your resume was updated: {outcome.updated.length} changed, {outcome.added.length} added
             {outcome.addedSections.length > 0
               ? ` (${outcome.addedSections.length} new section${
                   outcome.addedSections.length === 1 ? "" : "s"

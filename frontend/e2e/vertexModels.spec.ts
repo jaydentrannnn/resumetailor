@@ -58,7 +58,7 @@ for (const width of [1280, 390]) {
       }),
     );
     await page.goto("/settings?tab=ai");
-    const light = page.getByRole("group", { name: "Light task model", exact: true });
+    const light = page.getByRole("group", { name: "AI for tailoring", exact: true });
     const model = light.getByRole("combobox", { name: "Model", exact: true });
     const location = light.getByRole("combobox", { name: "Vertex location", exact: true });
     await expect(model).toHaveValue("claude-sonnet-5-5");

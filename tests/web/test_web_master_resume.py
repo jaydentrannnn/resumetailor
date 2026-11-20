@@ -308,3 +308,101 @@ def test_master_resume_put_regenerates_a_generated_degree_line(client, tmp_path,
     entries = next(s for s in saved["sections"] if s["kind"] == "education")["entries"]
     assert entries[0]["degree"] == "B.A. in Economics and Art | Minor in Music"
     assert entries[-1]["degree"] == "Typed by hand"
+
+
+def test_merge_preview_reads_only_and_a_decision_changes_the_merge(client):
+    """The preview names each incoming job and project with its proposed pair and writes
+    nothing; a decision sent with the merge overrides that pair."""
+    c, _ = client
+    before = config.MASTER_RESUME_PATH.read_text(encoding="utf-8")
+    imported = c.post(
+        "/api/master-resume/import",
+        files={"file": ("resume.docx", _resume_docx_bytes(), _DOCX_MIME)},
+    ).json()
+
+    plan = c.post("/api/master-resume/merge/preview", json=imported["resume"])
+    assert plan.status_code == 200
+    pairs = {pair["name"]: pair for pair in plan.json()["pairs"]}
+    assert pairs["Note Engine"]["reason"] == "same name"
+    assert pairs["Note Engine"]["match"] is not None
+    assert pairs["Analytical Engines"]["match"] is None
+    assert {option["kind"] for option in plan.json()["options"]} == {"experience", "project"}
+    assert config.MASTER_RESUME_PATH.read_text(encoding="utf-8") == before
+
+    res = c.post(
+        "/api/master-resume/merge",
+        json={"resume": imported["resume"], "decisions": {pairs["Note Engine"]["key"]: "new"}},
+    )
+    assert res.status_code == 200
+    assert "Note Engine" in res.json()["added"]
+    assert "Note Engine" not in res.json()["updated"]
+
+
+def test_merge_preview_rejects_an_invalid_body(client):
+    c, _ = client
+    assert c.post("/api/master-resume/merge/preview", json={"not": "a resume"}).status_code == 400
+
+
+def test_a_merge_reviewed_against_an_older_resume_is_refused(client):
+    """The preview's revision comes back with the merge; a resume saved in between (here,
+    sections reordered) gets a 409 instead of a merge the student never reviewed."""
+    c, _ = client
+    imported = c.post(
+        "/api/master-resume/import",
+        files={"file": ("resume.docx", _resume_docx_bytes(), _DOCX_MIME)},
+    ).json()
+    plan = c.post("/api/master-resume/merge/preview", json=imported["resume"]).json()
+    assert plan["revision"] and plan["existing_empty"] is False
+
+    resume = c.get("/api/master-resume").json()
+    resume["sections"].reverse()
+    assert c.put("/api/master-resume", json=resume).status_code == 200
+    before = config.MASTER_RESUME_PATH.read_text(encoding="utf-8")
+
+    stale = c.post(
+        "/api/master-resume/merge",
+        json={"resume": imported["resume"], "decisions": {}, "revision": plan["revision"]},
+    )
+    assert stale.status_code == 409
+    assert "changed after the merge was reviewed" in stale.json()["detail"]
+    assert config.MASTER_RESUME_PATH.read_text(encoding="utf-8") == before
+
+    fresh = c.post("/api/master-resume/merge/preview", json=imported["resume"]).json()
+    ok = c.post(
+        "/api/master-resume/merge",
+        json={"resume": imported["resume"], "decisions": {}, "revision": fresh["revision"]},
+    )
+    assert ok.status_code == 200
+
+
+def test_duplicates_are_listed_and_merged_with_a_backup(client):
+    c, _ = client
+    resume = c.get("/api/master-resume").json()
+    section = next(s for s in resume["sections"] if s["kind"] == "experience")
+    original = section["entries"][0]
+    twin = {
+        **original,
+        "id": original["id"] + "-twin",
+        "bullets": [{"id": original["id"] + "-twin_b1", "text": "Shipped a second thing."}],
+    }
+    section["entries"].append(twin)
+    assert c.put("/api/master-resume", json=resume).status_code == 200
+
+    pairs = c.get("/api/master-resume/duplicates").json()
+    assert [(p["keep"], p["drop"]) for p in pairs] == [(original["id"], twin["id"])]
+
+    res = c.post(
+        "/api/master-resume/duplicates/merge", json={"keep": original["id"], "drop": twin["id"]}
+    )
+    assert res.status_code == 200
+    assert res.json()["backup"] is not None
+    entries = [
+        e for s in res.json()["resume"]["sections"] if s["kind"] == "experience" for e in s["entries"]
+    ]
+    assert [e["id"] for e in entries].count(twin["id"]) == 0
+    kept = next(e for e in entries if e["id"] == original["id"])
+    assert kept["bullets"][-1]["text"] == "Shipped a second thing."
+    assert c.get("/api/master-resume/duplicates").json() == []
+
+    gone = c.post("/api/master-resume/duplicates/merge", json={"keep": original["id"], "drop": twin["id"]})
+    assert gone.status_code == 400

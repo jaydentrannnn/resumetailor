@@ -1724,6 +1724,18 @@ def test_source_status_records_found_kept_and_error(apply_paths, monkeypatch):
     assert saved["last_run_at"] and all(e["at"] for e in entries.values())
 
 
+def test_source_status_counts_postings_the_location_filter_drops_as_found(
+    apply_paths, monkeypatch
+):
+    """`found` is what the source returned: a list whose postings are all outside your
+    locations found them, and must not read "No postings found"."""
+    fresh = _sample_row(job_id="new", age="0d", age_days=0)
+    monkeypatch.setattr(daily_batch, "by_location", lambda rows, src, settings: ([], len(rows)))
+    _status_run(apply_paths, monkeypatch, lambda src: ([fresh], []), ["watch"])
+    entry = source_status.load_source_status()["sources"]["watch"]
+    assert (entry["found"], entry["kept"], entry["error"]) == (1, 0, None)
+
+
 def test_source_status_keeps_partial_fetch_errors(apply_paths, monkeypatch):
     fresh = _sample_row(job_id="new", age="0d", age_days=0)
     _status_run(

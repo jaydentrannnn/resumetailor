@@ -288,7 +288,7 @@ class _FillAtsSteps(fill_state._FillState):
             return True
         return False
 
-    def _smartrecruiters_step(self) -> None:
+    def _smartrecruiters_step(self) -> bool:
         # SmartRecruiters' one-click form: a City typeahead that drops typed text on blur,
         # inline Experience/Education editors, a Resume dropzone whose input shares its id
         # with the parse-and-prefill one, and the hiring-team message
@@ -313,6 +313,30 @@ class _FillAtsSteps(fill_state._FillState):
             for item in sr_filled if item["label"] not in done
         )
         self._review(sr_review)
+        if smartrecruiters_page.is_screening(page):
+            # An older fill could reach screening with bad dates still saved. Carry
+            # those notes across retries until the applicant returns to the entry step.
+            date_suffixes = (": start date", ": end date", ": saved dates could not be verified")
+            date_review = [
+                label for item in self.previous_fill.leftovers
+                if (label := str(item.get("label") or "")).startswith(("Experience ", "Education "))
+                and label.endswith(date_suffixes)
+            ]
+            if date_review:
+                self._review([
+                    *date_review,
+                    "Go back to the SmartRecruiters application to check the entry dates, "
+                    "then choose Continue fill",
+                ])
+                return True
+        saved_partial = tuple(
+            f"{item['label']}:" for item in sr_filled if item.get("state") == "partial"
+        )
+        return any(
+            note.startswith(("Experience ", "Education ", "Experience:", "Education:"))
+            and not note.startswith(saved_partial)
+            for note in sr_review
+        )
 
     def _flow_owned(self) -> Callable[[dict[str, Any]], bool] | None:
         """On a SmartRecruiters form: City, the shared ``#file-input``, the message box and

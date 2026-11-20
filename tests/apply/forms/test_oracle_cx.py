@@ -7,14 +7,29 @@ from __future__ import annotations
 import os
 from datetime import date
 from pathlib import Path
+from types import SimpleNamespace
 
 import pytest
 from playwright.sync_api import sync_playwright
 
 from resume_tailor.apply.answers import questions, widget_actions
-from resume_tailor.apply.forms import fill_answers, fill_page, fill_widgets
+from resume_tailor.apply.ats import oracle_email
+from resume_tailor.apply.forms import (
+    fill_answers,
+    fill_outcomes,
+    fill_page,
+    fill_widgets,
+    fill_wizard,
+    wizards,
+)
+from resume_tailor.apply.funnel.store_models import FillResult
 
 _FORM = Path(__file__).parents[2] / "fixtures/forms/oracle_cx_address.html"
+_EMAIL_FORM = _FORM.with_name("oracle_cx_email.html")
+_EMAIL_URL = (
+    "https://acme.example/hcmUI/CandidateExperience/en/sites/CX/job/1/apply/email"
+)
+_EMAIL_FIELDS = {"email": "test@example.com", "auto_accept_agreements": "Yes"}
 _FIELDS = {
     "first_name": "Zyxta", "last_name": "Quorvel", "country": "United States",
     "address_line1": "100 Capitol Mall", "city": "Sacramento", "state": "California",
@@ -47,6 +62,63 @@ def page(browser):
     page.set_content(_FORM.read_text(encoding="utf-8"))
     try:
         yield page
+    finally:
+        page.close()
+
+
+def _open_email(browser, query=""):
+    page = browser.new_page()
+    page.route("**/*", lambda route: route.fulfill(
+        body=_EMAIL_FORM.read_text(encoding="utf-8"), content_type="text/html",
+    ))
+    page.goto(_EMAIL_URL + query)
+    return page
+
+
+@pytest.mark.parametrize(("query", "suffix", "state"), [
+    ("", "/apply/section/1", "apply_form"),
+    ("?code", "/apply/verify", "otp"),
+])
+def test_the_oracle_email_gate_advances_to_the_form_or_verification(browser, query, suffix, state):
+    page = _open_email(browser, query)
+    try:
+        wizard = wizards.OracleWizard()
+        run = SimpleNamespace(page=page, fields=_EMAIL_FIELDS,
+                              _ms_left=lambda cap: cap, progress=lambda _text: None)
+        assert fill_wizard._FillWizard._advance_oracle_email(run, wizard) == fill_outcomes._CONTINUE
+        assert page.url.endswith(suffix)
+        assert wizard.detect_state(page) == state
+        if state == "otp":
+            assert wizard.stop_for(state).status == "awaiting_otp"
+    finally:
+        page.close()
+
+
+def test_the_oracle_email_gate_leaves_the_agreement_to_the_applicant(browser):
+    page = _open_email(browser)
+    try:
+        reason = oracle_email.advance(
+            page, {"email": _EMAIL_FIELDS["email"], "auto_accept_notices": "Yes"}, timeout_ms=2000,
+        )
+        assert reason == oracle_email.PRIVACY_REVIEW
+        assert not page.locator("#legal-disclaimer-checkbox").is_checked()
+        assert page.locator("#honey-pot-1").input_value() == ""
+        assert page.url == _EMAIL_URL
+    finally:
+        page.close()
+
+
+def test_a_refused_oracle_email_step_requests_specific_help(browser):
+    page = _open_email(browser, "?blocked")
+    try:
+        run = SimpleNamespace(
+            page=page, fields=_EMAIL_FIELDS,
+            _ms_left=lambda cap: min(1200, cap), progress=lambda _text: None,
+            _handoff=lambda reason: FillResult(status="awaiting_review", handoff_reason=reason),
+        )
+        result = fill_wizard._FillWizard._advance_oracle_email(run, wizards.OracleWizard())
+        assert result.handoff_reason == oracle_email.EMAIL_REVIEW
+        assert page.url.endswith("/apply/email?blocked")
     finally:
         page.close()
 

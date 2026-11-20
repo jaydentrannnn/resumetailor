@@ -5,6 +5,7 @@ import { useState } from "react";
 import { Link } from "react-router-dom";
 import { Modal } from "../../components/Modal";
 import { ResumeHistoryList } from "../../components/ResumeHistoryList";
+import { DuplicatesNotice } from "../../components/DuplicatesNotice";
 import { ImportResumePanel } from "../../components/ImportResumePanel";
 import { BulletSkillsProvider } from "../../state/bulletSkillsState";
 import { BulletSkillsNotice } from "./BulletSkillsNotice";
@@ -129,7 +130,7 @@ export function EditorPage({
   if (!resume) {
     return (
       <p className="text-sm text-ink-muted">
-        {errors.length ? errors.join("; ") : "Loading master resume…"}
+        {errors.length ? errors.join("; ") : "Loading your resume…"}
       </p>
     );
   }
@@ -227,6 +228,7 @@ export function EditorPage({
           )}
           <div>
             <BulletSkillsNotice />
+            <DuplicatesNotice />
             {message && (
               <p
                 role="status"

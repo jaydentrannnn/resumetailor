@@ -93,9 +93,9 @@ export function EffortSetting() {
 /** Which of the chosen task models drop the setting (only Claude, OpenAI and Gemini use it). */
 function ignoredNote(light: boolean, heavy: boolean): string | null {
   const why = "Reasoning effort is available only for models that support it.";
-  if (!light && !heavy) return `Neither of your task models uses these settings. ${why}`;
+  if (!light && !heavy) return `Neither of your AI models uses these settings. ${why}`;
   if (!light)
-    return `Your light task model ignores these settings; only Application answers use one. ${why}`;
-  if (!heavy) return `Your heavy task model ignores the Application answers setting. ${why}`;
+    return `Your AI for tailoring ignores these settings; only Application answers use one. ${why}`;
+  if (!heavy) return `Your AI for filling forms ignores the Application answers setting. ${why}`;
   return null;
 }

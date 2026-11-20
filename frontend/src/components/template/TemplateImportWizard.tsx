@@ -37,7 +37,10 @@ export function TemplateImportWizard({
     importOutcome,
     setImportOutcome,
     importContent,
-  } = useTemplateContentImport();
+  } = useTemplateContentImport({
+    // First-run setup uploads a resume, not just a design: its words come too.
+    defaultOn: embedded,
+  });
   const canInstall =
     Boolean(draftFile && profileDraft && analysis?.ready && installLabel.trim()) &&
     !uploading &&

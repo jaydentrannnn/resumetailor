@@ -109,8 +109,75 @@ export type MasterResumeMergeResponse = {
  */
 export function mergeMasterResume(
   resume: Record<string, unknown>,
+  /** Pairs the student changed in the review list: pair key to an entry id or "new". */
+  decisions: Record<string, string> = {},
+  /** The preview's `revision`: the server answers 409 if the resume changed since. */
+  revision = "",
 ): Promise<MasterResumeMergeResponse> {
-  return request("/api/master-resume/merge", { method: "POST", body: JSON.stringify(resume) });
+  return request("/api/master-resume/merge", {
+    method: "POST",
+    body: JSON.stringify({ resume, decisions, revision }),
+  });
+}
+
+/** One incoming job or project and the existing entry it would be merged into. */
+export type MergePair = {
+  key: string;
+  kind: "experience" | "project";
+  name: string;
+  detail: string;
+  /** The existing entry's id, or null when it would be added as new. */
+  match: string | null;
+  match_name: string;
+  reason: string;
+  /** A job with the same dates and a similar title under another name: never merged
+   *  unless the student picks it. */
+  suggested?: string | null;
+  suggested_name?: string;
+  new_bullets: number;
+};
+
+export type MergePlan = {
+  pairs: MergePair[];
+  /** Every existing job and project, offered as "the same one". */
+  options: { ref: string; kind: MergePair["kind"]; label: string }[];
+  /** The saved resume the plan was made against; sent back with the merge. */
+  revision?: string;
+  /** The saved resume has no entries: nothing to merge into. */
+  existing_empty?: boolean;
+};
+
+/** Two entries the saved resume seems to hold twice; `keep` is the first. */
+export type DuplicatePair = {
+  kind: "experience" | "project";
+  keep: string;
+  drop: string;
+  keep_label: string;
+  drop_label: string;
+  reason: string;
+};
+
+export function fetchResumeDuplicates(): Promise<DuplicatePair[]> {
+  return request("/api/master-resume/duplicates");
+}
+
+/** Fold entry `drop` into entry `keep` and save (the previous file is backed up). */
+export function mergeResumeDuplicates(
+  keep: string,
+  drop: string,
+): Promise<MasterResumeMergeResponse> {
+  return request("/api/master-resume/duplicates/merge", {
+    method: "POST",
+    body: JSON.stringify({ keep, drop }),
+  });
+}
+
+/** What merging `resume` would do to jobs and projects. Reads only. */
+export function previewMasterResumeMerge(resume: Record<string, unknown>): Promise<MergePlan> {
+  return request("/api/master-resume/merge/preview", {
+    method: "POST",
+    body: JSON.stringify(resume),
+  });
 }
 
 export function validateMasterResume(body: Record<string, unknown>): Promise<ValidateResponse> {

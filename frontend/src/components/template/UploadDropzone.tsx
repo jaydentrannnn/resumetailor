@@ -1,5 +1,6 @@
 import { buttonClass } from "../../lib/buttonClass";
 import { useRef, useState, type DragEvent } from "react";
+import { CONVERTIBLE, DOCX_MIME, isConvertible, isDocx, isPdf } from "../../lib/uploadKinds";
 
 type Props = {
   disabled?: boolean;
@@ -8,24 +9,6 @@ type Props = {
   /** Also accept a PDF (content import only; a PDF can't become a template). */
   allowPdf?: boolean;
 };
-
-const DOCX_MIME = "application/vnd.openxmlformats-officedocument.wordprocessingml.document";
-
-function isDocx(file: File): boolean {
-  return file.name.toLowerCase().endsWith(".docx") || file.type === DOCX_MIME;
-}
-
-function isPdf(file: File): boolean {
-  return file.name.toLowerCase().endsWith(".pdf") || file.type === "application/pdf";
-}
-
-/** Word-processor formats the server converts to .docx with LibreOffice. */
-const CONVERTIBLE = [".doc", ".odt", ".rtf"];
-
-function isConvertible(file: File): boolean {
-  const name = file.name.toLowerCase();
-  return CONVERTIBLE.some((suffix) => name.endsWith(suffix));
-}
 
 /**
  * Drag/drop + file picker for a single .docx baseline export (or a PDF when

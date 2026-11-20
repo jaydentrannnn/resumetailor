@@ -124,6 +124,9 @@ def _filter_source(
     """One source's rows through the funnel filters, recording its health; None when the
     source failed."""
     rows: list[source_rows.SourceRow] = []
+    # What the source returned, before the location filter: the status's `found`. A list
+    # whose postings are all outside your locations found postings; it is not empty.
+    fetched: list[source_rows.SourceRow] = []
     daily_progress._progress_set(
         phase="discovering",
         source_id=src.id,
@@ -131,10 +134,10 @@ def _filter_source(
         or (f"{src.provider}: {src.query}" if src.kind == "job_search" else ""),
     )
     try:
-        rows, source_errors = sources.fetch_source_rows(
+        fetched, source_errors = sources.fetch_source_rows(
             source_filters.with_global_filters(src, settings.source_filters)
         )
-        rows, dropped = by_location(rows, src, settings)
+        rows, dropped = by_location(fetched, src, settings)
         if dropped:
             daily_rows._append_log(
                 log_file, f"[source {src.id}] {dropped} posting(s) outside your locations", log
@@ -161,11 +164,11 @@ def _filter_source(
         summary.errors.append(f"{src.id}: {exc}")
         daily_rows._append_log(log_file, f"[source {src.id}] error: {exc}", log)
         status_entries[src.id] = _source_status_entry(
-            rows, 0, source_status.failure_reason(exc)
+            fetched, 0, source_status.failure_reason(exc)
         )
         return None
     status_entries[src.id] = _source_status_entry(
-        rows,
+        fetched,
         len(filtered.new_rows) + filtered.already_known,
         "; ".join(source_errors),
     )

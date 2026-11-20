@@ -10,7 +10,7 @@ export function TemplateContentResult({ importOutcome }: { importOutcome: Import
       ) : null}
       {importOutcome?.kind === "draft" ? (
         <div className="mt-4 border-t border-line pt-4 text-sm text-accent">
-          <p>Content imported — open the Master Resume tab to review and save it.</p>
+          <p>The content is loaded but not saved. Open the Resume page to check and save it.</p>
           {importOutcome.warnings.length > 0 ? (
             <ul className="mt-1 list-disc pl-5 text-xs text-ink-muted">
               {importOutcome.warnings.map((w) => (
@@ -23,7 +23,7 @@ export function TemplateContentResult({ importOutcome }: { importOutcome: Import
       {importOutcome?.kind === "merged" ? (
         <div className="mt-4 border-t border-line pt-4 text-sm text-accent">
           <p>
-            Master resume merged — {importOutcome.updated.length} updated,{" "}
+            Your resume was updated: {importOutcome.updated.length} changed,{" "}
             {importOutcome.added.length} added
             {importOutcome.addedSections.length > 0
               ? ` (${importOutcome.addedSections.length} new section${

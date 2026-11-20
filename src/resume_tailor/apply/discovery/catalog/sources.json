@@ -1092,6 +1092,42 @@
           "chief"
         ]
       }
+    },
+    {
+      "id": "freehire-economics",
+      "name": "freehire.me search: economics and policy analyst roles",
+      "description": "Keyword search for economic, policy and research analyst roles and research assistant jobs at entry level, linking to each employer's own application page. No key needed.",
+      "fields": ["finance", "consulting"],
+      "levels": ["intern", "new_grad"],
+      "tracks": ["strategy"],
+      "version": "2026.11.17",
+      "template": {
+        "id": "freehire-economics",
+        "kind": "job_search",
+        "provider": "freehire",
+        "query": "economic analyst, economics research assistant, policy analyst, economic consulting analyst, research analyst",
+        "country": "us",
+        "include": ["intern", "entry level", "entry-level", "junior", "new grad", "graduate", "research assistant", "associate analyst", "summer analyst", "fellow"],
+        "exclude": ["senior", "sr", "principal", "director", "vice president", "vp", "managing director", "head of", "chief", "manager", "lead", "professor", "postdoc"]
+      }
+    },
+    {
+      "id": "freehire-business",
+      "name": "freehire.me search: business internships and entry-level analyst roles",
+      "description": "Keyword search for business, marketing, operations and financial analyst internships and entry-level roles, linking to each employer's own application page. No key needed.",
+      "fields": ["business"],
+      "levels": ["intern", "new_grad"],
+      "tracks": ["marketing", "operations"],
+      "version": "2026.11.17",
+      "template": {
+        "id": "freehire-business",
+        "kind": "job_search",
+        "provider": "freehire",
+        "query": "business analyst intern, operations analyst, marketing intern, financial analyst, entry level analyst",
+        "country": "us",
+        "include": ["intern", "entry level", "entry-level", "junior", "new grad", "graduate", "research assistant", "associate analyst", "summer analyst", "fellow"],
+        "exclude": ["senior", "sr", "principal", "director", "vice president", "vp", "managing director", "head of", "chief", "manager", "lead", "professor", "postdoc", "software", "engineer", "developer"]
+      }
     }
   ]
 }

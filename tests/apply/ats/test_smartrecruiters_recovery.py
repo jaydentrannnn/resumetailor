@@ -124,6 +124,62 @@ def test_a_reopened_education_entry_is_saved_not_added_again(browser):
     assert len(smartrecruiters_entries._entries(page, "education")) == 1
 
 
+def test_modern_pickers_commit_non_january_months_in_both_saved_entries(browser):
+    page = _open(browser)
+    page.evaluate("window.__sr.modernDates = true")
+    for kind, fill in (("experience", smartrecruiters_entries.fill_experience),
+                       ("education", smartrecruiters_entries.fill_education)):
+        filled, review = fill(page, _packet(), _no_progress)
+        assert review == []
+        assert len(filled) == 1
+        actual = page.locator(f"oc-{kind}-entry").evaluate("el => el.__values")
+        wanted = getattr(_packet(), kind)[0]
+        assert (actual["from"], actual["to"]) == (wanted.start, wanted.end)
+
+
+def test_a_month_lost_on_save_keeps_the_editor_open_for_repair(browser):
+    page = _open(browser)
+    page.evaluate("Object.assign(window.__sr, {modernDates: true, corruptSavedMonth: true})")
+    filled, review = smartrecruiters_entries.fill_experience(page, _packet(), _no_progress)
+    assert filled == []
+    assert review == ["Experience 1 (Data Intern at Acme Corp): saved dates could not be verified"]
+    assert page.locator("[data-test=experience-edit-form]").count() == 1
+    page.evaluate("window.__sr.corruptSavedMonth = false")
+    filled, review = smartrecruiters_entries.fill_experience(page, _packet(), _no_progress)
+    assert review == []
+    assert len(filled) == 1
+    assert page.locator("oc-experience-entry").evaluate("el => el.__values.from") == "2025-06"
+
+
+@pytest.mark.parametrize(("kind", "autocomplete", "warning"), [
+    ("experience", "job-title-autocomplete", "title"),
+    ("education", "institution-autocomplete", "institution"),
+])
+def test_continue_fill_retries_a_visible_but_unaccepted_value(browser, kind, autocomplete, warning):
+    page = _open(browser)
+    page.evaluate("(test) => { window.__sr.rejectText = test; }", autocomplete)
+    fill = getattr(smartrecruiters_entries, f"fill_{kind}")
+    filled, review = fill(page, _packet(), _no_progress)
+    assert not filled
+    assert any(note.endswith(f": {warning}") for note in review)
+    field = page.locator(f"[data-test={autocomplete}] input[role=combobox]")
+    assert field.input_value()
+    assert field.get_attribute("aria-invalid") == "true"
+    assert page.evaluate("window.__sr.saves") == 0
+
+    if kind == "experience":
+        page.locator("[data-test=experience-description] textarea").fill("Applicant's edited text")
+    page.evaluate("window.__sr.rejectText = null")
+    filled, review = fill(page, _packet(), _no_progress)
+    assert review == []
+    assert len(filled) == 1
+    assert page.evaluate("window.__sr.saves") == 1
+    if kind == "experience":
+        assert "Applicant's edited text" in page.locator(
+            "[data-test=experience-entry-description]"
+        ).inner_text()
+
+
 def test_an_open_entry_holding_something_else_is_left_alone(browser):
     page = _open(browser)
     smartrecruiters_entries.fill_experience(page, _packet(), _no_progress)

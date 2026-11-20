@@ -136,12 +136,30 @@ export function openGaps(keys: string[], draft: Record<string, unknown> | null):
 
 /**
  * Job-source fields each target field starts with; the student adds or drops any. The
- * study field is kept beside it for the job-list presets that still key on it.
+ * study field is kept beside it for the job-list presets that still key on it. `entries`
+ * names catalog lists offered on top of the fields' own, for a field the tags do not
+ * cover (Economics) or none at all (General); it is the only way a keyword search is
+ * preselected, and only a keyless one (freehire.me) belongs there.
  */
-const TARGET_SOURCES: Record<string, { fields: SourceField[]; study: OnboardingField }> = {
-  general: { fields: [], study: "other" },
+const TARGET_SOURCES: Record<
+  string,
+  { fields: SourceField[]; study: OnboardingField; entries?: string[] }
+> = {
+  general: { fields: [], study: "other", entries: ["freehire-business"] },
   "software-data": { fields: ["swe", "data"], study: "cs" },
   "finance-consulting": { fields: ["finance", "consulting", "quant"], study: "business" },
+  economics: {
+    fields: ["consulting"],
+    study: "business",
+    entries: [
+      "jobright-business-analyst-internship",
+      "jobright-business-analyst-newgrad",
+      "jobright-data-analysis-internship",
+      "jobright-data-analysis-newgrad",
+      "drewdavis-finance-internships",
+      "freehire-economics",
+    ],
+  },
   accounting: { fields: ["finance", "business"], study: "business" },
   marketing: { fields: ["business", "product"], study: "business" },
   "operations-supply-chain": { fields: ["business"], study: "business" },
@@ -158,12 +176,23 @@ export function studyFieldForTarget(target: string | null | undefined): Onboardi
 }
 
 /**
- * Catalog entries a set of source fields preselects, in catalog order. Keyword searches are
- * left out: they return nothing until the student connects an API key, so onboarding does
+ * Catalog entries a set of source fields preselects, plus the lists the target field names
+ * (`TARGET_SOURCES` `entries`), in catalog order. Keyword searches matched by field are
+ * left out: most return nothing until the student connects an API key, so onboarding does
  * not add them silently (the Sources page offers them under "Recommended").
  */
-export function suggestedEntries(catalog: SourceCatalog, fields: SourceField[]): CatalogEntry[] {
-  return entriesForFields(catalog, fields).filter((entry) => entry.template.kind !== "job_search");
+export function suggestedEntries(
+  catalog: SourceCatalog,
+  fields: SourceField[],
+  target?: string | null,
+): CatalogEntry[] {
+  const named = new Set(target ? (TARGET_SOURCES[target]?.entries ?? []) : []);
+  const byField = new Set(
+    entriesForFields(catalog, fields)
+      .filter((entry) => entry.template.kind !== "job_search")
+      .map((entry) => entry.id),
+  );
+  return catalog.entries.filter((entry) => byField.has(entry.id) || named.has(entry.id));
 }
 
 /**

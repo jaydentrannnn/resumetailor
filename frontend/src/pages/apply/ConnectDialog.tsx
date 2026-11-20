@@ -1,6 +1,7 @@
 import { useState } from "react";
-import { saveSecret } from "../../api";
+import { saveSecret, testSource } from "../../api";
 import { Button, Modal } from "../../components/ui";
+import { connectionProbe, keyTestProblem } from "../../lib/connectTest";
 import { describe } from "../../lib/errors";
 import { PROVIDER_KEYS, PROVIDER_LABELS, type SearchProvider } from "../../lib/sources";
 const KEY_LINKS: Partial<Record<SearchProvider, string>> = {
@@ -10,7 +11,8 @@ const KEY_LINKS: Partial<Record<SearchProvider, string>> = {
 
 /**
  * Save a search engine's API keys once (OS keychain, through `/api/secrets`; values are
- * never read back). Every search on that engine then works.
+ * never read back). Every search on that engine then works. A test search runs right after
+ * saving, so a mistyped key shows here rather than as an empty job list later.
  */
 export function ConnectDialog({
   provider,
@@ -27,6 +29,7 @@ export function ConnectDialog({
   const keys = PROVIDER_KEYS[provider];
   const [values, setValues] = useState<Record<string, string>>({});
   const [saving, setSaving] = useState(false);
+  const [testing, setTesting] = useState(false);
   const [error, setError] = useState("");
   const complete = keys.every((k) => savedKeys.has(k.name) || values[k.name]?.trim());
 
@@ -39,11 +42,15 @@ export function ConnectDialog({
         if (value) await saveSecret(key.name, value);
       }
       onSaved();
-      onClose();
+      setTesting(true);
+      const problem = keyTestProblem(provider, await testSource(connectionProbe(provider)));
+      if (problem) setError(problem);
+      else onClose();
     } catch (reason) {
       setError(describe(reason).detail);
     } finally {
       setSaving(false);
+      setTesting(false);
     }
   }
 
@@ -82,7 +89,7 @@ export function ConnectDialog({
         )}
         <div className="flex justify-end">
           <Button type="submit" variant="primary" size="sm" loading={saving} disabled={!complete}>
-            Save keys
+            {testing ? "Testing the keys…" : "Save keys"}
           </Button>
         </div>
       </form>

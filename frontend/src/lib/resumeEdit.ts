@@ -137,8 +137,8 @@ export type CustomFieldValue = { key: string; label?: string; value?: string };
 
 /** Human-facing label for a section kind, e.g. in the "Add section" picker. */
 export const SECTION_KIND_LABELS: Record<SectionKind, string> = {
-  experience: "Experience-like",
-  project: "Project-like",
+  experience: "Experience",
+  project: "Projects",
   list: "Simple list",
   education: "Education",
   skills: "Skills",

@@ -5,6 +5,7 @@ from __future__ import annotations
 import contextlib
 import time
 from typing import Any
+from urllib.parse import urlsplit
 
 from resume_tailor.apply.forms import field_matcher
 
@@ -94,7 +95,7 @@ _ENTRIES_JS = r"""([section, kind]) => {
 
 #: What an open entry editor holds (a saved entry re-renders as one after the applicant
 #: goes Back from the screening step, live 2026-10-30): the typeahead and plain inputs'
-#: text and the month pickers' "MM/YYYY", keyed by ``data-test``.
+#: values and the month pickers' dates, keyed by ``data-test``.
 _EDITOR_VALUES_JS = r"""(editor) => {
   const deep = (root, sel) => {
     const hit = root.querySelector(sel);
@@ -106,12 +107,15 @@ _EDITOR_VALUES_JS = r"""(editor) => {
     }
     return null;
   };
-  const out = {};
+  const out = {resumeTailorEntry: editor.dataset.resumeTailorEntry || ''};
   const HOSTS = 'spl-autocomplete[data-test], oc-input[data-test], oc-datepicker[data-test]';
   for (const host of editor.querySelectorAll(HOSTS)) {
     const picker = host.localName === 'oc-datepicker';
     const field = deep(host, picker ? 'input.flatpickr-input' : 'input');
-    out[host.getAttribute('data-test')] = field ? (field.value || '').trim() : '';
+    const typeahead = host.localName === 'spl-autocomplete';
+    const value = typeahead && field?.getAttribute('aria-invalid') === 'true'
+      ? '' : typeahead ? host.value : field?.value;
+    out[host.getAttribute('data-test')] = typeof value === 'string' ? value.trim() : '';
   }
   const current = editor.querySelector('oc-checkbox[data-test$="-current"]');
   const box = current && deep(current, 'input[type=checkbox]');
@@ -172,6 +176,11 @@ _POINT_JS = r"""(el) => {
 def is_form(page: Any) -> bool:
     """Whether ``page`` shows the one-click application form."""
     return "/oneclick-ui/" in str(getattr(page, "url", "") or "")
+
+
+def is_screening(page: Any) -> bool:
+    return urlsplit(str(page.url)).path.rstrip("/").endswith("/screening")
+
 
 def wait_for_form(page: Any, timeout_ms: float) -> bool:
     """Until the form step's controls show (`_FORM_READY_JS`), at most ``timeout_ms``."""
