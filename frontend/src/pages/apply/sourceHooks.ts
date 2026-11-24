@@ -181,7 +181,10 @@ export function useSourcesController(
   function newWatchlist(board?: ResolvedBoard) {
     setFlow({
       type: "new",
-        source: withCompanies({ ...newWatchlistSource(undefined, sourcesRef.current), name: "" }, board ? [board] : []),
+      source: withCompanies(
+        { ...newWatchlistSource(undefined, sourcesRef.current), name: "" },
+        board ? [board] : [],
+      ),
       sections: null,
     });
   }

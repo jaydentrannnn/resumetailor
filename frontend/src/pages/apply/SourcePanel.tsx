@@ -249,7 +249,10 @@ export function SourceFlows({
             const target = sourcesRef.current.find((s) => s.id === id);
             if (target) {
               const { ats, slug, company } = flow.board;
-              update(id, withCompanies(target, addBoard(watchlistCompanies(target), { ats, slug, company })));
+              update(
+                id,
+                withCompanies(target, addBoard(watchlistCompanies(target), { ats, slug, company })),
+              );
               toast.success(`Added ${flow.board.company || flow.board.slug}`);
             }
             setFlow(null);

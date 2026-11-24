@@ -19,7 +19,8 @@ export function resolveBoard(
 }
 
 export async function fetchWatchlists(): Promise<Record<string, WatchlistCompany[]>> {
-  return (await request<{ fields: Record<string, WatchlistCompany[]> }>("/api/apply/watchlists")).fields;
+  return (await request<{ fields: Record<string, WatchlistCompany[]> }>("/api/apply/watchlists"))
+    .fields;
 }
 
 /** The category headings a README source offers. */

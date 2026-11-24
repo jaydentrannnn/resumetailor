@@ -689,14 +689,21 @@ describe("paste a link", () => {
     const url = "https://freehire.me/companies/google";
     vi.spyOn(api, "inspectSource").mockResolvedValue({ kind: null, sections: [], row_count: 0 });
     vi.spyOn(api, "resolveBoard").mockResolvedValue({
-      ats: "freehire", slug: "google", company: "Google", jobs: 12, url,
+      ats: "freehire",
+      slug: "google",
+      company: "Google",
+      jobs: 12,
+      url,
     });
     const { onChange } = renderTab([]);
     await paste(url);
     const dialog = await screen.findByRole("dialog", { name: "New company watchlist" });
     fireEvent.click(within(dialog).getByRole("button", { name: "Add watchlist" }));
     expect(onChange.mock.lastCall![0][0]).toMatchObject({
-      kind: "ats_board", provider: "freehire", categories: ["google"], boards: [],
+      kind: "ats_board",
+      provider: "freehire",
+      categories: ["google"],
+      boards: [],
     });
   });
 
