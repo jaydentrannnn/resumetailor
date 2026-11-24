@@ -1,5 +1,13 @@
 import { describe, expect, it } from "vitest";
-import { addBoard, hasBoard, newWatchlistSource, parseWords, removeBoard, watchlistCompanies, withCompanies } from "./watchlist";
+import {
+  addBoard,
+  hasBoard,
+  newWatchlistSource,
+  parseWords,
+  removeBoard,
+  watchlistCompanies,
+  withCompanies,
+} from "./watchlist";
 
 describe("watchlist helpers", () => {
   it("round-trips mixed watchlists through fields older desktop profiles preserve", () => {

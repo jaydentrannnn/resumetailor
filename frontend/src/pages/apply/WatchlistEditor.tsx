@@ -2,7 +2,14 @@ import { useState } from "react";
 import { fetchWatchlists, resolveBoard, type WatchlistCompany, type SourceConfig } from "../../api";
 import { Button } from "../../components/ui";
 import { describe } from "../../lib/errors";
-import { addBoard, ATS_LABELS, hasBoard, removeBoard, watchlistCompanies, withCompanies } from "../../lib/watchlist";
+import {
+  addBoard,
+  ATS_LABELS,
+  hasBoard,
+  removeBoard,
+  watchlistCompanies,
+  withCompanies,
+} from "../../lib/watchlist";
 /**
  * A company watchlist (`ats_board` source): the boards to read nightly and which of
  * their postings to keep. Every board is checked live before it is added.

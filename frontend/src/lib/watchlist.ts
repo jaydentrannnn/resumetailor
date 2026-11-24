@@ -54,12 +54,17 @@ export function parseWords(text: string): string[] {
 
 export function watchlistCompanies(source: SourceConfig): WatchlistCompany[] {
   const indexed = source.provider === "freehire" ? source.categories : [];
-  return [...(source.boards ?? []), ...indexed.map((slug) => ({ ats: "freehire" as const, slug, company: slug }))];
+  return [
+    ...(source.boards ?? []),
+    ...indexed.map((slug) => ({ ats: "freehire" as const, slug, company: slug })),
+  ];
 }
 
 /** Keep indexed employer IDs separate from ATS boards so older desktops can save the watchlist. */
 export function withCompanies(source: SourceConfig, companies: WatchlistCompany[]): SourceConfig {
-  const boards = companies.flatMap(({ ats, slug, company }) => ats === "freehire" ? [] : [{ ats, slug, company }]);
+  const boards = companies.flatMap(({ ats, slug, company }) =>
+    ats === "freehire" ? [] : [{ ats, slug, company }],
+  );
   const indexed = companies.filter((b) => b.ats === "freehire").map((b) => b.slug);
   if (indexed.length || source.provider === "freehire")
     return { ...source, boards, provider: "freehire", categories: indexed };
@@ -75,7 +80,10 @@ export function addBoard(boards: WatchlistCompany[], board: WatchlistCompany): W
   return boards.some((b) => sameBoard(b, board)) ? boards : [...boards, board];
 }
 
-export function removeBoard(boards: WatchlistCompany[], board: WatchlistCompany): WatchlistCompany[] {
+export function removeBoard(
+  boards: WatchlistCompany[],
+  board: WatchlistCompany,
+): WatchlistCompany[] {
   return boards.filter((b) => !sameBoard(b, board));
 }
 
