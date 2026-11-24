@@ -22,7 +22,7 @@ import {
 } from "../../lib/sources";
 import { describe } from "../../lib/errors";
 import { useToast } from "../../lib/toast";
-import { newWatchlistSource } from "../../lib/watchlist";
+import { newWatchlistSource, withCompanies } from "../../lib/watchlist";
 import type { KnownInspection } from "./AddFlows";
 
 /**
@@ -181,11 +181,7 @@ export function useSourcesController(
   function newWatchlist(board?: ResolvedBoard) {
     setFlow({
       type: "new",
-      source: {
-        ...newWatchlistSource(undefined, sourcesRef.current),
-        name: "",
-        boards: board ? [{ ats: board.ats, slug: board.slug, company: board.company }] : [],
-      },
+        source: withCompanies({ ...newWatchlistSource(undefined, sourcesRef.current), name: "" }, board ? [board] : []),
       sections: null,
     });
   }

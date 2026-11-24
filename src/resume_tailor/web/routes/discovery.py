@@ -43,7 +43,7 @@ router = APIRouter()
 _PAGE_LIMIT = 2 * 1024 * 1024
 _NO_BOARD = (
     "No supported job board (Greenhouse, Lever, Ashby, SmartRecruiters, Workday) "
-    "was found on that page."
+    "was found on that page. You can also paste the employer's freehire.me/companies/ link."
 )
 
 

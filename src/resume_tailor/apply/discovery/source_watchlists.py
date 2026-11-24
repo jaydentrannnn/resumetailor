@@ -102,14 +102,17 @@ def board_rows(
     include, exclude, places = source_keyword_filters(source)
     rows: list[source_rows.SourceRow] = []
     errors: list[str] = []
-    for position, board in enumerate(source.boards):
+    entries = [(b.ats, b.slug, b.company) for b in source.boards]
+    if source.provider == "freehire":
+        entries.extend(("freehire", slug, "") for slug in source.categories)
+    for position, (ats, slug, company) in enumerate(entries):
         if position:
             boards._sleep(boards.BOARD_DELAY_SECONDS)  # noqa: SLF001
-        name = board.company or board.slug
+        name = company or slug
         try:
-            jobs = list_board(board.ats, board.slug)
+            jobs = list_board(ats, slug)
         except boards.BoardNotFound:
-            errors.append(f"{name}: no {board.ats} board named {board.slug!r}")
+            errors.append(f"{name}: no {ats} board named {slug!r}")
             continue
         except Exception as exc:  # noqa: BLE001 - one board must not sink the source
             errors.append(f"{name}: {exc}")
@@ -127,13 +130,13 @@ def board_rows(
             flags = [] if age is not None else ["age_unknown"]
             rows.append(
                 source_rows.SourceRow(
-                    company=board.company or job.company or board.slug,
+                    company=company or job.company or slug,
                     role=job.title,
                     location=job.location,
                     age=f"{age}d" if age is not None else "",
                     age_days=age if age is not None else 0,
                     posted_at=iso_date(job.posted_at) if job.posted_at else "",
-                    job_id=identity.canonical_key(job.url),
+                    job_id=job.id if ats == "freehire" else identity.canonical_key(job.url),
                     application_link=job.url,
                     source_id=source.id,
                     flags=flags,

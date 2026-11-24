@@ -1,4 +1,4 @@
-import type { BoardConfig, SourceConfig } from "../api";
+import type { SourceConfig, WatchlistCompany } from "../api";
 import { uniqueSourceId } from "./sources";
 
 /** Title words a business watchlist starts with; the student edits them freely. */
@@ -52,24 +52,39 @@ export function parseWords(text: string): string[] {
   return out;
 }
 
-function sameBoard(a: BoardConfig, b: BoardConfig): boolean {
+export function watchlistCompanies(source: SourceConfig): WatchlistCompany[] {
+  const indexed = source.provider === "freehire" ? source.categories : [];
+  return [...(source.boards ?? []), ...indexed.map((slug) => ({ ats: "freehire" as const, slug, company: slug }))];
+}
+
+/** Keep indexed employer IDs separate from ATS boards so older desktops can save the watchlist. */
+export function withCompanies(source: SourceConfig, companies: WatchlistCompany[]): SourceConfig {
+  const boards = companies.flatMap(({ ats, slug, company }) => ats === "freehire" ? [] : [{ ats, slug, company }]);
+  const indexed = companies.filter((b) => b.ats === "freehire").map((b) => b.slug);
+  if (indexed.length || source.provider === "freehire")
+    return { ...source, boards, provider: "freehire", categories: indexed };
+  return { ...source, boards };
+}
+
+function sameBoard(a: WatchlistCompany, b: WatchlistCompany): boolean {
   return a.ats === b.ats && a.slug.toLowerCase() === b.slug.toLowerCase();
 }
 
 /** Add ``board`` unless the watchlist already has it. */
-export function addBoard(boards: BoardConfig[], board: BoardConfig): BoardConfig[] {
+export function addBoard(boards: WatchlistCompany[], board: WatchlistCompany): WatchlistCompany[] {
   return boards.some((b) => sameBoard(b, board)) ? boards : [...boards, board];
 }
 
-export function removeBoard(boards: BoardConfig[], board: BoardConfig): BoardConfig[] {
+export function removeBoard(boards: WatchlistCompany[], board: WatchlistCompany): WatchlistCompany[] {
   return boards.filter((b) => !sameBoard(b, board));
 }
 
-export function hasBoard(boards: BoardConfig[], board: BoardConfig): boolean {
+export function hasBoard(boards: WatchlistCompany[], board: WatchlistCompany): boolean {
   return boards.some((b) => sameBoard(b, board));
 }
 
-export const ATS_LABELS: Record<BoardConfig["ats"], string> = {
+export const ATS_LABELS: Record<WatchlistCompany["ats"], string> = {
+  freehire: "FreeHire employer index",
   greenhouse: "Greenhouse",
   lever: "Lever",
   ashby: "Ashby",

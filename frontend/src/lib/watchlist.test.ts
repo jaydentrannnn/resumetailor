@@ -1,7 +1,19 @@
 import { describe, expect, it } from "vitest";
-import { addBoard, hasBoard, newWatchlistSource, parseWords, removeBoard } from "./watchlist";
+import { addBoard, hasBoard, newWatchlistSource, parseWords, removeBoard, watchlistCompanies, withCompanies } from "./watchlist";
 
 describe("watchlist helpers", () => {
+  it("round-trips mixed watchlists through fields older desktop profiles preserve", () => {
+    const native = { ats: "greenhouse" as const, slug: "xai", company: "X" };
+    const employer = { ats: "freehire" as const, slug: "google", company: "Google" };
+    const source = withCompanies(newWatchlistSource(), [native, employer]);
+    expect(source.boards).toEqual([native]);
+    expect(source.categories).toEqual(["google"]);
+    expect(source.provider).toBe("freehire");
+    const companies = watchlistCompanies(source);
+    expect(hasBoard(companies, employer)).toBe(true);
+    expect(withCompanies(source, removeBoard(companies, employer)).boards).toEqual([native]);
+    expect(withCompanies(source, removeBoard(companies, employer)).categories).toEqual([]);
+  });
   it("parses a comma list, trimming and dropping repeats", () => {
     expect(parseWords("analyst, intern,, Finance \nANALYST")).toEqual([
       "analyst",

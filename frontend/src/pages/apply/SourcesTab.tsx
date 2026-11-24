@@ -283,7 +283,7 @@ export function SourcesTab({
           <SourceGroup
             id="watchlists"
             title="Company watchlists"
-            explanation="Companies whose careers pages are read directly (Greenhouse, Lever, Ashby and more). The best way to catch finance and consulting roles."
+            explanation="Follow company job boards directly or watch an exact employer through FreeHire."
             action={
               <Button size="sm" variant="secondary" onClick={() => newWatchlist()}>
                 + Add watchlist

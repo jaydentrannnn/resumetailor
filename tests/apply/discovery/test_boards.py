@@ -102,6 +102,68 @@ def test_greenhouse_listing_uses_the_ats_job_url():
     assert jobs[0].company == "Acme Capital"
 
 
+def test_exact_employer_watchlist_filters_and_deduplicates(monkeypatch):
+    company = {"company_slug": "google", "company": "Google", "title": "Software Intern",
+               "public_slug": "abc", "url": "https://example.org/jobs/1",
+               "posted_at": "2026-09-24T00:00:00Z", "location": "Boston"}
+    endpoint = "https://freehire.me/api/v1/jobs/search?"
+    get = _FakeGet({endpoint: _Response(200, {"data": [
+        company, company, {**company, "title": "Accountant", "public_slug": "acct",
+                           "url": "https://example.org/jobs/2"},
+        {**company, "url": "https://www.linkedin.com/jobs/view/1"},
+        {**company, "url": "https://example.org/closed", "closed_at": "2026-09-24"},
+    ]})})
+    monkeypatch.setattr(boards.httpx, "get", get)
+    src = _source(boards=[], provider="freehire", categories=["google"], include=["software"])
+    rows, errors = source_watchlists.board_rows(src, now=NOW)
+    assert not errors
+    assert [(r.company, r.role, r.application_link) for r in rows] == [
+        ("Google", "Software Intern", company["url"])]
+    params = httpx.URL(get.calls[0]).params
+    assert params["company_slug"] == "google" and params["source_type"] == "ats,company"
+    assert "q" not in params
+    assert boards.parse_board_url(boards.board_url("freehire", "google")) == ("freehire", "google")
+    assert rows[0].job_id == "freehire:abc"
+
+
+def test_employer_paging_keeps_distinct_query_only_postings():
+    offsets = []
+
+    def get(url, **kwargs):
+        params = httpx.URL(url).params
+        offset = int(params["offset"])
+        offsets.append(offset)
+        jobs = [
+            {"company_slug": "acme", "title": "Engineer", "public_slug": f"job-{i}",
+             "url": f"https://example.org/careers?requisition={i}"}
+            for i in range(offset, min(offset + 100, 101))
+        ]
+        return _Response(200, {"data": jobs, "meta": {"total": 101}})
+
+    from resume_tailor.apply.discovery import freehire
+
+    jobs = freehire.employer_jobs("acme", get=get, pause=lambda: None)
+    assert offsets == [0, 100]
+    assert len({j.id for j in jobs}) == 101
+
+
+def test_employer_typo_empty_board_and_wrong_employer(monkeypatch):
+    monkeypatch.setattr(boards, "_sleep", lambda _: None)
+    search = "https://freehire.me/api/v1/jobs/search?"
+    detail = "https://freehire.me/api/v1/companies/acme?"
+    get = _FakeGet({search: _Response(200, {"data": []})})
+    with pytest.raises(boards.BoardNotFound):
+        boards.list_board("freehire", "acme", get=get)
+    get.routes[detail] = _Response(200, {"data": {"company": {"slug": "acme"}}})
+    assert boards.list_board("freehire", "acme", get=get) == []
+    get.routes[search] = _Response(200, {"data": [{"company_slug": "acme-staffing"}]})
+    with pytest.raises(boards.BoardUnavailable, match="different employer"):
+        boards.list_board("freehire", "acme", get=get)
+    get.routes[search] = _Response(200, {"data": [], "meta": {"ignored_params": ["source_type"]}})
+    with pytest.raises(boards.BoardUnavailable, match="filters"):
+        boards.list_board("freehire", "acme", get=get)
+
+
 def test_lever_ashby_and_smartrecruiters_listings():
     get = _FakeGet(
         {

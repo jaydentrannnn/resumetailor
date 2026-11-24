@@ -1,15 +1,16 @@
 /** Discovery sources: boards, watchlists, the source catalog, inspection and tests. */
 
-import type { BoardAts, BoardConfig, SourceConfig } from "./applySettings";
+import type { BoardConfig, SourceConfig } from "./applySettings";
 import { request } from "./core";
 
 // --- Discovery sources (P4-D) ---------------------------------------------------------
 
-export type ResolvedBoard = BoardConfig & { jobs: number; url: string };
+export type WatchlistCompany = BoardConfig | { ats: "freehire"; slug: string; company: string };
+export type ResolvedBoard = WatchlistCompany & { jobs: number; url: string };
 
 /** Check a careers link (or a board) against its ATS before it joins a watchlist. */
 export function resolveBoard(
-  input: { url: string } | { ats: BoardAts; slug: string; company?: string },
+  input: { url: string } | { ats: WatchlistCompany["ats"]; slug: string; company?: string },
 ): Promise<ResolvedBoard> {
   return request<ResolvedBoard>("/api/apply/boards/resolve", {
     method: "POST",
@@ -17,8 +18,8 @@ export function resolveBoard(
   });
 }
 
-export async function fetchWatchlists(): Promise<Record<string, BoardConfig[]>> {
-  return (await request<{ fields: Record<string, BoardConfig[]> }>("/api/apply/watchlists")).fields;
+export async function fetchWatchlists(): Promise<Record<string, WatchlistCompany[]>> {
+  return (await request<{ fields: Record<string, WatchlistCompany[]> }>("/api/apply/watchlists")).fields;
 }
 
 /** The category headings a README source offers. */

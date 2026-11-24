@@ -120,8 +120,9 @@ export function githubPageUrl(url: string): string {
 }
 
 /** Company names on a watchlist (the board's slug when it has no name). */
-function boardNames(source: SourceConfig): string[] {
-  return (source.boards ?? []).map((b) => b.company?.trim() || b.slug);
+export function boardNames(source: SourceConfig): string[] {
+  const names = (source.boards ?? []).map((b) => b.company?.trim() || b.slug);
+  return source.provider === "freehire" ? [...names, ...source.categories] : names;
 }
 
 /** "A, B, C +2": the first ``max`` of ``items``, then how many were left out. */

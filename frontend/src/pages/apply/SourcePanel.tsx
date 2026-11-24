@@ -2,6 +2,7 @@ import { useState } from "react";
 import type { SourceConfig, SourceField } from "../../api";
 import { Button, Modal } from "../../components/ui";
 import {
+  boardNames,
   githubPageUrl,
   PROVIDER_LABELS,
   providerOf,
@@ -10,7 +11,7 @@ import {
   type SearchProvider,
 } from "../../lib/sources";
 import { NameField, BoardTargetDialog, CatalogDialog, ConnectDialog } from "./AddFlows";
-import { addBoard } from "../../lib/watchlist";
+import { addBoard, watchlistCompanies, withCompanies } from "../../lib/watchlist";
 import type { useSourcesController } from "./sourceHooks";
 import { CategoryPicker, FiltersEditor, JobSearchEditor, WatchlistEditor } from "./SourceEditors";
 import { SourceTest } from "./SourceTest";
@@ -21,7 +22,7 @@ export type SaveState = "saved" | "unsaved" | "saving" | "failed";
 export function notReadyReason(source: SourceConfig): string {
   if (source.kind === "job_search" && splitPhrases(source.query ?? "").length === 0)
     return "Add at least one search phrase first";
-  if (source.kind === "ats_board" && (source.boards ?? []).length === 0)
+  if (source.kind === "ats_board" && boardNames(source).length === 0)
     return "Add at least one company first";
   return "";
 }
@@ -248,10 +249,7 @@ export function SourceFlows({
             const target = sourcesRef.current.find((s) => s.id === id);
             if (target) {
               const { ats, slug, company } = flow.board;
-              update(id, {
-                ...target,
-                boards: addBoard(target.boards ?? [], { ats, slug, company }),
-              });
+              update(id, withCompanies(target, addBoard(watchlistCompanies(target), { ats, slug, company })));
               toast.success(`Added ${flow.board.company || flow.board.slug}`);
             }
             setFlow(null);

@@ -210,7 +210,7 @@ describe("groups", () => {
     expect(
       screen.getByText(/Keyword searches through Adzuna, USAJobs or freehire.me/),
     ).toBeTruthy();
-    expect(screen.getByText(/Companies whose careers pages/)).toBeTruthy();
+    expect(screen.getByText(/watch an exact employer through FreeHire/)).toBeTruthy();
     expect(screen.getByRole("button", { name: "+ Add job list" })).toBeTruthy();
     expect(screen.getByRole("button", { name: "+ Add search" })).toBeTruthy();
     expect(screen.getByRole("button", { name: "+ Add watchlist" })).toBeTruthy();
@@ -683,6 +683,21 @@ describe("paste a link", () => {
       (s) => s.id === "company-watchlist",
     )!;
     expect(watch.boards?.map((b) => b.slug)).toEqual(["acme", "globex", "initech"]);
+  });
+
+  it("saves an indexed employer as a watchlist with no keyword query or native board", async () => {
+    const url = "https://freehire.me/companies/google";
+    vi.spyOn(api, "inspectSource").mockResolvedValue({ kind: null, sections: [], row_count: 0 });
+    vi.spyOn(api, "resolveBoard").mockResolvedValue({
+      ats: "freehire", slug: "google", company: "Google", jobs: 12, url,
+    });
+    const { onChange } = renderTab([]);
+    await paste(url);
+    const dialog = await screen.findByRole("dialog", { name: "New company watchlist" });
+    fireEvent.click(within(dialog).getByRole("button", { name: "Add watchlist" }));
+    expect(onChange.mock.lastCall![0][0]).toMatchObject({
+      kind: "ats_board", provider: "freehire", categories: ["google"], boards: [],
+    });
   });
 
   it("says so when the link is neither", async () => {

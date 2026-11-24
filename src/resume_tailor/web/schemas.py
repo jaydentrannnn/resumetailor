@@ -147,6 +147,13 @@ class SourceConfig(BaseModel):
             if self.max_age_days is None:
                 self.max_age_days = 14
         elif self.kind == "ats_board":
+            if self.provider == "freehire":
+                from ..apply.discovery.boards import valid_slug
+
+                # Older desktops preserve provider/categories and skip indexed employers.
+                if any(not valid_slug(slug, "freehire") for slug in self.categories):
+                    raise ValueError("Invalid FreeHire employer slug")
+                self.categories = list(dict.fromkeys(self.categories))
             if self.max_age_days is None:
                 self.max_age_days = 7
         else:

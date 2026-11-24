@@ -1,8 +1,8 @@
 import { useState } from "react";
-import { fetchWatchlists, resolveBoard, type BoardConfig, type SourceConfig } from "../../api";
+import { fetchWatchlists, resolveBoard, type WatchlistCompany, type SourceConfig } from "../../api";
 import { Button } from "../../components/ui";
 import { describe } from "../../lib/errors";
-import { addBoard, ATS_LABELS, hasBoard, removeBoard } from "../../lib/watchlist";
+import { addBoard, ATS_LABELS, hasBoard, removeBoard, watchlistCompanies, withCompanies } from "../../lib/watchlist";
 /**
  * A company watchlist (`ats_board` source): the boards to read nightly and which of
  * their postings to keep. Every board is checked live before it is added.
@@ -14,14 +14,14 @@ export function WatchlistEditor({
   source: SourceConfig;
   onChange: (next: SourceConfig) => void;
 }) {
-  const boards = source.boards ?? [];
+  const boards = watchlistCompanies(source);
   const [link, setLink] = useState("");
   const [adding, setAdding] = useState(false);
   const [error, setError] = useState("");
-  const [suggestions, setSuggestions] = useState<Record<string, BoardConfig[]> | null>(null);
+  const [suggestions, setSuggestions] = useState<Record<string, WatchlistCompany[]> | null>(null);
   const [failed, setFailed] = useState<Record<string, string>>({});
 
-  const setBoards = (next: BoardConfig[]) => onChange({ ...source, boards: next });
+  const setBoards = (next: WatchlistCompany[]) => onChange(withCompanies(source, next));
 
   async function add(input: Parameters<typeof resolveBoard>[0], key?: string) {
     setAdding(true);
@@ -52,7 +52,7 @@ export function WatchlistEditor({
       <p className="text-xs font-medium">Companies</p>
       {boards.length === 0 ? (
         <p className="text-xs text-ink-muted">
-          No companies yet. Paste a company's careers page, job board, or job link.
+          No companies yet. Paste a careers page, job board, job link, or FreeHire company link.
         </p>
       ) : (
         <ul className="flex flex-wrap gap-2">

@@ -31,8 +31,10 @@ from urllib.parse import parse_qs, urlsplit
 
 import httpx
 
-BoardAts = Literal["greenhouse", "lever", "ashby", "smartrecruiters", "workday"]
-BOARD_ATS: tuple[BoardAts, ...] = ("greenhouse", "lever", "ashby", "smartrecruiters", "workday")
+BoardAts = Literal["greenhouse", "lever", "ashby", "smartrecruiters", "workday", "freehire"]
+BOARD_ATS: tuple[BoardAts, ...] = (
+    "greenhouse", "lever", "ashby", "smartrecruiters", "workday", "freehire",
+)
 
 #: Pause between two boards, to stay polite to the public APIs.
 BOARD_DELAY_SECONDS = 1.0
@@ -73,6 +75,8 @@ class BoardJob:
 
 
 def valid_slug(slug: str, ats: str | None = None) -> bool:
+    if ats == "freehire":
+        return bool(re.fullmatch(r"[a-z0-9]+(?:-[a-z0-9]+)*", slug or "") and len(slug) <= 100)
     if ats == "workday":
         match = _WORKDAY_SLUG_RE.fullmatch(slug or "")
         return bool(
@@ -88,6 +92,7 @@ def board_url(ats: str, slug: str) -> str:
         host, _tenant, site = slug.split("/")
         return f"https://{host}.myworkdayjobs.com/{site}"
     return {
+        "freehire": f"https://freehire.me/companies/{slug}",
         "greenhouse": f"https://boards.greenhouse.io/{slug}",
         "lever": f"https://jobs.lever.co/{slug}",
         "ashby": f"https://jobs.ashbyhq.com/{slug}",
@@ -122,6 +127,8 @@ def parse_board_url(url: str) -> tuple[BoardAts, str] | None:
             slug = query["for"][0]
         elif segments:
             slug = segments[0]
+    elif host == "freehire.me" and len(segments) == 2 and segments[0] == "companies":
+        ats, slug = "freehire", segments[1]
     elif host == "jobs.lever.co" and segments:
         ats, slug = "lever", segments[0]
     elif host == "jobs.ashbyhq.com" and segments:
@@ -349,6 +356,10 @@ def list_board(
         raise ValueError(f"not a board name: {slug!r}")
     if ats == "workday":
         return _workday(slug, post or httpx.post)
+    if ats == "freehire":
+        from .freehire import employer_jobs
+
+        return employer_jobs(slug, get=get or httpx.get, pause=lambda: _sleep(1.0))
     return _LISTERS[ats](slug, get or httpx.get)
 
 

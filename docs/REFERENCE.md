@@ -312,6 +312,12 @@ for that search only). Its rows use the
 ATS's own job URL, so they merge with Simplify sightings of the same job. A wrong board name
 is one run error, not a failed source. `POST /api/apply/boards/resolve` checks a board
 before the settings add it. `apply/discovery/watchlists/*.json` are suggestions, checked the same way.
+Pasting a `https://freehire.me/companies/<slug>` link into a watchlist adds that exact
+indexed employer. Find reads up to its 1,000 newest ATS and employer postings,
+checks the employer ID on each row, and applies the watchlist's usual filters.
+For `ats_board` sources with `provider="freehire"`, `categories` stores these employer
+IDs alongside the ordinary ATS `boards`. Older desktops can round-trip these settings
+and continue reading the ordinary boards.
 A keyword search (`kind="job_search"`, `apply/discovery/job_apis.py`) queries Adzuna or USAJobs by
 `query`/`location` (`country` for Adzuna) across any industry — `query` holds up to 5
 comma-separated phrases, each searched on its own and merged by `job_id` — then applies the same
